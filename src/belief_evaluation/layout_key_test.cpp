@@ -52,3 +52,28 @@ TEST(LayoutKey, DifferentSuitsOccupyDisjointBitRanges)
 
     EXPECT_NE(layout_key(spades_only, 2), layout_key(hearts_only, 2));
 }
+
+TEST(LayoutKey, RejectsAnOutOfRangeSeatWithoutUndefinedBehaviour)
+{
+    Deal const deal = make_deal_with_defender_spades(1, 0b1010);
+    EXPECT_EQ(layout_key(deal, DDS_HANDS), 0u);
+    EXPECT_EQ(layout_key(deal, -1), 0u);
+}
+
+TEST(LayoutKey, StrayBitsAboveRankFourteenDoNotLeakIntoTheNextSuitsField)
+{
+    // A well-formed Deal never sets remainCards bits above bit 14 (ace), but
+    // nothing in the type stops it. Without masking after `>> 2`, a stray
+    // high bit here would shift into spades' 13-bit field of the packed key
+    // (hearts occupies bits 13..25, so anything above hearts' own 13 bits
+    // once shifted would collide with spades' field at bits 0..12... in
+    // practice it collides one field up, into the next suit checked below).
+    Deal clean{};
+    clean.remainCards[2][1] = 0b1 << 2;  // South: deuce of hearts only
+
+    Deal with_stray_bits = clean;
+    with_stray_bits.remainCards[2][1] |= 1u << 20;  // stray bit far above any legal rank
+
+    EXPECT_EQ(layout_key(clean, 2), layout_key(with_stray_bits, 2))
+        << "a stray bit above rank 14 must not change the packed key";
+}

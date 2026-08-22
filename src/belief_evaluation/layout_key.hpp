@@ -11,4 +11,9 @@
 /// how the pool splits between the two defenders, so one defender's holding
 /// determines the other's by complement and identifies the layout completely
 /// within that node. This is **not** a cross-node or global layout identity.
+///
+/// `defender_seat` outside `0..DDS_HANDS` returns 0 rather than indexing out
+/// of bounds. Each suit's holding is masked to its 13 significant bits after
+/// shifting, so a malformed `Deal` with stray bits set above rank 14 cannot
+/// leak into an adjacent suit's field of the packed key.
 auto layout_key(Deal const& deal, int defender_seat) -> std::uint64_t;
