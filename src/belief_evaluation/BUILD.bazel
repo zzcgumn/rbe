@@ -1,0 +1,33 @@
+load("//:CPPVARIABLES.bzl", "DDS_CPPOPTS", "DDS_LINKOPTS", "DDS_LOCAL_DEFINES")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+cc_library(
+    name = "belief_evaluation",
+    srcs = glob(["*.cpp"], exclude = ["*_test.cpp"], allow_empty = True),
+    hdrs = glob(["*.hpp"], allow_empty = True),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//library/src/lookup_tables",
+        "//library/src/api:api_definitions",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+cc_test(
+    name = "belief_evaluation_test",
+    size = "small",
+    srcs = glob(["*_test.cpp"], allow_empty = True),
+    deps = [
+        ":belief_evaluation",
+        "//library/src/lookup_tables",
+        "//library/src/api:api_definitions",
+        "//library/src/utility:constants",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
