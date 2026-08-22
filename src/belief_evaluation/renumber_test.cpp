@@ -31,3 +31,15 @@ TEST(Renumber, FullPoolIsIdentity)
     unsigned const holding = 0x0A5Au;
     EXPECT_EQ(renumber(holding & pool, pool), holding & pool);
 }
+
+TEST(Renumber, DoesNotOverflowWhenPoolsHighestSetBitIsBit31)
+{
+    // No documented caller passes a pool wider than 13 bits (renumber.hpp's
+    // doxygen scopes both arguments to dds's aggregate convention), but the
+    // function is unsigned-typed generally rather than scoped to 13 bits by
+    // its type, so this pins down that the top bit doesn't shift `in_bit`
+    // past the width of `unsigned` in the loop that walks pool's set bits.
+    unsigned const pool = (1u << 31) | 0b1u;
+    unsigned const holding = pool;
+    EXPECT_EQ(renumber(holding, pool), 0b11u);
+}
