@@ -48,10 +48,15 @@ struct RankMap
 {
     std::array<unsigned, DDS_SUITS> aggr;  ///< outstanding pool per suit
 
-    /// Absolute rank -> relative, 1 = highest, 0 if not outstanding.
+    /// Absolute rank -> relative, 1 = highest, 0 if not outstanding. Also 0,
+    /// rather than undefined behaviour, for a `suit` outside `0..DDS_SUITS`
+    /// or a `rank` outside `2..14` — indistinguishable from "not
+    /// outstanding" by design, since no valid holding could contain either.
     auto to_relative(int suit, int rank) const -> int;
 
-    /// Relative ordinal (1 = highest) -> absolute rank.
+    /// Relative ordinal (1 = highest) -> absolute rank. Also 0, rather than
+    /// undefined behaviour, for a `suit` outside `0..DDS_SUITS` or an
+    /// `ordinal` outside `1..13`.
     auto to_absolute(int suit, int ordinal) const -> int;
 };
 

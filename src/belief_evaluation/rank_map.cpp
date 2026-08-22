@@ -5,12 +5,25 @@
 
 auto RankMap::to_relative(int suit, int rank) const -> int
 {
+    // Out-of-range suit/rank cannot be outstanding, so 0 ("not outstanding")
+    // is the correct answer as well as the safe one — without this guard,
+    // an out-of-range suit indexes aggr out of bounds and an out-of-range
+    // rank indexes rel_rank's second dimension out of bounds, both undefined
+    // behaviour. RankMap is a public type callback authors read directly, so
+    // it must fail safely rather than assume its callers validated first.
+    if (suit < 0 || suit >= DDS_SUITS || rank < 2 || rank > 14)
+    {
+        return 0;
+    }
     return rel_rank[aggr[suit]][rank];
 }
 
 auto RankMap::to_absolute(int suit, int ordinal) const -> int
 {
-    if (ordinal <= 0)
+    // ordinal is a count of top cards to keep, valid over 0..13 (win_ranks'
+    // second dimension); see win_ranks' doxygen in lookup_tables.hpp. Guard
+    // both ends and the suit for the same reason as to_relative above.
+    if (suit < 0 || suit >= DDS_SUITS || ordinal <= 0 || ordinal > 13)
     {
         return 0;
     }

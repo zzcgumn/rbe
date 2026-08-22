@@ -25,8 +25,9 @@ enum class ValidationError
 auto validate_declarer_card(Deal const& deal, int seat, Card const& card) -> ValidationError;
 
 /// Validates a distribution a defender strategy returned: every card held by
-/// `seat` in `layout`, every probability strictly positive, and the
-/// probabilities summing to 1 within tolerance. A card the strategy will
+/// `seat` in `layout` and legal for the trick in progress (must follow suit
+/// if `seat` holds the led suit), every probability strictly positive, and
+/// the probabilities summing to 1 within tolerance. A card the strategy will
 /// never play must be omitted rather than given zero probability, so a
 /// non-positive probability is a contract violation, not "never".
 auto validate_defender_distribution(

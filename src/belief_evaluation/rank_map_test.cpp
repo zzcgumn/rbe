@@ -42,6 +42,28 @@ TEST_F(RankMapTest, NotOutstandingRankMapsToZero)
     EXPECT_EQ(map.to_relative(0, 14), 0);
 }
 
+TEST_F(RankMapTest, ToRelativeIsBoundsSafeForOutOfRangeSuitOrRank)
+{
+    RankMap map{};
+    map.aggr[0] = 0b111;  // deuce, three, four outstanding
+
+    EXPECT_EQ(map.to_relative(-1, 2), 0);
+    EXPECT_EQ(map.to_relative(DDS_SUITS, 2), 0);
+    EXPECT_EQ(map.to_relative(0, 1), 0);   // below the lowest legal rank
+    EXPECT_EQ(map.to_relative(0, 15), 0);  // above the highest legal rank
+}
+
+TEST_F(RankMapTest, ToAbsoluteIsBoundsSafeForOutOfRangeSuitOrOrdinal)
+{
+    RankMap map{};
+    map.aggr[0] = 0b111;
+
+    EXPECT_EQ(map.to_absolute(-1, 1), 0);
+    EXPECT_EQ(map.to_absolute(DDS_SUITS, 1), 0);
+    EXPECT_EQ(map.to_absolute(0, -1), 0);
+    EXPECT_EQ(map.to_absolute(0, 14), 0);  // win_ranks' second dimension is 0..13
+}
+
 TEST_F(RankMapTest, BuildsAggrAsUnionOfAllFourHandsHoldingsPerSuit)
 {
     Deal deal{};
