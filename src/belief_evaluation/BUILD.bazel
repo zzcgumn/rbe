@@ -6,8 +6,10 @@ cc_library(
     srcs = [
         "kahan.cpp",
         "layout_key.cpp",
+        "position.cpp",
         "rank_map.cpp",
         "renumber.cpp",
+        "trick.cpp",
         "validation.cpp",
     ],
     hdrs = [
@@ -16,8 +18,10 @@ cc_library(
         "kahan.hpp",
         "layout_key.hpp",
         "layout_source.hpp",
+        "position.hpp",
         "rank_map.hpp",
         "renumber.hpp",
+        "trick.hpp",
         "types.hpp",
         "validation.hpp",
     ],
@@ -25,26 +29,6 @@ cc_library(
     deps = [
         "//library/src/lookup_tables",
         "//library/src/api:api_definitions",
-    ],
-    include_prefix = "belief_evaluation",
-    copts = DDS_CPPOPTS,
-    linkopts = DDS_LINKOPTS,
-    local_defines = DDS_LOCAL_DEFINES,
-)
-
-# Position, legal_plays(), trick_winner() and play_card() are a minimal
-# trick-mechanics helper that exists solely to state and test the
-# renumbering isomorphism (see position.hpp's own doxygen). Nothing in the
-# public belief_evaluation surface depends on it, so it is kept out of that
-# library's srcs/hdrs and exposed only to its own test package, mirroring
-# the testable_* pattern elsewhere in this tree (e.g.
-# //library/src/heuristic_sorting:testable_heuristic_sorting).
-cc_library(
-    name = "position",
-    srcs = ["position.cpp"],
-    hdrs = ["position.hpp"],
-    visibility = ["//library/tests/belief_evaluation:__pkg__"],
-    deps = [
         "//library/src/utility:constants",
     ],
     include_prefix = "belief_evaluation",
