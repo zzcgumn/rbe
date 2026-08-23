@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <vector>
 
 #include <api/dll.h>
@@ -162,6 +163,28 @@ TEST(ValidateDefenderDistribution, AcceptsAnyHeldCardWhenVoidInTheLedSuit)
     deal.currentTrickRank[0] = 5;
     std::vector<WeightedCard> const distribution{{Card{1, 4}, 1.0}};
     EXPECT_EQ(validate_defender_distribution(deal, 2, distribution), ValidationError::None);
+}
+
+TEST(ValidateDefenderDistribution, RejectsANaNProbability)
+{
+    Deal const deal = deal_with_south_holding_two_and_three_of_spades();
+    // NaN fails every comparison, including `<= 0.0` and the final
+    // sum-tolerance check, so an unguarded NaN slips past both.
+    std::vector<WeightedCard> const distribution{
+        {Card{0, 2}, std::numeric_limits<double>::quiet_NaN()}};
+    EXPECT_EQ(
+        validate_defender_distribution(deal, 2, distribution),
+        ValidationError::ProbabilityNonPositive);
+}
+
+TEST(ValidateDefenderDistribution, RejectsAPositiveInfiniteProbability)
+{
+    Deal const deal = deal_with_south_holding_two_and_three_of_spades();
+    std::vector<WeightedCard> const distribution{
+        {Card{0, 2}, std::numeric_limits<double>::infinity()}};
+    EXPECT_EQ(
+        validate_defender_distribution(deal, 2, distribution),
+        ValidationError::ProbabilityNonPositive);
 }
 
 TEST(ValidateDefenderDistribution, RejectsAnOutOfRangeCardWithoutUndefinedBehaviour)

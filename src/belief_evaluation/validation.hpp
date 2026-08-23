@@ -15,7 +15,7 @@ enum class ValidationError
     None,                        ///< the input is valid
     CardNotHeld,                 ///< the card is not in the seat's remaining holding
     CardIllegalForTrick,         ///< the seat holds the led suit but the card is of another suit
-    ProbabilityNonPositive,      ///< a WeightedCard's probability is <= 0
+    ProbabilityNonPositive,      ///< a WeightedCard's probability is <= 0, NaN, or +-infinite
     ProbabilitiesDoNotSumToOne,  ///< the distribution's probabilities do not sum to 1 within tolerance
 };
 

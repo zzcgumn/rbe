@@ -83,7 +83,13 @@ auto validate_defender_distribution(
         {
             return ValidationError::CardIllegalForTrick;
         }
-        if (entry.probability <= 0.0)
+        // NaN fails every comparison, so an unguarded `<= 0.0` check lets it
+        // through, and the sum-tolerance check below would too (NaN also
+        // fails `>`) once it has poisoned `total`. +-Inf is a positive
+        // number by that same `<= 0.0` test but is not a legitimate
+        // probability either. Reject all non-finite values up front,
+        // reusing ProbabilityNonPositive since none of them is one.
+        if (! std::isfinite(entry.probability) || entry.probability <= 0.0)
         {
             return ValidationError::ProbabilityNonPositive;
         }

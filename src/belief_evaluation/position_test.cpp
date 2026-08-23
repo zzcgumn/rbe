@@ -110,8 +110,16 @@ namespace
             if (count_in_trick == 0 && total_holding(orig, hand) == 0)
             {
                 // Deal complete: every hand's trick count must correspond.
+                // Also assert every hand is actually empty, not just the one
+                // about to lead — a starting position with unequal card
+                // counts per hand would otherwise let this walk terminate
+                // early and silently under-cover the isomorphism property,
+                // passing without ever having walked the whole deal.
                 for (int h = 0; h < DDS_HANDS; ++h)
                 {
+                    EXPECT_EQ(total_holding(orig, h), 0u)
+                        << "hand " << h << " still holds cards; the starting "
+                           "position is unbalanced";
                     EXPECT_EQ(orig_tricks[h], renum_tricks[h]);
                 }
                 return;
@@ -119,6 +127,17 @@ namespace
 
             auto const orig_legal = legal_plays(orig, hand, led_suit);
             auto const renum_legal = legal_plays(renum, hand, led_suit);
+
+            // A hand that is unexpectedly empty mid-trick (not at a trick
+            // boundary) returns an all-zero legal set here, and the loop
+            // below then has nothing to iterate — the walk would otherwise
+            // dead-end silently, firing no assertion at all rather than
+            // failing loudly, hiding the same class of unbalanced-position
+            // bug the trick-boundary check above guards against.
+            EXPECT_NE(
+                orig_legal[0] | orig_legal[1] | orig_legal[2] | orig_legal[3], 0u)
+                << "hand " << hand << " has no legal play mid-trick; the "
+                   "starting position is unbalanced";
 
             for (int suit = 0; suit < DDS_SUITS; ++suit)
             {
@@ -320,28 +339,38 @@ TEST(PositionIsomorphism, ThreeCardsPerHandTwoSuits)
 
 TEST(PositionIsomorphism, FiveCardsPerHandThreeSuitsWithTrumpAndAVoid)
 {
-    // Spades (trump): N,E,W hold 2 each; South holds 4 — 10 of the suit's 13
-    // bits, spread out to stay disjoint. Hearts: N,E,W hold 2 each, South
-    // holds only 1 — South goes void in hearts after playing it, enabling a
-    // ruff. Diamonds: N,E,W hold 1 each, South holds 2.
+    // Every hand holds exactly 5 cards. Spades (trump): 2 each, 8 of the
+    // suit's 13 bits. Hearts: N,E,W hold 2 each, South holds only 1 — South
+    // goes void in hearts after playing it, enabling a ruff. Diamonds:
+    // N,E,W hold 1 each, South holds 2, making up South's fifth card.
+    //
+    // (An earlier version of this test gave South 4 spades + 1 heart +
+    // 2 diamonds = 7 cards against 5 for every other hand. The isomorphism
+    // walk terminates once the hand about to lead is empty, so that
+    // imbalance let N/E/W's exhaustion end the walk early — South's extra
+    // two cards, and the tricks that would have played them, were never
+    // walked, silently under-covering the property this test exists to
+    // assert. Every hand having the same total is what makes "the hand
+    // about to lead is empty" a sound stand-in for "the deal is complete";
+    // the walk itself now also asserts this explicitly.)
     Position position{};
     position.trump = 0;  // spades
     position.leader = 0;
 
-    position.holding[0][0] = 0b0000011;        // N spades: bits 0,1
-    position.holding[1][0] = 0b0001100;        // E spades: bits 2,3
-    position.holding[2][0] = 0b11110000;       // S spades: bits 4,5,6,7 (4 cards)
-    position.holding[3][0] = 0b1100000000;     // W spades: bits 8,9
+    position.holding[0][0] = 0b00000011;  // N spades: bits 0,1
+    position.holding[1][0] = 0b00001100;  // E spades: bits 2,3
+    position.holding[2][0] = 0b00110000;  // S spades: bits 4,5
+    position.holding[3][0] = 0b11000000;  // W spades: bits 6,7
 
-    position.holding[0][1] = 0b0011;  // N hearts: bits 0,1
-    position.holding[1][1] = 0b1100;  // E hearts: bits 2,3
-    position.holding[2][1] = 0b10000; // S hearts: bit 4 (void after played)
-    position.holding[3][1] = 0b1100000; // W hearts: bits 5,6
+    position.holding[0][1] = 0b0000011;  // N hearts: bits 0,1
+    position.holding[1][1] = 0b0001100;  // E hearts: bits 2,3
+    position.holding[2][1] = 0b0010000;  // S hearts: bit 4 (void after played)
+    position.holding[3][1] = 0b1100000;  // W hearts: bits 5,6
 
-    position.holding[0][2] = 0b0001;  // N diamonds: bit 0
-    position.holding[1][2] = 0b0010;  // E diamonds: bit 1
-    position.holding[2][2] = 0b1100;  // S diamonds: bits 2,3
-    position.holding[3][2] = 0b10000; // W diamonds: bit 4
+    position.holding[0][2] = 0b00001;  // N diamonds: bit 0
+    position.holding[1][2] = 0b00010;  // E diamonds: bit 1
+    position.holding[2][2] = 0b01100;  // S diamonds: bits 2,3
+    position.holding[3][2] = 0b10000;  // W diamonds: bit 4
 
     assert_isomorphic(position);
 }
