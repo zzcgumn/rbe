@@ -195,3 +195,34 @@ TEST(ValidateDefenderDistribution, RejectsAnOutOfRangeCardWithoutUndefinedBehavi
         validate_defender_distribution(deal, 2, distribution),
         ValidationError::CardNotHeld);
 }
+
+TEST(ValidateDefenderDistribution, RejectsAnOutOfRangeSeatEvenForAnEmptyDistribution)
+{
+    // With a non-empty distribution, an invalid seat is already caught by
+    // is_held()'s per-entry guard. An *empty* distribution never enters that
+    // loop, so without an explicit upfront check it fell through to
+    // ProbabilitiesDoNotSumToOne (0.0 is never close to 1.0) — a misleading
+    // error that names the wrong problem, and inconsistent with
+    // validate_declarer_card, which always reports an invalid seat as
+    // CardNotHeld regardless of the card.
+    Deal const deal = deal_with_south_holding_two_and_three_of_spades();
+    std::vector<WeightedCard> const empty_distribution;
+    EXPECT_EQ(
+        validate_defender_distribution(deal, DDS_HANDS, empty_distribution),
+        ValidationError::CardNotHeld);
+    EXPECT_EQ(
+        validate_defender_distribution(deal, -1, empty_distribution),
+        ValidationError::CardNotHeld);
+}
+
+TEST(ValidateDefenderDistribution, RejectsAnEmptyDistributionForAValidSeat)
+{
+    // A defender must return at least one card; distinct from the seat
+    // check above, this is still ProbabilitiesDoNotSumToOne when the seat
+    // itself is fine.
+    Deal const deal = deal_with_south_holding_two_and_three_of_spades();
+    std::vector<WeightedCard> const empty_distribution;
+    EXPECT_EQ(
+        validate_defender_distribution(deal, 2, empty_distribution),
+        ValidationError::ProbabilitiesDoNotSumToOne);
+}

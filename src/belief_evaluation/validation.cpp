@@ -72,6 +72,17 @@ auto validate_defender_distribution(
     int seat,
     std::vector<WeightedCard> const& distribution) -> ValidationError
 {
+    // Every entry is checked against `seat` via is_held() below, but an
+    // empty distribution never enters that loop — without this upfront
+    // check an invalid seat with no cards to report would fall through to
+    // ProbabilitiesDoNotSumToOne, misleadingly naming the wrong problem and
+    // disagreeing with validate_declarer_card, which always reports an
+    // invalid seat as CardNotHeld regardless of the card.
+    if (seat < 0 || seat >= DDS_HANDS)
+    {
+        return ValidationError::CardNotHeld;
+    }
+
     double total = 0.0;
     for (auto const& entry : distribution)
     {
