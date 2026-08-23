@@ -1,0 +1,28 @@
+load("//:CPPVARIABLES.bzl", "DDS_CPPOPTS", "DDS_LINKOPTS", "DDS_LOCAL_DEFINES")
+load("@rules_cc//cc:defs.bzl", "cc_test")
+
+cc_test(
+    name = "belief_evaluation_test",
+    size = "small",
+    srcs = [
+        "aggr_invariance_test.cpp",
+        "kahan_test.cpp",
+        "layout_key_test.cpp",
+        "position_test.cpp",
+        "rank_map_test.cpp",
+        "renumber_test.cpp",
+        "smoke_test.cpp",
+        "validation_test.cpp",
+    ],
+    deps = [
+        "//library/src/belief_evaluation",
+        "//library/src/belief_evaluation:position",
+        "//library/src/lookup_tables",
+        "//library/src/api:api_definitions",
+        "//library/src/utility:constants",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
