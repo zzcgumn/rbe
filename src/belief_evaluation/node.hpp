@@ -47,3 +47,25 @@ auto make_root(
     int declarer,
     int tricks_needed,
     LayoutSource const& source) -> std::optional<BeliefNode>;
+
+/// kappa * Sigma_i p_i, accumulated through KahanAccumulator. The node's
+/// total probability mass, independent of what tricks_won_by_declarer says
+/// about it.
+auto node_mass(BeliefNode const& node) -> double;
+
+/// The value of a node with no cards left to play: node_mass(node) if
+/// declarer has already banked tricks_needed, else 0. tricks_won_by_declarer
+/// lives only on node.state — every card played is observed, so it is
+/// identical across every layout in the node (the same fact
+/// algorithm.md notes about the indicator being constant on A_tau) — so
+/// there is no per-layout trick count to read here even by mistake; the
+/// per-layout indicator form this guards against cannot compile.
+auto terminal_value(BeliefNode const& node) -> double;
+
+/// True when no hand in the node has a card left. node.layouts is never
+/// empty (make_root and every child-construction function guarantee at
+/// least one layout survives), and every layout in a node shares the same
+/// outstanding pool per suit (the aggr invariant), so an empty pool leaves
+/// every layout — not just the first — with every hand empty; checking one
+/// representative layout is sufficient.
+auto is_terminal(BeliefNode const& node) -> bool;

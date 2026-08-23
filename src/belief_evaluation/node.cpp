@@ -1,5 +1,6 @@
 #include <belief_evaluation/node.hpp>
 
+#include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/rank_map.hpp>
 #include <utility/constants.h>
 
@@ -115,4 +116,35 @@ auto make_root(
 
     node.kappa = 1.0 / static_cast<double>(node.layouts.size());
     return node;
+}
+
+auto node_mass(BeliefNode const& node) -> double
+{
+    KahanAccumulator total;
+    for (Probability const p_i : node.p)
+    {
+        total.add(node.kappa * p_i);
+    }
+    return total.value();
+}
+
+auto terminal_value(BeliefNode const& node) -> double
+{
+    return (node.state.tricks_won_by_declarer >= node.state.tricks_needed) ? node_mass(node) : 0.0;
+}
+
+auto is_terminal(BeliefNode const& node) -> bool
+{
+    Deal const& layout = node.layouts.front();
+    for (int hand = 0; hand < DDS_HANDS; ++hand)
+    {
+        for (int suit = 0; suit < DDS_SUITS; ++suit)
+        {
+            if (layout.remainCards[hand][suit] != 0)
+            {
+                return false;
+            }
+        }
+    }
+    return true;
 }

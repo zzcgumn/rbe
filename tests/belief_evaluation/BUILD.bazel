@@ -13,6 +13,7 @@ cc_test(
         "rank_map_test.cpp",
         "renumber_test.cpp",
         "smoke_test.cpp",
+        "terminal_test.cpp",
         "test_support.hpp",
         "trick_test.cpp",
         "validation_test.cpp",
