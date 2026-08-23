@@ -81,3 +81,18 @@ TEST_F(RankMapTest, BuildsAggrAsUnionOfAllFourHandsHoldingsPerSuit)
     // outstanding ranks 2, 3, 4 land at bits 0, 1, 2.
     EXPECT_EQ(map.aggr[0], 0b0111u);
 }
+
+TEST_F(RankMapTest, MasksAggrTo13BitsEvenWithStrayRemainCardsBitsAboveRankFourteen)
+{
+    // A well-formed Deal never sets a remainCards bit above rank 14, but
+    // nothing in the type enforces that. Without masking after `>> 2`,
+    // aggr[suit] could exceed 0x1FFF (8191) and later index rel_rank/
+    // win_ranks/highest_rank (all sized [8192]) out of bounds.
+    Deal deal{};
+    deal.remainCards[0][0] = (1u << 2) | (1u << 20);  // deuce, plus a stray high bit
+
+    RankMap const map = make_rank_map(deal);
+
+    EXPECT_LE(map.aggr[0], 0x1FFFu);
+    EXPECT_EQ(map.aggr[0], 0b1u);  // only the deuce should register
+}

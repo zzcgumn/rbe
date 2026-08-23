@@ -34,6 +34,8 @@ auto RankMap::to_absolute(int suit, int ordinal) const -> int
 
 auto make_rank_map(Deal const& deal) -> RankMap
 {
+    constexpr unsigned ThirteenBitMask = 0x1FFFu;
+
     RankMap map{};
     for (int suit = 0; suit < DDS_SUITS; ++suit)
     {
@@ -44,7 +46,11 @@ auto make_rank_map(Deal const& deal) -> RankMap
         }
         // remainCards sets bit r for absolute rank r; aggr and the lookup
         // tables use the compacted convention, bit r-2 for absolute rank r.
-        map.aggr[suit] = pool >> 2;
+        // A well-formed Deal never sets a remainCards bit above rank 14, but
+        // nothing in the type enforces that, and an unmasked stray bit here
+        // would push aggr[suit] past 0x1FFF — out of bounds for every
+        // rel_rank/win_ranks/highest_rank lookup that indexes by aggr.
+        map.aggr[suit] = (pool >> 2) & ThirteenBitMask;
     }
     return map;
 }
