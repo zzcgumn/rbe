@@ -1,5 +1,7 @@
 #include <belief_evaluation/trick.hpp>
 
+#include <cassert>
+
 #include <belief_evaluation/position.hpp>
 
 namespace
@@ -55,6 +57,14 @@ auto legal_cards(Deal const& deal, int seat) -> std::array<unsigned, DDS_SUITS>
 
 auto trick_complete_winner(Deal const& deal, Card const& card) -> int
 {
+    // Precondition, per this function's own doxygen: exactly three cards
+    // already played. An unplayed slot (rank 0) would feed
+    // rank_to_bit_position() a -2, an invalid bit position, straight into
+    // trick_winner()'s comparisons -- silent out-of-bounds, not a crash.
+    assert(deal.currentTrickRank[0] != 0);
+    assert(deal.currentTrickRank[1] != 0);
+    assert(deal.currentTrickRank[2] != 0);
+
     std::array<int, 4> suit_played{};
     std::array<int, 4> bit_played{};
     for (int i = 0; i < 3; ++i)
