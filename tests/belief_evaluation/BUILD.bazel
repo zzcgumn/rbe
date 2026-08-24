@@ -7,6 +7,7 @@ cc_test(
     srcs = [
         "aggr_invariance_test.cpp",
         "declarer_node_test.cpp",
+        "defender_node_test.cpp",
         "kahan_test.cpp",
         "layout_key_test.cpp",
         "node_test.cpp",

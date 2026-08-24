@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <belief_evaluation/declarer_strategy.hpp>
+#include <belief_evaluation/defender_strategy.hpp>
 #include <belief_evaluation/node.hpp>
 #include <belief_evaluation/validation.hpp>
 
@@ -42,3 +43,26 @@ auto expand_declarer_node(BeliefNode const& node, DeclarerStrategy const& pi) ->
 /// publicly-known card played.
 auto make_declarer_children(BeliefNode const& parent, std::vector<Card> const& cards)
     -> std::vector<BeliefNode>;
+
+/// The result of expanding a defender node: either the children (one per
+/// card delta assigned positive probability to, across every layout), or
+/// the ValidationError a callback's return violated. Provisional, as
+/// ExpandResult above.
+struct ExpandDefenderResult
+{
+    std::optional<std::vector<BeliefNode>> children;
+    ValidationError error = ValidationError::None;  ///< meaningful only when children is nullopt
+};
+
+/// Expands a node where a defender is on play (`seat_on_play` on
+/// `node.state.known_holdings`): calls `delta` once per layout, and groups
+/// the results by card. Child `C_a` holds `{B_i : delta(C_a | B_i) > 0}`
+/// with `p_i' = p_i * delta(C_a | B_i)` — a layout `delta` gives no
+/// probability to a card is absent from that card's child, not present
+/// with `p = 0`, and a layout may legitimately appear in more than one
+/// child. `kappa` is unchanged in every child; defender children partition
+/// `p`, not `kappa`. Every distribution `delta` returns is checked through
+/// `validate_defender_distribution`; a violation aborts expansion and is
+/// reported via the result rather than asserted.
+auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
+    -> ExpandDefenderResult;
