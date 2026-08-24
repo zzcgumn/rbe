@@ -14,7 +14,7 @@ struct WeightedCard
 };
 
 /// Everything one call to a defender strategy needs. `layout` is the actual
-/// layout — perfect information — because version one models
+/// layout — perfect information — because this contract currently models
 /// perfect-information defenders only.
 struct DefenderQuery
 {

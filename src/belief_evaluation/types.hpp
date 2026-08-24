@@ -19,8 +19,8 @@ struct Card
 };
 
 /// Identifies a declarer strategy among strategies compared together.
-/// Unused beyond distinctness validation in version one; load-bearing once
-/// strategy comparison is added.
+/// Unused beyond distinctness validation today; load-bearing once strategy
+/// comparison is added.
 using StrategyId = std::uint32_t;
 
 /// Opaque byte string a strategy uses to declare what `play` consults beyond
