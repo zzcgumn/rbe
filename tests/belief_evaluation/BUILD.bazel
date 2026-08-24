@@ -26,6 +26,7 @@ cc_test(
     ],
     deps = [
         "//library/src/belief_evaluation",
+        "//library/src/belief_evaluation:position",
         "//library/src/lookup_tables",
         "//library/src/api:api_definitions",
         "//library/src/utility:constants",
