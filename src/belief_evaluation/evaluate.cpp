@@ -1,5 +1,7 @@
 #include <belief_evaluation/evaluate.hpp>
 
+#include <cassert>
+
 #include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/trick.hpp>
@@ -39,6 +41,7 @@ namespace
     /// directly than that.
     auto last_played_card(BeliefNode const& node) -> Card
     {
+        assert(node.state.history.number > 0);
         int const n = node.state.history.number - 1;
         return Card{node.state.history.suit[n], node.state.history.rank[n]};
     }
@@ -139,7 +142,9 @@ auto evaluate(
             // actual choice (validated the same way any other node is).
             // The other legal cards' subtrees are then built directly via
             // make_declarer_children(), which does not call pi, and
-            // evaluated by recursing pi/delta normally from there.
+            // evaluated by recursing pi/delta normally from there. The
+            // chosen card's own child (chosen.child) is reused rather than
+            // rebuilt a second time through make_declarer_children().
             ExpandResult const chosen = expand_declarer_node(root, pi);
             if (! chosen.child.has_value())
             {
@@ -149,17 +154,43 @@ auto evaluate(
             }
 
             std::vector<Card> const legal = enumerate_legal_cards(root.state.known_holdings, seat);
-            std::vector<BeliefNode> const candidates = make_declarer_children(root, legal);
-            value.root_children.reserve(candidates.size());
-            for (std::size_t i = 0; i < candidates.size(); ++i)
+            // legal.size() is at least 1 (chosen.card must be a legal card,
+            // since it just passed validate_declarer_card), so no index in
+            // the loop below is ever left unset below chosen_index.
+            std::size_t chosen_index = legal.size();
+            for (std::size_t i = 0; i < legal.size(); ++i)
             {
-                double const candidate_value = p_make(candidates[i], pi, delta, error);
+                if (legal[i].suit == chosen.card.suit && legal[i].rank == chosen.card.rank)
+                {
+                    chosen_index = i;
+                    break;
+                }
+            }
+
+            std::vector<Card> other_cards;
+            other_cards.reserve(legal.size());
+            for (std::size_t i = 0; i < legal.size(); ++i)
+            {
+                if (i != chosen_index)
+                {
+                    other_cards.push_back(legal[i]);
+                }
+            }
+            std::vector<BeliefNode> const other_children = make_declarer_children(root, other_cards);
+
+            value.root_children.reserve(legal.size());
+            std::size_t other_i = 0;
+            for (std::size_t i = 0; i < legal.size(); ++i)
+            {
+                double const candidate_value = (i == chosen_index)
+                    ? p_make(*chosen.child, pi, delta, error)
+                    : p_make(other_children[other_i++], pi, delta, error);
                 if (error.has_value())
                 {
                     return EvaluationResult{{}, error};
                 }
                 value.root_children.push_back(RootChildValue{legal[i], candidate_value});
-                if (legal[i].suit == chosen.card.suit && legal[i].rank == chosen.card.rank)
+                if (i == chosen_index)
                 {
                     value.p_make = candidate_value;
                 }
