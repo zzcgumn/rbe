@@ -4,6 +4,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 cc_library(
     name = "belief_evaluation",
     srcs = [
+        "expand.cpp",
         "kahan.cpp",
         "layout_key.cpp",
         "node.cpp",
@@ -16,6 +17,7 @@ cc_library(
     hdrs = [
         "declarer_strategy.hpp",
         "defender_strategy.hpp",
+        "expand.hpp",
         "kahan.hpp",
         "layout_key.hpp",
         "layout_source.hpp",

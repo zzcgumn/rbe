@@ -10,7 +10,9 @@
 
 #include <api/dll.h>
 
+#include <belief_evaluation/declarer_strategy.hpp>
 #include <belief_evaluation/layout_source.hpp>
+#include <belief_evaluation/types.hpp>
 
 /// A LayoutSource over a fixed, in-memory list of layouts — the "dumb
 /// ordered index space" the production LayoutSource contract describes,
@@ -51,6 +53,48 @@ public:
     {
         return Deal{};  // never legitimately reached
     }
+};
+
+/// A DeclarerStrategy double that records every (ObservationState,
+/// BeliefView) it is called with — the view only by its non-owned summary
+/// fields, since the span it carries is not safe to retain past the call —
+/// and always returns the same scripted card, regardless of input.
+class RecordingDeclarerStrategy
+{
+public:
+    struct Call
+    {
+        ObservationState state;
+        bool view_is_sample;
+        std::size_t view_space_size;
+    };
+
+    explicit RecordingDeclarerStrategy(Card scripted_card) : scripted_card_(scripted_card)
+    {
+    }
+
+    auto as_strategy() -> DeclarerStrategy
+    {
+        return DeclarerStrategy{
+            .id = 0,
+            .play =
+                [this](ObservationState const& state, BeliefView const& view) -> Card
+            {
+                calls_.push_back(Call{state, view.is_sample, view.space_size});
+                return scripted_card_;
+            },
+            .state_key = nullptr,
+        };
+    }
+
+    auto calls() const -> std::vector<Call> const&
+    {
+        return calls_;
+    }
+
+private:
+    Card scripted_card_;
+    std::vector<Call> calls_;
 };
 
 /// A bitmask of `ranks` in Deal's own bit convention (bit r for absolute
