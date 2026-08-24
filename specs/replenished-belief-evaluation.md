@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-08-22
+last-updated: 2026-08-24
 ---
 
 # Replenished Belief Evaluation
@@ -22,8 +22,11 @@ hidden layouts — into a search over the belief space instead, following
 throughout for the theory and does not restate.
 
 This document describes the capability as it stands today: the vocabulary,
-the three injection contracts, and the renumbering scheme. No evaluator or
-recursive search exists yet — see "Known gaps / non-goals".
+the three injection contracts, the renumbering scheme, and an exhaustive
+evaluator that computes `P_make` exactly over a belief space small enough to
+enumerate in full — no sampling, no replenishment, no cuts. It is the
+reference every later, scalable evaluator is measured against; see "Known
+gaps / non-goals" for what those add.
 
 ## Behaviour & invariants
 
@@ -34,10 +37,11 @@ recursive search exists yet — see "Known gaps / non-goals".
   values that share declarer's holding, dummy's holding, and the cards played
   so far, differing only in how the outstanding cards are split between the
   two defenders. Nothing in the type system enforces this; it is a contract
-  the evaluator's callers and future evaluator itself must uphold.
+  the evaluator's callers and the evaluator itself must uphold — `make_root`
+  validates it on entry rather than trusting the caller.
 - **Declarer strategy (`DeclarerStrategy::play`) must be a pure function of
-  its arguments.** A future evaluator will walk the belief-space tree in its
-  own order and may revisit sibling subtrees; a strategy that accumulates
+  its arguments.** The evaluator walks the belief-space tree in its own
+  order and may revisit sibling subtrees; a strategy that accumulates
   state across calls returns different cards for the same node and corrupts
   the result. The common accidental violation is a strategy seeded from one
   PRNG stream drawn across the whole search: the card returned at a node then
@@ -64,8 +68,8 @@ recursive search exists yet — see "Known gaps / non-goals".
   must be held by the queried seat in the queried layout and legal there;
   every probability must be strictly positive; the probabilities for one
   query must sum to one within tolerance. A card the strategy will never play
-  is omitted, never given zero probability — a future evaluator uses
-  "probability greater than zero" as the survival test for a layout.
+  is omitted, never given zero probability — the evaluator uses "probability
+  greater than zero" as the survival test for a layout.
 - **The defender strategy is independent of the declarer strategy and of the
   belief space.** It receives one layout (perfect information) and which
   seat is asking, nothing more. This independence is what licenses evaluating
@@ -97,6 +101,84 @@ recursive search exists yet — see "Known gaps / non-goals".
   defender's holding exactly (52 significant bits, four 13-bit suits) and is
   unique only among layouts sharing one belief-space node's outstanding pool —
   it is not a cross-node or whole-game layout identity.
+- **Declarer nodes pass weight through undivided; defender nodes partition
+  it.** Declarer's and dummy's cards are public, so a declarer node neither
+  filters nor reweights the belief space — its single child inherits the
+  parent's layouts and per-layout probability `p` unchanged, and every
+  candidate first card is evaluated against the whole belief space, not a
+  share of it. Only a defender's play carries information: a defender node
+  calls the defender strategy once per layout and groups the results by
+  card, so `p` for a surviving layout is scaled by the probability the
+  defender strategy assigned that card in that layout, and a layout the
+  defender strategy gives no probability to is absent from that card's
+  child rather than present with zero weight. This is the asymmetry a
+  reader will not guess from the type signatures alone.
+- **Mass conservation at a defender node**: summing a node's mass — `kappa`
+  times the Kahan-compensated sum of `p` — over every child a defender node
+  produces reproduces the parent's mass, to a stated tolerance. This is
+  `docs/replenished_belief_evaluation/algorithm.md`'s
+  `Σ_c wᵢ^(…,b,c) = wᵢ^(…,b)`. An invariance test of this kind does not by
+  itself pin down that layouts are grouped by the right card or reweighted
+  by the right factor — it holds under any reweighting that happens to
+  preserve totals — so it is necessary evidence, not sufficient; the
+  evaluator's own test suite pairs it with hand-derived per-child values.
+- **Tricks won is common knowledge.** Every card played is observed, so
+  `tricks_won_by_declarer` is identical across every layout in a node, and
+  the terminal indicator `tricks_won ≥ tricks_needed` is therefore constant
+  on the whole node rather than a per-layout fact. A terminal node's value
+  is `node_mass` or zero, never a per-layout indicator summed over layouts —
+  the two are numerically identical but only one is structurally correct,
+  since a per-layout form would need a per-layout trick count that does not
+  exist anywhere in the node's state.
+- **`kappa` and `p` are separate quantities; `w = kappa · p` is never
+  stored.** `kappa` is the node's own sample weight, `p` is per-layout, and
+  collapsing them into one stored number is tempting wherever nothing yet
+  rescales `kappa` mid-search — but rescaling `kappa` (replenishment) has to
+  move every layout's weight in the node at once, which a single stored `w`
+  per layout cannot do without being rewritten entrywise anyway. `w` is
+  computed where needed and held nowhere.
+- **`kappa = 1 / N` at the root of an exhaustive evaluation**, where `N` is
+  the count of layouts a `LayoutSource` enumerates that are consistent with
+  the root position — sharing trump, the hand on lead, the trick in
+  progress, declarer's and dummy's exact holdings, and a defender split of
+  the same outstanding pool — not the source's raw size, which may include
+  layouts the root position rules out.
+- **A `BeliefView`'s posterior is normalised within the node, and sample
+  weight never crosses into it.** The posterior a declarer strategy is
+  handed is `p_i / Σ_j p_j` over the node's current layouts — not the raw
+  `p_i`, not `w_i`, and not `kappa`. `kappa` is the evaluator's own
+  accounting for how a sampled node relates to the space it was drawn from;
+  it is not part of what declarer would know, and handing it to the
+  declarer strategy would let a strategy infer the sampling regime, which
+  is exactly the kind of dependence that would make a sampled evaluator's
+  results irreproducible.
+- **An exhaustive evaluation returns the root value and root-child values,
+  and retains no tree unless asked to.** Nodes are built on the recursion
+  stack and released as each subtree completes; retaining a belief set at
+  every node is affordable at the small endings this evaluator targets and
+  is not affordable once a real belief space is involved, so retention is
+  an explicit, off-by-default opt-in. Root-child values — the value of each
+  candidate action at the root — are exposed unconditionally regardless of
+  the opt-in, since that is what a search layer above the evaluator
+  actually consumes: for a declarer-node root, one entry per legal first
+  card, each the value of committing to that card and following the given
+  strategy thereafter (alternatives, not a partition — the root value
+  equals whichever entry the strategy actually chose, not their sum); for a
+  defender-node root, exactly the children defender-node expansion already
+  produces, which do sum to the root value (mass conservation).
+- **A user callback's contract violation is reported in the result, never
+  thrown.** A callback is user input, not an internal, so a card or
+  distribution that fails validation surfaces as an error value carrying
+  which callback, which seat, and which layout — never an exception across
+  the callback boundary. This keeps the evaluator usable from a `noexcept`
+  context and keeps a future Python binding's job (translating the error
+  into a Python exception) an explicit mapping rather than a catch-and-
+  rethrow. A genuine internal invariant failure — mass conservation off by
+  more than tolerance — is a different category and is not modelled this
+  way.
+- **Evaluation here is exhaustive**, and its cost is proportional to the
+  size of the belief space it enumerates — a reference implementation and a
+  small-ending tool, not something to point at a full deal.
 - **Evaluation is single-threaded, callbacks run on the calling thread.**
   Declarer strategy, defender strategy and any layout source are user
   callbacks; a future Python binding requires the GIL for each of them, which
@@ -120,12 +202,22 @@ recursive search exists yet — see "Known gaps / non-goals".
 - `library/src/belief_evaluation/validation.hpp` — `ValidationError`,
   `validate_declarer_card()`, `validate_defender_distribution()`.
 - `library/src/belief_evaluation/kahan.hpp` — `KahanAccumulator`.
+- `library/src/belief_evaluation/trick.hpp` — `seat_on_play()`,
+  `legal_cards()`, `trick_complete_winner()`, `play()`, and the module's one
+  boundary between `Deal`'s absolute-rank bit convention and the compacted
+  convention `RankMap`, `renumber()` and every lookup table use.
+- `library/src/belief_evaluation/node.hpp` — `BeliefNode`, `make_root()`,
+  `node_mass()`, `terminal_value()`, `is_terminal()`.
+- `library/src/belief_evaluation/belief_view.hpp` — `make_belief_view()`.
+- `library/src/belief_evaluation/expand.hpp` — `expand_declarer_node()`,
+  `make_declarer_children()`, `expand_defender_node()`, and their result
+  types.
+- `library/src/belief_evaluation/evaluate.hpp` — `evaluate()`, the public
+  entry point, plus `EvaluationResult`, `EvaluationValue`,
+  `EvaluationError`, `RootChildValue` and `EvaluateOptions`.
 
 ## Known gaps / non-goals
 
-- **No evaluator yet.** Nothing in this capability recurses over a belief
-  space, samples it, or computes a probability that a contract makes. That is
-  future work built on the vocabulary and contracts this spec describes.
 - No sampling or replenishment, and no rescaling of sample weight.
 - No early cuts.
 - No search over declarer strategies — this capability evaluates one fixed
