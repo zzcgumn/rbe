@@ -12,9 +12,10 @@
 #include "test_support.hpp"
 
 // The tests whose expected values are derived by hand rather than read off
-// the code — see plans/02_exhaustive_evaluator task 09. Plans 4, 5 and 6
-// all have "reproduces plan 2 exactly" as their acceptance criterion, so
-// these cases are what certifies the rest of the sequence.
+// the code. This evaluator is the reference every later, scalable
+// evaluator (sampling, cuts, replenishment) is measured against, so these
+// cases are what certifies the rest of the project — a wrong oracle here
+// would silently certify every later evaluator built against it.
 
 namespace
 {

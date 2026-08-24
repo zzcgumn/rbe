@@ -77,10 +77,10 @@ TEST_F(BeliefViewTest, IsSampleIsFalseAndSpaceSizeIsTheNodesLayoutCount)
 
 TEST_F(BeliefViewTest, IsSampleIsCopiedFromTheNodeNotHardcoded)
 {
-    // Plan 2 never sets is_sample true, but make_belief_view must still
-    // read it from the node rather than writing the literal false, so
-    // plan 5 has one place (BeliefNode::is_sample) to change rather than
-    // every call site.
+    // This evaluator never sets is_sample true, but make_belief_view must
+    // still read it from the node rather than writing the literal false,
+    // so a future sampling evaluator has one place (BeliefNode::is_sample)
+    // to change rather than every call site.
     BeliefNode node = make_node_with_p({1.0}, /*kappa=*/1.0);
     node.is_sample = true;
 

@@ -52,7 +52,8 @@ class EvaluateTest : public ::testing::Test
 };
 
 // --- certainty and impossibility: proves the recursion terminates and
-// composes; the real oracle is task 09.
+// composes; the real oracle (hand-derived end-to-end cases) is in
+// oracle_test.cpp.
 
 TEST_F(EvaluateTest, CertaintyGivesPMakeOfOne)
 {
@@ -189,7 +190,7 @@ TEST_F(EvaluateTest, DefenderRootChildrenSumToPMake)
     // wins with an ace either way -- and North then wins the other suit's
     // trick too, since it is the only card left. Both children are
     // therefore certain (0.5 each) and sum to p_make = 1.0 -- unlike the
-    // declarer case above, this is a genuine partition (task 06's mass
+    // declarer case above, this is a genuine partition (defender-node mass
     // conservation).
     Deal root_layout{};
     root_layout.trump = DDS_NOTRUMP;

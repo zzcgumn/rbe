@@ -145,8 +145,8 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
             card_by_key.emplace(key, entry.card);
             layouts_by_key[key].push_back(layout);
             // p is never renormalised here — p_i' = p_i * delta(...) and
-            // nothing else. The normalised posterior pi sees is a view
-            // computed from this, never stored back (task 07).
+            // nothing else. The normalised posterior pi sees (belief_view.hpp)
+            // is computed from this on demand, never stored back.
             p_by_key[key].push_back(node.p[i] * entry.probability);
         }
     }

@@ -94,13 +94,13 @@ struct BeliefView
 };
 
 /// A declarer node's per-child bookkeeping record, for a future reuse
-/// cache. **Not yet populated.** Plan 2 (the exhaustive evaluator) has no
-/// cache and declarer nodes have exactly one child, so nothing in version
-/// one has a reason to write to this struct or a way to test a value it
-/// wrote — half-populating it now would let it silently acquire fields a
-/// later plan trusts without ever having been exercised. The `p_make` map
-/// shape is chosen for version two's strategy comparison, not used before
-/// then.
+/// cache. **Not yet populated.** The exhaustive evaluator has no cache and
+/// declarer nodes have exactly one child, so nothing here has a reason to
+/// write to this struct or a way to test a value it wrote —
+/// half-populating it now would let it silently acquire fields a future
+/// caller trusts without ever having been exercised. The `p_make` map
+/// shape is chosen for a future strategy-comparison search, not used
+/// before then.
 struct NodeSearchInfo
 {
     Deal renumbered;   ///< remaining cards, gaps removed

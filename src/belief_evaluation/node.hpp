@@ -24,11 +24,11 @@ struct BeliefNode
     SampleWeight kappa = 0.0;
 
     /// Whether this node's layouts are a sample of a larger space rather
-    /// than the whole of it. Always false in plan 2 (no sampling exists
-    /// yet); a stored, propagated field rather than a literal at each call
-    /// site so plan 5 has one place to set it true instead of every
-    /// construction site to hunt down. See BeliefView::is_sample, which
-    /// this feeds.
+    /// than the whole of it. Currently always false — nothing in this
+    /// exhaustive evaluator samples — but a stored, propagated field rather
+    /// than a literal at each call site, so a future sampling evaluator has
+    /// one place to set it true instead of every construction site to hunt
+    /// down. See BeliefView::is_sample, which this feeds.
     bool is_sample = false;
 };
 

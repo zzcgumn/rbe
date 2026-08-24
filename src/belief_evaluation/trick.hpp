@@ -30,12 +30,12 @@ auto seat_on_play(Deal const& deal) -> int;
 /// The cards `seat` may legally play next, one bitmask per suit in Deal's own
 /// bit convention (bit r = absolute rank r), honouring the suit led to the
 /// trick in progress if `seat` holds any card of it. Delegates to
-/// plan 1's `legal_plays()` rather than re-deriving the follow-suit rule.
+/// `legal_plays()` rather than re-deriving the follow-suit rule.
 auto legal_cards(Deal const& deal, int seat) -> std::array<unsigned, DDS_SUITS>;
 
 /// The hand (0..3) that wins the trick in progress in `deal` once `card` is
 /// played as its fourth card. `deal` must already carry exactly three played
-/// cards in `currentTrickSuit` / `currentTrickRank`. Delegates to plan 1's
+/// cards in `currentTrickSuit` / `currentTrickRank`. Delegates to
 /// `trick_winner()`.
 auto trick_complete_winner(Deal const& deal, Card const& card) -> int;
 

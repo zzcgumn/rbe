@@ -1,8 +1,9 @@
 #pragma once
 
 // Shared test doubles and fixture-building helpers for the exhaustive
-// evaluator (plan 2). Kept in one header because tasks 02, 06, 07, 08 and 09
-// all need the same LayoutSource double and card-holding helpers.
+// evaluator's test suite. Kept in one header since node, declarer-node,
+// defender-node, BeliefView, evaluate() and oracle tests all need the same
+// LayoutSource double and card-holding helpers.
 
 #include <cstdint>
 #include <map>

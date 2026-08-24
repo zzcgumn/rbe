@@ -23,8 +23,8 @@
 /// mutated while it is live. `node` is `const` so nothing reachable through
 /// it can mutate the layouts underneath the view.
 ///
-/// `is_sample` is copied from `node.is_sample` (always false in plan 2, no
+/// `is_sample` is copied from `node.is_sample` (currently always false — no
 /// sampling exists yet) and `space_size` is the node's own layout count —
-/// the whole belief space the node genuinely holds, not an estimate,
-/// because this plan never samples.
+/// the whole belief space the node genuinely holds, not an estimate, since
+/// this evaluator is exhaustive and never samples.
 auto make_belief_view(BeliefNode const& node, std::vector<BeliefEntry>& scratch) -> BeliefView;

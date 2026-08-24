@@ -9,8 +9,8 @@
 #include <belief_evaluation/validation.hpp>
 
 /// The result of expanding one node: either the child, or the
-/// ValidationError a callback's return violated. Provisional — task 08
-/// unifies error propagation (and the extra context it carries: which
+/// ValidationError a callback's return violated. A local, minimal shape —
+/// evaluate.hpp's EvaluationError is what carries the fuller context (which
 /// callback, seat and layout) across the whole evaluator; this exists so
 /// that expansion reports a bad callback return rather than asserting it,
 /// consistent with validation.hpp's own contract.
@@ -29,7 +29,7 @@ auto expand_declarer_node(BeliefNode const& node, DeclarerStrategy const& pi) ->
 
 /// The mass-propagation step declarer children go through, isolated so it
 /// can be pinned by a direct unit test rather than only by the evaluator
-/// (which, in version one, only ever calls this with a single card and so
+/// (which currently only ever calls this with a single card and so
 /// cannot distinguish giving each child the parent's full mass from
 /// dividing it — `parent_mass / n_children` equals `parent_mass` whenever
 /// `n_children == 1`). Every returned child receives `parent`'s full mass:

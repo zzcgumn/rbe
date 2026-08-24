@@ -68,8 +68,8 @@ TEST_F(DeclarerNodeTest, PiIsCalledWhenDeclarerIsOnPlay)
 
     ASSERT_TRUE(result.child.has_value());
     ASSERT_EQ(recorder.calls().size(), 1u);
-    // The view pi receives is populated (task 07), not the empty
-    // placeholder task 04 originally wired in.
+    // The view pi receives is populated with real BeliefView entries, not
+    // an empty placeholder.
     EXPECT_EQ(recorder.calls()[0].view_entry_count, node.layouts.size());
     EXPECT_EQ(recorder.calls()[0].state.declarer, North);
     EXPECT_EQ(recorder.calls()[0].state.tricks_needed, node.state.tricks_needed);
@@ -147,7 +147,7 @@ TEST_F(DeclarerNodeTest, ACardIllegalForTheTrickIsRejectedThroughValidateDeclare
 
 // --- mass pass-through with more than one child -------------------------
 //
-// The evaluator itself never produces two declarer children in version one,
+// The evaluator itself never currently produces two declarer children,
 // so this is the only test that can falsify parent_mass / n_children —
 // which equals parent_mass whenever n_children == 1, i.e. every other test
 // in this file.

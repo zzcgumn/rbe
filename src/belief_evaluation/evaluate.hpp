@@ -32,8 +32,7 @@ enum class EvaluationCallback
 ///
 /// `validation` is `ValidationError::None` for a `RootConstruction` error —
 /// `make_root()` does not yet distinguish "source.size() is nullopt" from
-/// "no layout survived filtering" (see plans/02_exhaustive_evaluator
-/// task 02); `callback` alone identifies the failure.
+/// "no layout survived filtering"; `callback` alone identifies the failure.
 struct EvaluationError
 {
     ValidationError validation;
@@ -73,8 +72,8 @@ struct EvaluateOptions
 /// - If the root is a defender node: one entry per card `delta` assigns
 ///   positive probability to somewhere in the belief space — exactly the
 ///   children defender-node expansion produces. These **do** sum to
-///   `p_make`, since defender children partition mass by construction
-///   (task 06's mass-conservation invariant).
+///   `p_make`, since defender children partition mass by construction (see
+///   specs/replenished-belief-evaluation.md's mass-conservation invariant).
 /// - Empty at a terminal root (no cards left to play a first card from).
 struct EvaluationValue
 {
@@ -95,11 +94,11 @@ struct EvaluationValue
 /// different category and asserts rather than reporting through this type.
 struct EvaluationResult
 {
-    /// `pi.id`'s dense-mapped entry. Exactly one entry in version one —
-    /// `evaluate()` takes a single DeclarerStrategy — but keyed by the
-    /// caller's own StrategyId (not an internal dense index) so a caller
-    /// can look its own strategy up directly, and so the shape survives
-    /// version two's multi-strategy comparison without changing.
+    /// `pi.id`'s dense-mapped entry. Exactly one entry today — `evaluate()`
+    /// takes a single DeclarerStrategy — but keyed by the caller's own
+    /// StrategyId (not an internal dense index) so a caller can look its
+    /// own strategy up directly, and so the shape survives a future
+    /// multi-strategy comparison without changing.
     std::map<StrategyId, EvaluationValue> by_strategy;
     std::optional<EvaluationError> error;  ///< meaningful only when by_strategy is empty
 };
@@ -109,7 +108,7 @@ struct EvaluationResult
 /// `make_root`). No sampling, no replenishment, no cuts of any kind — see
 /// `specs/replenished-belief-evaluation.md`.
 ///
-/// `state_key` is never called: there is no cache until version two.
+/// `state_key` is never called: there is no cache yet.
 auto evaluate(
     Deal const& root_layout,
     int declarer,
