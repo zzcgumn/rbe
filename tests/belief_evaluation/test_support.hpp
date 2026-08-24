@@ -74,6 +74,7 @@ public:
         ObservationState state;
         bool view_is_sample;
         std::size_t view_space_size;
+        std::size_t view_entry_count;  ///< view.entries.size(); the span itself is not retained
     };
 
     explicit RecordingDeclarerStrategy(Card scripted_card) : scripted_card_(scripted_card)
@@ -87,7 +88,8 @@ public:
             .play =
                 [this](ObservationState const& state, BeliefView const& view) -> Card
             {
-                calls_.push_back(Call{state, view.is_sample, view.space_size});
+                calls_.push_back(
+                    Call{state, view.is_sample, view.space_size, view.entries.size()});
                 return scripted_card_;
             },
             .state_key = nullptr,

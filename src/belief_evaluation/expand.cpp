@@ -2,6 +2,7 @@
 
 #include <map>
 
+#include <belief_evaluation/belief_view.hpp>
 #include <belief_evaluation/rank_map.hpp>
 #include <belief_evaluation/trick.hpp>
 #include <utility/constants.h>
@@ -89,6 +90,7 @@ auto make_declarer_children(BeliefNode const& parent, std::vector<Card> const& c
                                       // filter or reweight the belief space.
         child.kappa = parent.kappa;  // every child gets the parent's full
                                       // mass, not a share of it.
+        child.is_sample = parent.is_sample;
         children.push_back(std::move(child));
     }
     return children;
@@ -98,7 +100,8 @@ auto expand_declarer_node(BeliefNode const& node, DeclarerStrategy const& pi) ->
 {
     int const seat = seat_on_play(node.state.known_holdings);
 
-    BeliefView const view{{}, false, node.layouts.size()};  // task 07 replaces this placeholder
+    std::vector<BeliefEntry> scratch;
+    BeliefView const view = make_belief_view(node, scratch);
     Card const card = pi.play(node.state, view);
 
     ValidationError const error = validate_declarer_card(node.state.known_holdings, seat, card);
@@ -162,6 +165,7 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
         child.p = p_by_key[key];
         child.kappa = node.kappa;  // kappa is untouched; defender children
                                     // partition p, not kappa.
+        child.is_sample = node.is_sample;
         children.push_back(std::move(child));
     }
 

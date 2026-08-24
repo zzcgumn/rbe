@@ -68,6 +68,9 @@ TEST_F(DeclarerNodeTest, PiIsCalledWhenDeclarerIsOnPlay)
 
     ASSERT_TRUE(result.child.has_value());
     ASSERT_EQ(recorder.calls().size(), 1u);
+    // The view pi receives is populated (task 07), not the empty
+    // placeholder task 04 originally wired in.
+    EXPECT_EQ(recorder.calls()[0].view_entry_count, node.layouts.size());
     EXPECT_EQ(recorder.calls()[0].state.declarer, North);
     EXPECT_EQ(recorder.calls()[0].state.tricks_needed, node.state.tricks_needed);
     EXPECT_EQ(recorder.calls()[0].state.tricks_won_by_declarer, node.state.tricks_won_by_declarer);

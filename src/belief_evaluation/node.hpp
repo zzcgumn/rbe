@@ -22,6 +22,14 @@ struct BeliefNode
     std::vector<Deal> layouts;   ///< reserved up front; stable while any BeliefView over it is live
     std::vector<Probability> p;  ///< parallel to layouts
     SampleWeight kappa = 0.0;
+
+    /// Whether this node's layouts are a sample of a larger space rather
+    /// than the whole of it. Always false in plan 2 (no sampling exists
+    /// yet); a stored, propagated field rather than a literal at each call
+    /// site so plan 5 has one place to set it true instead of every
+    /// construction site to hunt down. See BeliefView::is_sample, which
+    /// this feeds.
+    bool is_sample = false;
 };
 
 /// Builds the root node of an exhaustive evaluation over `source`: every
