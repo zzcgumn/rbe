@@ -5,6 +5,7 @@ cc_library(
     name = "belief_evaluation",
     srcs = [
         "belief_view.cpp",
+        "evaluate.cpp",
         "expand.cpp",
         "kahan.cpp",
         "layout_key.cpp",
@@ -19,6 +20,7 @@ cc_library(
         "belief_view.hpp",
         "declarer_strategy.hpp",
         "defender_strategy.hpp",
+        "evaluate.hpp",
         "expand.hpp",
         "kahan.hpp",
         "layout_key.hpp",

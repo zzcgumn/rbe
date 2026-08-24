@@ -93,10 +93,14 @@ struct BeliefView
     std::size_t space_size;   ///< layouts believed consistent, if known; 0 when unknown
 };
 
-/// A declarer node's per-child bookkeeping record. Version one always
-/// populates exactly one entry in `p_make`, since evaluating one strategy is
-/// all this plan's successors do; the map shape is load-bearing for later
-/// plans that compare strategies.
+/// A declarer node's per-child bookkeeping record, for a future reuse
+/// cache. **Not yet populated.** Plan 2 (the exhaustive evaluator) has no
+/// cache and declarer nodes have exactly one child, so nothing in version
+/// one has a reason to write to this struct or a way to test a value it
+/// wrote — half-populating it now would let it silently acquire fields a
+/// later plan trusts without ever having been exercised. The `p_make` map
+/// shape is chosen for version two's strategy comparison, not used before
+/// then.
 struct NodeSearchInfo
 {
     Deal renumbered;   ///< remaining cards, gaps removed

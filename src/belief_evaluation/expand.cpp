@@ -107,11 +107,11 @@ auto expand_declarer_node(BeliefNode const& node, DeclarerStrategy const& pi) ->
     ValidationError const error = validate_declarer_card(node.state.known_holdings, seat, card);
     if (error != ValidationError::None)
     {
-        return ExpandResult{std::nullopt, error};
+        return ExpandResult{std::nullopt, Card{}, error};
     }
 
     std::vector<BeliefNode> children = make_declarer_children(node, {card});
-    return ExpandResult{std::move(children.front()), ValidationError::None};
+    return ExpandResult{std::move(children.front()), card, ValidationError::None};
 }
 
 auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
@@ -136,7 +136,7 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
         ValidationError const error = validate_defender_distribution(layout, seat, distribution);
         if (error != ValidationError::None)
         {
-            return ExpandDefenderResult{std::nullopt, error};
+            return ExpandDefenderResult{std::nullopt, error, layout};
         }
 
         for (WeightedCard const& entry : distribution)

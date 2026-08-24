@@ -9,6 +9,7 @@ cc_test(
         "belief_view_test.cpp",
         "declarer_node_test.cpp",
         "defender_node_test.cpp",
+        "evaluate_test.cpp",
         "kahan_test.cpp",
         "layout_key_test.cpp",
         "node_test.cpp",

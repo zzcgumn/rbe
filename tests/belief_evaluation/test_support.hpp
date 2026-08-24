@@ -18,8 +18,10 @@
 #include <belief_evaluation/defender_strategy.hpp>
 #include <belief_evaluation/layout_key.hpp>
 #include <belief_evaluation/layout_source.hpp>
+#include <belief_evaluation/trick.hpp>
 #include <belief_evaluation/types.hpp>
 #include <belief_evaluation/validation.hpp>
+#include <utility/constants.h>
 
 /// A LayoutSource over a fixed, in-memory list of layouts — the "dumb
 /// ordered index space" the production LayoutSource contract describes,
@@ -192,6 +194,56 @@ private:
     std::map<Key, Card> table_;
     std::vector<RecordedQuery> queries_;
 };
+
+/// The lowest card `seat` holds in `deal` — following the suit led to the
+/// trick in progress if `seat` holds it, else any held suit — for fixtures
+/// built so that every decision point has exactly one legal card *per
+/// suit*, so no strategy actually has to choose between two cards it could
+/// legally play.
+inline auto lowest_legal_card(Deal const& deal, int seat) -> Card
+{
+    int led = -1;
+    if (deal.currentTrickRank[0] != 0)
+    {
+        led = deal.currentTrickSuit[0];
+    }
+    if (led != -1 && deal.remainCards[seat][led] != 0)
+    {
+        for (int rank = 2; rank <= 14; ++rank)
+        {
+            if ((deal.remainCards[seat][led] & (1u << rank)) != 0)
+            {
+                return Card{led, rank};
+            }
+        }
+    }
+    for (int suit = 0; suit < DDS_SUITS; ++suit)
+    {
+        unsigned const suit_holding = deal.remainCards[seat][suit];
+        for (int rank = 2; rank <= 14; ++rank)
+        {
+            if ((suit_holding & (1u << rank)) != 0)
+            {
+                return Card{suit, rank};
+            }
+        }
+    }
+    return Card{};  // unreachable if the fixture holds its "one legal card per suit" promise
+}
+
+/// A DeclarerStrategy::play built on lowest_legal_card(). Finds the seat
+/// via seat_on_play(), per DeclarerStrategy's own doxygen: pi is not told
+/// its seat any other way.
+inline auto single_card_declarer_play(ObservationState const& state, BeliefView const&) -> Card
+{
+    return lowest_legal_card(state.known_holdings, seat_on_play(state.known_holdings));
+}
+
+/// A DefenderStrategy built on lowest_legal_card(), with certainty.
+inline auto single_card_defender(DefenderQuery const& query) -> std::vector<WeightedCard>
+{
+    return {WeightedCard{lowest_legal_card(query.layout, query.seat), 1.0}};
+}
 
 /// A bitmask of `ranks` in Deal's own bit convention (bit r for absolute
 /// rank r), for building fixture holdings without hand-computed hex

@@ -17,6 +17,7 @@
 struct ExpandResult
 {
     std::optional<BeliefNode> child;
+    Card card{};                                     ///< the card pi returned; meaningful only when child has a value
     ValidationError error = ValidationError::None;  ///< meaningful only when child is nullopt
 };
 
@@ -52,6 +53,7 @@ struct ExpandDefenderResult
 {
     std::optional<std::vector<BeliefNode>> children;
     ValidationError error = ValidationError::None;  ///< meaningful only when children is nullopt
+    Deal offending_layout{};  ///< the layout whose distribution violated the contract; meaningful only on error
 };
 
 /// Expands a node where a defender is on play (`seat_on_play` on

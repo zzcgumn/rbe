@@ -1,0 +1,284 @@
+#include <gtest/gtest.h>
+
+#include <api/dll.h>
+#include <utility/constants.h>
+
+#include <belief_evaluation/evaluate.hpp>
+#include <belief_evaluation/validation.hpp>
+
+#include "test_support.hpp"
+
+namespace
+{
+    constexpr int Two = 2;
+    constexpr int Three = 3;
+    constexpr int Jack = 11;
+    constexpr int Queen = 12;
+    constexpr int Ace = 14;
+
+    constexpr int Spades = 0;
+    constexpr int Hearts = 1;
+    constexpr int Diamonds = 2;
+    constexpr int Clubs = 3;
+
+    constexpr int North = 0;  // declarer
+    constexpr int East = 1;   // a defender
+    constexpr int South = 2;  // dummy
+    constexpr int West = 3;   // a defender
+
+    /// A single full trick declarer is certain to win: North leads the ace
+    /// of spades, East/South/West each hold one low spade and must follow
+    /// suit, so North's ace always wins regardless of what anyone plays.
+    auto make_one_trick_certain_win() -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = North;
+        deal.remainCards[North][Spades] = holding({Ace});
+        deal.remainCards[East][Spades] = holding({Two});
+        deal.remainCards[South][Spades] = holding({Three});
+        deal.remainCards[West][Spades] = holding({Jack});
+        return deal;
+    }
+
+    auto strategy(StrategyId id) -> DeclarerStrategy
+    {
+        return DeclarerStrategy{.id = id, .play = single_card_declarer_play, .state_key = nullptr};
+    }
+}
+
+class EvaluateTest : public ::testing::Test
+{
+};
+
+// --- certainty and impossibility: proves the recursion terminates and
+// composes; the real oracle is task 09.
+
+TEST_F(EvaluateTest, CertaintyGivesPMakeOfOne)
+{
+    Deal const root_layout = make_one_trick_certain_win();
+    VectorLayoutSource source({root_layout});
+
+    EvaluationResult const result =
+        evaluate(root_layout, North, /*tricks_needed=*/1, source, strategy(1), single_card_defender);
+
+    ASSERT_FALSE(result.error.has_value());
+    ASSERT_EQ(result.by_strategy.count(1u), 1u);
+    EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);
+}
+
+TEST_F(EvaluateTest, ImpossibilityGivesPMakeOfZero)
+{
+    Deal const root_layout = make_one_trick_certain_win();
+    VectorLayoutSource source({root_layout});
+
+    // Only one trick exists in the whole ending; needing two is impossible.
+    EvaluationResult const result =
+        evaluate(root_layout, North, /*tricks_needed=*/2, source, strategy(1), single_card_defender);
+
+    ASSERT_FALSE(result.error.has_value());
+    EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 0.0);
+}
+
+// --- error propagation: a bad callback return surfaces as an error, with
+// the offending seat and layout, not an exception or an assertion.
+
+TEST_F(EvaluateTest, AnUnenumerableSourceSurfacesAsARootConstructionError)
+{
+    Deal const root_layout = make_one_trick_certain_win();
+    UnboundedLayoutSource source;  // size() == nullopt
+
+    EvaluationResult const result = evaluate(
+        root_layout, North, /*tricks_needed=*/1, source, strategy(1), single_card_defender);
+
+    ASSERT_TRUE(result.error.has_value());
+    EXPECT_TRUE(result.by_strategy.empty());
+    EXPECT_EQ(result.error->callback, EvaluationCallback::RootConstruction);
+    EXPECT_EQ(result.error->seat, North);
+}
+
+TEST_F(EvaluateTest, AnIllegalCardFromPiSurfacesAsADeclarerPlayError)
+{
+    Deal const root_layout = make_one_trick_certain_win();
+    VectorLayoutSource source({root_layout});
+    RecordingDeclarerStrategy bad_pi(Card{Hearts, Two});  // North doesn't hold a heart at all
+
+    EvaluationResult const result = evaluate(
+        root_layout, North, /*tricks_needed=*/1, source, bad_pi.as_strategy(), single_card_defender);
+
+    ASSERT_TRUE(result.error.has_value());
+    EXPECT_TRUE(result.by_strategy.empty());
+    EXPECT_EQ(result.error->callback, EvaluationCallback::DeclarerPlay);
+    EXPECT_EQ(result.error->validation, ValidationError::CardNotHeld);
+    EXPECT_EQ(result.error->seat, North);
+    EXPECT_EQ(result.error->layout.remainCards[North][Spades], holding({Ace}));
+}
+
+TEST_F(EvaluateTest, AnIllegalDistributionFromDeltaSurfacesAsADefenderStrategyError)
+{
+    Deal const root_layout = make_one_trick_certain_win();
+    VectorLayoutSource source({root_layout});
+    auto const bad_delta = [](DefenderQuery const&) -> std::vector<WeightedCard>
+    {
+        return {WeightedCard{Card{Hearts, Two}, 1.0}};  // East doesn't hold a heart at all
+    };
+
+    EvaluationResult const result =
+        evaluate(root_layout, North, /*tricks_needed=*/1, source, strategy(1), bad_delta);
+
+    ASSERT_TRUE(result.error.has_value());
+    EXPECT_TRUE(result.by_strategy.empty());
+    EXPECT_EQ(result.error->callback, EvaluationCallback::DefenderStrategy);
+    EXPECT_EQ(result.error->validation, ValidationError::CardNotHeld);
+    EXPECT_EQ(result.error->seat, East);
+    EXPECT_EQ(result.error->layout.remainCards[East][Spades], holding({Two}));
+}
+
+// --- root-child values ---------------------------------------------------
+
+TEST_F(EvaluateTest, DeclarerRootChildrenAreAlternativesNotAPartition)
+{
+    // North holds two certain winners in different suits; East/South/West
+    // each hold one low card per suit, so either lead wins its trick and
+    // the other suit's trick follows automatically. Both candidate first
+    // cards are therefore winners on their own -- root_children must NOT
+    // sum to p_make (1.0 + 1.0 != 1.0), and p_make must equal whichever
+    // one pi actually chose (single_card_declarer_play scans suits in
+    // order, so pi leads the spade ace first).
+    Deal root_layout{};
+    root_layout.trump = DDS_NOTRUMP;
+    root_layout.first = North;
+    root_layout.remainCards[North][Spades] = holding({Ace});
+    root_layout.remainCards[North][Hearts] = holding({Ace});
+    root_layout.remainCards[East][Spades] = holding({Two});
+    root_layout.remainCards[East][Hearts] = holding({Two});
+    root_layout.remainCards[South][Spades] = holding({Three});
+    root_layout.remainCards[South][Hearts] = holding({Three});
+    root_layout.remainCards[West][Spades] = holding({Jack});
+    root_layout.remainCards[West][Hearts] = holding({Jack});
+    VectorLayoutSource source({root_layout});
+
+    EvaluationResult const result = evaluate(
+        root_layout, North, /*tricks_needed=*/2, source, strategy(1), single_card_defender);
+
+    ASSERT_FALSE(result.error.has_value());
+    EvaluationValue const& value = result.by_strategy.at(1u);
+    ASSERT_EQ(value.root_children.size(), 2u);
+    EXPECT_DOUBLE_EQ(value.root_children[0].value, 1.0);
+    EXPECT_DOUBLE_EQ(value.root_children[1].value, 1.0);
+    EXPECT_DOUBLE_EQ(value.p_make, 1.0);
+    // Presence of two alternatives that don't sum to p_make is the point:
+    EXPECT_DOUBLE_EQ(value.root_children[0].value + value.root_children[1].value, 2.0);
+
+    // Both candidates happen to tie at 1.0 here (no-trump, no-ruff, single
+    // layout: which suit's trick is won cannot depend on lead order), so
+    // the value assertions above cannot by themselves catch p_make being
+    // paired with the wrong root_children entry. single_card_declarer_play
+    // scans suits ascending, so pi's actual choice is deterministically
+    // the spade ace; pin that identity directly.
+    EXPECT_EQ(value.root_children[0].card.suit, Spades);
+    EXPECT_EQ(value.root_children[0].card.rank, Ace);
+}
+
+TEST_F(EvaluateTest, DefenderRootChildrenSumToPMake)
+{
+    // East leads first (a defender node at the root) and holds a card in
+    // each of two suits; delta splits 50/50 over which suit East leads.
+    // Everyone else holds one card in each of those two suits too, so
+    // whichever suit East leads, the trick is followed correctly and North
+    // wins with an ace either way -- and North then wins the other suit's
+    // trick too, since it is the only card left. Both children are
+    // therefore certain (0.5 each) and sum to p_make = 1.0 -- unlike the
+    // declarer case above, this is a genuine partition (task 06's mass
+    // conservation).
+    Deal root_layout{};
+    root_layout.trump = DDS_NOTRUMP;
+    root_layout.first = East;
+    root_layout.remainCards[North][Diamonds] = holding({Ace});
+    root_layout.remainCards[North][Clubs] = holding({Ace});
+    root_layout.remainCards[East][Diamonds] = holding({Queen});
+    root_layout.remainCards[East][Clubs] = holding({Queen});
+    root_layout.remainCards[South][Diamonds] = holding({Two});
+    root_layout.remainCards[South][Clubs] = holding({Two});
+    root_layout.remainCards[West][Diamonds] = holding({Three});
+    root_layout.remainCards[West][Clubs] = holding({Three});
+    VectorLayoutSource source({root_layout});
+
+    auto const delta = [](DefenderQuery const& query) -> std::vector<WeightedCard>
+    {
+        // East's leading decision: nothing played yet, and East still
+        // holds both suits. Every later query (East following the other
+        // suit's trick, or West following either trick) has only one
+        // legal card and falls through to single_card_defender.
+        bool const is_easts_lead = query.seat == East && query.layout.currentTrickRank[0] == 0;
+        if (is_easts_lead)
+        {
+            return {
+                WeightedCard{Card{Diamonds, Queen}, 0.5},
+                WeightedCard{Card{Clubs, Queen}, 0.5},
+            };
+        }
+        return single_card_defender(query);
+    };
+
+    EvaluationResult const result =
+        evaluate(root_layout, North, /*tricks_needed=*/2, source, strategy(1), delta);
+
+    ASSERT_FALSE(result.error.has_value())
+        << "callback=" << static_cast<int>(result.error->callback)
+        << " validation=" << static_cast<int>(result.error->validation)
+        << " seat=" << result.error->seat;
+    EvaluationValue const& value = result.by_strategy.at(1u);
+    ASSERT_EQ(value.root_children.size(), 2u);
+    EXPECT_DOUBLE_EQ(value.root_children[0].value, 0.5);
+    EXPECT_DOUBLE_EQ(value.root_children[1].value, 0.5);
+    EXPECT_DOUBLE_EQ(value.p_make, 1.0);
+    EXPECT_DOUBLE_EQ(
+        value.root_children[0].value + value.root_children[1].value, value.p_make);
+}
+
+// --- retention is opt-in --------------------------------------------------
+
+TEST_F(EvaluateTest, RetainedRootIsAbsentByDefaultAndPresentWhenRequested)
+{
+    Deal const root_layout = make_one_trick_certain_win();
+    VectorLayoutSource source({root_layout});
+
+    EvaluationResult const without_retention = evaluate(
+        root_layout, North, /*tricks_needed=*/1, source, strategy(1), single_card_defender);
+    ASSERT_FALSE(without_retention.error.has_value());
+    EXPECT_FALSE(without_retention.by_strategy.at(1u).retained_root.has_value());
+
+    EvaluationResult const with_retention = evaluate(
+        root_layout,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.retain_root = true});
+    ASSERT_FALSE(with_retention.error.has_value());
+    ASSERT_TRUE(with_retention.by_strategy.at(1u).retained_root.has_value());
+    EXPECT_EQ(with_retention.by_strategy.at(1u).retained_root->layouts.size(), 1u);
+}
+
+// --- StrategyId mapping ---------------------------------------------------
+
+TEST_F(EvaluateTest, TheResultIsIndexedByTheCallersOwnStrategyId)
+{
+    Deal const root_layout = make_one_trick_certain_win();
+    VectorLayoutSource source({root_layout});
+
+    EvaluationResult const result = evaluate(
+        root_layout,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(9999),
+        single_card_defender);
+
+    ASSERT_FALSE(result.error.has_value());
+    ASSERT_EQ(result.by_strategy.size(), 1u);
+    ASSERT_EQ(result.by_strategy.count(StrategyId{9999}), 1u);
+    EXPECT_DOUBLE_EQ(result.by_strategy.at(StrategyId{9999}).p_make, 1.0);
+}
