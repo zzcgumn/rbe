@@ -10,6 +10,7 @@
 
 namespace
 {
+    constexpr int Two = 2;
     constexpr int Jack = 11;
     constexpr int Queen = 12;
     constexpr int King = 13;
@@ -159,4 +160,29 @@ TEST_F(NodeTest, CommonKnowledgeFieldsAreSetFromTheRootLayoutAndCaller)
     EXPECT_EQ(node->state.known_holdings.remainCards[South][1], holding({Ace, King}));
     EXPECT_EQ(node->state.known_holdings.remainCards[East][2], holding({Queen, Jack}));
     EXPECT_EQ(node->state.known_holdings.remainCards[West][2], holding({Queen, Jack}));
+}
+
+TEST_F(NodeTest, HistoryIsSeededFromCardsAlreadyPlayedToTheRootsTrickInProgress)
+{
+    // North led the spade king and East followed with the two before this
+    // search began -- the root position starts two cards into a trick, not
+    // fresh. history must reflect that, since callers rely on it to see
+    // "every card played so far", and both those cards are still
+    // recoverable from root_layout's own currentTrickSuit/Rank.
+    Deal root_layout = make_root_layout();
+    root_layout.currentTrickSuit[0] = 0;  // spades
+    root_layout.currentTrickRank[0] = King;
+    root_layout.currentTrickSuit[1] = 0;  // spades
+    root_layout.currentTrickRank[1] = Two;
+    root_layout.remainCards[North][0] = holding({Ace});  // king already played
+    root_layout.remainCards[East][0] = 0;                // two already played
+    VectorLayoutSource source({root_layout});
+
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/7, source);
+    ASSERT_TRUE(node.has_value());
+    ASSERT_EQ(node->state.history.number, 2);
+    EXPECT_EQ(node->state.history.suit[0], 0);
+    EXPECT_EQ(node->state.history.rank[0], King);
+    EXPECT_EQ(node->state.history.suit[1], 0);
+    EXPECT_EQ(node->state.history.rank[1], Two);
 }

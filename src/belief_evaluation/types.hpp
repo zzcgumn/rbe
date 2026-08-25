@@ -67,7 +67,13 @@ struct ObservationState
 {
     int trump;
     int first;                  ///< seat on lead at the root
-    PlayTraceBin history;       ///< every card played so far, in order
+    PlayTraceBin history;       ///< every card played so far, in order — including
+                                 ///< cards already played to the root's trick in
+                                 ///< progress, if any, but never cards from a trick
+                                 ///< that completed before the root was constructed:
+                                 ///< a Deal keeps no record of a resolved trick, so
+                                 ///< that history is unrecoverable from the root
+                                 ///< layout alone
     int declarer;                ///< seat; dummy is (declarer + 2) % 4
     int tricks_needed;           ///< tricks still required to make the contract
     int tricks_won_by_declarer;

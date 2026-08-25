@@ -1,5 +1,7 @@
 #include <belief_evaluation/node.hpp>
 
+#include <cassert>
+
 #include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/rank_map.hpp>
 #include <utility/constants.h>
@@ -52,6 +54,25 @@ namespace
         return true;
     }
 
+    /// The cards already played to root's trick in progress (0..3 of
+    /// them), in order — the only prior history recoverable from a Deal:
+    /// once a trick resolves, currentTrick* is cleared and no record of
+    /// what was played to it survives, so a root that starts after one or
+    /// more completed tricks can never have those tricks reconstructed
+    /// from root_layout alone. Rank 0 is the empty-slot sentinel, matching
+    /// validation.cpp's led_suit() and trick.cpp's played_count().
+    auto history_for(Deal const& root_layout) -> PlayTraceBin
+    {
+        PlayTraceBin history{};
+        while (history.number < 3 && root_layout.currentTrickRank[history.number] != 0)
+        {
+            history.suit[history.number] = root_layout.currentTrickSuit[history.number];
+            history.rank[history.number] = root_layout.currentTrickRank[history.number];
+            ++history.number;
+        }
+        return history;
+    }
+
     /// `root`'s declarer and dummy holdings verbatim; each defender's entry
     /// replaced by the union pool the two defenders hold between them, per
     /// ObservationState::known_holdings' own doxygen.
@@ -90,7 +111,7 @@ auto make_root(
     BeliefNode node{};
     node.state.trump = root_layout.trump;
     node.state.first = root_layout.first;
-    node.state.history = PlayTraceBin{};
+    node.state.history = history_for(root_layout);
     node.state.declarer = declarer;
     node.state.tricks_needed = tricks_needed;
     node.state.tricks_won_by_declarer = 0;
@@ -135,6 +156,7 @@ auto terminal_value(BeliefNode const& node) -> double
 
 auto is_terminal(BeliefNode const& node) -> bool
 {
+    assert(! node.layouts.empty());  // guaranteed by every construction site in this module
     Deal const& layout = node.layouts.front();
     for (int hand = 0; hand < DDS_HANDS; ++hand)
     {
