@@ -19,7 +19,7 @@
 struct BeliefNode
 {
     ObservationState state;
-    std::vector<Deal> layouts;   ///< reserved up front; stable while any BeliefView over it is live
+    std::vector<Deal> layouts;   ///< never grows after construction; stable while any BeliefView over it is live
     std::vector<Probability> p;  ///< parallel to layouts
     SampleWeight kappa = 0.0;
 

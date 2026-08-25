@@ -15,7 +15,13 @@
 // bug, not a local idiom — it belongs here or nowhere.
 constexpr auto to_compacted(unsigned deal_holding) -> unsigned
 {
-    return deal_holding >> 2;
+    // Masked to 13 significant bits for the same reason make_rank_map()
+    // masks its own >> 2: a well-formed Deal never sets a remainCards bit
+    // above rank 14, but nothing in the type enforces that, and an
+    // unmasked stray bit here would leak past the 13 ranks a suit can
+    // hold into whatever a caller does with the result next.
+    constexpr unsigned ThirteenBitMask = 0x1FFFu;
+    return (deal_holding >> 2) & ThirteenBitMask;
 }
 
 constexpr auto rank_to_bit_position(int absolute_rank) -> int

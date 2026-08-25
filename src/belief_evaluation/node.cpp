@@ -118,8 +118,13 @@ auto make_root(
     node.state.known_holdings = known_holdings_for(root_layout, declarer, dummy);
     node.state.ranks = make_rank_map(root_layout);
 
-    node.layouts.reserve(*size);
-    node.p.reserve(*size);
+    // Not reserved to *size: source.size() is user-supplied and may be far
+    // larger than the number of layouts that actually survive filtering
+    // (or simply enormous), so reserving it up front risks an oversized
+    // allocation attempt before any filtering happens. Ordinary amortised
+    // growth is safe here: nothing holds a reference into node.layouts
+    // until after this function returns a fully-built node, so growth
+    // during construction cannot invalidate anything a caller has seen.
     for (std::uint64_t i = 0; i < *size; ++i)
     {
         Deal const candidate = source.at(i);

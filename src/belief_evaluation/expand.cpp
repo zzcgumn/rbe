@@ -1,8 +1,11 @@
 #include <belief_evaluation/expand.hpp>
 
+#include <cassert>
+#include <cmath>
 #include <map>
 
 #include <belief_evaluation/belief_view.hpp>
+#include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/rank_map.hpp>
 #include <belief_evaluation/trick.hpp>
 #include <utility/constants.h>
@@ -167,6 +170,26 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
                                     // partition p, not kappa.
         child.is_sample = node.is_sample;
         children.push_back(std::move(child));
+    }
+
+    // Mass conservation (algorithm.md's Sigma_c w_i^(...,b,c) = w_i^(...,b)):
+    // summing every child's mass must reproduce the parent's. Every
+    // distribution delta returned was already validated per-layout above
+    // (validate_defender_distribution requires it to sum to one), so a
+    // violation here is not user input — it is a genuine internal
+    // invariant failure (a bug in the grouping/reweighting above, not a
+    // contract violation delta committed), and asserts rather than being
+    // reported through ExpandDefenderResult. Same tolerance
+    // validate_defender_distribution uses for a distribution's own
+    // probabilities summing to one.
+    {
+        constexpr double MassConservationTolerance = 1e-6;
+        KahanAccumulator total_child_mass;
+        for (BeliefNode const& child : children)
+        {
+            total_child_mass.add(node_mass(child));
+        }
+        assert(std::abs(total_child_mass.value() - node_mass(node)) <= MassConservationTolerance);
     }
 
     return ExpandDefenderResult{std::move(children), ValidationError::None};
