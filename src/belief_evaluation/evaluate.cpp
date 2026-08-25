@@ -154,9 +154,6 @@ auto evaluate(
             }
 
             std::vector<Card> const legal = enumerate_legal_cards(root.state.known_holdings, seat);
-            // legal.size() is at least 1 (chosen.card must be a legal card,
-            // since it just passed validate_declarer_card), so no index in
-            // the loop below is ever left unset below chosen_index.
             std::size_t chosen_index = legal.size();
             for (std::size_t i = 0; i < legal.size(); ++i)
             {
@@ -166,6 +163,14 @@ auto evaluate(
                     break;
                 }
             }
+            // chosen.card already passed validate_declarer_card, and
+            // enumerate_legal_cards()/legal_cards() computes the same
+            // follow-suit rule over the same Deal (root.state.known_holdings),
+            // so chosen.card is provably present in legal. Asserted, not just
+            // commented, per this file's own convention for preconditions
+            // that hold today but aren't otherwise enforced (see
+            // last_played_card and trick_complete_winner).
+            assert(chosen_index < legal.size());
 
             std::vector<Card> other_cards;
             other_cards.reserve(legal.size());
