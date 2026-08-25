@@ -5,6 +5,7 @@
 // defender-node, BeliefView, evaluate() and oracle tests all need the same
 // LayoutSource double and card-holding helpers.
 
+#include <bit>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -257,4 +258,156 @@ inline auto holding(std::initializer_list<int> ranks) -> unsigned
         mask |= 1u << rank;
     }
     return mask;
+}
+
+/// Cards `hand` holds in `deal`, summed across suits via std::popcount.
+inline auto card_count(Deal const& deal, int hand) -> int
+{
+    int count = 0;
+    for (int suit = 0; suit < DDS_SUITS; ++suit)
+    {
+        count += std::popcount(deal.remainCards[hand][suit]);
+    }
+    return count;
+}
+
+/// Every hand in `deal` holds the same number of cards, compared against
+/// hand 0 and reported (via non-fatal ADD_FAILURE, so it composes with
+/// gtest rather than throwing) by whichever hand disagrees.
+///
+/// Applies only to a Deal at a trick boundary (no cards currently in
+/// progress): a mid-trick Deal legitimately has one fewer card in whichever
+/// hand(s) have already played to the trick in progress, and this helper
+/// does not account for that -- every fixture this module builds is at a
+/// trick boundary, so the simpler form covers what is actually needed.
+///
+/// Exists because an unequal hand size does not fail where it is built: play
+/// proceeds normally until the short hand empties, and only then does seat
+/// rotation land on a hand with nothing legal, several frames into the
+/// recursion and pointing at whichever callback happened to be asked rather
+/// than at the fixture that caused it.
+inline auto assert_equal_hand_sizes(Deal const& deal) -> void
+{
+    int const expected = card_count(deal, 0);
+    for (int hand = 1; hand < DDS_HANDS; ++hand)
+    {
+        int const actual = card_count(deal, hand);
+        if (actual != expected)
+        {
+            ADD_FAILURE() << "assert_equal_hand_sizes: hand " << hand << " holds " << actual
+                          << " cards, hand 0 holds " << expected;
+        }
+    }
+}
+
+/// The outstanding pool in `suit` -- the union of every hand's holding --
+/// for one layout.
+inline auto suit_pool(Deal const& deal, int suit) -> unsigned
+{
+    unsigned mask = 0;
+    for (int hand = 0; hand < DDS_HANDS; ++hand)
+    {
+        mask |= deal.remainCards[hand][suit];
+    }
+    return mask;
+}
+
+/// Every layout in `layouts` shares the same outstanding pool per suit as
+/// `layouts.front()`, reporting the first suit and layout index that
+/// disagrees. A set of layouts meant to form one belief node must agree on
+/// what the pool *is*, even though they may differ in how it splits between
+/// the two defenders -- a fixture that gets this wrong does not error on
+/// its own, it silently survives as a node with fewer layouts than the test
+/// author intended.
+inline auto assert_pool_matches(std::vector<Deal> const& layouts) -> void
+{
+    if (layouts.empty())
+    {
+        return;
+    }
+    for (int suit = 0; suit < DDS_SUITS; ++suit)
+    {
+        unsigned const expected = suit_pool(layouts.front(), suit);
+        for (std::size_t i = 1; i < layouts.size(); ++i)
+        {
+            unsigned const actual = suit_pool(layouts[i], suit);
+            if (actual != expected)
+            {
+                ADD_FAILURE() << "assert_pool_matches: layout " << i << " suit " << suit
+                              << " pool " << actual << " != layout 0's pool " << expected;
+                return;  // first disagreement named is enough; more would just add noise
+            }
+        }
+    }
+}
+
+/// Whether `layouts` would survive `make_root` as a single belief node for
+/// `declarer`: same trump, first, currentTrick*, the same declarer and
+/// dummy holdings exactly, and the same defender pool per suit -- mirroring
+/// make_root's own consistency filter, but asserted at fixture-build time
+/// rather than discovered later as a BeliefView with fewer entries than
+/// expected.
+inline auto assert_forms_one_belief_node(std::vector<Deal> const& layouts, int declarer) -> void
+{
+    if (layouts.size() < 2)
+    {
+        return;
+    }
+    int const dummy = (declarer + 2) % DDS_HANDS;
+    Deal const& root = layouts.front();
+
+    auto const defender_pool = [&](Deal const& deal, int suit) -> unsigned
+    {
+        unsigned mask = 0;
+        for (int hand = 0; hand < DDS_HANDS; ++hand)
+        {
+            if (hand != declarer && hand != dummy)
+            {
+                mask |= deal.remainCards[hand][suit];
+            }
+        }
+        return mask;
+    };
+
+    for (std::size_t i = 1; i < layouts.size(); ++i)
+    {
+        Deal const& candidate = layouts[i];
+        if (candidate.trump != root.trump)
+        {
+            ADD_FAILURE() << "assert_forms_one_belief_node: layout " << i << " trump "
+                          << candidate.trump << " != layout 0's trump " << root.trump;
+        }
+        if (candidate.first != root.first)
+        {
+            ADD_FAILURE() << "assert_forms_one_belief_node: layout " << i << " first "
+                          << candidate.first << " != layout 0's first " << root.first;
+        }
+        for (int t = 0; t < 3; ++t)
+        {
+            if (candidate.currentTrickSuit[t] != root.currentTrickSuit[t]
+                || candidate.currentTrickRank[t] != root.currentTrickRank[t])
+            {
+                ADD_FAILURE() << "assert_forms_one_belief_node: layout " << i << " currentTrick["
+                              << t << "] differs from layout 0's";
+            }
+        }
+        for (int suit = 0; suit < DDS_SUITS; ++suit)
+        {
+            if (candidate.remainCards[declarer][suit] != root.remainCards[declarer][suit])
+            {
+                ADD_FAILURE() << "assert_forms_one_belief_node: layout " << i << " suit " << suit
+                              << " declarer holding differs from layout 0's";
+            }
+            if (candidate.remainCards[dummy][suit] != root.remainCards[dummy][suit])
+            {
+                ADD_FAILURE() << "assert_forms_one_belief_node: layout " << i << " suit " << suit
+                              << " dummy holding differs from layout 0's";
+            }
+            if (defender_pool(candidate, suit) != defender_pool(root, suit))
+            {
+                ADD_FAILURE() << "assert_forms_one_belief_node: layout " << i << " suit " << suit
+                              << " defender pool differs from layout 0's";
+            }
+        }
+    }
 }

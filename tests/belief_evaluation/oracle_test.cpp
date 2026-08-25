@@ -70,14 +70,22 @@ TEST_F(OracleTest, CertaintyOverASeveralLayoutBeliefSpace)
     // Two/Four are split between the defenders. P_make == 1 for any of
     // three distinct splits, proving the belief machinery does not
     // perturb a determined answer.
-    VectorLayoutSource source(
-        {make_certain_win_layout(Two, /*west=*/4),
-         make_certain_win_layout(4, /*west=*/Two),
-         make_certain_win_layout(Two, /*west=*/Two)});
+    Deal const layout0 = make_certain_win_layout(Two, /*west=*/4);
+    Deal const layout1 = make_certain_win_layout(4, /*west=*/Two);
+    Deal const layout2 = make_certain_win_layout(Two, /*west=*/Two);
     // (the third layout is degenerate -- both defenders "holding" rank 2 is
     // not a real deal, but is_consistent() and the recursion do not care;
     // it only needs to be self-consistent as a Deal, and demonstrates the
-    // machinery tolerates an arbitrary extra layout in the space.)
+    // machinery tolerates an arbitrary extra layout in the space. Its
+    // defender pool ({2} only, both defenders "sharing" rank 2) genuinely
+    // disagrees with the other two layouts' pool ({2, 4}), so
+    // assert_pool_matches / assert_forms_one_belief_node are deliberately
+    // not applied across all three here -- each layout is still internally
+    // well-formed, which is all assert_equal_hand_sizes checks.)
+    assert_equal_hand_sizes(layout0);
+    assert_equal_hand_sizes(layout1);
+    assert_equal_hand_sizes(layout2);
+    VectorLayoutSource source({layout0, layout1, layout2});
 
     EvaluationResult const result =
         evaluate(source.at(0), North, /*tricks_needed=*/1, source, strategy(1), single_card_defender);
@@ -91,6 +99,7 @@ TEST_F(OracleTest, CertaintyOverASeveralLayoutBeliefSpace)
 TEST_F(OracleTest, Impossibility)
 {
     Deal const layout = make_certain_win_layout(Two, 4);
+    assert_equal_hand_sizes(layout);
     VectorLayoutSource source({layout});
 
     // Only one trick exists in the whole ending; two is unreachable no
@@ -120,6 +129,14 @@ TEST_F(OracleTest, ASingleDefenderChoiceCarriesNoMassOnTheUnchosenBranch)
     layout.remainCards[East][Spades] = holding({King, Two});
     layout.remainCards[South][Spades] = holding({3});
     layout.remainCards[West][Spades] = holding({4});
+    // Not assert_equal_hand_sizes(layout): East genuinely holds one more
+    // card than the other three hands here (the whole point is giving East
+    // a real choice), so this fixture fails that check. It is not the
+    // "ending becomes unplayable" trap the check exists to catch, though,
+    // because this test calls expand_defender_node() directly for one node
+    // and never recurses through to the point where the imbalance would
+    // bite -- recorded as a finding rather than silently retrofitted or
+    // used to loosen the check.
     VectorLayoutSource source({layout});
     BeliefNode const node = *make_root(layout, North, /*tricks_needed=*/1, source);
 
@@ -276,6 +293,10 @@ TEST_F(OracleTest, TheTwoWayGuess)
 {
     Deal const layout0 = make_two_way_guess_layout0();
     Deal const layout1 = make_two_way_guess_layout1();
+    assert_equal_hand_sizes(layout0);
+    assert_equal_hand_sizes(layout1);
+    assert_pool_matches({layout0, layout1});
+    assert_forms_one_belief_node({layout0, layout1}, North);
     VectorLayoutSource source({layout0, layout1});
 
     DeclarerStrategy const pi{.id = 1, .play = play_two_way_guess, .state_key = nullptr};
@@ -301,6 +322,10 @@ TEST_F(OracleTest, TheTwoWayGuessCollapsesToOneIfTheLinePerLayoutIsAllowedToDiff
     // whole world.
     Deal const layout0 = make_two_way_guess_layout0();
     Deal const layout1 = make_two_way_guess_layout1();
+    assert_equal_hand_sizes(layout0);
+    assert_equal_hand_sizes(layout1);
+    assert_pool_matches({layout0, layout1});
+    assert_forms_one_belief_node({layout0, layout1}, North);
 
     DeclarerStrategy const pi{.id = 1, .play = play_jack_forced, .state_key = nullptr};
 
@@ -344,6 +369,7 @@ TEST_F(OracleTest, DeltaActuallyMatters)
     layout.remainCards[South][Clubs] = holding({3});
     layout.remainCards[West][Spades] = holding({4});
     layout.remainCards[West][Clubs] = holding({4});
+    assert_equal_hand_sizes(layout);
     VectorLayoutSource source({layout});
 
     // Each only overrides East's *leading* decision, i.e. only while East
@@ -393,6 +419,10 @@ TEST_F(OracleTest, DeterminismAcrossRepeatedEvaluationAndLayoutOrder)
 {
     Deal const layout0 = make_two_way_guess_layout0();
     Deal const layout1 = make_two_way_guess_layout1();
+    assert_equal_hand_sizes(layout0);
+    assert_equal_hand_sizes(layout1);
+    assert_pool_matches({layout0, layout1});
+    assert_forms_one_belief_node({layout0, layout1}, North);
     DeclarerStrategy const pi{.id = 1, .play = play_two_way_guess, .state_key = nullptr};
 
     VectorLayoutSource source_ab({layout0, layout1});
