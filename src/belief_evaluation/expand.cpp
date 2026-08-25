@@ -124,8 +124,11 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
 
     // Grouped by card (keyed via card_key): the card itself, the surviving
     // layouts that card belongs to (advanced by it), and their reweighted
-    // p. std::map keeps first-seen order stable and both maps share the
-    // same key space, so lookups below never need a not-found branch.
+    // p. std::map orders by key (card_key), giving a stable, deterministic
+    // iteration order regardless of which layout each card was first seen
+    // from — the determinism oracle case relies on this. All three maps
+    // share the same key space, so lookups below never need a not-found
+    // branch.
     std::map<int, Card> card_by_key;
     std::map<int, std::vector<Deal>> layouts_by_key;
     std::map<int, std::vector<Probability>> p_by_key;
@@ -174,22 +177,34 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
 
     // Mass conservation (algorithm.md's Sigma_c w_i^(...,b,c) = w_i^(...,b)):
     // summing every child's mass must reproduce the parent's. Every
-    // distribution delta returned was already validated per-layout above
-    // (validate_defender_distribution requires it to sum to one), so a
+    // distribution delta returned was already validated per-layout above,
+    // each within ProbabilitySumTolerance of summing to one, so a
     // violation here is not user input — it is a genuine internal
     // invariant failure (a bug in the grouping/reweighting above, not a
     // contract violation delta committed), and asserts rather than being
-    // reported through ExpandDefenderResult. Same tolerance
-    // validate_defender_distribution uses for a distribution's own
-    // probabilities summing to one.
+    // reported through ExpandDefenderResult.
+    //
+    // The tolerance is ProbabilitySumTolerance scaled by node.layouts.size(),
+    // not used verbatim: this check sums a quantity derived from every
+    // layout's distribution, and each layout independently contributes up
+    // to ProbabilitySumTolerance of error (kappa * p_i * that layout's own
+    // sum-of-probabilities deviation), so the worst case (every layout's
+    // error the same sign) scales with how many layouts there are, not
+    // with a single distribution's own tolerance. p_i <= 1 for every
+    // layout at every node (it only ever shrinks from the root's 1 via
+    // multiplication by further probabilities <= 1), so scaling by the
+    // layout count rather than by Sigma_i p_i is a safe, if slightly
+    // looser, bound.
     {
-        constexpr double MassConservationTolerance = 1e-6;
+        double const mass_conservation_tolerance =
+            ProbabilitySumTolerance * static_cast<double>(node.layouts.size());
         KahanAccumulator total_child_mass;
         for (BeliefNode const& child : children)
         {
             total_child_mass.add(node_mass(child));
         }
-        assert(std::abs(total_child_mass.value() - node_mass(node)) <= MassConservationTolerance);
+        assert(
+            std::abs(total_child_mass.value() - node_mass(node)) <= mass_conservation_tolerance);
     }
 
     return ExpandDefenderResult{std::move(children), ValidationError::None};

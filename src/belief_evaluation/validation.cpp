@@ -4,8 +4,6 @@
 
 namespace
 {
-    constexpr double ProbabilitySumTolerance = 1e-6;
-
     auto is_held(Deal const& deal, int seat, Card const& card) -> bool
     {
         // A malformed seat/suit/rank cannot possibly be held — but without
