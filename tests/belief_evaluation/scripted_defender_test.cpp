@@ -91,7 +91,12 @@ TEST_F(ScriptedDefenderTest, AMissingTableEntryIsALoudNonFatalFailure)
     Deal const layout = make_layout();
     ObservationState state{};
 
-    ScriptedDefender defender({});  // empty table: any query is a miss
+    // An empty map literal is equally valid for either ScriptedDefender
+    // constructor's table type, so the value type is spelled out here to
+    // disambiguate -- the two-constructor overload otherwise cannot tell
+    // which was meant. Behaviour is identical either way: an empty table,
+    // any query is a miss.
+    ScriptedDefender defender(std::map<ScriptedDefender::Key, Card>{});
 
     std::vector<WeightedCard> distribution;
     EXPECT_NONFATAL_FAILURE(
@@ -111,6 +116,78 @@ TEST_F(ScriptedDefenderTest, AScriptedIllegalCardIsALoudNonFatalFailure)
     // East does not hold the ace of diamonds — an illegal script.
     ScriptedDefender::Key const key{layout_key(layout, East), ""};
     ScriptedDefender defender({{key, Card{2, 14}}});
+
+    std::vector<WeightedCard> distribution;
+    EXPECT_NONFATAL_FAILURE(
+        distribution = defender.as_strategy()(DefenderQuery{layout, East, state}),
+        "illegal defence");
+}
+
+// --- the stochastic (multi-entry) constructor -----------------------------
+
+TEST_F(ScriptedDefenderTest, ReturnsAScriptedMultiEntryDistribution)
+{
+    Deal const layout = make_layout();
+    ObservationState state{};
+
+    ScriptedDefender::Key const key{layout_key(layout, East), ""};
+    ScriptedDefender defender(
+        {{key, {WeightedCard{Card{2, King}, 0.5}, WeightedCard{Card{2, Queen}, 0.5}}}});
+
+    std::vector<WeightedCard> const distribution =
+        defender.as_strategy()(DefenderQuery{layout, East, state});
+
+    ASSERT_EQ(distribution.size(), 2u);
+    EXPECT_EQ(distribution[0].card.rank, King);
+    EXPECT_DOUBLE_EQ(distribution[0].probability, 0.5);
+    EXPECT_EQ(distribution[1].card.rank, Queen);
+    EXPECT_DOUBLE_EQ(distribution[1].probability, 0.5);
+}
+
+TEST_F(ScriptedDefenderTest, TheDeterministicConstructorStillReturnsASingleCertainCard)
+{
+    // Same assertion as ReturnsTheScriptedCardWithCertaintyOnAMatchingQuery
+    // above, kept separate here to sit next to the multi-entry case as a
+    // reminder that both constructors must keep working identically.
+    Deal const layout = make_layout();
+    ObservationState state{};
+
+    ScriptedDefender::Key const key{layout_key(layout, East), ""};
+    ScriptedDefender defender({{key, Card{2, King}}});
+
+    std::vector<WeightedCard> const distribution =
+        defender.as_strategy()(DefenderQuery{layout, East, state});
+
+    ASSERT_EQ(distribution.size(), 1u);
+    EXPECT_EQ(distribution[0].card.rank, King);
+    EXPECT_DOUBLE_EQ(distribution[0].probability, 1.0);
+}
+
+TEST_F(ScriptedDefenderTest, RecordingWorksTheSameForTheMultiEntryConstructor)
+{
+    Deal const layout = make_layout();
+    ObservationState state{};
+
+    ScriptedDefender::Key const key{layout_key(layout, East), ""};
+    ScriptedDefender defender(
+        {{key, {WeightedCard{Card{2, King}, 0.5}, WeightedCard{Card{2, Queen}, 0.5}}}});
+
+    defender.as_strategy()(DefenderQuery{layout, East, state});
+
+    ASSERT_EQ(defender.queries().size(), 1u);
+    EXPECT_EQ(defender.queries()[0].seat, East);
+    EXPECT_EQ(defender.queries()[0].layout, layout_key(layout, East));
+}
+
+TEST_F(ScriptedDefenderTest, AScriptedDistributionNotSummingToOneIsALoudNonFatalFailure)
+{
+    Deal const layout = make_layout();
+    ObservationState state{};
+
+    ScriptedDefender::Key const key{layout_key(layout, East), ""};
+    // 0.5 + 0.4 = 0.9, not 1 -- an illegal script.
+    ScriptedDefender defender(
+        {{key, {WeightedCard{Card{2, King}, 0.5}, WeightedCard{Card{2, Queen}, 0.4}}}});
 
     std::vector<WeightedCard> distribution;
     EXPECT_NONFATAL_FAILURE(

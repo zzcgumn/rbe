@@ -145,7 +145,29 @@ public:
         std::string position;
     };
 
-    explicit ScriptedDefender(std::map<Key, Card> table) : table_(std::move(table))
+    explicit ScriptedDefender(std::map<Key, Card> table)
+    {
+        for (auto const& [key, card] : table)
+        {
+            table_.emplace(key, std::vector<WeightedCard>{WeightedCard{card, 1.0}});
+        }
+    }
+
+    /// The stochastic form: a table from (layout, position) to a full
+    /// distribution rather than a single certain card, so a fixture can
+    /// script a defender that genuinely has more than one reply. Routes
+    /// through the same lookup, recording and validation as the
+    /// deterministic constructor above -- only the table's value type
+    /// differs. Any *non-empty* table disambiguates from the constructor
+    /// above on its own, since a `Card` cannot be list-initialized from a
+    /// `WeightedCard` list; a template here would additionally need to
+    /// deduce `Value` from a bare braced-init-list, which template argument
+    /// deduction cannot do for a non-`initializer_list` parameter, so a
+    /// second ordinary overload is what actually works. The one existing
+    /// call site this leaves genuinely ambiguous (an explicitly *empty*
+    /// table, equally valid for either value type) is noted at that site.
+    explicit ScriptedDefender(std::map<Key, std::vector<WeightedCard>> table)
+        : table_(std::move(table))
     {
     }
 
@@ -165,7 +187,7 @@ public:
                 return {};
             }
 
-            std::vector<WeightedCard> const distribution{WeightedCard{entry->second, 1.0}};
+            std::vector<WeightedCard> const& distribution = entry->second;
             EXPECT_EQ(
                 validate_defender_distribution(query.layout, query.seat, distribution),
                 ValidationError::None)
@@ -193,7 +215,7 @@ private:
         return result;
     }
 
-    std::map<Key, Card> table_;
+    std::map<Key, std::vector<WeightedCard>> table_;
     std::vector<RecordedQuery> queries_;
 };
 
