@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-08-24
+last-updated: 2026-08-26
 ---
 
 # Replenished Belief Evaluation
@@ -113,6 +113,63 @@ gaps / non-goals" for what those add.
   defender strategy gives no probability to is absent from that card's
   child rather than present with zero weight. This is the asymmetry a
   reader will not guess from the type signatures alone.
+- **δ may return a multi-entry distribution, and one layout may consequently
+  appear in several belief-space children with different `p`.** This is the
+  mechanism by which declarer learns anything from the play at all —
+  restricted choice is the canonical instance: a defender that could have
+  played either of two cards reveals, by playing one, that the split is not
+  what it would be had the defender held only that one. Whenever δ assigns
+  more than one card positive probability for a layout, that layout survives
+  into each of those cards' children, `p` multiplied by δ's respective
+  probability each time; mass conservation (below) holds across the full set
+  of children exactly as it does in the single-entry case.
+  `docs/replenished_belief_evaluation/algorithm.md` notes this happens
+  whenever the defenders have had more than one real choice, which is most
+  of the time once δ is genuinely stochastic.
+- **A double-dummy defender's two spread policies differ in what licenses
+  them, not only in behaviour.** `SpreadPolicy::TouchingSequence` spreads
+  uniformly over the canonical best card's touching-card group: playing
+  either of two touching cards (a held KQ, say) leaves positions that are
+  isomorphic under the renumbering bijection above, so the uniform
+  distribution over that group is not a modelling choice but the canonical
+  one, and the elementary `W_{π,δ}` derivation covers it unchanged.
+  `SpreadPolicy::AllOptimal` spreads uniformly over every candidate achieving
+  the maximum double-dummy score, across suits; those cards are equally
+  *good* but not otherwise equivalent, the resulting positions are not
+  isomorphic, and this is the case `algorithm.md` warns about when it says a
+  heuristic defender is "not guaranteed to stay within the requirements for
+  the `W_{π,δ}` based formulation" — its more general `Ω = S × B`
+  construction is what covers `AllOptimal`, not the elementary derivation. A
+  caller selecting `AllOptimal` has moved to that more general
+  justification, which the type alone does not convey.
+- **The double-dummy defender maximises tricks and is therefore not best
+  defence against a specific contract.** It solves with `target = -1`
+  (maximum tricks), not the contract's threshold: a threshold-aware
+  double-dummy defender is indifferent across every line whenever the
+  contract's fate is already double-dummy decided, so its equivalence
+  classes degenerate toward uniform noise, while trick-maximising keeps a
+  usable gradient at every node. The consequence is not academic — **a
+  trick-maximising defender will sometimes concede the contract to hold the
+  trick count down** — and is a specific instance of the gap between
+  maximising tricks and minimising `P_make` that this whole capability
+  exists to quantify, not a defect to apologise for.
+- **The double-dummy defender is a separate build target; the core evaluator
+  does not depend on the solver.** A caller supplying their own defender
+  links only the core library. This also keeps the callback boundary
+  (single-threaded, calling-thread-only — see below) free of the solver's
+  own threading model, a constraint future work must preserve rather than
+  merely a fact about today's build graph.
+- **A defender node evaluates its layouts in a stable, deliberate order, and
+  nothing reorders, batches or parallelises that.** Consecutive `solve_board`
+  calls at one node keep a warm transposition table (`similarDeal`,
+  `solver_if.cpp`) across layouts close together in a `LayoutSource`'s own
+  iteration order; a future optimisation that changes that order would lose
+  the benefit.
+- **No double-dummy result cache yet.** The same solver results will be
+  wanted by early cuts (later work), so a cache belongs somewhere every such
+  caller can reach it — adding one inside this reference implementation now
+  would sit inside the very thing a cut-introducing evaluator's correctness
+  is later measured against.
 - **Mass conservation at a defender node**: summing a node's mass — `kappa`
   times the Kahan-compensated sum of `p` — over every child a defender node
   produces reproduces the parent's mass, to a stated tolerance. This is
@@ -215,6 +272,14 @@ gaps / non-goals" for what those add.
 - `library/src/belief_evaluation/evaluate.hpp` — `evaluate()`, the public
   entry point, plus `EvaluationResult`, `EvaluationValue`,
   `EvaluationError`, `RootChildValue` and `EvaluateOptions`.
+- `library/src/belief_evaluation/spread.hpp` — `SpreadPolicy`, `spread()`.
+  Part of the core library: solver-free, taking an already-solved
+  `FutureTricks`.
+- `library/src/belief_evaluation/double_dummy_defender.hpp` —
+  `DoubleDummyDefender`. **A separate Bazel target**
+  (`//library/src/belief_evaluation:double_dummy_defender`), depending on
+  the solver — not part of the core library above, and not linked by
+  anything that only needs the core evaluator.
 
 ## Known gaps / non-goals
 
@@ -229,5 +294,10 @@ gaps / non-goals" for what those add.
   of tricks is in scope.
 - No deception-capable or partial-information defender models. The defender
   contract models perfect-information defenders only.
+- No defender heuristic beyond double-dummy equivalence. Signalling,
+  falsecarding, "low from three low" and similar conventions are all later
+  work or out of scope entirely; the only defenders this capability ships
+  are a test double and one that spreads uniformly over a double-dummy-tied
+  candidate set.
 - No `dds_c_*` C-ABI shim entry, and so no Java/FFM, .NET, or WASM binding
   surface for this capability.
