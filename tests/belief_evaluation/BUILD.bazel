@@ -49,6 +49,7 @@ cc_test(
     size = "small",
     srcs = [
         "double_dummy_defender_test.cpp",
+        "test_support.hpp",
     ],
     deps = [
         "//library/src/belief_evaluation",

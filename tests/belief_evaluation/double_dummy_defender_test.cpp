@@ -15,7 +15,10 @@
 #include <utility/constants.h>
 
 #include <belief_evaluation/double_dummy_defender.hpp>
+#include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/validation.hpp>
+
+#include "test_support.hpp"
 
 namespace
 {
@@ -35,16 +38,6 @@ namespace
     constexpr int East = 1;
     constexpr int South = 2;
     constexpr int West = 3;
-
-    auto holding(std::initializer_list<int> ranks) -> unsigned
-    {
-        unsigned mask = 0;
-        for (int rank : ranks)
-        {
-            mask |= 1u << rank;
-        }
-        return mask;
-    }
 }
 
 class DoubleDummyDefenderTest : public ::testing::Test
@@ -271,4 +264,41 @@ TEST_F(DoubleDummyDefenderTest, ANonZeroSolveBoardStatusSurfacesAsARejectedEmpty
     EXPECT_EQ(
         validate_defender_distribution(deal, North, distribution),
         ValidationError::ProbabilitiesDoNotSumToOne);
+}
+
+// --- the collapse: no touching sequences anywhere reduces to a
+// deterministic defender, reproducing a scripted-delta result exactly ------
+
+TEST_F(DoubleDummyDefenderTest, NoTouchingSequencesAnywhereReproducesAScriptedResultExactly)
+{
+    // A one-trick ending, one card per hand: no hand holds more than one
+    // card of any suit, so no touching sequence is even possible anywhere
+    // in the deal. East's only legal card is the king -- spread() must
+    // return it at probability 1 regardless of policy, identically to a
+    // defender scripted to always play its lowest (here, only) legal card.
+    Deal deal{};
+    deal.trump = DDS_NOTRUMP;
+    deal.first = East;
+    deal.remainCards[North][Spades] = holding({Ace});
+    deal.remainCards[East][Spades] = holding({King});
+    deal.remainCards[South][Spades] = holding({Three});
+    deal.remainCards[West][Spades] = holding({Two});
+
+    VectorLayoutSource source({deal});
+    DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
+
+    SolverContext ctx;
+    DoubleDummyDefender dd_defender(ctx, SpreadPolicy::TouchingSequence);
+    EvaluationResult const dd_result =
+        evaluate(deal, North, /*tricks_needed=*/1, source, pi, dd_defender.as_strategy());
+
+    EvaluationResult const scripted_result =
+        evaluate(deal, North, /*tricks_needed=*/1, source, pi, single_card_defender);
+
+    ASSERT_FALSE(dd_result.error.has_value());
+    ASSERT_FALSE(scripted_result.error.has_value());
+    // Bitwise, not EXPECT_DOUBLE_EQ: the whole point is that the stochastic
+    // machinery performs the identical arithmetic as the deterministic path
+    // in this degenerate case, not merely an approximately equal one.
+    EXPECT_EQ(dd_result.by_strategy.at(1u).p_make, scripted_result.by_strategy.at(1u).p_make);
 }
