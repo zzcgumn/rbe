@@ -18,6 +18,7 @@ cc_test(
         "position_test.cpp",
         "rank_map_test.cpp",
         "renumber_test.cpp",
+        "restricted_choice_test.cpp",
         "scripted_defender_test.cpp",
         "smoke_test.cpp",
         "spread_test.cpp",
