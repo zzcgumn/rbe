@@ -67,3 +67,25 @@ cc_library(
     linkopts = DDS_LINKOPTS,
     local_defines = DDS_LOCAL_DEFINES,
 )
+
+# Depends on the solver (//library/src:dds), deliberately kept out of the
+# core belief_evaluation library's own deps: the core evaluator must stay
+# solver-free (a caller supplying their own defender should not link the
+# solver to get the evaluator), and this is where a future GIL-release
+# boundary for the Python binding needs to live, cleanly separated from the
+# callback boundary that runs on the calling thread.
+cc_library(
+    name = "double_dummy_defender",
+    srcs = ["double_dummy_defender.cpp"],
+    hdrs = ["double_dummy_defender.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":belief_evaluation",
+        "//library/src:dds",
+        "//library/src/utility:constants",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)

@@ -38,3 +38,26 @@ cc_test(
     linkopts = DDS_LINKOPTS,
     local_defines = DDS_LOCAL_DEFINES,
 )
+
+# Separate from belief_evaluation_test above so that target does not link
+# the solver either -- only this one does, matching
+# //library/src/belief_evaluation:double_dummy_defender's own separation
+# from the core library.
+cc_test(
+    name = "double_dummy_defender_test",
+    size = "small",
+    srcs = [
+        "double_dummy_defender_test.cpp",
+    ],
+    deps = [
+        "//library/src/belief_evaluation",
+        "//library/src/belief_evaluation:double_dummy_defender",
+        "//library/src/api:api_definitions",
+        "//library/src/solver_context",
+        "//library/src/utility:constants",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
