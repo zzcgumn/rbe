@@ -12,6 +12,14 @@
 
 /// A single card. Suits and ranks are otherwise passed as separate `int`s
 /// throughout dds; this exists purely as a convenient callback return/param.
+///
+/// `api/dds.h` (solver-internal, not included from anywhere in this module)
+/// separately declares its own unrelated `struct Card` in the same global
+/// namespace. If a future include here ever pulls that header in
+/// transitively, the two collide -- see `double_dummy_defender.cpp`'s
+/// top-of-file comment for how the one place that currently needs both
+/// resolves it, and keep any new include out of the way of that trick's
+/// ordering assumption rather than duplicating the workaround ad hoc.
 struct Card
 {
     int suit;  ///< 0=S, 1=H, 2=D, 3=C

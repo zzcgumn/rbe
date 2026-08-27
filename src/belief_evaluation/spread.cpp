@@ -1,6 +1,9 @@
 #include <belief_evaluation/spread.hpp>
 
+#include <cassert>
 #include <map>
+
+#include <utility/constants.h>
 
 namespace
 {
@@ -23,8 +26,15 @@ namespace
 
     /// A total order over Card for deduplication -- two fut entries in the
     /// same touching sequence must not double-count the cards they share.
+    /// Collision-free only for a well-formed card (suit 0..3, rank 2..14),
+    /// which is all `FutureTricks` and `touching_cards()` above ever
+    /// populate -- asserted rather than silently tolerated, since a
+    /// malformed suit/rank here would collide or go negative without
+    /// either failing loudly or being a valid card to begin with.
     auto card_key(Card const& card) -> int
     {
+        assert(card.suit >= 0 && card.suit < DDS_SUITS);
+        assert(card.rank >= 2 && card.rank <= 14);
         return card.suit * 100 + card.rank;
     }
 

@@ -83,23 +83,25 @@ TEST_F(DoubleDummyDefenderTest, AClearlyBestCardWinsAllTheProbability)
     // (its only trump) and the four of hearts. Trick order is East, South,
     // West, North.
     //
-    // Leading the ace of clubs first: North must follow suit with its king
-    // (forced, loses). South, void in clubs, ruffs with its three of
-    // spades -- but West, also void in clubs, *overruffs* with its four of
-    // spades, winning the trick for East's side before East's own two of
-    // spades is ever needed. West then leads its last card (the four of
-    // hearts); East, now void in hearts, is forced to play its last card,
-    // the two of spades -- a trump, which wins the trick outright over
-    // South's ace of hearts (a trump beats a non-trump regardless of rank).
-    // East's side: 2 tricks (the overruff, then the forced ruff).
+    // Leading the ace of clubs first: South, void in clubs, ruffs with its
+    // three of spades -- but West, also void in clubs, *overruffs* with its
+    // four of spades, winning the trick for East's side before East's own
+    // two of spades is ever needed; North, last to play, is forced to follow
+    // suit with its king (loses, and never affects the winner -- the trick
+    // is already decided between the two trump plays). West then leads its
+    // last card (the four of hearts); North follows with its remaining
+    // heart; East, void in hearts, is forced to play its last card, the two
+    // of spades -- a trump, which wins the trick outright over South's ace
+    // of hearts (a trump beats a non-trump regardless of rank). East's side:
+    // 2 tricks (the overruff, then the forced ruff).
     //
     // Leading the two of spades (the trump) first instead: South and West
     // must both follow suit (forced), so their three and four of spades
     // are spent on nothing -- West's four is high enough to win the trick
     // for East's side, but *only* that one trick, since neither defender
-    // has a trump left afterwards. South's ace of hearts then survives
-    // uncontested to win the last trick for North-South. East's side: 1
-    // trick.
+    // has a trump left afterwards (North, void in spades throughout, simply
+    // discards). South's ace of hearts then survives uncontested to win the
+    // last trick for North-South. East's side: 1 trick.
     //
     // So the ace of clubs is strictly better than the trump: leading it
     // lets West's overruff (and East's own forced follow-up ruff) happen
@@ -127,6 +129,54 @@ TEST_F(DoubleDummyDefenderTest, AClearlyBestCardWinsAllTheProbability)
     EXPECT_DOUBLE_EQ(distribution[0].probability, 1.0);
     EXPECT_EQ(
         validate_defender_distribution(deal, East, distribution), ValidationError::None);
+}
+
+TEST_F(DoubleDummyDefenderTest, SolutionsTwoOmitsTheSuboptimalCandidateSolutionsThreeDoesNot)
+{
+    // Pins the reasoning double_dummy_defender.cpp gives for using
+    // solutions = 3 rather than the plan's suggested 2: on the same
+    // strictly-asymmetric position as AClearlyBestCardWinsAllTheProbability
+    // above (the ace of clubs scores higher than the two of spades), 2
+    // silently drops the worse candidate instead of reporting its score
+    // alongside the better one.
+    Deal deal{};
+    deal.trump = Spades;
+    deal.first = East;
+    deal.remainCards[North][Clubs] = holding({King});
+    deal.remainCards[North][Hearts] = holding({Three});
+    deal.remainCards[South][Spades] = holding({Three});
+    deal.remainCards[South][Hearts] = holding({Ace});
+    deal.remainCards[East][Spades] = holding({Two});
+    deal.remainCards[East][Clubs] = holding({Ace});
+    deal.remainCards[West][Spades] = holding({Four});
+    deal.remainCards[West][Hearts] = holding({Four});
+
+    SolverContext ctx;
+
+    FutureTricks two_solutions{};
+    ASSERT_EQ(solve_board(ctx, deal, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &two_solutions),
+        RETURN_NO_FAULT);
+    EXPECT_EQ(two_solutions.cards, 1);  // the two of spades is silently absent
+
+    FutureTricks three_solutions{};
+    ASSERT_EQ(
+        solve_board(ctx, deal, /*target=*/-1, /*solutions=*/3, /*mode=*/0, &three_solutions),
+        RETURN_NO_FAULT);
+    ASSERT_EQ(three_solutions.cards, 2);  // both candidates present, each with its own score
+    for (int i = 0; i < three_solutions.cards; ++i)
+    {
+        if (three_solutions.suit[i] == Clubs)
+        {
+            EXPECT_EQ(three_solutions.rank[i], Ace);
+            EXPECT_EQ(three_solutions.score[i], 2);
+        }
+        else
+        {
+            EXPECT_EQ(three_solutions.suit[i], Spades);
+            EXPECT_EQ(three_solutions.rank[i], Two);
+            EXPECT_EQ(three_solutions.score[i], 1);
+        }
+    }
 }
 
 // --- a genuine touching sequence -------------------------------------------
