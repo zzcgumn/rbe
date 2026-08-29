@@ -156,7 +156,9 @@ TEST_F(DoubleDummyDefenderTest, SolutionsTwoOmitsTheSuboptimalCandidateSolutions
     FutureTricks two_solutions{};
     ASSERT_EQ(solve_board(ctx, deal, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &two_solutions),
         RETURN_NO_FAULT);
-    EXPECT_EQ(two_solutions.cards, 1);  // the two of spades is silently absent
+    ASSERT_EQ(two_solutions.cards, 1);  // the two of spades is silently absent
+    EXPECT_EQ(two_solutions.suit[0], Clubs);
+    EXPECT_EQ(two_solutions.rank[0], Ace);
 
     FutureTricks three_solutions{};
     ASSERT_EQ(
@@ -185,9 +187,11 @@ TEST_F(DoubleDummyDefenderTest, ATouchingSequenceSpreadsEvenlyUnderTouchingSeque
 {
     // North holds the king and queen of spades -- a touching pair -- with
     // East, South and West holding low singletons. Playing either honour
-    // from KQ leaves an isomorphic position (plan 1's renumbering theorem),
-    // so double dummy reports one entry (the king) with the queen named in
-    // its equals group, and TouchingSequence spreads 0.5/0.5 over the two.
+    // from KQ leaves an isomorphic position (a strictly order-preserving
+    // bijection within the suit, under which every rule of trick-taking is
+    // preserved), so double dummy reports one entry (the king) with the
+    // queen named in its equals group, and TouchingSequence spreads 0.5/0.5
+    // over the two.
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = North;

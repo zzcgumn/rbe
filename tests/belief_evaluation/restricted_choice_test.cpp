@@ -186,7 +186,9 @@ TEST_F(RestrictedChoiceTest, TheShiftAfterAnHonourAppearsFromADoubletonHonourHol
         {
             if (is_dummys_decision(state))
             {
-                // Info set first: exactly the two layouts above, per criterion 4.
+                // Info set first: the recorded view must show exactly the
+                // two layouts above before any probability is trusted --
+                // asserted from inside pi, not assumed by the test.
                 EXPECT_EQ(view.entries.size(), 2u);
                 Deal const& first = view.entries[0].layout;
                 Deal const& second = view.entries[1].layout;
