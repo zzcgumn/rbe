@@ -245,8 +245,8 @@ TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChi
     BeliefNode const& king_child = first_is_king_child ? (*result.children)[0] : (*result.children)[1];
     BeliefNode const& queen_child = first_is_king_child ? (*result.children)[1] : (*result.children)[0];
 
-    // criteria 1 and 2: layout 0 (the split one) appears in both children,
-    // p correctly multiplied per child.
+    // The split: layout 0 appears in both children, p correctly multiplied
+    // per child.
     ASSERT_EQ(king_child.layouts.size(), 2u);
     ASSERT_EQ(king_child.p.size(), 2u);
     EXPECT_DOUBLE_EQ(king_child.p[0], 0.5);
@@ -256,7 +256,7 @@ TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChi
     ASSERT_EQ(queen_child.p.size(), 1u);
     EXPECT_DOUBLE_EQ(queen_child.p[0], 0.5);
 
-    // criterion 3: mass conservation.
+    // Mass conservation.
     KahanAccumulator total_child_mass;
     for (BeliefNode const& child : *result.children)
     {
@@ -264,11 +264,11 @@ TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChi
     }
     EXPECT_NEAR(total_child_mass.value(), node_mass(node), 1e-6);
 
-    // criterion 6 (kappa untouched -- defender children partition p, not kappa).
+    // kappa is untouched -- defender children partition p, not kappa.
     EXPECT_DOUBLE_EQ(king_child.kappa, node.kappa);
     EXPECT_DOUBLE_EQ(queen_child.kappa, node.kappa);
 
-    // criterion 5: each child's common-knowledge pool, hand-derived. The
+    // Per-child common-knowledge pool, hand-derived. The
     // king's child is missing exactly the king from both defenders' entries
     // (still showing the queen); the queen's child the reverse -- in
     // *both* entries, not just East's (the one queried), which is exactly

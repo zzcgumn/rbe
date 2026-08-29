@@ -70,9 +70,10 @@ TEST_F(OracleTest, CertaintyOverASeveralLayoutBeliefSpace)
     // Two/Four are split between the defenders. P_make == 1 for any of
     // three distinct splits, proving the belief machinery does not
     // perturb a determined answer.
-    Deal const layout0 = make_certain_win_layout(Two, /*west=*/4);
-    Deal const layout1 = make_certain_win_layout(4, /*west=*/Two);
-    Deal const layout2 = make_certain_win_layout(Two, /*west=*/Two);
+    VectorLayoutSource source(
+        {make_certain_win_layout(Two, /*west=*/4),
+         make_certain_win_layout(4, /*west=*/Two),
+         make_certain_win_layout(Two, /*west=*/Two)});
     // (the third layout is degenerate -- both defenders "holding" rank 2 is
     // not a real deal, but is_consistent() and the recursion do not care;
     // it only needs to be self-consistent as a Deal, and demonstrates the
@@ -82,10 +83,9 @@ TEST_F(OracleTest, CertaintyOverASeveralLayoutBeliefSpace)
     // assert_pool_matches / assert_forms_one_belief_node are deliberately
     // not applied across all three here -- each layout is still internally
     // well-formed, which is all assert_equal_hand_sizes checks.)
-    assert_equal_hand_sizes(layout0);
-    assert_equal_hand_sizes(layout1);
-    assert_equal_hand_sizes(layout2);
-    VectorLayoutSource source({layout0, layout1, layout2});
+    assert_equal_hand_sizes(source.at(0));
+    assert_equal_hand_sizes(source.at(1));
+    assert_equal_hand_sizes(source.at(2));
 
     EvaluationResult const result =
         evaluate(source.at(0), North, /*tricks_needed=*/1, source, strategy(1), single_card_defender);

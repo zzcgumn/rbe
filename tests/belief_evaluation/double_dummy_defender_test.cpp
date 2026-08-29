@@ -138,7 +138,8 @@ TEST_F(DoubleDummyDefenderTest, SolutionsTwoReportsEveryScoreTiedCandidateAcross
     // for the maximum score (the same fixture
     // TwoTiedSuitsDistinguishTouchingSequenceFromAllOptimal below uses),
     // solutions = 2 reports *both* tied entries -- not just a single best
-    // guess -- with the same scores and equals groups solutions = 3 would.
+    // guess -- with the same scores and equals groups solutions = 3 gives
+    // those same entries, checked directly below rather than assumed.
     // spread() only ever consumes entries at the maximum score (both
     // TouchingSequence and AllOptimal filter to it before using anything
     // else), so a solution mode that returns exactly that set is already
@@ -164,30 +165,45 @@ TEST_F(DoubleDummyDefenderTest, SolutionsTwoReportsEveryScoreTiedCandidateAcross
     deal.remainCards[West][Clubs] = holding({Four});
 
     SolverContext ctx;
-    FutureTricks fut{};
+    FutureTricks two_solutions{};
     ASSERT_EQ(
-        solve_board(ctx, deal, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &fut),
+        solve_board(ctx, deal, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &two_solutions),
         RETURN_NO_FAULT);
 
-    ASSERT_EQ(fut.cards, 2);  // both suits' tied entries present, not just one
+    ASSERT_EQ(two_solutions.cards, 2);  // both suits' tied entries present, not just one
     int spade_count = 0;
     int heart_count = 0;
-    for (int i = 0; i < fut.cards; ++i)
+    for (int i = 0; i < two_solutions.cards; ++i)
     {
-        EXPECT_EQ(fut.rank[i], Ace);
-        EXPECT_EQ(fut.score[i], 4);
-        EXPECT_EQ(fut.equals[i], 1 << King);  // each suit's own king, touching its ace
-        if (fut.suit[i] == Spades)
+        EXPECT_EQ(two_solutions.rank[i], Ace);
+        EXPECT_EQ(two_solutions.score[i], 4);
+        EXPECT_EQ(two_solutions.equals[i], 1 << King);  // each suit's own king, touching its ace
+        if (two_solutions.suit[i] == Spades)
         {
             ++spade_count;
         }
-        else if (fut.suit[i] == Hearts)
+        else if (two_solutions.suit[i] == Hearts)
         {
             ++heart_count;
         }
     }
     EXPECT_EQ(spade_count, 1);
     EXPECT_EQ(heart_count, 1);
+
+    // The comparison the comment above actually needs: solutions = 3 must
+    // agree with solutions = 2 on this same deal, not merely be assumed to.
+    FutureTricks three_solutions{};
+    ASSERT_EQ(
+        solve_board(ctx, deal, /*target=*/-1, /*solutions=*/3, /*mode=*/0, &three_solutions),
+        RETURN_NO_FAULT);
+    ASSERT_EQ(three_solutions.cards, two_solutions.cards);
+    for (int i = 0; i < two_solutions.cards; ++i)
+    {
+        EXPECT_EQ(three_solutions.suit[i], two_solutions.suit[i]);
+        EXPECT_EQ(three_solutions.rank[i], two_solutions.rank[i]);
+        EXPECT_EQ(three_solutions.score[i], two_solutions.score[i]);
+        EXPECT_EQ(three_solutions.equals[i], two_solutions.equals[i]);
+    }
 }
 
 // --- a genuine touching sequence -------------------------------------------
