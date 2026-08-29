@@ -77,12 +77,12 @@ TEST_F(OracleTest, CertaintyOverASeveralLayoutBeliefSpace)
     // (the third layout is degenerate -- both defenders "holding" rank 2 is
     // not a real deal, but is_consistent() and the recursion do not care;
     // it only needs to be self-consistent as a Deal, and demonstrates the
-    // machinery tolerates an arbitrary extra layout in the space. Its
-    // defender pool ({2} only, both defenders "sharing" rank 2) genuinely
-    // disagrees with the other two layouts' pool ({2, 4}), so
+    // machinery tolerates an arbitrary extra layout in the space.)
+    // Its defender pool ({2} only, both defenders "sharing" rank 2)
+    // genuinely disagrees with the other two layouts' pool ({2, 4}), so
     // assert_pool_matches / assert_forms_one_belief_node are deliberately
     // not applied across all three here -- each layout is still internally
-    // well-formed, which is all assert_equal_hand_sizes checks.)
+    // well-formed, which is all assert_equal_hand_sizes checks.
     assert_equal_hand_sizes(source.at(0));
     assert_equal_hand_sizes(source.at(1));
     assert_equal_hand_sizes(source.at(2));

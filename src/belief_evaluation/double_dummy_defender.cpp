@@ -4,8 +4,12 @@
 // public interface exposes dds.h's internal move-generation types
 // directly) and by api/solve_board.hpp -- declares its own unrelated
 // "simple card representation" also named `struct Card` (see
-// api/dds.h:141-150, used throughout the solver's own internals in
-// moves.cpp and heuristic_sorting.hpp). That collides head-on with
+// api/dds.h:141-150), alongside ExtCard and MoveType, the ones actually
+// used by the solver's own internals (moves.cpp, heuristic_sorting.hpp).
+// `Card` itself need not be used anywhere to collide: the moment both
+// headers are visible in one translation unit, both declare an unqualified
+// global `::Card`, which is a hard redefinition error regardless of
+// whether either one is ever referenced. That collides head-on with
 // belief_evaluation::Card (belief_evaluation/types.hpp), used throughout
 // this module's whole public surface, the moment both headers are visible
 // in the same translation unit -- as they must be here, since this file is
