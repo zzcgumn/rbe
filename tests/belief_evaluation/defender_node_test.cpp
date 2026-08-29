@@ -112,12 +112,8 @@ TEST_F(DefenderNodeTest, TwoLayoutsScriptedToDifferentCardsProduceTwoSingleLayou
 TEST_F(DefenderNodeTest, HandComputedPerChildValuesForAStochasticDefence)
 {
     // Two layouts, East (the defender) on play, holding king and two of
-    // diamonds in both -- ScriptedDefender's table is keyed on the queried
-    // seat's own holding (layout_key), so the two layouts also need to
-    // differ in *East's* holding, not just West's, to produce distinct
-    // keys; a club filler card that swaps sides between East and West does
-    // that while leaving the club pool itself (and hence the outstanding
-    // pool assert_pool_matches would check) the same in both. Hand-computed:
+    // diamonds in both. West's club rank distinguishes the two layouts so
+    // the ad-hoc delta below can tell them apart. Hand-computed:
     //   layout 0: p = 0.6, delta plays the king with certainty
     //   layout 1: p = 0.4, delta plays the king 0.25, the two 0.75
     // so the king's child holds both layouts with p = {0.6, 0.1}
@@ -126,25 +122,24 @@ TEST_F(DefenderNodeTest, HandComputedPerChildValuesForAStochasticDefence)
     //   (0.4 * 0.75 = 0.3).
     // Total 0.6 + 0.1 + 0.3 = 1.0, which conservation alone would also see
     // under a wrong split — hence the per-child assertions below.
-    auto const make_split_club_layout = [](int east_club_rank, int west_club_rank) -> Deal
-    {
-        Deal deal = make_layout({King, Two}, /*west_club_rank=*/west_club_rank);
-        deal.remainCards[East][Clubs] = holding({east_club_rank});
-        return deal;
-    };
-    Deal const layout0 = make_split_club_layout(/*east=*/Two, /*west=*/Ace);
-    Deal const layout1 = make_split_club_layout(/*east=*/Ace, /*west=*/Two);
-    assert_pool_matches({layout0, layout1});
+    Deal const layout0 = make_layout({King, Two}, /*west_club_rank=*/Two);
+    Deal const layout1 = make_layout({King, Two}, /*west_club_rank=*/Ace);
     BeliefNode const node = make_node({layout0, layout1}, {0.6, 0.4}, 1.0);
 
-    ScriptedDefender::Key const key0{layout_key(layout0, East), ""};
-    ScriptedDefender::Key const key1{layout_key(layout1, East), ""};
-    ScriptedDefender defender(
-        {{key0, {WeightedCard{Card{Diamonds, King}, 1.0}}},
-         {key1,
-          {WeightedCard{Card{Diamonds, King}, 0.25}, WeightedCard{Card{Diamonds, Two}, 0.75}}}});
+    auto const delta = [](DefenderQuery const& query) -> std::vector<WeightedCard>
+    {
+        bool const is_layout0 = query.layout.remainCards[West][Clubs] == holding({Two});
+        if (is_layout0)
+        {
+            return {WeightedCard{Card{Diamonds, King}, 1.0}};
+        }
+        return {
+            WeightedCard{Card{Diamonds, King}, 0.25},
+            WeightedCard{Card{Diamonds, Two}, 0.75},
+        };
+    };
 
-    ExpandDefenderResult const result = expand_defender_node(node, defender.as_strategy());
+    ExpandDefenderResult const result = expand_defender_node(node, delta);
 
     ASSERT_TRUE(result.children.has_value());
     ASSERT_EQ(result.children->size(), 2u);
@@ -237,7 +232,7 @@ TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChi
 
     ScriptedDefender::Key const key0{layout_key(layout0, East), ""};
     ScriptedDefender::Key const key1{layout_key(layout1, East), ""};
-    ScriptedDefender defender(
+    ScriptedDefender defender = ScriptedDefender::stochastic(
         {{key0,
           {WeightedCard{Card{Diamonds, King}, 0.5}, WeightedCard{Card{Diamonds, Queen}, 0.5}}},
          {key1, {WeightedCard{Card{Diamonds, King}, 1.0}}}});
@@ -319,7 +314,7 @@ TEST_F(DefenderNodeTest, AMixedNodeHandlesASplittingAndANonSplittingLayoutTogeth
     ScriptedDefender::Key const key0{layout_key(layout0, East), ""};
     ScriptedDefender::Key const key1{layout_key(layout1, East), ""};
     ScriptedDefender::Key const key2{layout_key(layout2, East), ""};
-    ScriptedDefender defender(
+    ScriptedDefender defender = ScriptedDefender::stochastic(
         {{key0,
           {WeightedCard{Card{Diamonds, King}, 0.5}, WeightedCard{Card{Diamonds, Queen}, 0.5}}},
          {key1, {WeightedCard{Card{Diamonds, King}, 1.0}}},

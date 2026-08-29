@@ -110,9 +110,11 @@ private:
     std::vector<Call> calls_;
 };
 
-/// A deterministic, scripted DefenderStrategy double: a table from
-/// (layout, position) to a single card, always returned with probability 1.
-/// `layout_key(deal, seat)` is exact only within one node — unique among
+/// A scripted DefenderStrategy double: a table from (layout, position) to a
+/// single card, always returned with probability 1 -- or, via the
+/// `stochastic()` factory below, to a full distribution, for a fixture that
+/// needs a defender with a genuine choice. `layout_key(deal, seat)` is
+/// exact only within one node — unique among
 /// layouts sharing a node's outstanding pool, not across a whole test tree
 /// — so the key also carries the play history, which disambiguates any two
 /// nodes that could otherwise collide.
@@ -158,17 +160,30 @@ public:
     /// script a defender that genuinely has more than one reply. Routes
     /// through the same lookup, recording and validation as the
     /// deterministic constructor above -- only the table's value type
-    /// differs. Any *non-empty* table disambiguates from the constructor
-    /// above on its own, since a `Card` cannot be list-initialized from a
-    /// `WeightedCard` list; a template here would additionally need to
-    /// deduce `Value` from a bare braced-init-list, which template argument
-    /// deduction cannot do for a non-`initializer_list` parameter, so a
-    /// second ordinary overload is what actually works. The one existing
-    /// call site this leaves genuinely ambiguous (an explicitly *empty*
-    /// table, equally valid for either value type) is noted at that site.
-    explicit ScriptedDefender(std::map<Key, std::vector<WeightedCard>> table)
-        : table_(std::move(table))
+    /// differs.
+    ///
+    /// A named factory adding *no* new constructor to this class, not a
+    /// second same-arity overload: a second constructor taking
+    /// `std::map<Key, std::vector<WeightedCard>>` would make an explicitly
+    /// *empty* table literal genuinely ambiguous against the one above --
+    /// and, subtly, this holds even for a *private* second constructor
+    /// (tried and rejected), and even for a private default constructor
+    /// (also tried and rejected): overload resolution picks the
+    /// best-viable candidate before access control is considered at all,
+    /// so an equally-good but inaccessible match still makes the call a
+    /// hard ambiguity error rather than silently falling through to the
+    /// public one -- and a private default constructor makes the compiler-
+    /// generated copy/move constructors newly viable for the very same
+    /// `{}` call, reintroducing the identical problem one level up. Adding
+    /// no constructor at all sidesteps every variant of this: build through
+    /// the sole existing (empty-table) constructor, then overwrite
+    /// `table_` directly, which a member function may always do regardless
+    /// of the member's own access specifier.
+    static auto stochastic(std::map<Key, std::vector<WeightedCard>> table) -> ScriptedDefender
     {
+        ScriptedDefender defender({});
+        defender.table_ = std::move(table);
+        return defender;
     }
 
     auto as_strategy() -> DefenderStrategy

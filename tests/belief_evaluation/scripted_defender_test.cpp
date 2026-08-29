@@ -91,12 +91,7 @@ TEST_F(ScriptedDefenderTest, AMissingTableEntryIsALoudNonFatalFailure)
     Deal const layout = make_layout();
     ObservationState state{};
 
-    // An empty map literal is equally valid for either ScriptedDefender
-    // constructor's table type, so the value type is spelled out here to
-    // disambiguate -- the two-constructor overload otherwise cannot tell
-    // which was meant. Behaviour is identical either way: an empty table,
-    // any query is a miss.
-    ScriptedDefender defender(std::map<ScriptedDefender::Key, Card>{});
+    ScriptedDefender defender({});  // empty table: any query is a miss
 
     std::vector<WeightedCard> distribution;
     EXPECT_NONFATAL_FAILURE(
@@ -123,7 +118,7 @@ TEST_F(ScriptedDefenderTest, AScriptedIllegalCardIsALoudNonFatalFailure)
         "illegal defence");
 }
 
-// --- the stochastic (multi-entry) constructor -----------------------------
+// --- the stochastic (multi-entry) factory ----------------------------------
 
 TEST_F(ScriptedDefenderTest, ReturnsAScriptedMultiEntryDistribution)
 {
@@ -131,7 +126,7 @@ TEST_F(ScriptedDefenderTest, ReturnsAScriptedMultiEntryDistribution)
     ObservationState state{};
 
     ScriptedDefender::Key const key{layout_key(layout, East), ""};
-    ScriptedDefender defender(
+    ScriptedDefender defender = ScriptedDefender::stochastic(
         {{key, {WeightedCard{Card{2, King}, 0.5}, WeightedCard{Card{2, Queen}, 0.5}}}});
 
     std::vector<WeightedCard> const distribution =
@@ -148,7 +143,8 @@ TEST_F(ScriptedDefenderTest, TheDeterministicConstructorStillReturnsASingleCerta
 {
     // Same assertion as ReturnsTheScriptedCardWithCertaintyOnAMatchingQuery
     // above, kept separate here to sit next to the multi-entry case as a
-    // reminder that both constructors must keep working identically.
+    // reminder that the constructor and the stochastic factory must keep
+    // working identically.
     Deal const layout = make_layout();
     ObservationState state{};
 
@@ -169,7 +165,7 @@ TEST_F(ScriptedDefenderTest, RecordingWorksTheSameForTheMultiEntryConstructor)
     ObservationState state{};
 
     ScriptedDefender::Key const key{layout_key(layout, East), ""};
-    ScriptedDefender defender(
+    ScriptedDefender defender = ScriptedDefender::stochastic(
         {{key, {WeightedCard{Card{2, King}, 0.5}, WeightedCard{Card{2, Queen}, 0.5}}}});
 
     defender.as_strategy()(DefenderQuery{layout, East, state});
@@ -186,7 +182,7 @@ TEST_F(ScriptedDefenderTest, AScriptedDistributionNotSummingToOneIsALoudNonFatal
 
     ScriptedDefender::Key const key{layout_key(layout, East), ""};
     // 0.5 + 0.4 = 0.9, not 1 -- an illegal script.
-    ScriptedDefender defender(
+    ScriptedDefender defender = ScriptedDefender::stochastic(
         {{key, {WeightedCard{Card{2, King}, 0.5}, WeightedCard{Card{2, Queen}, 0.4}}}});
 
     std::vector<WeightedCard> distribution;
