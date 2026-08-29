@@ -11,7 +11,7 @@
 // in the same translation unit -- as they must be here, since this file is
 // the one place that both calls the solver and builds a WeightedCard
 // result from it. Neither Card is ours to rename: dds.h's is load-bearing
-// well beyond this plan, and this module's is load-bearing throughout its
+// well beyond this module, and this module's is load-bearing throughout its
 // own public API. Renaming dds.h's *locally*, for the duration of these two
 // includes only, is the smallest fix that touches neither header -- these
 // must be the first inclusion of solver_context.hpp / api/dds.h in this
@@ -33,18 +33,20 @@ auto DoubleDummyDefender::as_strategy() -> DefenderStrategy
     return [this](DefenderQuery const& query) -> std::vector<WeightedCard>
     {
         FutureTricks fut{};
-        // solutions = 3, not 2: measured directly (see this file's tests)
-        // that solutions = 2 silently omits every candidate that is not
-        // already score-optimal -- a legal card strictly worse than the
-        // best is simply absent from fut, with no score of its own to
-        // compare against. AllOptimal happens not to need those entries
-        // (it only ever keeps score-optimal candidates anyway), but
-        // relying on that coincidence would be fragile, and the touching-
-        // sequence collapse spread() depends on (one representative entry
-        // per sequence, via `equals`, not one entry per card) turned out to
-        // hold under solutions = 3 too -- confirmed directly, not assumed.
+        // solutions = 2: measured directly (see
+        // SolutionsTwoReportsEveryScoreTiedCandidateAcrossSuits in this
+        // module's tests) that it reports every entry tied for the maximum
+        // score -- across suits, not just within one -- with the same
+        // scores and equals groups solutions = 3 gives those same entries.
+        // It also collapses a touching sequence to one representative entry
+        // per sequence, exactly as spread() needs. The entries solutions = 3
+        // additionally returns (every legal card, not just the tied ones)
+        // are strictly sub-optimal and are discarded by spread()'s own
+        // score filter regardless (both SpreadPolicy values only ever keep
+        // entries at the maximum score), so solutions = 2 already reports
+        // everything spread() consumes, at less solver cost per query.
         int const status =
-            solve_board(ctx_, query.layout, /*target=*/-1, /*solutions=*/3, /*mode=*/0, &fut);
+            solve_board(ctx_, query.layout, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &fut);
         if (status != RETURN_NO_FAULT)
         {
             // Not silently empty-and-ignored: expand_defender_node's call

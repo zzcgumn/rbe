@@ -39,12 +39,15 @@ public:
         SolverContext& ctx, SpreadPolicy policy = SpreadPolicy::TouchingSequence);
 
     /// Solves `query.layout` once per call (no result cache -- future work
-    /// that needs one, e.g. plan-scale cuts, shares it across callers
-    /// rather than caching inside this defender) and delegates to
+    /// that needs one, e.g. a cut-introducing evaluator, shares it across
+    /// callers rather than caching inside this defender) and delegates to
     /// `spread()`. A non-zero `solve_board` status returns an empty
     /// distribution, which `validate_defender_distribution` then rejects as
     /// `ProbabilitiesDoNotSumToOne` -- the existing validation path is what
     /// surfaces the error, rather than this defender inventing a second one.
+    ///
+    /// The returned `DefenderStrategy` captures `this` and is valid only
+    /// for this `DoubleDummyDefender`'s own lifetime -- do not outlive it.
     auto as_strategy() -> DefenderStrategy;
 
 private:

@@ -131,54 +131,63 @@ TEST_F(DoubleDummyDefenderTest, AClearlyBestCardWinsAllTheProbability)
         validate_defender_distribution(deal, East, distribution), ValidationError::None);
 }
 
-TEST_F(DoubleDummyDefenderTest, SolutionsTwoOmitsTheSuboptimalCandidateSolutionsThreeDoesNot)
+TEST_F(DoubleDummyDefenderTest, SolutionsTwoReportsEveryScoreTiedCandidateAcrossSuits)
 {
     // Pins the reasoning double_dummy_defender.cpp gives for using
-    // solutions = 3 rather than the plan's suggested 2: on the same
-    // strictly-asymmetric position as AClearlyBestCardWinsAllTheProbability
-    // above (the ace of clubs scores higher than the two of spades), 2
-    // silently drops the worse candidate instead of reporting its score
-    // alongside the better one.
+    // solutions = 2: on a position where two different suits genuinely tie
+    // for the maximum score (the same fixture
+    // TwoTiedSuitsDistinguishTouchingSequenceFromAllOptimal below uses),
+    // solutions = 2 reports *both* tied entries -- not just a single best
+    // guess -- with the same scores and equals groups solutions = 3 would.
+    // spread() only ever consumes entries at the maximum score (both
+    // TouchingSequence and AllOptimal filter to it before using anything
+    // else), so a solution mode that returns exactly that set is already
+    // everything spread() needs; the entries solutions = 3 additionally
+    // reports (every legal card, not just the tied ones) are strictly
+    // sub-optimal and would be discarded by that filter regardless.
     Deal deal{};
-    deal.trump = Spades;
+    deal.trump = DDS_NOTRUMP;
     deal.first = East;
-    deal.remainCards[North][Clubs] = holding({King});
+    deal.remainCards[North][Spades] = holding({Three});
     deal.remainCards[North][Hearts] = holding({Three});
-    deal.remainCards[South][Spades] = holding({Three});
-    deal.remainCards[South][Hearts] = holding({Ace});
-    deal.remainCards[East][Spades] = holding({Two});
-    deal.remainCards[East][Clubs] = holding({Ace});
-    deal.remainCards[West][Spades] = holding({Four});
-    deal.remainCards[West][Hearts] = holding({Four});
+    deal.remainCards[North][Diamonds] = holding({Two});
+    deal.remainCards[North][Clubs] = holding({Two});
+    deal.remainCards[South][Spades] = holding({Four});
+    deal.remainCards[South][Hearts] = holding({Four});
+    deal.remainCards[South][Diamonds] = holding({Three});
+    deal.remainCards[South][Clubs] = holding({Three});
+    deal.remainCards[East][Spades] = holding({Ace, King});
+    deal.remainCards[East][Hearts] = holding({Ace, King});
+    deal.remainCards[West][Spades] = holding({Two});
+    deal.remainCards[West][Hearts] = holding({Two});
+    deal.remainCards[West][Diamonds] = holding({Four});
+    deal.remainCards[West][Clubs] = holding({Four});
 
     SolverContext ctx;
-
-    FutureTricks two_solutions{};
-    ASSERT_EQ(solve_board(ctx, deal, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &two_solutions),
-        RETURN_NO_FAULT);
-    ASSERT_EQ(two_solutions.cards, 1);  // the two of spades is silently absent
-    EXPECT_EQ(two_solutions.suit[0], Clubs);
-    EXPECT_EQ(two_solutions.rank[0], Ace);
-
-    FutureTricks three_solutions{};
+    FutureTricks fut{};
     ASSERT_EQ(
-        solve_board(ctx, deal, /*target=*/-1, /*solutions=*/3, /*mode=*/0, &three_solutions),
+        solve_board(ctx, deal, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &fut),
         RETURN_NO_FAULT);
-    ASSERT_EQ(three_solutions.cards, 2);  // both candidates present, each with its own score
-    for (int i = 0; i < three_solutions.cards; ++i)
+
+    ASSERT_EQ(fut.cards, 2);  // both suits' tied entries present, not just one
+    int spade_count = 0;
+    int heart_count = 0;
+    for (int i = 0; i < fut.cards; ++i)
     {
-        if (three_solutions.suit[i] == Clubs)
+        EXPECT_EQ(fut.rank[i], Ace);
+        EXPECT_EQ(fut.score[i], 4);
+        EXPECT_EQ(fut.equals[i], 1 << King);  // each suit's own king, touching its ace
+        if (fut.suit[i] == Spades)
         {
-            EXPECT_EQ(three_solutions.rank[i], Ace);
-            EXPECT_EQ(three_solutions.score[i], 2);
+            ++spade_count;
         }
-        else
+        else if (fut.suit[i] == Hearts)
         {
-            EXPECT_EQ(three_solutions.suit[i], Spades);
-            EXPECT_EQ(three_solutions.rank[i], Two);
-            EXPECT_EQ(three_solutions.score[i], 1);
+            ++heart_count;
         }
     }
+    EXPECT_EQ(spade_count, 1);
+    EXPECT_EQ(heart_count, 1);
 }
 
 // --- a genuine touching sequence -------------------------------------------

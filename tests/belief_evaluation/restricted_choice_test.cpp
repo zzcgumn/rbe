@@ -11,7 +11,7 @@
 
 #include "test_support.hpp"
 
-// The acceptance test this plan exists for: declarer's belief about where a
+// The capability's central acceptance test: declarer's belief about where a
 // missing honour sits shifts correctly after a defender produces its
 // partner, and does not shift at all when the defender's play carries no
 // information (see docs/replenished_belief_evaluation/algorithm.md for the
@@ -229,6 +229,8 @@ TEST_F(RestrictedChoiceTest, ADeterministicDefenceShowsNoShiftOnTheSameFixture)
 {
     Deal const layout_a = make_layout_a();
     Deal const layout_b = make_layout_b();
+    assert_equal_hand_sizes(layout_a);
+    assert_equal_hand_sizes(layout_b);
     assert_pool_matches({layout_a, layout_b});
     assert_forms_one_belief_node({layout_a, layout_b}, North);
 
