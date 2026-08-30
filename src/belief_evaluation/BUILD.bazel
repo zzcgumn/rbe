@@ -89,3 +89,23 @@ cc_library(
     linkopts = DDS_LINKOPTS,
     local_defines = DDS_LOCAL_DEFINES,
 )
+
+# Sibling of double_dummy_defender, same reasoning for staying out of the
+# core library's own deps -- and the same intended pairing: a caller
+# combining this bound with DoubleDummyDefender is in the sound
+# configuration EvaluateOptions::delta_is_double_dummy_optimal documents.
+cc_library(
+    name = "double_dummy_bound",
+    srcs = ["double_dummy_bound.cpp"],
+    hdrs = ["double_dummy_bound.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":belief_evaluation",
+        "//library/src:dds",
+        "//library/src/utility:constants",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
