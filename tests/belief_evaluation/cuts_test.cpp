@@ -435,3 +435,64 @@ TEST_F(DeadCutTest, PiAndDeltaAreNotCalledWhenTheRootIsAlreadyDead)
     EXPECT_EQ(result.by_strategy.at(0u).p_make, 0.0);
     EXPECT_TRUE(result.by_strategy.at(0u).root_children.empty());
 }
+
+// The LayoutBound injection seam: a caller-supplied double-dummy upper
+// bound on tricks, and the separate delta_is_double_dummy_optimal
+// declaration a future node-level cut (not built in this task) will gate
+// on. Nothing in this module consumes either yet -- these tests pin the
+// seam itself: the scripted test double behaves correctly, and supplying a
+// bound cannot perturb the answer.
+
+class LayoutBoundTest : public ::testing::Test
+{
+};
+
+TEST_F(LayoutBoundTest, ScriptedBoundRecordsWhatItWasAskedAndReturnsTheScriptedValue)
+{
+    Deal const layout = make_east_wins_first_trick();
+    ScriptedBound scripted({{layout, 7}});
+    LayoutBound const bound = scripted.as_bound();
+
+    EXPECT_EQ(bound(layout), 7);
+    ASSERT_EQ(scripted.queries().size(), 1u);
+    EXPECT_EQ(scripted.queries().front().remainCards[East][Spades], layout.remainCards[East][Spades]);
+}
+
+TEST_F(LayoutBoundTest, SupplyingABoundDoesNotChangeTheAnswerEitherDirection)
+{
+    // A bound scripted to claim zero tricks for declarer -- exactly the
+    // value that would fire a future node-level cut immediately, if
+    // anything read it. Nothing does yet, so both runs below must agree
+    // bitwise regardless.
+    Deal const root_layout = make_east_wins_first_trick();
+    VectorLayoutSource source({root_layout});
+    ScriptedBound scripted({{root_layout, 0}});
+
+    EvaluationResult const without_bound = evaluate(
+        root_layout, North, /*tricks_needed=*/1, source, strategy(1), single_card_defender);
+    EvaluationResult const with_bound = evaluate(
+        root_layout,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
+
+    ASSERT_FALSE(without_bound.error.has_value());
+    ASSERT_FALSE(with_bound.error.has_value());
+    EXPECT_EQ(without_bound.by_strategy.at(1u).p_make, with_bound.by_strategy.at(1u).p_make);
+    ASSERT_EQ(
+        without_bound.by_strategy.at(1u).root_children.size(),
+        with_bound.by_strategy.at(1u).root_children.size());
+    for (std::size_t i = 0; i < without_bound.by_strategy.at(1u).root_children.size(); ++i)
+    {
+        EXPECT_EQ(
+            without_bound.by_strategy.at(1u).root_children[i].value,
+            with_bound.by_strategy.at(1u).root_children[i].value);
+    }
+    // The bound is never even called: nothing in this module consumes it
+    // yet (that is task 06's job), so scripting a single entry above and
+    // never seeing ScriptedBound's own ADD_FAILURE fire is itself part of
+    // what this test pins.
+}

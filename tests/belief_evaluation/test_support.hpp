@@ -10,6 +10,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -18,6 +19,7 @@
 
 #include <belief_evaluation/declarer_strategy.hpp>
 #include <belief_evaluation/defender_strategy.hpp>
+#include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/layout_key.hpp>
 #include <belief_evaluation/layout_source.hpp>
 #include <belief_evaluation/trick.hpp>
@@ -448,3 +450,79 @@ inline auto assert_forms_one_belief_node(std::vector<Deal> const& layouts, int d
         }
     }
 }
+
+/// A scripted LayoutBound test double: a table from a whole `Deal` to a
+/// claimed bound, recording every layout it was asked about -- in the
+/// style of ScriptedDefender, but keyed on the whole Deal directly rather
+/// than layout_key(): LayoutBound (`Deal -> int`) carries no seat or
+/// position to disambiguate with, and is asked about whichever exact Deal
+/// a caller passes, so equality is field-by-field over trump, remainCards
+/// and the current-trick state -- everything make_root's own consistency
+/// filter reads. A linear scan over the table is fine; every fixture this
+/// module builds scripts at most a handful of layouts.
+///
+/// A missing table entry is a loud test failure (ADD_FAILURE, non-fatal)
+/// rather than a fallback, for the same reason ScriptedDefender's table is:
+/// a silent fallback would turn an incomplete script into a passing test
+/// against a different bound than the one the expected values were
+/// hand-derived from.
+class ScriptedBound
+{
+public:
+    explicit ScriptedBound(std::vector<std::pair<Deal, int>> table) : table_(std::move(table))
+    {
+    }
+
+    auto as_bound() -> LayoutBound
+    {
+        return [this](Deal const& layout) -> int
+        {
+            queries_.push_back(layout);
+            for (auto const& [scripted_layout, bound] : table_)
+            {
+                if (same_layout(scripted_layout, layout))
+                {
+                    return bound;
+                }
+            }
+            ADD_FAILURE() << "ScriptedBound: no scripted entry for this layout";
+            return 0;
+        };
+    }
+
+    auto queries() const -> std::vector<Deal> const&
+    {
+        return queries_;
+    }
+
+private:
+    static auto same_layout(Deal const& a, Deal const& b) -> bool
+    {
+        if (a.trump != b.trump)
+        {
+            return false;
+        }
+        for (int hand = 0; hand < DDS_HANDS; ++hand)
+        {
+            for (int suit = 0; suit < DDS_SUITS; ++suit)
+            {
+                if (a.remainCards[hand][suit] != b.remainCards[hand][suit])
+                {
+                    return false;
+                }
+            }
+        }
+        for (int i = 0; i < 3; ++i)
+        {
+            if (a.currentTrickSuit[i] != b.currentTrickSuit[i]
+                || a.currentTrickRank[i] != b.currentTrickRank[i])
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    std::vector<std::pair<Deal, int>> table_;
+    std::vector<Deal> queries_;
+};

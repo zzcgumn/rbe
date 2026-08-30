@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <vector>
@@ -51,10 +52,35 @@ struct RootChildValue
     double value;
 };
 
+/// A caller-supplied double-dummy upper bound on the tricks declarer can
+/// take from a given layout, for EvaluateOptions::bound. Not yet consumed
+/// by anything in this module — the seam a future node-level cut is built
+/// on, kept separate from the cut itself so the cut is testable with a
+/// scripted bound and no solver in the loop, exactly as `spread()` is
+/// testable without `solve_board`.
+///
+/// **Not validated, and cannot be**: π's card is checkable against the
+/// layout, δ's distribution is checkable against the contract, but a
+/// claimed trick bound is checkable against nothing short of solving the
+/// position — which is the work the bound exists to avoid. A bound that is
+/// too high makes a future cut fire when it should not and silently
+/// reports zero for a contract that makes. This is one of two
+/// unvalidatable obligations a caller supplying a bound takes on; see
+/// EvaluateOptions::delta_is_double_dummy_optimal for the other, and
+/// `DeclarerStrategy::state_key`'s own doxygen for the same register
+/// applied to a different obligation already in this module.
+using LayoutBound = std::function<int(Deal const&)>;
+
 /// Opt-in behaviour for `evaluate()`. Off by default: nodes are built on
 /// the recursion stack and released as each subtree completes, so a
 /// retained tree — a belief set kept at every node — is affordable only
 /// when asked for; see EvaluationValue::retained_root.
+///
+/// Four fields now, and growing as later capabilities add their own — this
+/// stays a flat struct of independently-defaulted options rather than
+/// acquiring internal structure of its own; if that stops reading clearly
+/// as options accumulate, that is worth revisiting then, not pre-empting
+/// here.
 struct EvaluateOptions
 {
     bool retain_root = false;
@@ -66,6 +92,42 @@ struct EvaluateOptions
     /// feeds back into the recursion (see counters_test.cpp's paired-run
     /// check, both directions).
     bool collect_counters = false;
+
+    /// See LayoutBound's own doxygen. Absent by default (a default-
+    /// constructed `std::function` is empty), which leaves a future
+    /// bound-based cut disabled the same way `delta_is_double_dummy_optimal`
+    /// being unset does — the two are separate obligations and neither
+    /// implies the other; see that field for why they are not collapsed
+    /// into one.
+    LayoutBound bound;
+
+    /// The caller's declaration that `delta` holds declarer to the
+    /// double-dummy trick count whatever declarer does — i.e. that `delta`
+    /// is double-dummy optimal *for trick count*. Unset by default,
+    /// **separate** from `bound` itself: supplying a bound and making this
+    /// declaration assert different things (a function, versus a claim
+    /// about δ's behaviour), and a caller may legitimately want a bound
+    /// computed for instrumentation while their δ does not qualify.
+    /// Collapsing the two into one flag would make the unsound
+    /// configuration the easy one.
+    ///
+    /// This does **not** conflict with the separate, already-documented
+    /// fact that a trick-maximising defender is not best defence against a
+    /// *contract* (see `DoubleDummyDefender`'s own doxygen) — that caveat
+    /// is about the contract; this declaration is about trick count, and a
+    /// trick-maximising δ (`DoubleDummyDefender` under either
+    /// `SpreadPolicy`) satisfies it against any π, since maximising tricks
+    /// for both sides at `target = -1` holds declarer to the double-dummy
+    /// trick count regardless of which card declarer actually plays.
+    ///
+    /// **Cannot be validated, and a wrong declaration is silently wrong in
+    /// only one direction.** If `delta` does not actually hold declarer to
+    /// the double-dummy trick count — a scripted δ that ducks a trick it
+    /// need not have lost, for instance — a future bound-based cut can
+    /// discard a layout where declarer, following π, would actually have
+    /// made the contract. The bound is an upper bound on double-dummy play;
+    /// nothing here checks that δ delivers double-dummy play.
+    bool delta_is_double_dummy_optimal = false;
 };
 
 /// Instrumentation `evaluate()` can report about its own run, populated
