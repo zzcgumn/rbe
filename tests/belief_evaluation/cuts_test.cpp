@@ -439,10 +439,10 @@ TEST_F(DeadCutTest, PiAndDeltaAreNotCalledWhenTheRootIsAlreadyDead)
 
 // The LayoutBound injection seam: a caller-supplied double-dummy upper
 // bound on tricks, and the separate delta_is_double_dummy_optimal
-// declaration a future node-level cut (not built in this task) will gate
-// on. Nothing in this module consumes either yet -- these tests pin the
-// seam itself: the scripted test double behaves correctly, and supplying a
-// bound cannot perturb the answer.
+// declaration a future node-level cut will gate on. Nothing in this module
+// consumes either yet -- these tests pin the seam itself: the scripted test
+// double behaves correctly, and supplying a bound cannot perturb the
+// answer.
 
 class LayoutBoundTest : public ::testing::Test
 {

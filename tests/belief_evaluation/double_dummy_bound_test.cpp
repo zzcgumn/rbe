@@ -46,8 +46,8 @@ class DoubleDummyBoundTest : public ::testing::Test
 
 // --- criterion 1: what solve_board's raw score actually measures ----------
 //
-// Verified empirically against the solver, not assumed -- this plan's
-// equivalent of confirming FutureTricks::equals' bit convention before
+// Verified empirically against the solver, not assumed -- the same
+// discipline as confirming FutureTricks::equals' bit convention before
 // building anything on it. A single-trick, one-card-per-hand ending, with
 // North (declarer) always holding the ace -- so declarer's own trick count
 // is 1 regardless of who leads -- but who is *on lead* changes what
@@ -225,9 +225,9 @@ TEST_F(DoubleDummyBoundTest, AMalformedLayoutSurfacesAsTheSentinelNotARealBound)
 }
 
 // --- reproduction run (b): tier 1 and tier 2 together, against a delta
-// that satisfies EvaluateOptions::delta_is_double_dummy_optimal (this
-// plan's headline acceptance criterion, the solver-linked half -- run (a)
-// is in reproduction_test.cpp). DoubleDummyDefender paired with
+// that satisfies EvaluateOptions::delta_is_double_dummy_optimal (the
+// headline acceptance criterion for early cuts, the solver-linked half --
+// run (a) is in reproduction_test.cpp). DoubleDummyDefender paired with
 // DoubleDummyBound, both driven by the same SolverContext, is the intended
 // sound configuration DoubleDummyBound's own doxygen names.
 
@@ -243,7 +243,7 @@ namespace
     /// wins a spade trick regardless of the split or who leads. The club
     /// filler (one card each, never a genuine choice) also always goes to
     /// West, the highest of the four -- so declarer's true double-dummy
-    /// value over the whole two-trick ending is 0, not just in spades.
+    /// value over the whole three-trick ending is 0, not just in spades.
     ///
     /// tier 1's own dead cut cannot see this: at the root, declarer's own
     /// card count (3: queen, jack, club) is well above tricks_needed (1),

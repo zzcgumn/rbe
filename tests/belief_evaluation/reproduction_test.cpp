@@ -7,23 +7,23 @@
 
 #include "test_support.hpp"
 
-// This plan's headline acceptance criterion: every early cut lands with no
-// change to any answer, and this file is where that end-to-end claim gets
-// made, not just per-cut in cuts_test.cpp.
+// The headline acceptance criterion for early cuts: every cut lands with
+// no change to any answer, and this file is where that end-to-end claim
+// gets made, not just per-cut in cuts_test.cpp.
 //
-// Criterion 1 (every plan 2 and plan 3 test unchanged) is verified by
+// Every pre-existing test in this suite passing unchanged is verified by
 // `git diff 353dae5b -- library/tests/belief_evaluation/` showing zero
 // deletions -- not asserted here, since it is a property of the diff, not
-// of any one test's runtime behaviour. Recorded in the review and in every
-// task commit message in this plan.
+// of any one test's runtime behaviour. Recorded in the commit history for
+// this work.
 //
 // Run (a) -- tier 1 only, against a fixture whose shape is representative
-// of plan 2/3's own oracle fixtures (several tricks, several layouts) --
-// lives below. Tier 1 has no flag to disable, so it is already exercised
-// by literally every one of the 150 pre-existing tests, whatever their own
-// delta; this file adds the missing half of that claim, evidence that the
-// cuts actually *fire* on a fixture of that shape, which no individual
-// pre-existing test was asked to demonstrate.
+// of this suite's own oracle-style fixtures (several tricks, several
+// layouts) -- lives below. Tier 1 has no flag to disable, so it is already
+// exercised by literally every one of the 150 pre-existing tests, whatever
+// their own delta; this file adds the missing half of that claim, evidence
+// that the cuts actually *fire* on a fixture of that shape, which no
+// individual pre-existing test was asked to demonstrate.
 //
 // Run (b) -- tier 1 and tier 2 together, against a delta that satisfies
 // EvaluateOptions::delta_is_double_dummy_optimal -- needs the solver
@@ -86,19 +86,21 @@ TEST_F(ReproductionTest, TierOneCutsFireOnAThreeTrickOracleShapedFixture)
     EXPECT_EQ(value.p_make, 1.0);
     ASSERT_TRUE(value.counters.has_value());
     // Hand-counted tree, single deterministic path, needed = 2 of 3: root,
-    // then one node per card played -- East, South, West, North for trick
-    // 1 (nodes 2-5), the same four for trick 2 (nodes 6-9). Node 9, the
-    // one reached right after North's card resolves trick 2 (tricks_won 2
-    // >= needed 2), is where the already-made cut fires -- visited but not
-    // expanded, so trick 3 is never touched at all.
+    // then one node per card played -- East, South, West, North for trick 1
+    // (nodes 2-5). North's queen/king/ace always beats the defenders' low
+    // cards, so North wins trick 1 and leads trick 2 -- North, East, South,
+    // West this time (nodes 6-9). Node 9, the one reached right after
+    // West's card resolves trick 2 (tricks_won 2 >= needed 2), is where the
+    // already-made cut fires -- visited but not expanded, so trick 3 is
+    // never touched at all.
     constexpr std::uint64_t NodesWithCuts = 9;
     EXPECT_EQ(value.counters->nodes_visited, NodesWithCuts);
 
     // The uncut comparison: needing all 3 tricks instead of 2 removes any
     // opportunity for the already-made cut to fire early, so the
     // recursion runs to its natural terminal node -- the same technique
-    // cuts_test.cpp's own fixtures use throughout this plan, since tier 1
-    // has no flag to disable directly.
+    // cuts_test.cpp's own fixtures use throughout, since tier 1 has no flag
+    // to disable directly.
     EvaluationResult const uncut_comparison = evaluate(
         deal,
         North,
@@ -116,10 +118,8 @@ TEST_F(ReproductionTest, TierOneCutsFireOnAThreeTrickOracleShapedFixture)
     EXPECT_EQ(
         uncut_comparison.by_strategy.at(1u).counters->nodes_visited, NodesWithoutTheEarlyCut);
 
-    // The cut rate this task asks be recorded: 4 of 13 nodes the uncut
-    // recursion would have visited (the whole of trick 3) were pruned by
-    // tier 1 on this fixture -- roughly 31%, for a fixture with only one
-    // real cut opportunity. Recorded in the review with the rest of plan
-    // 8's requested numbers.
+    // The cut rate: 4 of 13 nodes the uncut recursion would have visited
+    // (the whole of trick 3) were pruned by tier 1 on this fixture --
+    // roughly 31%, for a fixture with only one real cut opportunity.
     EXPECT_LT(NodesWithCuts, NodesWithoutTheEarlyCut);
 }
