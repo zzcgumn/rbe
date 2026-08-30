@@ -53,17 +53,16 @@ struct RootChildValue
 };
 
 /// A caller-supplied double-dummy upper bound on the tricks declarer can
-/// take from a given layout, for EvaluateOptions::bound. Not yet consumed
-/// by anything in this module — the seam a future node-level cut is built
-/// on, kept separate from the cut itself so the cut is testable with a
-/// scripted bound and no solver in the loop, exactly as `spread()` is
-/// testable without `solve_board`.
+/// take from a given layout, for EvaluateOptions::bound. Consumed by
+/// `tier2_dead()` (below) — kept as a seam separate from the cut itself so
+/// the cut is testable with a scripted bound and no solver in the loop,
+/// exactly as `spread()` is testable without `solve_board`.
 ///
 /// **Not validated, and cannot be**: π's card is checkable against the
 /// layout, δ's distribution is checkable against the contract, but a
 /// claimed trick bound is checkable against nothing short of solving the
 /// position — which is the work the bound exists to avoid. A bound that is
-/// too high makes a future cut fire when it should not and silently
+/// too high makes `tier2_dead()` fire when it should not and silently
 /// reports zero for a contract that makes. This is one of two
 /// unvalidatable obligations a caller supplying a bound takes on; see
 /// EvaluateOptions::delta_is_double_dummy_optimal for the other, and
@@ -94,11 +93,10 @@ struct EvaluateOptions
     bool collect_counters = false;
 
     /// See LayoutBound's own doxygen. Absent by default (a default-
-    /// constructed `std::function` is empty), which leaves a future
-    /// bound-based cut disabled the same way `delta_is_double_dummy_optimal`
-    /// being unset does — the two are separate obligations and neither
-    /// implies the other; see that field for why they are not collapsed
-    /// into one.
+    /// constructed `std::function` is empty), which leaves `tier2_dead()`
+    /// disabled the same way `delta_is_double_dummy_optimal` being unset
+    /// does — the two are separate obligations and neither implies the
+    /// other; see that field for why they are not collapsed into one.
     LayoutBound bound;
 
     /// The caller's declaration that `delta` holds declarer to the
@@ -123,10 +121,10 @@ struct EvaluateOptions
     /// **Cannot be validated, and a wrong declaration is silently wrong in
     /// only one direction.** If `delta` does not actually hold declarer to
     /// the double-dummy trick count — a scripted δ that ducks a trick it
-    /// need not have lost, for instance — a future bound-based cut can
-    /// discard a layout where declarer, following π, would actually have
-    /// made the contract. The bound is an upper bound on double-dummy play;
-    /// nothing here checks that δ delivers double-dummy play.
+    /// need not have lost, for instance — `tier2_dead()` can discard a
+    /// layout where declarer, following π, would actually have made the
+    /// contract. The bound is an upper bound on double-dummy play; nothing
+    /// here checks that δ delivers double-dummy play.
     bool delta_is_double_dummy_optimal = false;
 };
 

@@ -96,7 +96,7 @@ TEST_F(CountersTest, CountersAreAbsentByDefault)
     EXPECT_FALSE(result.by_strategy.at(1u).counters.has_value());
 }
 
-// Criterion 4 is the one that would otherwise go unenforced silently: every
+// This is the check that would otherwise go unenforced silently: every
 // test either turns counters on or leaves them off, never both, so nothing
 // forces the two runs to actually agree unless a test does so directly.
 // Bitwise, not EXPECT_DOUBLE_EQ -- a counters flag that perturbs the last
