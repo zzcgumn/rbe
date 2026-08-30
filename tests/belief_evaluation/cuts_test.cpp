@@ -1,0 +1,300 @@
+#include <gtest/gtest.h>
+
+#include <api/dll.h>
+#include <utility/constants.h>
+
+#include <belief_evaluation/evaluate.hpp>
+
+#include "test_support.hpp"
+
+// Tier 1's already-made cut: a node where declarer has already banked every
+// trick the contract needs evaluates to node_mass(node) without recursing
+// further -- sound unconditionally, no gate, no precondition (see
+// evaluate.cpp's already_made()).
+
+namespace
+{
+    constexpr int Two = 2;
+    constexpr int Three = 3;
+    constexpr int Four = 4;
+    constexpr int Five = 5;
+    constexpr int Jack = 11;
+    constexpr int Queen = 12;
+    constexpr int King = 13;
+    constexpr int Ace = 14;
+
+    constexpr int Spades = 0;
+
+    constexpr int North = 0;  // declarer
+    constexpr int East = 1;   // a defender
+    constexpr int South = 2;  // dummy
+    constexpr int West = 3;   // a defender
+
+    auto strategy(StrategyId id) -> DeclarerStrategy
+    {
+        return DeclarerStrategy{.id = id, .play = single_card_declarer_play, .state_key = nullptr};
+    }
+}
+
+class AlreadyMadeCutTest : public ::testing::Test
+{
+};
+
+// --- criteria 1 & 2: the cut computes the right, non-trivial value --------
+
+namespace
+{
+    /// North A,K / South 2,3 opposite each other; East and West split
+    /// {Q,J,4,5} between them, differently in the two layouts below, so
+    /// East's opening lead can be scripted to distinguish them while West's
+    /// own forced follow (via single_card_defender, unscripted) plays the
+    /// same rank in both -- keeping both layouts merged into the same
+    /// child all the way through trick 1.
+    ///
+    /// Layout A: East {Q,J}, West {4,5}.
+    /// Layout B: East {J,5}, West {4,Q}.
+    /// J stays with East and 4 stays with West in both, so West's lowest
+    /// legal card is "4" in either layout -- no scripting needed for West.
+    auto make_layout_a() -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = East;
+        deal.remainCards[North][Spades] = holding({Ace, King});
+        deal.remainCards[South][Spades] = holding({Two, Three});
+        deal.remainCards[East][Spades] = holding({Queen, Jack});
+        deal.remainCards[West][Spades] = holding({Four, Five});
+        return deal;
+    }
+
+    auto make_layout_b() -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = East;
+        deal.remainCards[North][Spades] = holding({Ace, King});
+        deal.remainCards[South][Spades] = holding({Two, Three});
+        deal.remainCards[East][Spades] = holding({Jack, Five});
+        deal.remainCards[West][Spades] = holding({Four, Queen});
+        return deal;
+    }
+
+    /// East's opening lead: layout A has a genuine choice between its two
+    /// honours, spread 0.5/0.5; layout B is scripted to certainly play its
+    /// jack -- deliberately not the "lowest legal" 5, so that both layouts'
+    /// jack branches merge into the same child (layout A's queen branch is
+    /// a separate child neither test below inspects). Every other query
+    /// (West's forced follow, either declarer-side play) falls back to
+    /// single_card_defender / single_card_declarer_play.
+    auto merging_delta(DefenderQuery const& query) -> std::vector<WeightedCard>
+    {
+        bool const is_easts_lead = query.seat == East && query.layout.currentTrickRank[0] == 0;
+        if (! is_easts_lead)
+        {
+            return single_card_defender(query);
+        }
+        if (query.layout.remainCards[East][Spades] == holding({Queen, Jack}))
+        {
+            return {WeightedCard{Card{Spades, Jack}, 0.5}, WeightedCard{Card{Spades, Queen}, 0.5}};
+        }
+        return {WeightedCard{Card{Spades, Jack}, 1.0}};
+    }
+}
+
+TEST_F(AlreadyMadeCutTest, ReturnsTheHandDerivedMassOverSeveralLayoutsAtUnequalP)
+{
+    Deal const layout_a = make_layout_a();
+    Deal const layout_b = make_layout_b();
+    assert_equal_hand_sizes(layout_a);
+    assert_equal_hand_sizes(layout_b);
+    assert_pool_matches({layout_a, layout_b});
+    assert_forms_one_belief_node({layout_a, layout_b}, North);
+    VectorLayoutSource source({layout_a, layout_b});
+
+    // East's lead is the root's own defender decision, so it produces two
+    // root_children directly: the jack branch (both layouts, merged) and
+    // the queen branch (layout A alone -- layout B never plays queen).
+    // Derivation, kappa = 1/2 (two root layouts), p_i = 1 each at the root:
+    //
+    //   jack branch: layout A contributes p = 1 * 0.5 = 0.5 (its half of
+    //     the genuine choice), layout B contributes p = 1 * 1.0 = 1.0
+    //     (certain). South (2), West (4, forced the same way in both
+    //     layouts) and North (K, the lower of its two honours, so it plays
+    //     first under single_card_declarer_play) then all play identically
+    //     across both layouts, so they stay merged: North's king beats
+    //     jack/two/four in every layout, winning trick 1.
+    //     tricks_won_by_declarer becomes 1, matching tricks_needed = 1 --
+    //     the cut fires at the node right after trick 1, still holding
+    //     both layouts: mass = kappa * (0.5 + 1.0) = 0.5 * 1.5 = 0.75.
+    //     Every hand still holds one more spade at this point (not
+    //     terminal -- North kept its ace, East kept its other honour,
+    //     South kept its three, West kept its five), so this is the cut
+    //     doing real work, not coincidence with terminal_value.
+    //
+    //   queen branch: layout A alone, p = 1 * 0.5 = 0.5. South (2), West
+    //     (4, unaffected by the other branch) and North (K again) play
+    //     out the same way; North's king beats queen/two/four too, so
+    //     tricks_won_by_declarer reaches 1 here as well and the cut fires
+    //     again: mass = kappa * 0.5 = 0.5 * 0.5 = 0.25.
+    //
+    //   p_make = 0.75 + 0.25 = 1.0 (mass conservation across the root's
+    //   own two children) -- so the jack branch's own root_children entry,
+    //   not the summed p_make, is what actually isolates the cut's
+    //   unequal-p value; that entry is what this test pins.
+    constexpr double ExpectedJackBranchMass = 0.75;
+    constexpr double ExpectedQueenBranchMass = 0.25;
+
+    EvaluationResult const result =
+        evaluate(layout_a, North, /*tricks_needed=*/1, source, strategy(1), merging_delta);
+
+    ASSERT_FALSE(result.error.has_value());
+    EvaluationValue const& value = result.by_strategy.at(1u);
+    ASSERT_EQ(value.root_children.size(), 2u);
+    RootChildValue const* jack_branch = nullptr;
+    RootChildValue const* queen_branch = nullptr;
+    for (RootChildValue const& child : value.root_children)
+    {
+        if (child.card.rank == Jack)
+        {
+            jack_branch = &child;
+        }
+        else if (child.card.rank == Queen)
+        {
+            queen_branch = &child;
+        }
+    }
+    ASSERT_NE(jack_branch, nullptr);
+    ASSERT_NE(queen_branch, nullptr);
+    // Bitwise, not EXPECT_DOUBLE_EQ (criterion 4): 0.5 and 1.0 are both
+    // exactly representable, so every value derived above is exact too,
+    // and each is the same value an uncut recursion would reach at its own
+    // true terminal node further down, by mass conservation through every
+    // defender expansion in between -- confirmed directly by temporarily
+    // disabling the cut and rebuilding (see commit message).
+    EXPECT_EQ(jack_branch->value, ExpectedJackBranchMass);
+    EXPECT_EQ(queen_branch->value, ExpectedQueenBranchMass);
+    EXPECT_EQ(value.p_make, ExpectedJackBranchMass + ExpectedQueenBranchMass);
+}
+
+// --- criterion 3: the cut actually fires, saving node visits --------------
+
+namespace
+{
+    /// A single, deterministic layout: North A,K / East Q,J / South 2,3 /
+    /// West 4,5, East on lead. Two certain tricks for North regardless of
+    /// tricks_needed -- used to compare node counts with the cut firing
+    /// early (tricks_needed = 1) against the same recursion run to its
+    /// natural end (tricks_needed = 2).
+    auto make_two_certain_tricks() -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = East;
+        deal.remainCards[North][Spades] = holding({Ace, King});
+        deal.remainCards[South][Spades] = holding({Two, Three});
+        deal.remainCards[East][Spades] = holding({Queen, Jack});
+        deal.remainCards[West][Spades] = holding({Four, Five});
+        return deal;
+    }
+}
+
+TEST_F(AlreadyMadeCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison)
+{
+    // There is no flag to disable tier 1's cut (it is unconditional by
+    // design -- see already_made()'s own doxygen), so criterion 3 is
+    // verified by comparing this fixture's node count under two different
+    // tricks_needed values instead: 1 (the cut fires the instant trick 1
+    // is won, before trick 2 is ever touched) versus 2 (declarer needs
+    // *both* tricks, so tricks_won never reaches tricks_needed early and
+    // the recursion runs all the way to its natural terminal node). Same
+    // layout, same delta, same pi -- the only difference between the two
+    // runs is whether the cut gets a chance to fire, so the gap in node
+    // count is attributable only to it.
+    Deal const root_layout = make_two_certain_tricks();
+    VectorLayoutSource source({root_layout});
+
+    // Hand-counted tree with tricks_needed = 1 (single_card_defender/
+    // single_card_declarer_play are both fully deterministic here, so
+    // there is exactly one path):
+    //   root: East to lead, defender node                          -- 1
+    //     East plays J -> South to play, declarer/dummy node       -- 2
+    //       South plays 2 -> West to play, defender node           -- 3
+    //         West plays 4 -> North to play, declarer node         -- 4
+    //           North plays K -> trick 1 resolves, North to lead
+    //                            trick 2 -- tricks_won (1) >=
+    //                            tricks_needed (1): CUT FIRES here,
+    //                            node visited but not expanded       -- 5
+    constexpr std::uint64_t NodesWithEarlyCut = 5;
+
+    // The same tree with tricks_needed = 2: node 5 is visited but the cut
+    // does NOT fire (tricks_won 1 < needed 2), so trick 2 is played out in
+    // full to its natural terminal node:
+    //     [node 5, not cut] North plays A -> East to play             -- 6
+    //       East plays Q -> South to play                             -- 7
+    //         South plays 3 -> West to play                           -- 8
+    //           West plays 5 -> trick 2 resolves, every hand empty,
+    //                           terminal (tricks_won 2 >= needed 2,
+    //                           so this is where terminal_value's own
+    //                           made-branch would fire if the cut's
+    //                           already_made() check textually before it
+    //                           did not already catch the same condition
+    //                           first)                                -- 9
+    constexpr std::uint64_t NodesWithoutEarlyCut = 9;
+
+    EvaluationResult const with_early_cut = evaluate(
+        root_layout,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.collect_counters = true});
+    EvaluationResult const without_early_cut = evaluate(
+        root_layout,
+        North,
+        /*tricks_needed=*/2,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.collect_counters = true});
+
+    ASSERT_FALSE(with_early_cut.error.has_value());
+    ASSERT_FALSE(without_early_cut.error.has_value());
+    ASSERT_TRUE(with_early_cut.by_strategy.at(1u).counters.has_value());
+    ASSERT_TRUE(without_early_cut.by_strategy.at(1u).counters.has_value());
+    EXPECT_EQ(with_early_cut.by_strategy.at(1u).counters->nodes_visited, NodesWithEarlyCut);
+    EXPECT_EQ(
+        without_early_cut.by_strategy.at(1u).counters->nodes_visited, NodesWithoutEarlyCut);
+    EXPECT_LT(
+        with_early_cut.by_strategy.at(1u).counters->nodes_visited,
+        without_early_cut.by_strategy.at(1u).counters->nodes_visited);
+}
+
+// --- criterion 5: pi is not called below a firing cut ----------------------
+
+TEST_F(AlreadyMadeCutTest, PiIsNotCalledWhenTheContractIsAlreadyMadeAtTheRoot)
+{
+    // tricks_needed = 0: the contract is already made before a single card
+    // is played, so the cut fires at the root itself, before seat_on_play
+    // is even consulted -- pi must never be asked which card to lead.
+    Deal const root_layout = make_two_certain_tricks();
+    VectorLayoutSource source({root_layout});
+    RecordingDeclarerStrategy recording(Card{Spades, King});  // never actually asked
+
+    EvaluationResult const result = evaluate(
+        root_layout,
+        North,
+        /*tricks_needed=*/0,
+        source,
+        recording.as_strategy(),
+        single_card_defender);
+
+    ASSERT_FALSE(result.error.has_value());
+    EXPECT_TRUE(recording.calls().empty());
+    // RecordingDeclarerStrategy::as_strategy() fixes id = 0.
+    // Single root layout, p = 1, kappa = 1 -- node_mass is trivially 1.0
+    // here, which is fine: this test is about the call count, not the
+    // value (criteria 1 & 2's dedicated test above covers the value).
+    EXPECT_EQ(result.by_strategy.at(0u).p_make, 1.0);
+    EXPECT_TRUE(result.by_strategy.at(0u).root_children.empty());
+}

@@ -107,7 +107,10 @@ struct EvaluationCounters
 ///   children defender-node expansion produces. These **do** sum to
 ///   `p_make`, since defender children partition mass by construction (see
 ///   specs/replenished-belief-evaluation.md's mass-conservation invariant).
-/// - Empty at a terminal root (no cards left to play a first card from).
+/// - Empty at a terminal root (no cards left to play a first card from), or
+///   at a root where declarer has already banked every trick the contract
+///   needs before any card is played -- in both cases there is no
+///   first-card decision left to report alternatives for.
 struct EvaluationValue
 {
     double p_make = 0.0;

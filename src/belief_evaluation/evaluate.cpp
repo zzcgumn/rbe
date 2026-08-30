@@ -59,6 +59,20 @@ namespace
         }
     }
 
+    /// Tier 1's already-made cut: true once declarer has banked every trick
+    /// the contract needs, whatever is left to play. Sound with no
+    /// precondition at all -- tricks_won_by_declarer and tricks_needed are
+    /// both common knowledge, identical across every layout the node holds,
+    /// so once this holds the contract is made in every layout of the node
+    /// and nothing about pi, delta, or sampling enters the argument. No
+    /// gate. Shared between p_make (every recursive call) and evaluate()'s
+    /// root handling, which checks it at the same point for the same
+    /// reason count_node() is shared.
+    auto already_made(ObservationState const& state) -> bool
+    {
+        return state.tricks_won_by_declarer >= state.tricks_needed;
+    }
+
     /// The recursion: P_make(node) = terminal_value(node), or the sum (for
     /// a defender node) / the single value (for a declarer node) over its
     /// children. Once `error` is set, every further call is a no-op
@@ -86,9 +100,15 @@ namespace
             return 0.0;
         }
         count_node(counters);
+        if (already_made(node.state))
+        {
+            return node_mass(node);
+        }
         if (is_terminal(node))
         {
-            return terminal_value(node);
+            return terminal_value(node);  // already_made() above is false here, so this is 0 --
+                                           // terminal_value's own made-branch is unreachable from
+                                           // this call site, not double-counted with the cut above
         }
 
         int const seat = seat_on_play(node.state.known_holdings);
@@ -157,7 +177,18 @@ auto evaluate(
     // through a p_make() call on itself.
     count_node(counters_ptr);
 
-    if (is_terminal(root))
+    if (already_made(root.state))
+    {
+        // Tier 1's already-made cut, mirrored here for the same reason
+        // count_node() is: pi is never even asked which seat is on play,
+        // because there is nothing left to decide -- the contract is made
+        // in every layout the root holds before a single card is played.
+        // root_children stays empty for the same reason it does at a
+        // terminal root: no first-card decision exists to report
+        // alternatives for.
+        value.p_make = node_mass(root);
+    }
+    else if (is_terminal(root))
     {
         value.p_make = terminal_value(root);  // no legal first card exists; root_children stays empty
     }
