@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <vector>
@@ -57,6 +58,38 @@ struct RootChildValue
 struct EvaluateOptions
 {
     bool retain_root = false;
+
+    /// Populate EvaluationValue::counters. Off by default, so the ordinary
+    /// path pays nothing to collect what nothing is asking for. Collecting
+    /// counters must never change `p_make` or `root_children` — every
+    /// counter measures this run's own shape or cost and none of them
+    /// feeds back into the recursion (see counters_test.cpp's paired-run
+    /// check, both directions).
+    bool collect_counters = false;
+};
+
+/// Instrumentation `evaluate()` can report about its own run, populated
+/// only when EvaluateOptions::collect_counters is set — see
+/// EvaluationValue::counters. Nothing here is read back into `p_make`;
+/// every field is purely a fact about this run's own shape or cost.
+///
+/// This is the module's shared instrumentation mechanism, not a type
+/// specific to whatever fills it in first. Later additions belong here
+/// rather than in a parallel mechanism of their own — some of what a
+/// future capability adds will naturally be per-depth rather than scalar
+/// (sample size, replenishment count, and scan-to-hit, each broken out by
+/// recursion depth, are the known examples). That arrives as its own
+/// `std::vector<...>` member indexed by depth, added alongside the scalar
+/// fields below, not a reshaping of this type — nothing here needs to
+/// anticipate that further than leaving room for it.
+struct EvaluationCounters
+{
+    /// Every BeliefNode reached and evaluated for a value — terminal or
+    /// expanded, including the root itself. Meaningful on its own with no
+    /// cuts implemented at all: a cut that fires reduces this count below
+    /// the same fixture's uncut run, which is how a cut's tests prove it
+    /// actually fired rather than merely computing the right number.
+    std::uint64_t nodes_visited = 0;
 };
 
 /// `P_make` for one declarer strategy against one defender strategy, plus
@@ -84,6 +117,10 @@ struct EvaluationValue
     /// is set. Not a full retained tree — see evaluate.cpp and the spec for
     /// why a full tree is not retained by default.
     std::optional<BeliefNode> retained_root;
+
+    /// This run's instrumentation, populated only when
+    /// EvaluateOptions::collect_counters is set.
+    std::optional<EvaluationCounters> counters;
 };
 
 /// Either the value, or the EvaluationError a callback's return (or

@@ -46,6 +46,19 @@ namespace
         return Card{node.state.history.suit[n], node.state.history.rank[n]};
     }
 
+    /// nodes_visited's single write site: every other counter this module
+    /// will ever add is a candidate for its own such helper, but this one
+    /// is shared between p_make (every recursive call) and evaluate() (the
+    /// root, which dispatches the same way but outside p_make) — see
+    /// evaluate()'s own root-handling block for the paired call.
+    auto count_node(EvaluationCounters* counters) -> void
+    {
+        if (counters != nullptr)
+        {
+            counters->nodes_visited += 1;
+        }
+    }
+
     /// The recursion: P_make(node) = terminal_value(node), or the sum (for
     /// a defender node) / the single value (for a declarer node) over its
     /// children. Once `error` is set, every further call is a no-op
@@ -57,16 +70,22 @@ namespace
     /// on rather than a behaviour any current test can isolate — keep it
     /// so that stays true as call sites are added, not because it is
     /// reachable today.
+    ///
+    /// `counters` is null unless EvaluateOptions::collect_counters was set;
+    /// every write to it goes through count_node() so collection stays a
+    /// single well-known site as more counters arrive.
     auto p_make(
         BeliefNode const& node,
         DeclarerStrategy const& pi,
         DefenderStrategy const& delta,
-        std::optional<EvaluationError>& error) -> double
+        std::optional<EvaluationError>& error,
+        EvaluationCounters* counters) -> double
     {
         if (error.has_value())
         {
             return 0.0;
         }
+        count_node(counters);
         if (is_terminal(node))
         {
             return terminal_value(node);
@@ -83,7 +102,7 @@ namespace
                     result.error, EvaluationCallback::DeclarerPlay, seat, node.state.known_holdings};
                 return 0.0;
             }
-            return p_make(*result.child, pi, delta, error);
+            return p_make(*result.child, pi, delta, error, counters);
         }
 
         ExpandDefenderResult const result = expand_defender_node(node, delta);
@@ -97,7 +116,7 @@ namespace
         KahanAccumulator total;
         for (BeliefNode const& child : *result.children)
         {
-            total.add(p_make(child, pi, delta, error));
+            total.add(p_make(child, pi, delta, error, counters));
             if (error.has_value())
             {
                 return 0.0;
@@ -127,6 +146,16 @@ auto evaluate(
 
     std::optional<EvaluationError> error;
     EvaluationValue value{};
+    EvaluationCounters counters{};
+    // Null unless options.collect_counters is set, so the counting call
+    // sites below are unconditional and cost nothing when off — count_node()
+    // itself is the single place that checks the flag (via nullness).
+    EvaluationCounters* const counters_ptr = options.collect_counters ? &counters : nullptr;
+
+    // The root's own visit — same site p_make() counts a node at, but
+    // outside p_make() because the root's dispatch happens here rather than
+    // through a p_make() call on itself.
+    count_node(counters_ptr);
 
     if (is_terminal(root))
     {
@@ -188,8 +217,8 @@ auto evaluate(
             for (std::size_t i = 0; i < legal.size(); ++i)
             {
                 double const candidate_value = (i == chosen_index)
-                    ? p_make(*chosen.child, pi, delta, error)
-                    : p_make(other_children[other_i++], pi, delta, error);
+                    ? p_make(*chosen.child, pi, delta, error, counters_ptr)
+                    : p_make(other_children[other_i++], pi, delta, error, counters_ptr);
                 if (error.has_value())
                 {
                     return EvaluationResult{{}, error};
@@ -218,7 +247,7 @@ auto evaluate(
             value.root_children.reserve(expanded.children->size());
             for (BeliefNode const& child : *expanded.children)
             {
-                double const child_value = p_make(child, pi, delta, error);
+                double const child_value = p_make(child, pi, delta, error, counters_ptr);
                 if (error.has_value())
                 {
                     return EvaluationResult{{}, error};
@@ -233,6 +262,10 @@ auto evaluate(
     if (options.retain_root)
     {
         value.retained_root = root;
+    }
+    if (options.collect_counters)
+    {
+        value.counters = counters;
     }
 
     EvaluationResult result{};
