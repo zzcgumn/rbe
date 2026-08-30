@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-08-26
+last-updated: 2026-08-30
 ---
 
 # Replenished Belief Evaluation
@@ -22,11 +22,13 @@ hidden layouts — into a search over the belief space instead, following
 throughout for the theory and does not restate.
 
 This document describes the capability as it stands today: the vocabulary,
-the three injection contracts, the renumbering scheme, and an exhaustive
+the four injection contracts, the renumbering scheme, and an exhaustive
 evaluator that computes `P_make` exactly over a belief space small enough to
-enumerate in full — no sampling, no replenishment, no cuts. It is the
-reference every later, scalable evaluator is measured against; see "Known
-gaps / non-goals" for what those add.
+enumerate in full. No sampling, no replenishment. Early cuts exist —
+unconditional arithmetic ones that skip subtrees contributing exactly zero,
+and one gated, injected-bound one — but change no answer; see "Behaviour &
+invariants" for what makes each sound and "Known gaps / non-goals" for what
+is still absent (a third, injected-bound-free tier; per-layout pruning).
 
 ## Behaviour & invariants
 
@@ -243,6 +245,81 @@ gaps / non-goals" for what those add.
   thread. Any double-dummy calls this capability makes for its own purposes
   go through a `SolverContext` and may use that context's internal
   parallelism.
+- **Early cuts skip a subtree only when doing so is guaranteed to contribute
+  exactly zero to the result, and tier 1 and tier 2 are sound for entirely
+  different reasons — the asymmetry is the fact worth keeping straight, more
+  than either rule on its own.** Tier 1 (a node already holding enough
+  tricks; a node that cannot possibly hold enough) reads only
+  `tricks_won_by_declarer`, `tricks_needed` and the outstanding-card pool —
+  all common knowledge, identical across every layout a node holds,
+  regardless of π, δ, or whether the node is a sample. It is sound
+  unconditionally, with no gate and no caller obligation. Tier 2 (a node
+  whose every layout is dead by a caller-injected double-dummy bound)
+  instead concludes something from the specific layouts the node happens to
+  hold, which carries two preconditions tier 1 has none of (below) — a
+  future cut belongs on whichever side of this line its own soundness
+  argument actually falls on.
+- **Tier 2's bound is a one-directional fact, and reusing it in the other
+  direction is the strategy-fusion trap early cuts have to be built around.**
+  `R ≤ DD` — declarer's actual value under π is bounded by the double-dummy
+  value — holds only when δ holds declarer to the double-dummy trick count
+  whatever declarer does (`EvaluateOptions::delta_is_double_dummy_optimal`);
+  a double-dummy solve assumes best defence, so against a δ that errs,
+  declarer following π can take *more* tricks than the double-dummy value,
+  and a cut on `DD < ρ` then reports zero for a contract that in fact makes.
+  `DoubleDummyDefender` (either `SpreadPolicy`) satisfies the precondition —
+  trick-maximising for both sides at every node — and pairing it with
+  `DoubleDummyBound` is the intended sound configuration. The other
+  direction is equally load-bearing and easy to miss precisely because it
+  looks free once the bound is already computed: `DD ≥ ρ` implies **nothing**
+  about `R`, since π may play worse than double dummy, so the single solve
+  behind a bound must never be reused to conclude a contract makes. No cut
+  in this capability does; a symmetric make-cut is the one addition to this
+  code a future contributor is most likely to reach for and must not.
+- **Early cuts are node-level, never per-layout, because per-layout pruning
+  changes what a declarer strategy sees, not merely what it costs to
+  compute.** `make_belief_view` normalises the posterior over the layouts a
+  node currently holds; dropping one dead layout renormalises every
+  survivor's posterior, and π — an arbitrary caller-supplied function of that
+  view — may return a different card in response, which changes the value of
+  every surviving layout too, not just the dropped one's own (zero)
+  contribution. A node-level cut has no such problem: it returns before any
+  view is ever built at or below the node it fires on. This is a decision
+  about what a cut is allowed to touch, not an optimisation deferred for
+  later — a per-layout cut would reproduce every test in this capability's
+  suite bitwise (most scripted π here does not read its belief view) while
+  being wrong for any π that does, which is every real one.
+- **Two caller obligations cannot be validated, and are named together for
+  that reason.** An injected `LayoutBound` is checkable against nothing
+  short of solving the position, which is the work it exists to avoid; the
+  `delta_is_double_dummy_optimal` declaration cannot be checked at all, ever.
+  Both fail silently — a bound that is too high, or a declaration that does
+  not hold, produces a wrong probability with no error surfaced anywhere.
+  `DeclarerStrategy::state_key` (above) is the third obligation of this kind
+  already in this module; a future caller-supplied contract this evaluator
+  cannot verify belongs in this same register, not treated as a new kind of
+  risk each time.
+- **Instrumentation is reported in the result, behind an opt-in, and cannot
+  change any answer.** `EvaluationCounters`, populated only when
+  `EvaluateOptions::collect_counters` is set, holds facts about a run's own
+  shape or cost (node count today; per-depth sample size, replenishment
+  count and scan-to-hit are the known future additions) — never a value
+  read back into `p_make`. This is a constraint on every future counter
+  this capability adds, not just a fact about the ones that exist today: a
+  counters flag that perturbs the answer is a bug invisible to any test that
+  does not run the same fixture both ways.
+- **The sampling gate: tier 2 is gated on `! node.is_sample`, tier 1 is not,
+  and today the gate is a no-op.** Nothing in this evaluator sets
+  `is_sample` yet — it stays false everywhere, all the way from the exact
+  reasons above. Tier 1's own soundness argument does not depend on whether
+  a node holds the whole remaining space or a sample of it (common knowledge
+  either way); tier 2's does — "every layout this node holds is dead" is
+  "every layout *drawn* is dead" on a sample, which says nothing about the
+  true space a made contract might still be hiding in. Gating both cuts
+  together, rather than tier 2 alone, would look like the safe choice and
+  would in fact disable two cuts that were never unsound on a sample in the
+  first place, silently, at exactly the point a future sampling evaluator
+  starts to matter.
 
 ## Key entry points
 
@@ -264,14 +341,24 @@ gaps / non-goals" for what those add.
   boundary between `Deal`'s absolute-rank bit convention and the compacted
   convention `RankMap`, `renumber()` and every lookup table use.
 - `library/src/belief_evaluation/node.hpp` — `BeliefNode`, `make_root()`,
-  `node_mass()`, `terminal_value()`, `is_terminal()`.
+  `node_mass()`, `terminal_value()`, `is_terminal()`, `tricks_remaining()`.
+  The last is derived from declarer's own holding, never the union pool a
+  defender's `known_holdings` entry is — summing across all four entries
+  double-counts every outstanding card.
 - `library/src/belief_evaluation/belief_view.hpp` — `make_belief_view()`.
 - `library/src/belief_evaluation/expand.hpp` — `expand_declarer_node()`,
   `make_declarer_children()`, `expand_defender_node()`, and their result
   types.
 - `library/src/belief_evaluation/evaluate.hpp` — `evaluate()`, the public
   entry point, plus `EvaluationResult`, `EvaluationValue`,
-  `EvaluationError`, `RootChildValue` and `EvaluateOptions`.
+  `EvaluationError`, `RootChildValue`, `EvaluateOptions`,
+  `EvaluationCounters`, `LayoutBound`, and the cut predicates
+  `already_made()`, `is_dead()`, `tier2_dead()` — exposed (not
+  `evaluate.cpp`-private) for the same reason `is_terminal()` /
+  `terminal_value()` are: so a test can construct an `ObservationState` /
+  `BeliefNode` directly and check a cut condition without going through the
+  whole recursion, including states the evaluator itself cannot yet
+  produce (`is_sample = true`).
 - `library/src/belief_evaluation/spread.hpp` — `SpreadPolicy`, `spread()`.
   Part of the core library: solver-free, taking an already-solved
   `FutureTricks`.
@@ -280,11 +367,24 @@ gaps / non-goals" for what those add.
   (`//library/src/belief_evaluation:double_dummy_defender`), depending on
   the solver — not part of the core library above, and not linked by
   anything that only needs the core evaluator.
+- `library/src/belief_evaluation/double_dummy_bound.hpp` —
+  `DoubleDummyBound`, a `LayoutBound` backed by `solve_board()`. **Also a
+  separate, solver-linked Bazel target**
+  (`//library/src/belief_evaluation:double_dummy_bound`), sibling to
+  `double_dummy_defender` above and paired with it for the intended sound
+  tier-2 configuration.
 
 ## Known gaps / non-goals
 
 - No sampling or replenishment, and no rescaling of sample weight.
-- No early cuts.
+- No third cut tier: no top-trick / quick-tricks analysis (`quick_tricks.cpp`
+  / `later_tricks.cpp`), and no double-dummy result cache beyond whatever an
+  injected `LayoutBound` implementation chooses to do internally.
+- No per-layout pruning, deliberately — not a gap awaiting later work, but a
+  decision: dropping a dead layout from a node renormalises the posterior
+  every surviving layout's declarer strategy sees, so it changes the
+  *answer*, not merely the cost, for any declarer strategy that reads its
+  belief view. See "Behaviour & invariants" above.
 - No search over declarer strategies — this capability evaluates one fixed
   strategy against one fixed defender strategy at a time.
 - No lookup tables or equivalence-class collapsing beyond the exact gap

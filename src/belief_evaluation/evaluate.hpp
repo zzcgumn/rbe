@@ -262,8 +262,10 @@ auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool;
 
 /// Exhaustively evaluates `P_make` for `pi` against `delta` over every
 /// layout `source` enumerates that is consistent with `root_layout` (see
-/// `make_root`). No sampling, no replenishment, no cuts of any kind — see
-/// `specs/replenished-belief-evaluation.md`.
+/// `make_root`). No sampling, no replenishment. Early cuts (already_made(),
+/// is_dead(), tier2_dead() above) skip subtrees that are guaranteed to
+/// contribute exactly zero to the result — none of them change any answer;
+/// see `specs/replenished-belief-evaluation.md` for what makes each sound.
 ///
 /// `state_key` is never called: there is no cache yet.
 auto evaluate(
