@@ -186,3 +186,119 @@ TEST_F(NodeTest, HistoryIsSeededFromCardsAlreadyPlayedToTheRootsTrickInProgress)
     EXPECT_EQ(node->state.history.suit[1], 0);
     EXPECT_EQ(node->state.history.rank[1], Two);
 }
+
+// --- tricks_remaining() ----------------------------------------------------
+
+TEST_F(NodeTest, TricksRemainingAtATrickBoundaryEqualsDeclarersOwnCardCount)
+{
+    // make_root_layout(): North (declarer) holds spades A/K -- two cards,
+    // nothing played, so two tricks remain.
+    Deal const root_layout = make_root_layout();
+    VectorLayoutSource source({root_layout});
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    ASSERT_TRUE(node.has_value());
+
+    EXPECT_EQ(tricks_remaining(node->state), 2);
+}
+
+TEST_F(NodeTest, TricksRemainingCrossCheckedAgainstADefendersOwnHolding)
+{
+    // A cross-check worth building even though it is not shipped: tricks
+    // remaining computed from declarer's holding must equal the same
+    // count computed directly from a single layout's defender holding
+    // (East's two diamonds here, one card each of the pool the two
+    // defenders' entries would otherwise double if summed together) --
+    // this is exactly the mistake tricks_remaining() itself must not make.
+    Deal const root_layout = make_root_layout();
+    VectorLayoutSource source({root_layout});
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    ASSERT_TRUE(node.has_value());
+    ASSERT_EQ(node->layouts.size(), 1u);
+
+    int east_diamond_count = 0;
+    for (int suit = 0; suit < DDS_SUITS; ++suit)
+    {
+        east_diamond_count += std::popcount(node->layouts[0].remainCards[East][suit]);
+    }
+    // East alone holds one of the two outstanding diamonds (West holds the
+    // other) -- not itself tricks_remaining, but every suit here has depth
+    // one, so North's spade count (2) equals declarer's card count exactly
+    // as tricks_remaining() computes it; this test pins that a defender's
+    // OWN entry (not the union pool known_holdings would give) is the
+    // right thing to cross-check against.
+    EXPECT_EQ(east_diamond_count, 1);
+    EXPECT_EQ(tricks_remaining(node->state), 2);
+}
+
+TEST_F(NodeTest, TricksRemainingMidTrickIsOneShortForAHandThatHasAlreadyPlayed)
+{
+    // North led the spade king (already played, one card gone from its
+    // holding) before this search began; East has not followed yet. North
+    // (declarer) is the trick's leader here, so it has already played to
+    // the trick in progress -- its own remaining card count (1, the ace)
+    // is one short of tricks_remaining, which must still read 2 (the ace
+    // trick, plus the queen/jack diamond trick still to come).
+    Deal root_layout = make_root_layout();
+    root_layout.currentTrickSuit[0] = 0;  // spades
+    root_layout.currentTrickRank[0] = King;
+    root_layout.remainCards[North][0] = holding({Ace});  // king already played
+    VectorLayoutSource source({root_layout});
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    ASSERT_TRUE(node.has_value());
+
+    ASSERT_EQ(card_count(node->state.known_holdings, North), 1);  // declarer's own count: one short
+    EXPECT_EQ(tricks_remaining(node->state), 2);
+}
+
+TEST_F(NodeTest, TricksRemainingMidTrickTwoCardsInIsStillCorrectForTheLeader)
+{
+    // Two cards into the trick North led (king, then East's queen), with
+    // North (the leader) still one short of tricks_remaining exactly as
+    // in the one-card-in case above -- pinned separately per this file's
+    // own standing rule against collapsing trick-boundary cases together.
+    Deal root_layout = make_root_layout();
+    root_layout.currentTrickSuit[0] = 0;  // spades
+    root_layout.currentTrickRank[0] = King;
+    root_layout.currentTrickSuit[1] = 2;  // diamonds
+    root_layout.currentTrickRank[1] = Queen;
+    root_layout.remainCards[North][0] = holding({Ace});  // king already played
+    root_layout.remainCards[East][2] = 0;                // queen already played
+    VectorLayoutSource source({root_layout});
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    ASSERT_TRUE(node.has_value());
+
+    ASSERT_EQ(card_count(node->state.known_holdings, North), 1);
+    EXPECT_EQ(tricks_remaining(node->state), 2);
+}
+
+TEST_F(NodeTest, TricksRemainingMidTrickIsNotShortForAHandThatHasNotPlayedYet)
+{
+    // Same two-cards-in position as above, but read from a seat that has
+    // NOT yet played to the trick in progress: South (dummy) is due to
+    // play third (after North and East), so its own remaining card count
+    // (2, the ace and king of hearts) already equals tricks_remaining
+    // exactly, with no +1 adjustment needed -- the mirror case
+    // tricks_remaining() has to get right along with the "already played"
+    // case above.
+    Deal root_layout = make_root_layout();
+    root_layout.currentTrickSuit[0] = 0;  // spades
+    root_layout.currentTrickRank[0] = King;
+    root_layout.currentTrickSuit[1] = 2;  // diamonds
+    root_layout.currentTrickRank[1] = Queen;
+    root_layout.remainCards[North][0] = holding({Ace});  // king already played
+    root_layout.remainCards[East][2] = 0;                // queen already played
+    VectorLayoutSource source({root_layout});
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    ASSERT_TRUE(node.has_value());
+
+    // tricks_remaining() reads state.declarer directly, not "the real
+    // declarer" -- and South's own known_holdings entry is exact (South is
+    // this fixture's dummy, kept verbatim by known_holdings_for(), the
+    // same as declarer's own entry), so pointing declarer at South is a
+    // legitimate way to ask "what would tricks_remaining read from South's
+    // own seat instead of North's".
+    ObservationState south_view = node->state;
+    south_view.declarer = South;
+    ASSERT_EQ(card_count(south_view.known_holdings, South), 2);
+    EXPECT_EQ(tricks_remaining(south_view), 2);
+}

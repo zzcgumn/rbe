@@ -77,3 +77,19 @@ auto terminal_value(BeliefNode const& node) -> double;
 /// every layout — not just the first — with every hand empty; checking one
 /// representative layout is sufficient.
 auto is_terminal(BeliefNode const& node) -> bool;
+
+/// How many more tricks remain to be played out from `state`, common
+/// knowledge and identical across every layout the node holds (the
+/// outstanding pool is layout-invariant, same as `RankMap::aggr`).
+///
+/// Derived from declarer's own holding in `state.known_holdings` — exact,
+/// unlike a defender's entry, which is the union pool the two defenders
+/// share (see `ObservationState::known_holdings`'s own doxygen); summing
+/// across all four entries would double-count every outstanding card.
+/// Declarer's card count equals tricks remaining exactly at a trick
+/// boundary, but is one short of it mid-trick if declarer has *already*
+/// played to the trick in progress — determined from `state.known_holdings`'s
+/// own `first` (the current trick's leader; see `trick.hpp`) and how many
+/// cards are already in it, not from `state.first` (the root's leader,
+/// unrelated once play has moved on).
+auto tricks_remaining(ObservationState const& state) -> int;

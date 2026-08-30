@@ -73,6 +73,17 @@ namespace
         return state.tricks_won_by_declarer >= state.tricks_needed;
     }
 
+    /// Tier 1's dead cut, the mirror of already_made(): true once declarer
+    /// cannot reach tricks_needed even by winning every remaining trick.
+    /// Sound with no precondition, same argument as already_made() --
+    /// tricks_won_by_declarer, tricks_needed and the outstanding pool
+    /// (tricks_remaining() reads it) are all common knowledge, identical
+    /// across every layout the node holds. No gate.
+    auto is_dead(ObservationState const& state) -> bool
+    {
+        return state.tricks_won_by_declarer + tricks_remaining(state) < state.tricks_needed;
+    }
+
     /// The recursion: P_make(node) = terminal_value(node), or the sum (for
     /// a defender node) / the single value (for a declarer node) over its
     /// children. Once `error` is set, every further call is a no-op
@@ -103,6 +114,11 @@ namespace
         if (already_made(node.state))
         {
             return node_mass(node);
+        }
+        if (is_dead(node.state))
+        {
+            return 0.0;  // node_mass(node) discarded here, not conserved -- the contract fails in
+                          // every layout this node holds, whatever happens next
         }
         if (is_terminal(node))
         {
@@ -187,6 +203,15 @@ auto evaluate(
         // terminal root: no first-card decision exists to report
         // alternatives for.
         value.p_make = node_mass(root);
+    }
+    else if (is_dead(root.state))
+    {
+        // Tier 1's dead cut, mirrored here for the same reason: the
+        // contract cannot be made from the root even in principle, so
+        // p_make stays 0.0 and root_children stays empty -- there is no
+        // point reporting alternatives for a first card when every one of
+        // them leads to the same impossible outcome.
+        value.p_make = 0.0;
     }
     else if (is_terminal(root))
     {

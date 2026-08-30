@@ -298,3 +298,140 @@ TEST_F(AlreadyMadeCutTest, PiIsNotCalledWhenTheContractIsAlreadyMadeAtTheRoot)
     EXPECT_EQ(result.by_strategy.at(0u).p_make, 1.0);
     EXPECT_TRUE(result.by_strategy.at(0u).root_children.empty());
 }
+
+// Tier 1's dead cut, the mirror of the already-made cut above: a node where
+// declarer cannot reach tricks_needed even by winning every remaining trick
+// evaluates to 0.0 without recursing further -- sound unconditionally, same
+// argument as already_made(), no gate (see evaluate.cpp's is_dead()).
+
+namespace
+{
+    /// East holds the top two spades, North (declarer) and South (dummy)
+    /// the bottom two, West the middle two -- East wins trick 1 outright
+    /// however anyone else plays, so declarer's tricks_won stays 0 through
+    /// it regardless of tricks_needed. East on lead (defender root), fully
+    /// deterministic under single_card_defender / single_card_declarer_play.
+    auto make_east_wins_first_trick() -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = East;
+        deal.remainCards[East][Spades] = holding({Ace, King});
+        deal.remainCards[West][Spades] = holding({Queen, Jack});
+        deal.remainCards[North][Spades] = holding({Two, Three});
+        deal.remainCards[South][Spades] = holding({Four, Five});
+        return deal;
+    }
+}
+
+class DeadCutTest : public ::testing::Test
+{
+};
+
+TEST_F(DeadCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison)
+{
+    // No flag to disable tier 1's cuts, same as the already-made cut above,
+    // so criterion 4 (the cut fired) is verified by comparing node counts
+    // across two tricks_needed values on the same deterministic fixture: 2
+    // (impossible the instant trick 1 is lost to East, since only trick 2
+    // remains) versus 1 (still possible after losing trick 1, so the
+    // recursion runs to its natural terminal node without the cut ever
+    // firing early).
+    Deal const root_layout = make_east_wins_first_trick();
+    VectorLayoutSource source({root_layout});
+
+    // Hand-counted tree with tricks_needed = 2 (East leads, rotation
+    // East -> South -> West -> North):
+    //   root: East to lead, defender node                        -- 1
+    //     East plays K -> South to play, declarer/dummy node     -- 2
+    //       South plays 4 -> West to play, defender node         -- 3
+    //         West plays J -> North to play, declarer node       -- 4
+    //           North plays 2 -> trick 1 resolves (East's king
+    //                            beats jack/four/two), East to
+    //                            lead trick 2 -- tricks_won (0) +
+    //                            tricks_remaining (1) < tricks_needed
+    //                            (2): DEAD, CUT FIRES here, node
+    //                            visited but not expanded          -- 5
+    constexpr std::uint64_t NodesWithEarlyDeadCut = 5;
+
+    // The same tree with tricks_needed = 1: node 5 is visited but the cut
+    // does NOT fire (0 + 1 is not < 1 -- trick 2 could still be made), so
+    // trick 2 plays out in full to its natural terminal node:
+    //     [node 5, not cut] East plays A -> South to play           -- 6
+    //       South plays 5 -> West to play                           -- 7
+    //         West plays Q -> North to play                         -- 8
+    //           North plays 3 -> trick 2 resolves (East's ace beats
+    //                            queen/five/three too), every hand
+    //                            empty, terminal -- and also dead
+    //                            (0 + 0 < 1), so is_dead() firing
+    //                            first here is what actually returns
+    //                            0.0, not terminal_value()           -- 9
+    constexpr std::uint64_t NodesWithoutEarlyDeadCut = 9;
+
+    EvaluationResult const with_early_cut = evaluate(
+        root_layout,
+        North,
+        /*tricks_needed=*/2,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.collect_counters = true});
+    EvaluationResult const without_early_cut = evaluate(
+        root_layout,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.collect_counters = true});
+
+    ASSERT_FALSE(with_early_cut.error.has_value());
+    ASSERT_FALSE(without_early_cut.error.has_value());
+    ASSERT_TRUE(with_early_cut.by_strategy.at(1u).counters.has_value());
+    ASSERT_TRUE(without_early_cut.by_strategy.at(1u).counters.has_value());
+    EXPECT_EQ(with_early_cut.by_strategy.at(1u).counters->nodes_visited, NodesWithEarlyDeadCut);
+    EXPECT_EQ(
+        without_early_cut.by_strategy.at(1u).counters->nodes_visited, NodesWithoutEarlyDeadCut);
+    EXPECT_LT(
+        with_early_cut.by_strategy.at(1u).counters->nodes_visited,
+        without_early_cut.by_strategy.at(1u).counters->nodes_visited);
+
+    // Criterion 3: the cut computes the right value -- zero, both ways,
+    // whether via the cut or (tricks_needed = 1's own coincidental dead
+    // terminal) via natural completion.
+    EXPECT_EQ(with_early_cut.by_strategy.at(1u).p_make, 0.0);
+    EXPECT_EQ(without_early_cut.by_strategy.at(1u).p_make, 0.0);
+    // Criterion 6: bitwise agreement with the uncut path -- both exactly
+    // 0.0, and confirmed directly (not just reasoned about) by temporarily
+    // disabling is_dead() at both call sites and rebuilding: the
+    // tricks_needed = 2 fixture still evaluates to exactly 0.0 at its true
+    // terminal node four plies further down, then reverted (see commit
+    // message).
+}
+
+TEST_F(DeadCutTest, PiAndDeltaAreNotCalledWhenTheRootIsAlreadyDead)
+{
+    // tricks_needed = 4: no suit here has four tricks in it at all
+    // (tricks_remaining(root) = 2, North's own card count), so the root
+    // itself is dead before a single card is played -- neither pi nor
+    // delta should ever be asked for one.
+    Deal const root_layout = make_east_wins_first_trick();
+    VectorLayoutSource source({root_layout});
+    RecordingDeclarerStrategy recording_pi(Card{Spades, Two});  // never actually asked
+    bool delta_called = false;
+    auto const recording_delta = [&delta_called](DefenderQuery const&) -> std::vector<WeightedCard>
+    {
+        delta_called = true;
+        return {};
+    };
+
+    EvaluationResult const result = evaluate(
+        root_layout, North, /*tricks_needed=*/4, source, recording_pi.as_strategy(), recording_delta);
+
+    ASSERT_FALSE(result.error.has_value());
+    EXPECT_TRUE(recording_pi.calls().empty());
+    EXPECT_FALSE(delta_called);
+    // RecordingDeclarerStrategy::as_strategy() fixes id = 0.
+    EXPECT_EQ(result.by_strategy.at(0u).p_make, 0.0);
+    EXPECT_TRUE(result.by_strategy.at(0u).root_children.empty());
+}

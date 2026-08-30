@@ -1,5 +1,6 @@
 #include <belief_evaluation/node.hpp>
 
+#include <bit>
 #include <cassert>
 
 #include <belief_evaluation/kahan.hpp>
@@ -174,4 +175,35 @@ auto is_terminal(BeliefNode const& node) -> bool
         }
     }
     return true;
+}
+
+auto tricks_remaining(ObservationState const& state) -> int
+{
+    Deal const& deal = state.known_holdings;
+
+    int card_count = 0;
+    for (int suit = 0; suit < DDS_SUITS; ++suit)
+    {
+        card_count += std::popcount(deal.remainCards[state.declarer][suit]);
+    }
+
+    // How many cards are already in the trick currently in progress (0..3),
+    // read directly off currentTrickRank -- rank 0 is the empty-slot
+    // sentinel, matching trick.cpp's own played_count() and
+    // validation.cpp's led_suit(). deal.first is that trick's leader (see
+    // trick.hpp/play()), not the root's leader once play has moved on, so
+    // this is the rotation the offset below has to be measured against.
+    int played_to_current_trick = 0;
+    while (played_to_current_trick < 3 && deal.currentTrickRank[played_to_current_trick] != 0)
+    {
+        ++played_to_current_trick;
+    }
+
+    // declarer's rotational position within this trick, 0 = leader. If
+    // that position is already behind how many cards have been played,
+    // declarer's own card count is one short of tricks remaining --
+    // declarer has already contributed its card to the trick in progress.
+    int const declarer_position = (state.declarer - deal.first + DDS_HANDS) % DDS_HANDS;
+    bool const declarer_already_played = declarer_position < played_to_current_trick;
+    return declarer_already_played ? card_count + 1 : card_count;
 }
