@@ -44,7 +44,7 @@ class DoubleDummyBoundTest : public ::testing::Test
 {
 };
 
-// --- criterion 1: what solve_board's raw score actually measures ----------
+// --- what solve_board's raw score actually measures ------------------------
 //
 // Verified empirically against the solver, not assumed -- the same
 // discipline as confirming FutureTricks::equals' bit convention before
@@ -101,10 +101,9 @@ namespace
     /// suit's worth of cards with more than one card per hand was measured
     /// directly (not assumed) to report a nonsensical score (a negative
     /// number) from this solver build, while the same holdings alongside
-    /// any second, filler suit solve correctly -- see the review for the
-    /// full finding. Every fixture below with more than one card per hand
-    /// therefore carries a second suit, even where the suit itself plays
-    /// no role in the position's logic.
+    /// any second, filler suit solve correctly. Every fixture below with
+    /// more than one card per hand therefore carries a second suit, even
+    /// where the suit itself plays no role in the position's logic.
     auto make_declarer_wins_exactly_half_the_tricks() -> Deal
     {
         Deal deal{};
@@ -144,7 +143,7 @@ namespace
     }
 }
 
-// --- criterion 4: hand-checkable positions ---------------------------------
+// --- hand-checkable positions ------------------------------------------
 
 TEST_F(DoubleDummyBoundTest, ADeclarerWinOutrightBoundsAtTheFullTrickCount)
 {
@@ -208,7 +207,7 @@ TEST_F(DoubleDummyBoundTest, ADefenderOnLeadStillReportsDeclarersOwnBound)
     EXPECT_EQ(bound(layout), 4);
 }
 
-// --- criterion 5: a solver failure surfaces as the sentinel, not silently -
+// --- a solver failure surfaces as the sentinel, not silently ---------------
 
 TEST_F(DoubleDummyBoundTest, AMalformedLayoutSurfacesAsTheSentinelNotARealBound)
 {

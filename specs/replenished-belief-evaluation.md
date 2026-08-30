@@ -167,11 +167,11 @@ is still absent (a third, injected-bound-free tier; per-layout pruning).
   `solver_if.cpp`) across layouts close together in a `LayoutSource`'s own
   iteration order; a future optimisation that changes that order would lose
   the benefit.
-- **No double-dummy result cache yet.** The same solver results will be
-  wanted by early cuts (later work), so a cache belongs somewhere every such
-  caller can reach it — adding one inside this reference implementation now
-  would sit inside the very thing a cut-introducing evaluator's correctness
-  is later measured against.
+- **No double-dummy result cache yet.** The same solver results are also
+  wanted by early cuts' injected bound (below), so a cache belongs somewhere
+  every such caller can reach it — adding one inside this reference
+  implementation now would sit inside the very thing a cut-introducing
+  evaluator's correctness is measured against.
 - **Mass conservation at a defender node**: summing a node's mass — `kappa`
   times the Kahan-compensated sum of `p` — over every child a defender node
   produces reproduces the parent's mass, to a stated tolerance. This is

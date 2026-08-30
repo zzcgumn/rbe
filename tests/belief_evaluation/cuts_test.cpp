@@ -166,8 +166,8 @@ TEST_F(AlreadyMadeCutTest, ReturnsTheHandDerivedMassOverSeveralLayoutsAtUnequalP
     }
     ASSERT_NE(jack_branch, nullptr);
     ASSERT_NE(queen_branch, nullptr);
-    // Bitwise, not EXPECT_DOUBLE_EQ (criterion 4): 0.5 and 1.0 are both
-    // exactly representable, so every value derived above is exact too,
+    // Bitwise, not EXPECT_DOUBLE_EQ: 0.5 and 1.0 are both exactly
+    // representable, so every value derived above is exact too,
     // and each is the same value an uncut recursion would reach at its own
     // true terminal node further down, by mass conservation through every
     // defender expansion in between -- confirmed directly by temporarily
@@ -177,7 +177,7 @@ TEST_F(AlreadyMadeCutTest, ReturnsTheHandDerivedMassOverSeveralLayoutsAtUnequalP
     EXPECT_EQ(value.p_make, ExpectedJackBranchMass + ExpectedQueenBranchMass);
 }
 
-// --- criterion 3: the cut actually fires, saving node visits --------------
+// --- the cut actually fires, saving node visits ----------------------------
 
 namespace
 {
@@ -202,15 +202,15 @@ namespace
 TEST_F(AlreadyMadeCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison)
 {
     // There is no flag to disable tier 1's cut (it is unconditional by
-    // design -- see already_made()'s own doxygen), so criterion 3 is
-    // verified by comparing this fixture's node count under two different
-    // tricks_needed values instead: 1 (the cut fires the instant trick 1
-    // is won, before trick 2 is ever touched) versus 2 (declarer needs
-    // *both* tricks, so tricks_won never reaches tricks_needed early and
-    // the recursion runs all the way to its natural terminal node). Same
-    // layout, same delta, same pi -- the only difference between the two
-    // runs is whether the cut gets a chance to fire, so the gap in node
-    // count is attributable only to it.
+    // design -- see already_made()'s own doxygen), so "the cut actually
+    // fired" is verified by comparing this fixture's node count under two
+    // different tricks_needed values instead: 1 (the cut fires the instant
+    // trick 1 is won, before trick 2 is ever touched) versus 2 (declarer
+    // needs *both* tricks, so tricks_won never reaches tricks_needed early
+    // and the recursion runs all the way to its natural terminal node).
+    // Same layout, same delta, same pi -- the only difference between the
+    // two runs is whether the cut gets a chance to fire, so the gap in
+    // node count is attributable only to it.
     Deal const root_layout = make_two_certain_tricks();
     VectorLayoutSource source({root_layout});
 
@@ -271,7 +271,7 @@ TEST_F(AlreadyMadeCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison
         without_early_cut.by_strategy.at(1u).counters->nodes_visited);
 }
 
-// --- criterion 5: pi is not called below a firing cut ----------------------
+// --- pi is not called below a firing cut ------------------------------------
 
 TEST_F(AlreadyMadeCutTest, PiIsNotCalledWhenTheContractIsAlreadyMadeAtTheRoot)
 {
@@ -332,7 +332,7 @@ class DeadCutTest : public ::testing::Test
 TEST_F(DeadCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison)
 {
     // No flag to disable tier 1's cuts, same as the already-made cut above,
-    // so criterion 4 (the cut fired) is verified by comparing node counts
+    // so "the cut actually fired" is verified by comparing node counts
     // across two tricks_needed values on the same deterministic fixture: 2
     // (impossible the instant trick 1 is lost to East, since only trick 2
     // remains) versus 1 (still possible after losing trick 1, so the
@@ -397,13 +397,13 @@ TEST_F(DeadCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison)
         with_early_cut.by_strategy.at(1u).counters->nodes_visited,
         without_early_cut.by_strategy.at(1u).counters->nodes_visited);
 
-    // Criterion 3: the cut computes the right value -- zero, both ways,
-    // whether via the cut or (tricks_needed = 1's own coincidental dead
-    // terminal) via natural completion.
+    // The cut computes the right value -- zero, both ways, whether via the
+    // cut or (tricks_needed = 1's own coincidental dead terminal) via
+    // natural completion.
     EXPECT_EQ(with_early_cut.by_strategy.at(1u).p_make, 0.0);
     EXPECT_EQ(without_early_cut.by_strategy.at(1u).p_make, 0.0);
-    // Criterion 6: bitwise agreement with the uncut path -- both exactly
-    // 0.0, and confirmed directly (not just reasoned about) by temporarily
+    // Bitwise agreement with the uncut path: both exactly 0.0, and
+    // confirmed directly (not just reasoned about) by temporarily
     // disabling is_dead() at both call sites and rebuilding: the
     // tricks_needed = 2 fixture still evaluates to exactly 0.0 at its true
     // terminal node four plies further down, then reverted (see commit
@@ -708,6 +708,19 @@ TEST_F(TierTwoCutTest, StopsAtTheFirstLiveLayoutWithoutQueryingTheRest)
     // layout_a is scripted live and appears first in node.layouts (the
     // VectorLayoutSource order); layout_b has no scripted entry at all, so
     // if the early exit inside tier2_dead's loop works, it is never asked.
+    //
+    // The two layouts must actually be a same-pool split between the
+    // defenders, not two different pools -- East and West's club filler
+    // is swapped between the two (matching
+    // make_declarer_certain_win_with_club_filler()'s own pattern earlier
+    // in this file), so the union pool {Six, Seven} is identical between
+    // layout_a and layout_b and both genuinely survive make_root() into
+    // the same node. Asserted directly below, not assumed: an earlier
+    // version of this fixture only changed East's own filler and left
+    // West's at zero, which gave the two layouts different pools --
+    // make_root()'s own consistency filter silently dropped layout_b, and
+    // the test passed for the wrong reason (there was only ever one
+    // layout to query).
     Deal layout_a{};
     layout_a.trump = DDS_NOTRUMP;
     layout_a.first = South;
@@ -718,12 +731,23 @@ TEST_F(TierTwoCutTest, StopsAtTheFirstLiveLayoutWithoutQueryingTheRest)
     layout_a.currentTrickSuit[2] = Spades;
     layout_a.currentTrickRank[2] = Ace;    // North's card, already played -- already winning
     layout_a.remainCards[East][Spades] = holding({Four});  // East's own card, about to play
-    layout_a.remainCards[East][Clubs] = holding({Six});    // untouched filler; the only difference
+    layout_a.remainCards[East][Clubs] = holding({Six});    // untouched filler pool, split one way
+    layout_a.remainCards[West][Clubs] = holding({Seven});
 
     Deal layout_b = layout_a;
-    layout_b.remainCards[East][Clubs] = holding({Seven});
+    layout_b.remainCards[East][Clubs] = holding({Seven});  // same pool, split the other way
+    layout_b.remainCards[West][Clubs] = holding({Six});
 
     VectorLayoutSource source({layout_a, layout_b});
+
+    // Confirm both layouts actually survive make_root() into one node
+    // before trusting the early-exit assertion below -- see the fixture
+    // comment above for why this is checked directly rather than assumed.
+    std::optional<BeliefNode> const root =
+        make_root(layout_a, North, /*tricks_needed=*/1, source);
+    ASSERT_TRUE(root.has_value());
+    ASSERT_EQ(root->layouts.size(), 2u);
+
     ScriptedBound scripted({{layout_a, 5}});  // live; layout_b deliberately unscripted
 
     EvaluationResult const result = evaluate(
@@ -744,8 +768,8 @@ TEST_F(TierTwoCutTest, StopsAtTheFirstLiveLayoutWithoutQueryingTheRest)
 TEST_F(TierTwoCutTest, BitwiseAgreementWithTheUncutPathVerifiedByTemporarilyDisablingTheCut)
 {
     // No flag to disable tier 2's cut either, same as both tier 1 cuts --
-    // this test documents that the bitwise-agreement check (criterion 6)
-    // was done by temporarily changing evaluate.cpp's tier2_dead() call
+    // this test documents that the bitwise-agreement check was done by
+    // temporarily changing evaluate.cpp's tier2_dead() call
     // sites to `false && tier2_dead(...)`, rebuilding, and confirming
     // FiresWhenEveryLayoutIsDeadAndTheDeclarationIsMade's fixture still
     // evaluates to exactly 0.0 via natural recursion to its true terminal
@@ -834,11 +858,10 @@ TEST_F(SamplingGateTest, Tier2DoesNotFireOnASampledNodeEvenWhenEveryLayoutIsDead
 
 TEST_F(SamplingGateTest, BothTier1CutsStillFireOnASampledNode)
 {
-    // Criterion 2 is not padding: gating "the cuts" as a group instead of
-    // tier 2 alone would disable both of these on every sampled node too
-    // -- tested separately, deliberately, so the difference is pinned by
-    // an assertion rather than left to a comment someone can talk
-    // themselves out of.
+    // Testing this separately is not padding: gating "the cuts" as a group
+    // instead of tier 2 alone would disable both of these on every sampled
+    // node too. Pinning that with a separate assertion per tier, rather
+    // than leaving it to a comment someone can talk themselves out of.
     BeliefNode already_made_node{};
     already_made_node.state.declarer = North;
     already_made_node.state.tricks_needed = 1;

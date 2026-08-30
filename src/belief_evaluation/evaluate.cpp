@@ -100,11 +100,22 @@ namespace
         {
             return 0.0;  // same non-conservation as tier 1's dead cut above -- see its own comment
         }
+        // is_terminal(node) is never true here, not just its "made" branch: a
+        // terminal node has tricks_remaining(node.state) == 0, and at that
+        // point already_made() and is_dead() are exact logical complements
+        // (tricks_won >= needed vs. tricks_won + 0 < needed), so one of the
+        // two tier-1 checks above has already returned before this line could
+        // run. Kept anyway, the same reasoning this function's own error
+        // check above is kept for: a structural invariant for today's call
+        // sites to rely on, not a behaviour any current test can isolate --
+        // safe to keep as tier-1 coverage evolves, not because it is
+        // reachable today. is_terminal()/terminal_value() remain genuinely
+        // used elsewhere (direct construction in terminal_test.cpp, per their
+        // own doxygen); this is only about the two call sites inside the
+        // recursion.
         if (is_terminal(node))
         {
-            return terminal_value(node);  // already_made() above is false here, so this is 0 --
-                                           // terminal_value's own made-branch is unreachable from
-                                           // this call site, not double-counted with the cut above
+            return terminal_value(node);
         }
 
         int const seat = seat_on_play(node.state.known_holdings);
@@ -246,6 +257,9 @@ auto evaluate(
     }
     else if (is_terminal(root))
     {
+        // Unreachable today for the same reason p_make()'s own is_terminal()
+        // check is -- see that call site's comment. Kept as the same
+        // structural fallback, not because a root can reach here now.
         value.p_make = terminal_value(root);  // no legal first card exists; root_children stays empty
     }
     else
