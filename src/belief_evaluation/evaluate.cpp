@@ -84,6 +84,47 @@ namespace
         return state.tricks_won_by_declarer + tricks_remaining(state) < state.tricks_needed;
     }
 
+    /// Tier 2's node-level cut: true only when the caller has made the
+    /// EvaluateOptions::delta_is_double_dummy_optimal declaration *and*
+    /// every layout at `node` is dead by the injected bound
+    /// (EvaluateOptions::bound). Absent either, this never fires, whatever
+    /// the bound says -- the declaration is not a performance switch (see
+    /// that field's own doxygen for why R <= DD is false against a
+    /// defence that errs).
+    ///
+    /// Stops at the first live layout (bound(layout) >= what is still
+    /// needed) rather than calling `bound` for every layout: each call is
+    /// a double-dummy solve in production, and most nodes where the cut
+    /// does not fire have a live layout early.
+    ///
+    /// **Never a make-cut.** This function only ever answers "is every
+    /// layout dead" -- it has no "not dead" branch that concludes anything
+    /// about a make, because DD >= rho implies nothing about R: pi may play
+    /// worse than double dummy, so the single solve behind a bound must
+    /// never be reused to conclude the contract makes. Node-level, not
+    /// per-layout, for the same reason tier 1's cuts are not per-layout in
+    /// spirit and per decision 3 explicitly: dropping a dead layout here
+    /// would renormalise every surviving layout's posterior, changing what
+    /// an arbitrary caller-supplied pi does with the belief view it is
+    /// given. This function returns before any view is built at or below
+    /// `node`, so that problem cannot arise.
+    auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool
+    {
+        if (! options.delta_is_double_dummy_optimal || ! options.bound)
+        {
+            return false;
+        }
+        int const still_needed = node.state.tricks_needed - node.state.tricks_won_by_declarer;
+        for (Deal const& layout : node.layouts)
+        {
+            if (options.bound(layout) >= still_needed)
+            {
+                return false;  // one live layout suppresses the cut
+            }
+        }
+        return true;
+    }
+
     /// The recursion: P_make(node) = terminal_value(node), or the sum (for
     /// a defender node) / the single value (for a declarer node) over its
     /// children. Once `error` is set, every further call is a no-op
@@ -104,7 +145,8 @@ namespace
         DeclarerStrategy const& pi,
         DefenderStrategy const& delta,
         std::optional<EvaluationError>& error,
-        EvaluationCounters* counters) -> double
+        EvaluationCounters* counters,
+        EvaluateOptions const& options) -> double
     {
         if (error.has_value())
         {
@@ -119,6 +161,10 @@ namespace
         {
             return 0.0;  // node_mass(node) discarded here, not conserved -- the contract fails in
                           // every layout this node holds, whatever happens next
+        }
+        if (tier2_dead(node, options))
+        {
+            return 0.0;  // same non-conservation as tier 1's dead cut above -- see its own comment
         }
         if (is_terminal(node))
         {
@@ -138,7 +184,7 @@ namespace
                     result.error, EvaluationCallback::DeclarerPlay, seat, node.state.known_holdings};
                 return 0.0;
             }
-            return p_make(*result.child, pi, delta, error, counters);
+            return p_make(*result.child, pi, delta, error, counters, options);
         }
 
         ExpandDefenderResult const result = expand_defender_node(node, delta);
@@ -152,7 +198,7 @@ namespace
         KahanAccumulator total;
         for (BeliefNode const& child : *result.children)
         {
-            total.add(p_make(child, pi, delta, error, counters));
+            total.add(p_make(child, pi, delta, error, counters, options));
             if (error.has_value())
             {
                 return 0.0;
@@ -211,6 +257,13 @@ auto evaluate(
         // p_make stays 0.0 and root_children stays empty -- there is no
         // point reporting alternatives for a first card when every one of
         // them leads to the same impossible outcome.
+        value.p_make = 0.0;
+    }
+    else if (tier2_dead(root, options))
+    {
+        // Tier 2's cut, mirrored here for the same reason: every layout
+        // the root holds is dead by the injected bound, under the
+        // caller's own double-dummy-optimal declaration.
         value.p_make = 0.0;
     }
     else if (is_terminal(root))
@@ -273,8 +326,8 @@ auto evaluate(
             for (std::size_t i = 0; i < legal.size(); ++i)
             {
                 double const candidate_value = (i == chosen_index)
-                    ? p_make(*chosen.child, pi, delta, error, counters_ptr)
-                    : p_make(other_children[other_i++], pi, delta, error, counters_ptr);
+                    ? p_make(*chosen.child, pi, delta, error, counters_ptr, options)
+                    : p_make(other_children[other_i++], pi, delta, error, counters_ptr, options);
                 if (error.has_value())
                 {
                     return EvaluationResult{{}, error};
@@ -303,7 +356,7 @@ auto evaluate(
             value.root_children.reserve(expanded.children->size());
             for (BeliefNode const& child : *expanded.children)
             {
-                double const child_value = p_make(child, pi, delta, error, counters_ptr);
+                double const child_value = p_make(child, pi, delta, error, counters_ptr, options);
                 if (error.has_value())
                 {
                     return EvaluationResult{{}, error};

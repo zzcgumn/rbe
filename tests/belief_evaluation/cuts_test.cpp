@@ -24,6 +24,7 @@ namespace
     constexpr int Ace = 14;
 
     constexpr int Spades = 0;
+    constexpr int Clubs = 3;
 
     constexpr int North = 0;  // declarer
     constexpr int East = 1;   // a defender
@@ -458,12 +459,15 @@ TEST_F(LayoutBoundTest, ScriptedBoundRecordsWhatItWasAskedAndReturnsTheScriptedV
     EXPECT_EQ(scripted.queries().front().remainCards[East][Spades], layout.remainCards[East][Spades]);
 }
 
-TEST_F(LayoutBoundTest, SupplyingABoundDoesNotChangeTheAnswerEitherDirection)
+TEST_F(LayoutBoundTest, SupplyingABoundWithoutTheDeclarationDoesNotChangeTheAnswerEitherDirection)
 {
     // A bound scripted to claim zero tricks for declarer -- exactly the
-    // value that would fire a future node-level cut immediately, if
-    // anything read it. Nothing does yet, so both runs below must agree
-    // bitwise regardless.
+    // value that fires tier 2's node-level cut (see TierTwoCutTest below)
+    // when the caller has also made the delta_is_double_dummy_optimal
+    // declaration. Withhold the declaration here, and both runs must still
+    // agree bitwise: supplying a bound alone is not itself the switch (see
+    // EvaluateOptions::delta_is_double_dummy_optimal's own doxygen for why
+    // the two are kept separate).
     Deal const root_layout = make_east_wins_first_trick();
     VectorLayoutSource source({root_layout});
     ScriptedBound scripted({{root_layout, 0}});
@@ -477,7 +481,7 @@ TEST_F(LayoutBoundTest, SupplyingABoundDoesNotChangeTheAnswerEitherDirection)
         source,
         strategy(1),
         single_card_defender,
-        EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
+        EvaluateOptions{.bound = scripted.as_bound()});  // delta_is_double_dummy_optimal left unset
 
     ASSERT_FALSE(without_bound.error.has_value());
     ASSERT_FALSE(with_bound.error.has_value());
@@ -491,8 +495,307 @@ TEST_F(LayoutBoundTest, SupplyingABoundDoesNotChangeTheAnswerEitherDirection)
             without_bound.by_strategy.at(1u).root_children[i].value,
             with_bound.by_strategy.at(1u).root_children[i].value);
     }
-    // The bound is never even called: nothing in this module consumes it
-    // yet (that is task 06's job), so scripting a single entry above and
-    // never seeing ScriptedBound's own ADD_FAILURE fire is itself part of
-    // what this test pins.
+    // The bound is never even called: tier2_dead() checks the declaration
+    // before ever touching options.bound, so scripting a single entry
+    // above and never seeing ScriptedBound's own ADD_FAILURE fire is
+    // itself part of what this test pins.
+}
+
+// Tier 2's node-level cut: every layout at a node dead by the injected
+// bound, under the caller's own delta_is_double_dummy_optimal declaration,
+// evaluates to 0.0 without recursing further. Tested entirely with
+// scripted bounds -- no solver anywhere in this file.
+
+class TierTwoCutTest : public ::testing::Test
+{
+};
+
+TEST_F(TierTwoCutTest, FiresWhenEveryLayoutIsDeadAndTheDeclarationIsMade)
+{
+    // Reuses make_layout_a()/make_layout_b() and merging_delta() from
+    // AlreadyMadeCutTest above -- the scripted bound here is independent
+    // of what merging_delta would actually produce, since tier2_dead()
+    // never inspects delta's own behaviour, only the bound.
+    Deal const layout_a = make_layout_a();
+    Deal const layout_b = make_layout_b();
+    VectorLayoutSource source({layout_a, layout_b});
+    ScriptedBound scripted({{layout_a, 0}, {layout_b, 0}});  // both dead: needed = 1
+
+    EvaluationResult const result = evaluate(
+        layout_a,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        merging_delta,
+        EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
+
+    ASSERT_FALSE(result.error.has_value());
+    EXPECT_EQ(result.by_strategy.at(1u).p_make, 0.0);
+    EXPECT_TRUE(result.by_strategy.at(1u).root_children.empty());
+}
+
+
+// tier2_dead() is checked at *every* node, not just the root -- a fixture
+// spanning several plies needs a bound that can answer for every layout at
+// every depth the recursion actually reaches. A fixed per-Deal table
+// (ScriptedBound's own exact-Deal matching) cannot do that once a card has
+// been played, since play() returns a genuinely different Deal each time.
+// The tests below that need the cut to stay suppressed (or a single query
+// to matter) past the root use a fixture built so both layouts always take
+// the *same* path with no branching at all -- so a lambda keyed on a
+// filler suit no play here ever touches can tell them apart at any depth.
+// ScriptedBound itself remains right where a check is confined to one node
+// (an all-dead root that fires immediately, or a root check whose early
+// exit is the whole point).
+
+namespace
+{
+    /// North holds the two top spades outright (a certain trick), so
+    /// however East and West's *spades* are split, North always wins
+    /// trick 1 the same way -- no branching, one path through the whole
+    /// recursion. The two layouts differ only in an untouched club filler,
+    /// redistributed between the defenders (East holds Six in layout_a,
+    /// Seven in layout_b) -- clubs are never played (tricks_needed = 1 is
+    /// met the instant trick 1 resolves, well before any second trick), so
+    /// that filler is a stable discriminator at every depth this recursion
+    /// ever reaches.
+    ///
+    /// East on lead (defender root): East -> South -> West -> North.
+    /// East's own spades ({Queen, Jack}) are identical in both layouts, so
+    /// East's forced (single_card_defender) lead is the jack in both --
+    /// merged from the very first ply.
+    auto make_declarer_certain_win_with_club_filler(int east_club_rank, int west_club_rank) -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = East;
+        deal.remainCards[North][Spades] = holding({Ace, King});
+        deal.remainCards[East][Spades] = holding({Queen, Jack});
+        deal.remainCards[South][Spades] = holding({Two, Three});
+        deal.remainCards[West][Spades] = holding({Four, Five});
+        deal.remainCards[East][Clubs] = holding({east_club_rank});
+        deal.remainCards[West][Clubs] = holding({west_club_rank});
+        return deal;
+    }
+
+    constexpr int Six = 6;
+    constexpr int Seven = 7;
+
+    auto is_layout_a_by_club_filler(Deal const& layout) -> bool
+    {
+        return (layout.remainCards[East][Clubs] & holding({Six})) != 0;
+    }
+}
+
+TEST_F(TierTwoCutTest, OneLiveLayoutSuppressesTheCut)
+{
+    // layout_a (East's club filler = Six) is scripted dead throughout;
+    // layout_b (East's club filler = Seven) is scripted live throughout,
+    // exactly at the boundary (still_needed itself, not comfortably
+    // above it) so this test also pins the >= in tier2_dead()'s own
+    // condition, not just its direction. Both layouts are present
+    // together at every node on the single path this fixture has (see
+    // the fixture's own comment), so the live one must suppress the cut
+    // at every one of those checks. Full evaluation then reaches the
+    // already-made cut right after trick 1 (both AK tricks are certain,
+    // but only one is needed): node_mass = kappa * (p_a + p_b) =
+    // 0.5 * (1 + 1) = 1.0 -- neither layout's p is ever touched, since
+    // single_card_defender never gives either a genuine choice.
+    Deal const layout_a = make_declarer_certain_win_with_club_filler(Six, Seven);
+    Deal const layout_b = make_declarer_certain_win_with_club_filler(Seven, Six);
+    VectorLayoutSource source({layout_a, layout_b});
+    auto const bound = [](Deal const& layout) -> int
+    { return is_layout_a_by_club_filler(layout) ? 0 : 1; };  // 1 == still_needed exactly
+
+    EvaluationResult const result = evaluate(
+        layout_a,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.bound = bound, .delta_is_double_dummy_optimal = true});
+
+    ASSERT_FALSE(result.error.has_value());
+    EXPECT_EQ(result.by_strategy.at(1u).p_make, 1.0);
+}
+
+TEST_F(TierTwoCutTest, NeverFiresWithoutTheDeclarationWhateverTheBoundSays)
+{
+    // Same fixture as above, but every layout scripted dead throughout
+    // (layout_b's own branch would normally suppress the cut -- scripted
+    // dead here instead, so this test would fail the moment the
+    // declaration gate stopped being checked first) and the declaration
+    // withheld. Full evaluation must still proceed to the same 1.0.
+    Deal const layout_a = make_declarer_certain_win_with_club_filler(Six, Seven);
+    Deal const layout_b = make_declarer_certain_win_with_club_filler(Seven, Six);
+    VectorLayoutSource source({layout_a, layout_b});
+    auto const bound = [](Deal const&) -> int { return 0; };  // "all dead", ignored without the declaration
+
+    EvaluationResult const result = evaluate(
+        layout_a,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.collect_counters = true, .bound = bound});  // no declaration
+
+    ASSERT_FALSE(result.error.has_value());
+    EvaluationValue const& value = result.by_strategy.at(1u);
+    EXPECT_EQ(value.p_make, 1.0);
+    ASSERT_TRUE(value.counters.has_value());
+    // Hand-counted tree, single path (both layouts always merged):
+    //   root: East to lead                                    -- 1
+    //     East plays J -> South to play                        -- 2
+    //       South plays 2 -> West to play                      -- 3
+    //         West plays 4 -> North to play                    -- 4
+    //           North plays K -> trick 1 resolves, tricks_won
+    //                            (1) >= tricks_needed (1):
+    //                            already-made cut, visited but
+    //                            not expanded                   -- 5
+    EXPECT_EQ(value.counters->nodes_visited, 5u);
+}
+
+TEST_F(TierTwoCutTest, TheBoundIsNeverConsultedForAMakeCut)
+{
+    // The strategy-fusion trap, made concrete: North holds only the queen
+    // of spades, East only the king -- East, on lead, is forced to play
+    // its only card (the king), so North's queen always loses. The true
+    // double-dummy value is 0, and a bound reflecting that correctly would
+    // be < needed -- but this bound instead claims 5 (comfortably "not
+    // dead") at every node it is ever asked about, the case a symmetric
+    // make-cut would misread as permission to report the node's full
+    // mass. No make-cut exists in this implementation, so evaluation must
+    // proceed for real and return the true value, 0.0, not node_mass
+    // (which would be 1.0 for this single, p = 1, kappa = 1 layout).
+    Deal deal{};
+    deal.trump = DDS_NOTRUMP;
+    deal.first = East;
+    deal.remainCards[North][Spades] = holding({Queen});
+    deal.remainCards[East][Spades] = holding({King});
+    deal.remainCards[South][Spades] = holding({Two});
+    deal.remainCards[West][Spades] = holding({Three});
+    VectorLayoutSource source({deal});
+    auto const bound = [](Deal const&) -> int { return 5; };  // "not dead", at any depth this is asked
+
+    EvaluationResult const result = evaluate(
+        deal,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.bound = bound, .delta_is_double_dummy_optimal = true});
+
+    ASSERT_FALSE(result.error.has_value());
+    EXPECT_EQ(result.by_strategy.at(1u).p_make, 0.0);
+}
+
+TEST_F(TierTwoCutTest, StopsAtTheFirstLiveLayoutWithoutQueryingTheRest)
+{
+    // Built so the *whole* evaluation touches tier2_dead exactly once:
+    // the root starts three cards into trick 1 already (South, West and
+    // North -- the Ace -- already played), so East, the fourth and last
+    // player, is on play at the root itself. Whatever East plays, North's
+    // already-played ace has already won the trick, so the very next node
+    // is already-made (tricks_won reaches 1, meeting tricks_needed = 1)
+    // and short-circuits before tier2_dead is ever reached there --
+    // tier2_dead's only invocation anywhere in this test is the root's own
+    // single call, over its two (unadvanced) layouts.
+    //
+    // layout_a is scripted live and appears first in node.layouts (the
+    // VectorLayoutSource order); layout_b has no scripted entry at all, so
+    // if the early exit inside tier2_dead's loop works, it is never asked.
+    Deal layout_a{};
+    layout_a.trump = DDS_NOTRUMP;
+    layout_a.first = South;
+    layout_a.currentTrickSuit[0] = Spades;
+    layout_a.currentTrickRank[0] = Two;    // South's card, already played
+    layout_a.currentTrickSuit[1] = Spades;
+    layout_a.currentTrickRank[1] = Three;  // West's card, already played
+    layout_a.currentTrickSuit[2] = Spades;
+    layout_a.currentTrickRank[2] = Ace;    // North's card, already played -- already winning
+    layout_a.remainCards[East][Spades] = holding({Four});  // East's own card, about to play
+    layout_a.remainCards[East][Clubs] = holding({Six});    // untouched filler; the only difference
+
+    Deal layout_b = layout_a;
+    layout_b.remainCards[East][Clubs] = holding({Seven});
+
+    VectorLayoutSource source({layout_a, layout_b});
+    ScriptedBound scripted({{layout_a, 5}});  // live; layout_b deliberately unscripted
+
+    EvaluationResult const result = evaluate(
+        layout_a,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
+
+    ASSERT_FALSE(result.error.has_value());
+    ASSERT_EQ(scripted.queries().size(), 1u);
+    EXPECT_EQ(
+        scripted.queries().front().remainCards[East][Clubs], layout_a.remainCards[East][Clubs]);
+}
+
+TEST_F(TierTwoCutTest, BitwiseAgreementWithTheUncutPathVerifiedByTemporarilyDisablingTheCut)
+{
+    // No flag to disable tier 2's cut either, same as both tier 1 cuts --
+    // this test documents that the bitwise-agreement check (criterion 6)
+    // was done by temporarily changing evaluate.cpp's tier2_dead() call
+    // sites to `false && tier2_dead(...)`, rebuilding, and confirming
+    // FiresWhenEveryLayoutIsDeadAndTheDeclarationIsMade's fixture still
+    // evaluates to exactly 0.0 via natural recursion to its true terminal
+    // node, then reverting -- see the commit message for the record. This
+    // test itself just re-pins the cut's own value, which the disabled-cut
+    // check was run against.
+    Deal const layout_a = make_layout_a();
+    Deal const layout_b = make_layout_b();
+    VectorLayoutSource source({layout_a, layout_b});
+    ScriptedBound scripted({{layout_a, 0}, {layout_b, 0}});
+
+    EvaluationResult const result = evaluate(
+        layout_a,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        merging_delta,
+        EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
+
+    ASSERT_FALSE(result.error.has_value());
+    EXPECT_EQ(result.by_strategy.at(1u).p_make, 0.0);
+}
+
+TEST_F(TierTwoCutTest, PiAndDeltaAreNotCalledWhenTheRootIsDeadByTheBound)
+{
+    Deal const layout_a = make_layout_a();
+    Deal const layout_b = make_layout_b();
+    VectorLayoutSource source({layout_a, layout_b});
+    ScriptedBound scripted({{layout_a, 0}, {layout_b, 0}});
+    RecordingDeclarerStrategy recording_pi(Card{Spades, King});  // never actually asked
+    bool delta_called = false;
+    auto const recording_delta = [&delta_called](DefenderQuery const&) -> std::vector<WeightedCard>
+    {
+        delta_called = true;
+        return {};
+    };
+
+    EvaluationResult const result = evaluate(
+        layout_a,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        recording_pi.as_strategy(),
+        recording_delta,
+        EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
+
+    ASSERT_FALSE(result.error.has_value());
+    EXPECT_TRUE(recording_pi.calls().empty());
+    EXPECT_FALSE(delta_called);
+    // RecordingDeclarerStrategy::as_strategy() fixes id = 0.
+    EXPECT_EQ(result.by_strategy.at(0u).p_make, 0.0);
 }
