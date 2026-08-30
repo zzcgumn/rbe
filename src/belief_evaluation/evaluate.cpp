@@ -59,72 +59,6 @@ namespace
         }
     }
 
-    /// Tier 1's already-made cut: true once declarer has banked every trick
-    /// the contract needs, whatever is left to play. Sound with no
-    /// precondition at all -- tricks_won_by_declarer and tricks_needed are
-    /// both common knowledge, identical across every layout the node holds,
-    /// so once this holds the contract is made in every layout of the node
-    /// and nothing about pi, delta, or sampling enters the argument. No
-    /// gate. Shared between p_make (every recursive call) and evaluate()'s
-    /// root handling, which checks it at the same point for the same
-    /// reason count_node() is shared.
-    auto already_made(ObservationState const& state) -> bool
-    {
-        return state.tricks_won_by_declarer >= state.tricks_needed;
-    }
-
-    /// Tier 1's dead cut, the mirror of already_made(): true once declarer
-    /// cannot reach tricks_needed even by winning every remaining trick.
-    /// Sound with no precondition, same argument as already_made() --
-    /// tricks_won_by_declarer, tricks_needed and the outstanding pool
-    /// (tricks_remaining() reads it) are all common knowledge, identical
-    /// across every layout the node holds. No gate.
-    auto is_dead(ObservationState const& state) -> bool
-    {
-        return state.tricks_won_by_declarer + tricks_remaining(state) < state.tricks_needed;
-    }
-
-    /// Tier 2's node-level cut: true only when the caller has made the
-    /// EvaluateOptions::delta_is_double_dummy_optimal declaration *and*
-    /// every layout at `node` is dead by the injected bound
-    /// (EvaluateOptions::bound). Absent either, this never fires, whatever
-    /// the bound says -- the declaration is not a performance switch (see
-    /// that field's own doxygen for why R <= DD is false against a
-    /// defence that errs).
-    ///
-    /// Stops at the first live layout (bound(layout) >= what is still
-    /// needed) rather than calling `bound` for every layout: each call is
-    /// a double-dummy solve in production, and most nodes where the cut
-    /// does not fire have a live layout early.
-    ///
-    /// **Never a make-cut.** This function only ever answers "is every
-    /// layout dead" -- it has no "not dead" branch that concludes anything
-    /// about a make, because DD >= rho implies nothing about R: pi may play
-    /// worse than double dummy, so the single solve behind a bound must
-    /// never be reused to conclude the contract makes. Node-level, not
-    /// per-layout, for the same reason tier 1's cuts are not per-layout in
-    /// spirit and per decision 3 explicitly: dropping a dead layout here
-    /// would renormalise every surviving layout's posterior, changing what
-    /// an arbitrary caller-supplied pi does with the belief view it is
-    /// given. This function returns before any view is built at or below
-    /// `node`, so that problem cannot arise.
-    auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool
-    {
-        if (! options.delta_is_double_dummy_optimal || ! options.bound)
-        {
-            return false;
-        }
-        int const still_needed = node.state.tricks_needed - node.state.tricks_won_by_declarer;
-        for (Deal const& layout : node.layouts)
-        {
-            if (options.bound(layout) >= still_needed)
-            {
-                return false;  // one live layout suppresses the cut
-            }
-        }
-        return true;
-    }
-
     /// The recursion: P_make(node) = terminal_value(node), or the sum (for
     /// a defender node) / the single value (for a declarer node) over its
     /// children. Once `error` is set, every further call is a no-op
@@ -206,6 +140,50 @@ namespace
         }
         return total.value();
     }
+}
+
+auto already_made(ObservationState const& state) -> bool
+{
+    return state.tricks_won_by_declarer >= state.tricks_needed;
+}
+
+auto is_dead(ObservationState const& state) -> bool
+{
+    return state.tricks_won_by_declarer + tricks_remaining(state) < state.tricks_needed;
+}
+
+auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool
+{
+    // Gated on !node.is_sample, unlike either tier-1 cut: those read only
+    // tricks_won_by_declarer, tricks_needed and the outstanding pool, all
+    // common knowledge identical across every layout the node holds
+    // regardless of whether the node is a full space or a sample of one --
+    // sampling removes layouts, it does not change how many cards are left
+    // or how many tricks have been won. This cut instead concludes "every
+    // layout in this node is dead" from the layouts the node happens to
+    // hold; on a sample that is only "every layout *drawn* is dead", which
+    // says nothing about every layout in the true space, so a layout that
+    // would have made could simply not have been drawn. is_sample is
+    // always false today -- nothing in this evaluator samples yet -- so
+    // this is a no-op today and load-bearing only once something sets it
+    // true.
+    if (node.is_sample)
+    {
+        return false;
+    }
+    if (! options.delta_is_double_dummy_optimal || ! options.bound)
+    {
+        return false;
+    }
+    int const still_needed = node.state.tricks_needed - node.state.tricks_won_by_declarer;
+    for (Deal const& layout : node.layouts)
+    {
+        if (options.bound(layout) >= still_needed)
+        {
+            return false;  // one live layout suppresses the cut
+        }
+    }
+    return true;
 }
 
 auto evaluate(

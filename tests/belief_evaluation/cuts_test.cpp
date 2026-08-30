@@ -799,3 +799,58 @@ TEST_F(TierTwoCutTest, PiAndDeltaAreNotCalledWhenTheRootIsDeadByTheBound)
     // RecordingDeclarerStrategy::as_strategy() fixes id = 0.
     EXPECT_EQ(result.by_strategy.at(0u).p_make, 0.0);
 }
+
+// The sampling gate: tier2_dead() is gated on !node.is_sample; neither
+// tier-1 cut is. Nothing in the evaluator sets is_sample yet (make_root()
+// always leaves it false), so these tests construct a BeliefNode directly
+// -- a state the evaluator itself cannot yet produce today, deliberately,
+// per tier2_dead()'s own doxygen. already_made()/is_dead() are exposed the
+// same way is_terminal()/terminal_value() are, precisely so a test can do
+// this.
+
+class SamplingGateTest : public ::testing::Test
+{
+};
+
+TEST_F(SamplingGateTest, Tier2DoesNotFireOnASampledNodeEvenWhenEveryLayoutIsDead)
+{
+    BeliefNode node{};
+    node.state.declarer = North;
+    node.state.tricks_needed = 1;
+    node.state.tricks_won_by_declarer = 0;
+    Deal layout{};
+    layout.trump = DDS_NOTRUMP;
+    layout.remainCards[North][Spades] = holding({Two});
+    node.layouts = {layout};
+    node.p = {1.0};
+    node.kappa = 1.0;
+    node.is_sample = true;  // the state the evaluator cannot yet produce
+
+    auto const bound = [](Deal const&) -> int { return 0; };  // dead, if it were consulted
+    EvaluateOptions const options{.bound = bound, .delta_is_double_dummy_optimal = true};
+
+    EXPECT_FALSE(tier2_dead(node, options));
+}
+
+TEST_F(SamplingGateTest, BothTier1CutsStillFireOnASampledNode)
+{
+    // Criterion 2 is not padding: gating "the cuts" as a group instead of
+    // tier 2 alone would disable both of these on every sampled node too
+    // -- tested separately, deliberately, so the difference is pinned by
+    // an assertion rather than left to a comment someone can talk
+    // themselves out of.
+    BeliefNode already_made_node{};
+    already_made_node.state.declarer = North;
+    already_made_node.state.tricks_needed = 1;
+    already_made_node.state.tricks_won_by_declarer = 1;  // already made
+    already_made_node.is_sample = true;
+    EXPECT_TRUE(already_made(already_made_node.state));
+
+    BeliefNode dead_node{};
+    dead_node.state.declarer = North;
+    dead_node.state.tricks_needed = 5;  // impossible: nothing left to win 5 tricks from
+    dead_node.state.tricks_won_by_declarer = 0;
+    dead_node.state.known_holdings = Deal{};  // every hand empty -- tricks_remaining() == 0
+    dead_node.is_sample = true;
+    EXPECT_TRUE(is_dead(dead_node.state));
+}

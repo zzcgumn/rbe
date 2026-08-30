@@ -205,6 +205,61 @@ struct EvaluationResult
     std::optional<EvaluationError> error;  ///< meaningful only when by_strategy is empty
 };
 
+/// Tier 1's already-made cut: true once declarer has banked every trick
+/// the contract needs, whatever is left to play. Sound with no
+/// precondition at all -- tricks_won_by_declarer and tricks_needed are
+/// both common knowledge, identical across every layout the node holds,
+/// so once this holds the contract is made in every layout of the node
+/// and nothing about pi, delta, or sampling enters the argument. No gate.
+///
+/// Exposed (rather than kept private to evaluate.cpp) for the same reason
+/// `is_terminal()`/`terminal_value()` are: so a test can construct an
+/// `ObservationState`/`BeliefNode` by hand and check the cut condition
+/// directly, including states the evaluator itself cannot yet produce
+/// (see `tier2_dead()`'s own `is_sample` note).
+auto already_made(ObservationState const& state) -> bool;
+
+/// Tier 1's dead cut, the mirror of already_made(): true once declarer
+/// cannot reach tricks_needed even by winning every remaining trick.
+/// Sound with no precondition, same argument as already_made() --
+/// tricks_won_by_declarer, tricks_needed and the outstanding pool
+/// (tricks_remaining() reads it) are all common knowledge, identical
+/// across every layout the node holds. No gate.
+auto is_dead(ObservationState const& state) -> bool;
+
+/// Tier 2's node-level cut: true only when the caller has made the
+/// EvaluateOptions::delta_is_double_dummy_optimal declaration *and* every
+/// layout at `node` is dead by the injected bound (EvaluateOptions::bound).
+/// Absent either, this never fires, whatever the bound says -- the
+/// declaration is not a performance switch (see that field's own doxygen
+/// for why R <= DD is false against a defence that errs).
+///
+/// Gated on `! node.is_sample`, unlike either tier-1 cut above: those read
+/// only common knowledge, identical across every layout regardless of
+/// whether the node is a full space or a sample of one. This cut instead
+/// concludes "every layout in this node is dead" from the layouts the node
+/// happens to hold; on a sample that is only "every layout *drawn* is
+/// dead", which says nothing about every layout in the true space. Nothing
+/// in this evaluator sets `is_sample` yet, so this gate is a no-op today --
+/// load-bearing only once a future sampling evaluator sets it true, and
+/// testable today only by constructing a `BeliefNode` with `is_sample =
+/// true` by hand.
+///
+/// Stops at the first live layout (`bound(layout) >=` what is still
+/// needed) rather than calling `bound` for every layout: each call is a
+/// double-dummy solve in production.
+///
+/// **Never a make-cut.** This function only ever answers "is every layout
+/// dead" -- it has no "not dead" branch that concludes anything about a
+/// make, because DD >= rho implies nothing about R: pi may play worse than
+/// double dummy, so the single solve behind a bound must never be reused
+/// to conclude the contract makes. Node-level, not per-layout: dropping a
+/// dead layout here would renormalise every surviving layout's posterior,
+/// changing what an arbitrary caller-supplied pi does with the belief view
+/// it is given -- this function returns before any view is built at or
+/// below `node`, so that problem cannot arise.
+auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool;
+
 /// Exhaustively evaluates `P_make` for `pi` against `delta` over every
 /// layout `source` enumerates that is consistent with `root_layout` (see
 /// `make_root`). No sampling, no replenishment, no cuts of any kind — see
