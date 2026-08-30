@@ -15,6 +15,7 @@
 #include <utility/constants.h>
 
 #include <belief_evaluation/double_dummy_bound.hpp>
+#include <belief_evaluation/double_dummy_defender.hpp>
 #include <belief_evaluation/evaluate.hpp>
 
 #include "test_support.hpp"
@@ -221,4 +222,105 @@ TEST_F(DoubleDummyBoundTest, AMalformedLayoutSurfacesAsTheSentinelNotARealBound)
     LayoutBound const bound = provider.as_bound();
 
     EXPECT_EQ(bound(empty_deal), 14);
+}
+
+// --- reproduction run (b): tier 1 and tier 2 together, against a delta
+// that satisfies EvaluateOptions::delta_is_double_dummy_optimal (this
+// plan's headline acceptance criterion, the solver-linked half -- run (a)
+// is in reproduction_test.cpp). DoubleDummyDefender paired with
+// DoubleDummyBound, both driven by the same SolverContext, is the intended
+// sound configuration DoubleDummyBound's own doxygen names.
+
+namespace
+{
+    constexpr int Six = 6;
+    constexpr int Seven = 7;
+    constexpr int Eight = 8;
+    constexpr int Nine = 9;
+
+    /// North (declarer) holds only the queen and jack of spades -- East
+    /// and West hold the ace and king between them, so declarer never
+    /// wins a spade trick regardless of the split or who leads. The club
+    /// filler (one card each, never a genuine choice) also always goes to
+    /// West, the highest of the four -- so declarer's true double-dummy
+    /// value over the whole two-trick ending is 0, not just in spades.
+    ///
+    /// tier 1's own dead cut cannot see this: at the root, declarer's own
+    /// card count (3: queen, jack, club) is well above tricks_needed (1),
+    /// so tier 1 finds nothing to prune -- tier 1 counts cards, not
+    /// winners. Only a real double-dummy bound catches it, which is the
+    /// point of this fixture.
+    auto make_declarer_never_wins_a_trick() -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = East;
+        deal.remainCards[North][Spades] = holding({Queen, Jack});
+        deal.remainCards[South][Spades] = holding({Two, Three});
+        deal.remainCards[East][Spades] = holding({Ace, Four});
+        deal.remainCards[West][Spades] = holding({King, Five});
+        deal.remainCards[North][Clubs] = holding({Six});
+        deal.remainCards[South][Clubs] = holding({Seven});
+        deal.remainCards[East][Clubs] = holding({Eight});
+        deal.remainCards[West][Clubs] = holding({Nine});
+        return deal;
+    }
+}
+
+TEST_F(DoubleDummyBoundTest, ReproductionRunBTierOneAndTwoTogetherAgainstAQualifyingDelta)
+{
+    Deal const layout = make_declarer_never_wins_a_trick();
+    VectorLayoutSource source({layout});
+    SolverContext ctx;
+    DoubleDummyDefender defender(ctx);
+    DoubleDummyBound provider(ctx, North);
+    DeclarerStrategy const pi{
+        .id = 1, .play = single_card_declarer_play, .state_key = nullptr};
+
+    // Baseline: tier 1 only (no bound supplied, so tier2_dead() never
+    // fires -- see its own guard). The true value is 0.0, reached by full
+    // recursion through both tricks.
+    EvaluationResult const tier1_only = evaluate(
+        layout,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        pi,
+        defender.as_strategy(),
+        EvaluateOptions{.collect_counters = true});
+
+    // Tier 1 and 2 together: DoubleDummyDefender satisfies
+    // delta_is_double_dummy_optimal (target = -1 is trick-maximising for
+    // both sides -- see EvaluateOptions::delta_is_double_dummy_optimal's
+    // own doxygen), so this is the sound, intended pairing.
+    EvaluationResult const tier1_and_2 = evaluate(
+        layout,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        pi,
+        defender.as_strategy(),
+        EvaluateOptions{
+            .collect_counters = true,
+            .bound = provider.as_bound(),
+            .delta_is_double_dummy_optimal = true});
+
+    ASSERT_FALSE(tier1_only.error.has_value());
+    ASSERT_FALSE(tier1_and_2.error.has_value());
+    // Bitwise (criterion for run (b) itself): both exactly 0.0, and both
+    // reached the identical way regardless of which tiers were active.
+    EXPECT_EQ(tier1_only.by_strategy.at(1u).p_make, tier1_and_2.by_strategy.at(1u).p_make);
+    EXPECT_EQ(tier1_only.by_strategy.at(1u).p_make, 0.0);
+
+    // Evidence tier 2 did real work tier 1 alone could not: fewer nodes
+    // visited with tier 2 enabled, since tier 2's bound catches the
+    // all-dead position at the root itself, where tier 1's own dead cut
+    // could not (see the fixture's own comment).
+    ASSERT_TRUE(tier1_only.by_strategy.at(1u).counters.has_value());
+    ASSERT_TRUE(tier1_and_2.by_strategy.at(1u).counters.has_value());
+    EXPECT_LT(
+        tier1_and_2.by_strategy.at(1u).counters->nodes_visited,
+        tier1_only.by_strategy.at(1u).counters->nodes_visited);
+    // Fires at the very root: exactly 1 node visited with tier 2 enabled.
+    EXPECT_EQ(tier1_and_2.by_strategy.at(1u).counters->nodes_visited, 1u);
 }

@@ -20,6 +20,7 @@ cc_test(
         "position_test.cpp",
         "rank_map_test.cpp",
         "renumber_test.cpp",
+        "reproduction_test.cpp",
         "restricted_choice_test.cpp",
         "scripted_defender_test.cpp",
         "smoke_test.cpp",
@@ -79,6 +80,7 @@ cc_test(
     deps = [
         "//library/src/belief_evaluation",
         "//library/src/belief_evaluation:double_dummy_bound",
+        "//library/src/belief_evaluation:double_dummy_defender",
         "//library/src/api:api_definitions",
         "//library/src/solver_context",
         "//library/src/utility:constants",
