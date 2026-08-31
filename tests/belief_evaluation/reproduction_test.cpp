@@ -12,10 +12,10 @@
 // gets made, not just per-cut in cuts_test.cpp.
 //
 // Every pre-existing test in this suite passing unchanged is verified by
-// `git diff 353dae5b -- library/tests/belief_evaluation/` showing zero
-// deletions -- not asserted here, since it is a property of the diff, not
-// of any one test's runtime behaviour. Recorded in the commit history for
-// this work.
+// diffing this directory against the commit this work branched from and
+// confirming zero deletions -- not asserted here, since it is a property
+// of the diff, not of any one test's runtime behaviour. Recorded in the
+// commit history for this work.
 //
 // Run (a) -- tier 1 only, against a fixture whose shape is representative
 // of this suite's own oracle-style fixtures (several tricks, several
