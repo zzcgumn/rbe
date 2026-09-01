@@ -7,9 +7,11 @@
 #include <string>
 #include <utility>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
+namespace dds::belief_evaluation
+{
 
 /// A single card. Suits and ranks are otherwise passed as separate `int`s
 /// throughout dds; this exists purely as a convenient callback return/param.
@@ -123,3 +125,5 @@ struct NodeSearchInfo
     int min_tricks;    ///< strategy-independent lower bound
     std::map<std::pair<StrategyId, int>, Probability> p_make;  ///< keyed by (strategy, tricks needed)
 };
+
+}  // namespace dds::belief_evaluation

@@ -2,6 +2,8 @@
 
 #include <belief_evaluation/node.hpp>
 
+using namespace dds::belief_evaluation;
+
 class TerminalTest : public ::testing::Test
 {
 };

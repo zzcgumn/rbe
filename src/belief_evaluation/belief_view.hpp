@@ -5,6 +5,9 @@
 #include <belief_evaluation/node.hpp>
 #include <belief_evaluation/types.hpp>
 
+namespace dds::belief_evaluation
+{
+
 /// Builds the view a declarer strategy reasons over: `node`'s layouts,
 /// paired with the normalised posterior `p_i / Sigma_j p_j` within the
 /// node — never `w_i`, never `kappa * p_i`, never the raw `p_i`. `kappa` is
@@ -28,3 +31,5 @@
 /// the whole belief space the node genuinely holds, not an estimate, since
 /// this evaluator is exhaustive and never samples.
 auto make_belief_view(BeliefNode const& node, std::vector<BeliefEntry>& scratch) -> BeliefView;
+
+}  // namespace dds::belief_evaluation

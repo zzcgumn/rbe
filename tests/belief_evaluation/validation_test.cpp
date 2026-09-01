@@ -3,10 +3,12 @@
 #include <limits>
 #include <vector>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/validation.hpp>
+
+namespace be = dds::belief_evaluation;
 
 namespace
 {
@@ -25,8 +27,8 @@ TEST(ValidateDeclarerCard, RejectsACardNotHeldBySeat)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
     EXPECT_EQ(
-        validate_declarer_card(deal, 2, Card{0, 14}),  // ace of spades, not held
-        ValidationError::CardNotHeld);
+        be::validate_declarer_card(deal, 2, be::Card{0, 14}),  // ace of spades, not held
+        be::ValidationError::CardNotHeld);
 }
 
 TEST(ValidateDeclarerCard, RejectsACardIllegalForTheTrickInProgress)
@@ -35,8 +37,8 @@ TEST(ValidateDeclarerCard, RejectsACardIllegalForTheTrickInProgress)
     deal.currentTrickSuit[0] = 0;  // spades led
     deal.currentTrickRank[0] = 5;  // by some other seat
     EXPECT_EQ(
-        validate_declarer_card(deal, 2, Card{1, 4}),  // 4H, but South holds spades
-        ValidationError::CardIllegalForTrick);
+        be::validate_declarer_card(deal, 2, be::Card{1, 4}),  // 4H, but South holds spades
+        be::ValidationError::CardIllegalForTrick);
 }
 
 TEST(ValidateDeclarerCard, AcceptsAHeldCardThatFollowsSuit)
@@ -44,13 +46,13 @@ TEST(ValidateDeclarerCard, AcceptsAHeldCardThatFollowsSuit)
     Deal deal = deal_with_south_holding_two_and_three_of_spades();
     deal.currentTrickSuit[0] = 0;
     deal.currentTrickRank[0] = 5;
-    EXPECT_EQ(validate_declarer_card(deal, 2, Card{0, 2}), ValidationError::None);
+    EXPECT_EQ(be::validate_declarer_card(deal, 2, be::Card{0, 2}), be::ValidationError::None);
 }
 
 TEST(ValidateDeclarerCard, AcceptsAnyHeldCardWhenLeading)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    EXPECT_EQ(validate_declarer_card(deal, 2, Card{1, 4}), ValidationError::None);
+    EXPECT_EQ(be::validate_declarer_card(deal, 2, be::Card{1, 4}), be::ValidationError::None);
 }
 
 TEST(ValidateDeclarerCard, AcceptsAnyHeldCardWhenVoidInTheLedSuit)
@@ -58,81 +60,81 @@ TEST(ValidateDeclarerCard, AcceptsAnyHeldCardWhenVoidInTheLedSuit)
     Deal deal = deal_with_south_holding_two_and_three_of_spades();
     deal.currentTrickSuit[0] = 2;  // diamonds led; South holds none
     deal.currentTrickRank[0] = 5;
-    EXPECT_EQ(validate_declarer_card(deal, 2, Card{1, 4}), ValidationError::None);
+    EXPECT_EQ(be::validate_declarer_card(deal, 2, be::Card{1, 4}), be::ValidationError::None);
 }
 
 TEST(ValidateDeclarerCard, RejectsAnOutOfRangeSuitWithoutUndefinedBehaviour)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    EXPECT_EQ(validate_declarer_card(deal, 2, Card{4, 5}), ValidationError::CardNotHeld);
-    EXPECT_EQ(validate_declarer_card(deal, 2, Card{-1, 5}), ValidationError::CardNotHeld);
+    EXPECT_EQ(be::validate_declarer_card(deal, 2, be::Card{4, 5}), be::ValidationError::CardNotHeld);
+    EXPECT_EQ(be::validate_declarer_card(deal, 2, be::Card{-1, 5}), be::ValidationError::CardNotHeld);
 }
 
 TEST(ValidateDeclarerCard, RejectsAnOutOfRangeRankWithoutUndefinedBehaviour)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    EXPECT_EQ(validate_declarer_card(deal, 2, Card{0, 15}), ValidationError::CardNotHeld);
-    EXPECT_EQ(validate_declarer_card(deal, 2, Card{0, 1}), ValidationError::CardNotHeld);
+    EXPECT_EQ(be::validate_declarer_card(deal, 2, be::Card{0, 15}), be::ValidationError::CardNotHeld);
+    EXPECT_EQ(be::validate_declarer_card(deal, 2, be::Card{0, 1}), be::ValidationError::CardNotHeld);
     // Close to the width of the shift in is_held(); must not be undefined
     // behaviour even though it is nowhere near a legal rank.
-    EXPECT_EQ(validate_declarer_card(deal, 2, Card{0, 31}), ValidationError::CardNotHeld);
+    EXPECT_EQ(be::validate_declarer_card(deal, 2, be::Card{0, 31}), be::ValidationError::CardNotHeld);
 }
 
 TEST(ValidateDeclarerCard, RejectsAnOutOfRangeSeatWithoutUndefinedBehaviour)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    EXPECT_EQ(validate_declarer_card(deal, 4, Card{0, 2}), ValidationError::CardNotHeld);
-    EXPECT_EQ(validate_declarer_card(deal, -1, Card{0, 2}), ValidationError::CardNotHeld);
+    EXPECT_EQ(be::validate_declarer_card(deal, 4, be::Card{0, 2}), be::ValidationError::CardNotHeld);
+    EXPECT_EQ(be::validate_declarer_card(deal, -1, be::Card{0, 2}), be::ValidationError::CardNotHeld);
 }
 
 TEST(ValidateDefenderDistribution, RejectsACardNotHeldBySeat)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    std::vector<WeightedCard> const distribution{{Card{0, 14}, 1.0}};
+    std::vector<be::WeightedCard> const distribution{{be::Card{0, 14}, 1.0}};
     EXPECT_EQ(
-        validate_defender_distribution(deal, 2, distribution),
-        ValidationError::CardNotHeld);
+        be::validate_defender_distribution(deal, 2, distribution),
+        be::ValidationError::CardNotHeld);
 }
 
 TEST(ValidateDefenderDistribution, RejectsANonPositiveProbability)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    std::vector<WeightedCard> const distribution{{Card{0, 2}, 0.0}, {Card{0, 3}, 1.0}};
+    std::vector<be::WeightedCard> const distribution{{be::Card{0, 2}, 0.0}, {be::Card{0, 3}, 1.0}};
     EXPECT_EQ(
-        validate_defender_distribution(deal, 2, distribution),
-        ValidationError::ProbabilityNonPositive);
+        be::validate_defender_distribution(deal, 2, distribution),
+        be::ValidationError::ProbabilityNonPositive);
 }
 
 TEST(ValidateDefenderDistribution, RejectsANegativeProbability)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    std::vector<WeightedCard> const distribution{{Card{0, 2}, -0.5}, {Card{0, 3}, 1.5}};
+    std::vector<be::WeightedCard> const distribution{{be::Card{0, 2}, -0.5}, {be::Card{0, 3}, 1.5}};
     EXPECT_EQ(
-        validate_defender_distribution(deal, 2, distribution),
-        ValidationError::ProbabilityNonPositive);
+        be::validate_defender_distribution(deal, 2, distribution),
+        be::ValidationError::ProbabilityNonPositive);
 }
 
 TEST(ValidateDefenderDistribution, RejectsProbabilitiesNotSummingToOne)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    std::vector<WeightedCard> const distribution{{Card{0, 2}, 0.4}, {Card{0, 3}, 0.4}};
+    std::vector<be::WeightedCard> const distribution{{be::Card{0, 2}, 0.4}, {be::Card{0, 3}, 0.4}};
     EXPECT_EQ(
-        validate_defender_distribution(deal, 2, distribution),
-        ValidationError::ProbabilitiesDoNotSumToOne);
+        be::validate_defender_distribution(deal, 2, distribution),
+        be::ValidationError::ProbabilitiesDoNotSumToOne);
 }
 
 TEST(ValidateDefenderDistribution, AcceptsAValidDistribution)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    std::vector<WeightedCard> const distribution{{Card{0, 2}, 0.5}, {Card{0, 3}, 0.5}};
-    EXPECT_EQ(validate_defender_distribution(deal, 2, distribution), ValidationError::None);
+    std::vector<be::WeightedCard> const distribution{{be::Card{0, 2}, 0.5}, {be::Card{0, 3}, 0.5}};
+    EXPECT_EQ(be::validate_defender_distribution(deal, 2, distribution), be::ValidationError::None);
 }
 
 TEST(ValidateDefenderDistribution, AcceptsASingleCertainCard)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    std::vector<WeightedCard> const distribution{{Card{1, 4}, 1.0}};
-    EXPECT_EQ(validate_defender_distribution(deal, 2, distribution), ValidationError::None);
+    std::vector<be::WeightedCard> const distribution{{be::Card{1, 4}, 1.0}};
+    EXPECT_EQ(be::validate_defender_distribution(deal, 2, distribution), be::ValidationError::None);
 }
 
 TEST(ValidateDefenderDistribution, RejectsACardIllegalForTheTrickInProgress)
@@ -141,10 +143,10 @@ TEST(ValidateDefenderDistribution, RejectsACardIllegalForTheTrickInProgress)
     deal.currentTrickSuit[0] = 0;  // spades led
     deal.currentTrickRank[0] = 5;
     // South's 4H, but South holds spades and must follow suit.
-    std::vector<WeightedCard> const distribution{{Card{1, 4}, 1.0}};
+    std::vector<be::WeightedCard> const distribution{{be::Card{1, 4}, 1.0}};
     EXPECT_EQ(
-        validate_defender_distribution(deal, 2, distribution),
-        ValidationError::CardIllegalForTrick);
+        be::validate_defender_distribution(deal, 2, distribution),
+        be::ValidationError::CardIllegalForTrick);
 }
 
 TEST(ValidateDefenderDistribution, AcceptsCardsThatFollowSuit)
@@ -152,8 +154,8 @@ TEST(ValidateDefenderDistribution, AcceptsCardsThatFollowSuit)
     Deal deal = deal_with_south_holding_two_and_three_of_spades();
     deal.currentTrickSuit[0] = 0;
     deal.currentTrickRank[0] = 5;
-    std::vector<WeightedCard> const distribution{{Card{0, 2}, 0.5}, {Card{0, 3}, 0.5}};
-    EXPECT_EQ(validate_defender_distribution(deal, 2, distribution), ValidationError::None);
+    std::vector<be::WeightedCard> const distribution{{be::Card{0, 2}, 0.5}, {be::Card{0, 3}, 0.5}};
+    EXPECT_EQ(be::validate_defender_distribution(deal, 2, distribution), be::ValidationError::None);
 }
 
 TEST(ValidateDefenderDistribution, AcceptsAnyHeldCardWhenVoidInTheLedSuit)
@@ -161,8 +163,8 @@ TEST(ValidateDefenderDistribution, AcceptsAnyHeldCardWhenVoidInTheLedSuit)
     Deal deal = deal_with_south_holding_two_and_three_of_spades();
     deal.currentTrickSuit[0] = 2;  // diamonds led; South holds none
     deal.currentTrickRank[0] = 5;
-    std::vector<WeightedCard> const distribution{{Card{1, 4}, 1.0}};
-    EXPECT_EQ(validate_defender_distribution(deal, 2, distribution), ValidationError::None);
+    std::vector<be::WeightedCard> const distribution{{be::Card{1, 4}, 1.0}};
+    EXPECT_EQ(be::validate_defender_distribution(deal, 2, distribution), be::ValidationError::None);
 }
 
 TEST(ValidateDefenderDistribution, RejectsANaNProbability)
@@ -170,30 +172,30 @@ TEST(ValidateDefenderDistribution, RejectsANaNProbability)
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
     // NaN fails every comparison, including `<= 0.0` and the final
     // sum-tolerance check, so an unguarded NaN slips past both.
-    std::vector<WeightedCard> const distribution{
-        {Card{0, 2}, std::numeric_limits<double>::quiet_NaN()}};
+    std::vector<be::WeightedCard> const distribution{
+        {be::Card{0, 2}, std::numeric_limits<double>::quiet_NaN()}};
     EXPECT_EQ(
-        validate_defender_distribution(deal, 2, distribution),
-        ValidationError::ProbabilityNonPositive);
+        be::validate_defender_distribution(deal, 2, distribution),
+        be::ValidationError::ProbabilityNonPositive);
 }
 
 TEST(ValidateDefenderDistribution, RejectsAPositiveInfiniteProbability)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    std::vector<WeightedCard> const distribution{
-        {Card{0, 2}, std::numeric_limits<double>::infinity()}};
+    std::vector<be::WeightedCard> const distribution{
+        {be::Card{0, 2}, std::numeric_limits<double>::infinity()}};
     EXPECT_EQ(
-        validate_defender_distribution(deal, 2, distribution),
-        ValidationError::ProbabilityNonPositive);
+        be::validate_defender_distribution(deal, 2, distribution),
+        be::ValidationError::ProbabilityNonPositive);
 }
 
 TEST(ValidateDefenderDistribution, RejectsAnOutOfRangeCardWithoutUndefinedBehaviour)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    std::vector<WeightedCard> const distribution{{Card{9, 9}, 1.0}};
+    std::vector<be::WeightedCard> const distribution{{be::Card{9, 9}, 1.0}};
     EXPECT_EQ(
-        validate_defender_distribution(deal, 2, distribution),
-        ValidationError::CardNotHeld);
+        be::validate_defender_distribution(deal, 2, distribution),
+        be::ValidationError::CardNotHeld);
 }
 
 TEST(ValidateDefenderDistribution, RejectsAnOutOfRangeSeatEvenForAnEmptyDistribution)
@@ -206,13 +208,13 @@ TEST(ValidateDefenderDistribution, RejectsAnOutOfRangeSeatEvenForAnEmptyDistribu
     // validate_declarer_card, which always reports an invalid seat as
     // CardNotHeld regardless of the card.
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    std::vector<WeightedCard> const empty_distribution;
+    std::vector<be::WeightedCard> const empty_distribution;
     EXPECT_EQ(
-        validate_defender_distribution(deal, DDS_HANDS, empty_distribution),
-        ValidationError::CardNotHeld);
+        be::validate_defender_distribution(deal, DDS_HANDS, empty_distribution),
+        be::ValidationError::CardNotHeld);
     EXPECT_EQ(
-        validate_defender_distribution(deal, -1, empty_distribution),
-        ValidationError::CardNotHeld);
+        be::validate_defender_distribution(deal, -1, empty_distribution),
+        be::ValidationError::CardNotHeld);
 }
 
 TEST(ValidateDefenderDistribution, RejectsAnEmptyDistributionForAValidSeat)
@@ -221,8 +223,8 @@ TEST(ValidateDefenderDistribution, RejectsAnEmptyDistributionForAValidSeat)
     // check above, this is still ProbabilitiesDoNotSumToOne when the seat
     // itself is fine.
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    std::vector<WeightedCard> const empty_distribution;
+    std::vector<be::WeightedCard> const empty_distribution;
     EXPECT_EQ(
-        validate_defender_distribution(deal, 2, empty_distribution),
-        ValidationError::ProbabilitiesDoNotSumToOne);
+        be::validate_defender_distribution(deal, 2, empty_distribution),
+        be::ValidationError::ProbabilitiesDoNotSumToOne);
 }

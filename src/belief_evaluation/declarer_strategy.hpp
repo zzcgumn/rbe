@@ -4,6 +4,9 @@
 
 #include <belief_evaluation/types.hpp>
 
+namespace dds::belief_evaluation
+{
+
 /// Declarer's decision strategy. A struct rather than a bare callable because
 /// it needs somewhere to hang an identity (`id`) and somewhere to declare
 /// what it depends on beyond position (`state_key`).
@@ -52,3 +55,5 @@ struct DeclarerStrategy
     /// function must be pure on the same terms as `play`.
     std::function<StateKey(ObservationState const&, BeliefView const&)> state_key;
 };
+
+}  // namespace dds::belief_evaluation

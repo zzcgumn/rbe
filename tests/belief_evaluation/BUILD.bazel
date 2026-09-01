@@ -67,6 +67,29 @@ cc_test(
     local_defines = DDS_LOCAL_DEFINES,
 )
 
+# The compile-level proof that dds::belief_evaluation's own Card and
+# api/dds.h's ::Card genuinely coexist in one translation unit, with no
+# rename trick. No solver linkage needed -- api/dds.h is a data-model-only
+# header, reached the same way //library/src/belief_evaluation itself
+# reaches it. A separate target rather than a source in belief_evaluation_test
+# because the whole point is what a translation unit can contain, and mixing
+# it into a file with any workaround of its own would blur that.
+cc_test(
+    name = "namespace_collision_test",
+    size = "small",
+    srcs = [
+        "namespace_collision_test.cpp",
+    ],
+    deps = [
+        "//library/src/belief_evaluation",
+        "//library/src/api:api_definitions",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
 # Sibling of double_dummy_defender_test, mirroring
 # //library/src/belief_evaluation:double_dummy_bound's own separation from
 # the core library.

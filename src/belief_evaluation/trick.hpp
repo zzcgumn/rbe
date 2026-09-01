@@ -2,10 +2,13 @@
 
 #include <array>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/types.hpp>
+
+namespace dds::belief_evaluation
+{
 
 // The only two places in the module that convert between dds's two rank bit
 // conventions: Deal::remainCards sets bit r for absolute rank r, while
@@ -52,3 +55,5 @@ auto trick_complete_winner(Deal const& deal, Card const& card) -> int;
 /// new `Deal` is returned. Carries no trick counter; who won and how many
 /// tricks that makes is the caller's business (see `ObservationState`).
 auto play(Deal const& deal, Card const& card) -> Deal;
+
+}  // namespace dds::belief_evaluation

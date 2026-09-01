@@ -3,9 +3,13 @@
 #include <optional>
 #include <vector>
 
-#include <belief_evaluation/dds_types.hpp>
+#include <api/dds_data_types.hpp>
+
 #include <belief_evaluation/layout_source.hpp>
 #include <belief_evaluation/types.hpp>
+
+namespace dds::belief_evaluation
+{
 
 /// One node of the belief-evaluation recursion: the state every layout in
 /// the node shares (see `ObservationState`), the surviving layouts, and each
@@ -92,3 +96,5 @@ auto is_terminal(BeliefNode const& node) -> bool;
 /// cards are already in it, not from `state.first` (the root's leader,
 /// unrelated once play has moved on).
 auto tricks_remaining(ObservationState const& state) -> int;
+
+}  // namespace dds::belief_evaluation

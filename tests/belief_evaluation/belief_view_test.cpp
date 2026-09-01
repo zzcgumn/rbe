@@ -8,6 +8,8 @@
 #include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/node.hpp>
 
+using namespace dds::belief_evaluation;
+
 namespace
 {
     auto make_node_with_p(std::vector<Probability> p, SampleWeight kappa) -> BeliefNode

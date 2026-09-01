@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <vector>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/layout_key.hpp>
+
+using namespace dds::belief_evaluation;
 
 namespace
 {

@@ -1,13 +1,15 @@
 #include <gtest/gtest-spi.h>
 #include <gtest/gtest.h>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/layout_key.hpp>
 #include <belief_evaluation/types.hpp>
 
 #include "test_support.hpp"
+
+namespace be = dds::belief_evaluation;
 
 namespace
 {
@@ -20,7 +22,7 @@ namespace
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = East;
-        deal.remainCards[East][2] = holding({King, Queen});  // diamonds
+        deal.remainCards[East][2] = be::holding({King, Queen});  // diamonds
         return deal;
     }
 }
@@ -32,13 +34,13 @@ class ScriptedDefenderTest : public ::testing::Test
 TEST_F(ScriptedDefenderTest, ReturnsTheScriptedCardWithCertaintyOnAMatchingQuery)
 {
     Deal const layout = make_layout();
-    ObservationState state{};
+    be::ObservationState state{};
 
-    ScriptedDefender::Key const key{layout_key(layout, East), ""};
-    ScriptedDefender defender({{key, Card{2, King}}});
+    be::ScriptedDefender::Key const key{be::layout_key(layout, East), ""};
+    be::ScriptedDefender defender({{key, be::Card{2, King}}});
 
-    DefenderQuery const query{layout, East, state};
-    std::vector<WeightedCard> const distribution = defender.as_strategy()(query);
+    be::DefenderQuery const query{layout, East, state};
+    std::vector<be::WeightedCard> const distribution = defender.as_strategy()(query);
 
     ASSERT_EQ(distribution.size(), 1u);
     EXPECT_EQ(distribution[0].card.suit, 2);
@@ -49,36 +51,36 @@ TEST_F(ScriptedDefenderTest, ReturnsTheScriptedCardWithCertaintyOnAMatchingQuery
 TEST_F(ScriptedDefenderTest, RecordsTheSeatAndLayoutOfEveryQuery)
 {
     Deal const layout = make_layout();
-    ObservationState state{};
+    be::ObservationState state{};
 
-    ScriptedDefender::Key const key{layout_key(layout, East), ""};
-    ScriptedDefender defender({{key, Card{2, King}}});
+    be::ScriptedDefender::Key const key{be::layout_key(layout, East), ""};
+    be::ScriptedDefender defender({{key, be::Card{2, King}}});
 
-    DefenderQuery const query{layout, East, state};
+    be::DefenderQuery const query{layout, East, state};
     defender.as_strategy()(query);
 
     ASSERT_EQ(defender.queries().size(), 1u);
     EXPECT_EQ(defender.queries()[0].seat, East);
-    EXPECT_EQ(defender.queries()[0].layout, layout_key(layout, East));
+    EXPECT_EQ(defender.queries()[0].layout, be::layout_key(layout, East));
 }
 
 TEST_F(ScriptedDefenderTest, DistinguishesTwoQueriesWithTheSamePoolButDifferentHistory)
 {
     Deal const layout = make_layout();
-    ObservationState state_at_root{};
-    ObservationState state_after_one_card{};
+    be::ObservationState state_at_root{};
+    be::ObservationState state_after_one_card{};
     state_after_one_card.history.number = 1;
     state_after_one_card.history.suit[0] = 0;
     state_after_one_card.history.rank[0] = 14;
 
-    ScriptedDefender::Key const key_at_root{layout_key(layout, East), ""};
-    ScriptedDefender::Key const key_after_one_card{layout_key(layout, East), "0:14,"};
-    ScriptedDefender defender({{key_at_root, Card{2, King}}, {key_after_one_card, Card{2, Queen}}});
+    be::ScriptedDefender::Key const key_at_root{be::layout_key(layout, East), ""};
+    be::ScriptedDefender::Key const key_after_one_card{be::layout_key(layout, East), "0:14,"};
+    be::ScriptedDefender defender({{key_at_root, be::Card{2, King}}, {key_after_one_card, be::Card{2, Queen}}});
 
     auto const strategy = defender.as_strategy();
-    std::vector<WeightedCard> const at_root = strategy(DefenderQuery{layout, East, state_at_root});
-    std::vector<WeightedCard> const after_one_card =
-        strategy(DefenderQuery{layout, East, state_after_one_card});
+    std::vector<be::WeightedCard> const at_root = strategy(be::DefenderQuery{layout, East, state_at_root});
+    std::vector<be::WeightedCard> const after_one_card =
+        strategy(be::DefenderQuery{layout, East, state_after_one_card});
 
     ASSERT_EQ(at_root.size(), 1u);
     ASSERT_EQ(after_one_card.size(), 1u);
@@ -89,13 +91,13 @@ TEST_F(ScriptedDefenderTest, DistinguishesTwoQueriesWithTheSamePoolButDifferentH
 TEST_F(ScriptedDefenderTest, AMissingTableEntryIsALoudNonFatalFailure)
 {
     Deal const layout = make_layout();
-    ObservationState state{};
+    be::ObservationState state{};
 
-    ScriptedDefender defender({});  // empty table: any query is a miss
+    be::ScriptedDefender defender({});  // empty table: any query is a miss
 
-    std::vector<WeightedCard> distribution;
+    std::vector<be::WeightedCard> distribution;
     EXPECT_NONFATAL_FAILURE(
-        distribution = defender.as_strategy()(DefenderQuery{layout, East, state}),
+        distribution = defender.as_strategy()(be::DefenderQuery{layout, East, state}),
         "no scripted entry");
 
     // The failure is the intended behaviour, per this double's own doxygen;
@@ -106,15 +108,15 @@ TEST_F(ScriptedDefenderTest, AMissingTableEntryIsALoudNonFatalFailure)
 TEST_F(ScriptedDefenderTest, AScriptedIllegalCardIsALoudNonFatalFailure)
 {
     Deal const layout = make_layout();
-    ObservationState state{};
+    be::ObservationState state{};
 
     // East does not hold the ace of diamonds — an illegal script.
-    ScriptedDefender::Key const key{layout_key(layout, East), ""};
-    ScriptedDefender defender({{key, Card{2, 14}}});
+    be::ScriptedDefender::Key const key{be::layout_key(layout, East), ""};
+    be::ScriptedDefender defender({{key, be::Card{2, 14}}});
 
-    std::vector<WeightedCard> distribution;
+    std::vector<be::WeightedCard> distribution;
     EXPECT_NONFATAL_FAILURE(
-        distribution = defender.as_strategy()(DefenderQuery{layout, East, state}),
+        distribution = defender.as_strategy()(be::DefenderQuery{layout, East, state}),
         "illegal defence");
 }
 
@@ -123,14 +125,14 @@ TEST_F(ScriptedDefenderTest, AScriptedIllegalCardIsALoudNonFatalFailure)
 TEST_F(ScriptedDefenderTest, ReturnsAScriptedMultiEntryDistribution)
 {
     Deal const layout = make_layout();
-    ObservationState state{};
+    be::ObservationState state{};
 
-    ScriptedDefender::Key const key{layout_key(layout, East), ""};
-    ScriptedDefender defender = ScriptedDefender::stochastic(
-        {{key, {WeightedCard{Card{2, King}, 0.5}, WeightedCard{Card{2, Queen}, 0.5}}}});
+    be::ScriptedDefender::Key const key{be::layout_key(layout, East), ""};
+    be::ScriptedDefender defender = be::ScriptedDefender::stochastic(
+        {{key, {be::WeightedCard{be::Card{2, King}, 0.5}, be::WeightedCard{be::Card{2, Queen}, 0.5}}}});
 
-    std::vector<WeightedCard> const distribution =
-        defender.as_strategy()(DefenderQuery{layout, East, state});
+    std::vector<be::WeightedCard> const distribution =
+        defender.as_strategy()(be::DefenderQuery{layout, East, state});
 
     ASSERT_EQ(distribution.size(), 2u);
     EXPECT_EQ(distribution[0].card.rank, King);
@@ -146,13 +148,13 @@ TEST_F(ScriptedDefenderTest, TheDeterministicConstructorStillReturnsASingleCerta
     // reminder that the constructor and the stochastic factory must keep
     // working identically.
     Deal const layout = make_layout();
-    ObservationState state{};
+    be::ObservationState state{};
 
-    ScriptedDefender::Key const key{layout_key(layout, East), ""};
-    ScriptedDefender defender({{key, Card{2, King}}});
+    be::ScriptedDefender::Key const key{be::layout_key(layout, East), ""};
+    be::ScriptedDefender defender({{key, be::Card{2, King}}});
 
-    std::vector<WeightedCard> const distribution =
-        defender.as_strategy()(DefenderQuery{layout, East, state});
+    std::vector<be::WeightedCard> const distribution =
+        defender.as_strategy()(be::DefenderQuery{layout, East, state});
 
     ASSERT_EQ(distribution.size(), 1u);
     EXPECT_EQ(distribution[0].card.rank, King);
@@ -162,31 +164,31 @@ TEST_F(ScriptedDefenderTest, TheDeterministicConstructorStillReturnsASingleCerta
 TEST_F(ScriptedDefenderTest, RecordingWorksTheSameForTheMultiEntryConstructor)
 {
     Deal const layout = make_layout();
-    ObservationState state{};
+    be::ObservationState state{};
 
-    ScriptedDefender::Key const key{layout_key(layout, East), ""};
-    ScriptedDefender defender = ScriptedDefender::stochastic(
-        {{key, {WeightedCard{Card{2, King}, 0.5}, WeightedCard{Card{2, Queen}, 0.5}}}});
+    be::ScriptedDefender::Key const key{be::layout_key(layout, East), ""};
+    be::ScriptedDefender defender = be::ScriptedDefender::stochastic(
+        {{key, {be::WeightedCard{be::Card{2, King}, 0.5}, be::WeightedCard{be::Card{2, Queen}, 0.5}}}});
 
-    defender.as_strategy()(DefenderQuery{layout, East, state});
+    defender.as_strategy()(be::DefenderQuery{layout, East, state});
 
     ASSERT_EQ(defender.queries().size(), 1u);
     EXPECT_EQ(defender.queries()[0].seat, East);
-    EXPECT_EQ(defender.queries()[0].layout, layout_key(layout, East));
+    EXPECT_EQ(defender.queries()[0].layout, be::layout_key(layout, East));
 }
 
 TEST_F(ScriptedDefenderTest, AScriptedDistributionNotSummingToOneIsALoudNonFatalFailure)
 {
     Deal const layout = make_layout();
-    ObservationState state{};
+    be::ObservationState state{};
 
-    ScriptedDefender::Key const key{layout_key(layout, East), ""};
+    be::ScriptedDefender::Key const key{be::layout_key(layout, East), ""};
     // 0.5 + 0.4 = 0.9, not 1 -- an illegal script.
-    ScriptedDefender defender = ScriptedDefender::stochastic(
-        {{key, {WeightedCard{Card{2, King}, 0.5}, WeightedCard{Card{2, Queen}, 0.4}}}});
+    be::ScriptedDefender defender = be::ScriptedDefender::stochastic(
+        {{key, {be::WeightedCard{be::Card{2, King}, 0.5}, be::WeightedCard{be::Card{2, Queen}, 0.4}}}});
 
-    std::vector<WeightedCard> distribution;
+    std::vector<be::WeightedCard> distribution;
     EXPECT_NONFATAL_FAILURE(
-        distribution = defender.as_strategy()(DefenderQuery{layout, East, state}),
+        distribution = defender.as_strategy()(be::DefenderQuery{layout, East, state}),
         "illegal defence");
 }

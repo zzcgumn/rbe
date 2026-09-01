@@ -1,5 +1,8 @@
 #include <belief_evaluation/kahan.hpp>
 
+namespace dds::belief_evaluation
+{
+
 auto KahanAccumulator::add(double value) -> void
 {
     double const y = value - compensation_;
@@ -12,3 +15,5 @@ auto KahanAccumulator::value() const -> double
 {
     return sum_;
 }
+
+}  // namespace dds::belief_evaluation

@@ -7,6 +7,9 @@
 #include <belief_evaluation/trick.hpp>
 #include <utility/constants.h>
 
+namespace dds::belief_evaluation
+{
+
 namespace
 {
     auto is_declarer_side(ObservationState const& state, int seat) -> bool
@@ -373,3 +376,5 @@ auto evaluate(
     result.by_strategy.emplace(pi.id, std::move(value));
     return result;
 }
+
+}  // namespace dds::belief_evaluation

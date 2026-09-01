@@ -1,11 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/evaluate.hpp>
 
 #include "test_support.hpp"
+
+using namespace dds::belief_evaluation;
 
 // The headline acceptance criterion for early cuts: every cut lands with
 // no change to any answer, and this file is where that end-to-end claim

@@ -1,5 +1,8 @@
 #include <belief_evaluation/position.hpp>
 
+namespace dds::belief_evaluation
+{
+
 auto legal_plays(Position const& position, int hand, int led_suit)
     -> std::array<unsigned, DDS_SUITS>
 {
@@ -54,3 +57,5 @@ auto play_card(Position& position, int hand, int suit, int bit_position) -> void
 {
     position.holding[hand][suit] &= ~(1u << bit_position);
 }
+
+}  // namespace dds::belief_evaluation

@@ -4,6 +4,9 @@
 
 #include <belief_evaluation/position.hpp>
 
+namespace dds::belief_evaluation
+{
+
 namespace
 {
     /// How many cards have already been played to the trick in progress:
@@ -101,3 +104,5 @@ auto play(Deal const& deal, Card const& card) -> Deal
     result.first = winner;
     return result;
 }
+
+}  // namespace dds::belief_evaluation

@@ -1,5 +1,8 @@
 #include <belief_evaluation/renumber.hpp>
 
+namespace dds::belief_evaluation
+{
+
 auto renumber(unsigned holding, unsigned pool) -> unsigned
 {
     unsigned result = 0;
@@ -18,3 +21,5 @@ auto renumber(unsigned holding, unsigned pool) -> unsigned
     }
     return result;
 }
+
+}  // namespace dds::belief_evaluation

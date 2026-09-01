@@ -1,14 +1,16 @@
 #include <gtest/gtest.h>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/node.hpp>
 #include <belief_evaluation/trick.hpp>
 #include <belief_evaluation/validation.hpp>
 
 #include "test_support.hpp"
+
+namespace be = dds::belief_evaluation;
 
 namespace
 {
@@ -22,13 +24,13 @@ namespace
     /// A node with North (declarer) on lead, holding the ace and king of
     /// spades; South (dummy) holds nothing relevant. One layout, p = 1,
     /// kappa = 1.
-    auto make_declarer_on_play_node() -> BeliefNode
+    auto make_declarer_on_play_node() -> be::BeliefNode
     {
-        BeliefNode node{};
+        be::BeliefNode node{};
         Deal layout{};
         layout.trump = DDS_NOTRUMP;
         layout.first = North;
-        layout.remainCards[North][0] = holding({Ace, King});
+        layout.remainCards[North][0] = be::holding({Ace, King});
 
         node.state.trump = DDS_NOTRUMP;
         node.state.first = North;
@@ -44,12 +46,12 @@ namespace
 
     /// Same shape, but the trick-in-progress state puts dummy (South) on
     /// lead instead of declarer.
-    auto make_dummy_on_play_node() -> BeliefNode
+    auto make_dummy_on_play_node() -> be::BeliefNode
     {
-        BeliefNode node = make_declarer_on_play_node();
+        be::BeliefNode node = make_declarer_on_play_node();
         node.state.known_holdings.first = South;
         node.state.known_holdings.remainCards[North][0] = 0;
-        node.state.known_holdings.remainCards[South][0] = holding({Ace, King});
+        node.state.known_holdings.remainCards[South][0] = be::holding({Ace, King});
         node.layouts[0] = node.state.known_holdings;
         return node;
     }
@@ -61,10 +63,10 @@ class DeclarerNodeTest : public ::testing::Test
 
 TEST_F(DeclarerNodeTest, PiIsCalledWhenDeclarerIsOnPlay)
 {
-    BeliefNode const node = make_declarer_on_play_node();
-    RecordingDeclarerStrategy recorder(Card{0, Ace});
+    be::BeliefNode const node = make_declarer_on_play_node();
+    be::RecordingDeclarerStrategy recorder(be::Card{0, Ace});
 
-    ExpandResult const result = expand_declarer_node(node, recorder.as_strategy());
+    be::ExpandResult const result = be::expand_declarer_node(node, recorder.as_strategy());
 
     ASSERT_TRUE(result.child.has_value());
     ASSERT_EQ(recorder.calls().size(), 1u);
@@ -82,10 +84,10 @@ TEST_F(DeclarerNodeTest, PiIsCalledWhenDummyIsOnPlay)
     // "the seat on play is declarer's side" is easy to write as "the seat
     // on play is declarer" by mistake, so this is its own test rather than
     // folded into the previous one.
-    BeliefNode const node = make_dummy_on_play_node();
-    RecordingDeclarerStrategy recorder(Card{0, Ace});
+    be::BeliefNode const node = make_dummy_on_play_node();
+    be::RecordingDeclarerStrategy recorder(be::Card{0, Ace});
 
-    ExpandResult const result = expand_declarer_node(node, recorder.as_strategy());
+    be::ExpandResult const result = be::expand_declarer_node(node, recorder.as_strategy());
 
     ASSERT_TRUE(result.child.has_value());
     ASSERT_EQ(recorder.calls().size(), 1u);
@@ -93,13 +95,13 @@ TEST_F(DeclarerNodeTest, PiIsCalledWhenDummyIsOnPlay)
 
 TEST_F(DeclarerNodeTest, TheChildsBeliefSetAndWeightsCarryOverFromTheParent)
 {
-    BeliefNode const node = make_declarer_on_play_node();
-    RecordingDeclarerStrategy recorder(Card{0, Ace});
+    be::BeliefNode const node = make_declarer_on_play_node();
+    be::RecordingDeclarerStrategy recorder(be::Card{0, Ace});
 
-    ExpandResult const result = expand_declarer_node(node, recorder.as_strategy());
+    be::ExpandResult const result = be::expand_declarer_node(node, recorder.as_strategy());
 
     ASSERT_TRUE(result.child.has_value());
-    BeliefNode const& child = *result.child;
+    be::BeliefNode const& child = *result.child;
     EXPECT_EQ(child.p, node.p);            // untouched, not just summing to the same total
     EXPECT_DOUBLE_EQ(child.kappa, node.kappa);
     ASSERT_EQ(child.layouts.size(), node.layouts.size());
@@ -107,7 +109,7 @@ TEST_F(DeclarerNodeTest, TheChildsBeliefSetAndWeightsCarryOverFromTheParent)
     // set's size and correspondence carry over even though the card played
     // is now gone from remainCards. Deal has no operator==, so compare the
     // field that changed.
-    Deal const expected = play(node.layouts[0], Card{0, Ace});
+    Deal const expected = play(node.layouts[0], be::Card{0, Ace});
     EXPECT_EQ(child.layouts[0].remainCards[North][0], expected.remainCards[North][0]);
     EXPECT_EQ(child.layouts[0].currentTrickSuit[0], expected.currentTrickSuit[0]);
     EXPECT_EQ(child.layouts[0].currentTrickRank[0], expected.currentTrickRank[0]);
@@ -115,34 +117,34 @@ TEST_F(DeclarerNodeTest, TheChildsBeliefSetAndWeightsCarryOverFromTheParent)
 
 TEST_F(DeclarerNodeTest, ACardNotHeldIsRejectedThroughValidateDeclarerCard)
 {
-    BeliefNode const node = make_declarer_on_play_node();
+    be::BeliefNode const node = make_declarer_on_play_node();
     // North does not hold the queen of spades.
-    RecordingDeclarerStrategy recorder(Card{0, 12});
+    be::RecordingDeclarerStrategy recorder(be::Card{0, 12});
 
-    ExpandResult const result = expand_declarer_node(node, recorder.as_strategy());
+    be::ExpandResult const result = be::expand_declarer_node(node, recorder.as_strategy());
 
     EXPECT_FALSE(result.child.has_value());
-    EXPECT_EQ(result.error, ValidationError::CardNotHeld);
+    EXPECT_EQ(result.error, be::ValidationError::CardNotHeld);
 }
 
 TEST_F(DeclarerNodeTest, ACardIllegalForTheTrickIsRejectedThroughValidateDeclarerCard)
 {
-    BeliefNode node = make_declarer_on_play_node();
+    be::BeliefNode node = make_declarer_on_play_node();
     // A heart has been led; North holds no hearts but does hold spades, so
     // playing a spade is illegal — North must follow suit or, since void,
     // may discard, but here North is not void: give North a heart too.
     node.state.known_holdings.currentTrickSuit[0] = 1;  // hearts led
     node.state.known_holdings.currentTrickRank[0] = 2;
     node.state.known_holdings.first = West;  // West led the heart; North is next to play
-    node.state.known_holdings.remainCards[North][1] = holding({King});  // North holds a heart
+    node.state.known_holdings.remainCards[North][1] = be::holding({King});  // North holds a heart
     node.layouts[0] = node.state.known_holdings;
 
-    RecordingDeclarerStrategy recorder(Card{0, Ace});  // North plays a spade instead
+    be::RecordingDeclarerStrategy recorder(be::Card{0, Ace});  // North plays a spade instead
 
-    ExpandResult const result = expand_declarer_node(node, recorder.as_strategy());
+    be::ExpandResult const result = be::expand_declarer_node(node, recorder.as_strategy());
 
     EXPECT_FALSE(result.child.has_value());
-    EXPECT_EQ(result.error, ValidationError::CardIllegalForTrick);
+    EXPECT_EQ(result.error, be::ValidationError::CardIllegalForTrick);
 }
 
 // --- mass pass-through with more than one child -------------------------
@@ -154,17 +156,17 @@ TEST_F(DeclarerNodeTest, ACardIllegalForTheTrickIsRejectedThroughValidateDeclare
 
 TEST_F(DeclarerNodeTest, EveryDeclarerChildInheritsTheParentsFullMass)
 {
-    BeliefNode parent = make_declarer_on_play_node();
+    be::BeliefNode parent = make_declarer_on_play_node();
     parent.p = {0.4, 0.2};
     parent.kappa = 0.5;
     parent.layouts = {parent.layouts[0], parent.layouts[0]};
     // 0.5 * (0.4 + 0.2) = 0.3
-    std::vector<BeliefNode> const children =
-        make_declarer_children(parent, {Card{0, Ace}, Card{0, King}});
+    std::vector<be::BeliefNode> const children =
+        be::make_declarer_children(parent, {be::Card{0, Ace}, be::Card{0, King}});
 
     ASSERT_EQ(children.size(), 2u);
-    for (BeliefNode const& child : children)
+    for (be::BeliefNode const& child : children)
     {
-        EXPECT_DOUBLE_EQ(node_mass(child), 0.3);
+        EXPECT_DOUBLE_EQ(be::node_mass(child), 0.3);
     }
 }

@@ -1,11 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/evaluate.hpp>
 
 #include "test_support.hpp"
+
+namespace be = dds::belief_evaluation;
 
 // Tier 1's already-made cut: a node where declarer has already banked every
 // trick the contract needs evaluates to node_mass(node) without recursing
@@ -31,9 +33,9 @@ namespace
     constexpr int South = 2;  // dummy
     constexpr int West = 3;   // a defender
 
-    auto strategy(StrategyId id) -> DeclarerStrategy
+    auto strategy(be::StrategyId id) -> be::DeclarerStrategy
     {
-        return DeclarerStrategy{.id = id, .play = single_card_declarer_play, .state_key = nullptr};
+        return be::DeclarerStrategy{.id = id, .play = be::single_card_declarer_play, .state_key = nullptr};
     }
 }
 
@@ -61,10 +63,10 @@ namespace
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = East;
-        deal.remainCards[North][Spades] = holding({Ace, King});
-        deal.remainCards[South][Spades] = holding({Two, Three});
-        deal.remainCards[East][Spades] = holding({Queen, Jack});
-        deal.remainCards[West][Spades] = holding({Four, Five});
+        deal.remainCards[North][Spades] = be::holding({Ace, King});
+        deal.remainCards[South][Spades] = be::holding({Two, Three});
+        deal.remainCards[East][Spades] = be::holding({Queen, Jack});
+        deal.remainCards[West][Spades] = be::holding({Four, Five});
         return deal;
     }
 
@@ -73,10 +75,10 @@ namespace
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = East;
-        deal.remainCards[North][Spades] = holding({Ace, King});
-        deal.remainCards[South][Spades] = holding({Two, Three});
-        deal.remainCards[East][Spades] = holding({Jack, Five});
-        deal.remainCards[West][Spades] = holding({Four, Queen});
+        deal.remainCards[North][Spades] = be::holding({Ace, King});
+        deal.remainCards[South][Spades] = be::holding({Two, Three});
+        deal.remainCards[East][Spades] = be::holding({Jack, Five});
+        deal.remainCards[West][Spades] = be::holding({Four, Queen});
         return deal;
     }
 
@@ -87,18 +89,18 @@ namespace
     /// a separate child neither test below inspects). Every other query
     /// (West's forced follow, either declarer-side play) falls back to
     /// single_card_defender / single_card_declarer_play.
-    auto merging_delta(DefenderQuery const& query) -> std::vector<WeightedCard>
+    auto merging_delta(be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
     {
         bool const is_easts_lead = query.seat == East && query.layout.currentTrickRank[0] == 0;
         if (! is_easts_lead)
         {
-            return single_card_defender(query);
+            return be::single_card_defender(query);
         }
-        if (query.layout.remainCards[East][Spades] == holding({Queen, Jack}))
+        if (query.layout.remainCards[East][Spades] == be::holding({Queen, Jack}))
         {
-            return {WeightedCard{Card{Spades, Jack}, 0.5}, WeightedCard{Card{Spades, Queen}, 0.5}};
+            return {be::WeightedCard{be::Card{Spades, Jack}, 0.5}, be::WeightedCard{be::Card{Spades, Queen}, 0.5}};
         }
-        return {WeightedCard{Card{Spades, Jack}, 1.0}};
+        return {be::WeightedCard{be::Card{Spades, Jack}, 1.0}};
     }
 }
 
@@ -106,11 +108,11 @@ TEST_F(AlreadyMadeCutTest, ReturnsTheHandDerivedMassOverSeveralLayoutsAtUnequalP
 {
     Deal const layout_a = make_layout_a();
     Deal const layout_b = make_layout_b();
-    assert_equal_hand_sizes(layout_a);
-    assert_equal_hand_sizes(layout_b);
-    assert_pool_matches({layout_a, layout_b});
-    assert_forms_one_belief_node({layout_a, layout_b}, North);
-    VectorLayoutSource source({layout_a, layout_b});
+    be::assert_equal_hand_sizes(layout_a);
+    be::assert_equal_hand_sizes(layout_b);
+    be::assert_pool_matches({layout_a, layout_b});
+    be::assert_forms_one_belief_node({layout_a, layout_b}, North);
+    be::VectorLayoutSource source({layout_a, layout_b});
 
     // East's lead is the root's own defender decision, so it produces two
     // root_children directly: the jack branch (both layouts, merged) and
@@ -145,15 +147,15 @@ TEST_F(AlreadyMadeCutTest, ReturnsTheHandDerivedMassOverSeveralLayoutsAtUnequalP
     constexpr double ExpectedJackBranchMass = 0.75;
     constexpr double ExpectedQueenBranchMass = 0.25;
 
-    EvaluationResult const result =
-        evaluate(layout_a, North, /*tricks_needed=*/1, source, strategy(1), merging_delta);
+    be::EvaluationResult const result =
+        be::evaluate(layout_a, North, /*tricks_needed=*/1, source, strategy(1), merging_delta);
 
     ASSERT_FALSE(result.error.has_value());
-    EvaluationValue const& value = result.by_strategy.at(1u);
+    be::EvaluationValue const& value = result.by_strategy.at(1u);
     ASSERT_EQ(value.root_children.size(), 2u);
-    RootChildValue const* jack_branch = nullptr;
-    RootChildValue const* queen_branch = nullptr;
-    for (RootChildValue const& child : value.root_children)
+    be::RootChildValue const* jack_branch = nullptr;
+    be::RootChildValue const* queen_branch = nullptr;
+    for (be::RootChildValue const& child : value.root_children)
     {
         if (child.card.rank == Jack)
         {
@@ -191,10 +193,10 @@ namespace
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = East;
-        deal.remainCards[North][Spades] = holding({Ace, King});
-        deal.remainCards[South][Spades] = holding({Two, Three});
-        deal.remainCards[East][Spades] = holding({Queen, Jack});
-        deal.remainCards[West][Spades] = holding({Four, Five});
+        deal.remainCards[North][Spades] = be::holding({Ace, King});
+        deal.remainCards[South][Spades] = be::holding({Two, Three});
+        deal.remainCards[East][Spades] = be::holding({Queen, Jack});
+        deal.remainCards[West][Spades] = be::holding({Four, Five});
         return deal;
     }
 }
@@ -212,7 +214,7 @@ TEST_F(AlreadyMadeCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison
     // two runs is whether the cut gets a chance to fire, so the gap in
     // node count is attributable only to it.
     Deal const root_layout = make_two_certain_tricks();
-    VectorLayoutSource source({root_layout});
+    be::VectorLayoutSource source({root_layout});
 
     // Hand-counted tree with tricks_needed = 1 (single_card_defender/
     // single_card_declarer_play are both fully deterministic here, so
@@ -242,22 +244,22 @@ TEST_F(AlreadyMadeCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison
     //                           first)                                -- 9
     constexpr std::uint64_t NodesWithoutEarlyCut = 9;
 
-    EvaluationResult const with_early_cut = evaluate(
+    be::EvaluationResult const with_early_cut = be::evaluate(
         root_layout,
         North,
         /*tricks_needed=*/1,
         source,
         strategy(1),
-        single_card_defender,
-        EvaluateOptions{.collect_counters = true});
-    EvaluationResult const without_early_cut = evaluate(
+        be::single_card_defender,
+        be::EvaluateOptions{.collect_counters = true});
+    be::EvaluationResult const without_early_cut = be::evaluate(
         root_layout,
         North,
         /*tricks_needed=*/2,
         source,
         strategy(1),
-        single_card_defender,
-        EvaluateOptions{.collect_counters = true});
+        be::single_card_defender,
+        be::EvaluateOptions{.collect_counters = true});
 
     ASSERT_FALSE(with_early_cut.error.has_value());
     ASSERT_FALSE(without_early_cut.error.has_value());
@@ -279,16 +281,16 @@ TEST_F(AlreadyMadeCutTest, PiIsNotCalledWhenTheContractIsAlreadyMadeAtTheRoot)
     // is played, so the cut fires at the root itself, before seat_on_play
     // is even consulted -- pi must never be asked which card to lead.
     Deal const root_layout = make_two_certain_tricks();
-    VectorLayoutSource source({root_layout});
-    RecordingDeclarerStrategy recording(Card{Spades, King});  // never actually asked
+    be::VectorLayoutSource source({root_layout});
+    be::RecordingDeclarerStrategy recording(be::Card{Spades, King});  // never actually asked
 
-    EvaluationResult const result = evaluate(
+    be::EvaluationResult const result = be::evaluate(
         root_layout,
         North,
         /*tricks_needed=*/0,
         source,
         recording.as_strategy(),
-        single_card_defender);
+        be::single_card_defender);
 
     ASSERT_FALSE(result.error.has_value());
     EXPECT_TRUE(recording.calls().empty());
@@ -317,10 +319,10 @@ namespace
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = East;
-        deal.remainCards[East][Spades] = holding({Ace, King});
-        deal.remainCards[West][Spades] = holding({Queen, Jack});
-        deal.remainCards[North][Spades] = holding({Two, Three});
-        deal.remainCards[South][Spades] = holding({Four, Five});
+        deal.remainCards[East][Spades] = be::holding({Ace, King});
+        deal.remainCards[West][Spades] = be::holding({Queen, Jack});
+        deal.remainCards[North][Spades] = be::holding({Two, Three});
+        deal.remainCards[South][Spades] = be::holding({Four, Five});
         return deal;
     }
 }
@@ -339,7 +341,7 @@ TEST_F(DeadCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison)
     // recursion runs to its natural terminal node without the cut ever
     // firing early).
     Deal const root_layout = make_east_wins_first_trick();
-    VectorLayoutSource source({root_layout});
+    be::VectorLayoutSource source({root_layout});
 
     // Hand-counted tree with tricks_needed = 2 (East leads, rotation
     // East -> South -> West -> North):
@@ -369,22 +371,22 @@ TEST_F(DeadCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison)
     //                            0.0, not terminal_value()           -- 9
     constexpr std::uint64_t NodesWithoutEarlyDeadCut = 9;
 
-    EvaluationResult const with_early_cut = evaluate(
+    be::EvaluationResult const with_early_cut = be::evaluate(
         root_layout,
         North,
         /*tricks_needed=*/2,
         source,
         strategy(1),
-        single_card_defender,
-        EvaluateOptions{.collect_counters = true});
-    EvaluationResult const without_early_cut = evaluate(
+        be::single_card_defender,
+        be::EvaluateOptions{.collect_counters = true});
+    be::EvaluationResult const without_early_cut = be::evaluate(
         root_layout,
         North,
         /*tricks_needed=*/1,
         source,
         strategy(1),
-        single_card_defender,
-        EvaluateOptions{.collect_counters = true});
+        be::single_card_defender,
+        be::EvaluateOptions{.collect_counters = true});
 
     ASSERT_FALSE(with_early_cut.error.has_value());
     ASSERT_FALSE(without_early_cut.error.has_value());
@@ -417,16 +419,16 @@ TEST_F(DeadCutTest, PiAndDeltaAreNotCalledWhenTheRootIsAlreadyDead)
     // itself is dead before a single card is played -- neither pi nor
     // delta should ever be asked for one.
     Deal const root_layout = make_east_wins_first_trick();
-    VectorLayoutSource source({root_layout});
-    RecordingDeclarerStrategy recording_pi(Card{Spades, Two});  // never actually asked
+    be::VectorLayoutSource source({root_layout});
+    be::RecordingDeclarerStrategy recording_pi(be::Card{Spades, Two});  // never actually asked
     bool delta_called = false;
-    auto const recording_delta = [&delta_called](DefenderQuery const&) -> std::vector<WeightedCard>
+    auto const recording_delta = [&delta_called](be::DefenderQuery const&) -> std::vector<be::WeightedCard>
     {
         delta_called = true;
         return {};
     };
 
-    EvaluationResult const result = evaluate(
+    be::EvaluationResult const result = be::evaluate(
         root_layout, North, /*tricks_needed=*/4, source, recording_pi.as_strategy(), recording_delta);
 
     ASSERT_FALSE(result.error.has_value());
@@ -451,8 +453,8 @@ class LayoutBoundTest : public ::testing::Test
 TEST_F(LayoutBoundTest, ScriptedBoundRecordsWhatItWasAskedAndReturnsTheScriptedValue)
 {
     Deal const layout = make_east_wins_first_trick();
-    ScriptedBound scripted({{layout, 7}});
-    LayoutBound const bound = scripted.as_bound();
+    be::ScriptedBound scripted({{layout, 7}});
+    be::LayoutBound const bound = scripted.as_bound();
 
     EXPECT_EQ(bound(layout), 7);
     ASSERT_EQ(scripted.queries().size(), 1u);
@@ -469,19 +471,19 @@ TEST_F(LayoutBoundTest, SupplyingABoundWithoutTheDeclarationDoesNotChangeTheAnsw
     // EvaluateOptions::delta_is_double_dummy_optimal's own doxygen for why
     // the two are kept separate).
     Deal const root_layout = make_east_wins_first_trick();
-    VectorLayoutSource source({root_layout});
-    ScriptedBound scripted({{root_layout, 0}});
+    be::VectorLayoutSource source({root_layout});
+    be::ScriptedBound scripted({{root_layout, 0}});
 
-    EvaluationResult const without_bound = evaluate(
-        root_layout, North, /*tricks_needed=*/1, source, strategy(1), single_card_defender);
-    EvaluationResult const with_bound = evaluate(
+    be::EvaluationResult const without_bound = be::evaluate(
+        root_layout, North, /*tricks_needed=*/1, source, strategy(1), be::single_card_defender);
+    be::EvaluationResult const with_bound = be::evaluate(
         root_layout,
         North,
         /*tricks_needed=*/1,
         source,
         strategy(1),
-        single_card_defender,
-        EvaluateOptions{.bound = scripted.as_bound()});  // delta_is_double_dummy_optimal left unset
+        be::single_card_defender,
+        be::EvaluateOptions{.bound = scripted.as_bound()});  // delta_is_double_dummy_optimal left unset
 
     ASSERT_FALSE(without_bound.error.has_value());
     ASSERT_FALSE(with_bound.error.has_value());
@@ -518,17 +520,17 @@ TEST_F(TierTwoCutTest, FiresWhenEveryLayoutIsDeadAndTheDeclarationIsMade)
     // never inspects delta's own behaviour, only the bound.
     Deal const layout_a = make_layout_a();
     Deal const layout_b = make_layout_b();
-    VectorLayoutSource source({layout_a, layout_b});
-    ScriptedBound scripted({{layout_a, 0}, {layout_b, 0}});  // both dead: needed = 1
+    be::VectorLayoutSource source({layout_a, layout_b});
+    be::ScriptedBound scripted({{layout_a, 0}, {layout_b, 0}});  // both dead: needed = 1
 
-    EvaluationResult const result = evaluate(
+    be::EvaluationResult const result = be::evaluate(
         layout_a,
         North,
         /*tricks_needed=*/1,
         source,
         strategy(1),
         merging_delta,
-        EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
+        be::EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
 
     ASSERT_FALSE(result.error.has_value());
     EXPECT_EQ(result.by_strategy.at(1u).p_make, 0.0);
@@ -570,12 +572,12 @@ namespace
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = East;
-        deal.remainCards[North][Spades] = holding({Ace, King});
-        deal.remainCards[East][Spades] = holding({Queen, Jack});
-        deal.remainCards[South][Spades] = holding({Two, Three});
-        deal.remainCards[West][Spades] = holding({Four, Five});
-        deal.remainCards[East][Clubs] = holding({east_club_rank});
-        deal.remainCards[West][Clubs] = holding({west_club_rank});
+        deal.remainCards[North][Spades] = be::holding({Ace, King});
+        deal.remainCards[East][Spades] = be::holding({Queen, Jack});
+        deal.remainCards[South][Spades] = be::holding({Two, Three});
+        deal.remainCards[West][Spades] = be::holding({Four, Five});
+        deal.remainCards[East][Clubs] = be::holding({east_club_rank});
+        deal.remainCards[West][Clubs] = be::holding({west_club_rank});
         return deal;
     }
 
@@ -584,7 +586,7 @@ namespace
 
     auto is_layout_a_by_club_filler(Deal const& layout) -> bool
     {
-        return (layout.remainCards[East][Clubs] & holding({Six})) != 0;
+        return (layout.remainCards[East][Clubs] & be::holding({Six})) != 0;
     }
 }
 
@@ -604,18 +606,18 @@ TEST_F(TierTwoCutTest, OneLiveLayoutSuppressesTheCut)
     // single_card_defender never gives either a genuine choice.
     Deal const layout_a = make_declarer_certain_win_with_club_filler(Six, Seven);
     Deal const layout_b = make_declarer_certain_win_with_club_filler(Seven, Six);
-    VectorLayoutSource source({layout_a, layout_b});
+    be::VectorLayoutSource source({layout_a, layout_b});
     auto const bound = [](Deal const& layout) -> int
     { return is_layout_a_by_club_filler(layout) ? 0 : 1; };  // 1 == still_needed exactly
 
-    EvaluationResult const result = evaluate(
+    be::EvaluationResult const result = be::evaluate(
         layout_a,
         North,
         /*tricks_needed=*/1,
         source,
         strategy(1),
-        single_card_defender,
-        EvaluateOptions{.bound = bound, .delta_is_double_dummy_optimal = true});
+        be::single_card_defender,
+        be::EvaluateOptions{.bound = bound, .delta_is_double_dummy_optimal = true});
 
     ASSERT_FALSE(result.error.has_value());
     EXPECT_EQ(result.by_strategy.at(1u).p_make, 1.0);
@@ -630,20 +632,20 @@ TEST_F(TierTwoCutTest, NeverFiresWithoutTheDeclarationWhateverTheBoundSays)
     // withheld. Full evaluation must still proceed to the same 1.0.
     Deal const layout_a = make_declarer_certain_win_with_club_filler(Six, Seven);
     Deal const layout_b = make_declarer_certain_win_with_club_filler(Seven, Six);
-    VectorLayoutSource source({layout_a, layout_b});
+    be::VectorLayoutSource source({layout_a, layout_b});
     auto const bound = [](Deal const&) -> int { return 0; };  // "all dead", ignored without the declaration
 
-    EvaluationResult const result = evaluate(
+    be::EvaluationResult const result = be::evaluate(
         layout_a,
         North,
         /*tricks_needed=*/1,
         source,
         strategy(1),
-        single_card_defender,
-        EvaluateOptions{.collect_counters = true, .bound = bound});  // no declaration
+        be::single_card_defender,
+        be::EvaluateOptions{.collect_counters = true, .bound = bound});  // no declaration
 
     ASSERT_FALSE(result.error.has_value());
-    EvaluationValue const& value = result.by_strategy.at(1u);
+    be::EvaluationValue const& value = result.by_strategy.at(1u);
     EXPECT_EQ(value.p_make, 1.0);
     ASSERT_TRUE(value.counters.has_value());
     // Hand-counted tree, single path (both layouts always merged):
@@ -673,21 +675,21 @@ TEST_F(TierTwoCutTest, TheBoundIsNeverConsultedForAMakeCut)
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = East;
-    deal.remainCards[North][Spades] = holding({Queen});
-    deal.remainCards[East][Spades] = holding({King});
-    deal.remainCards[South][Spades] = holding({Two});
-    deal.remainCards[West][Spades] = holding({Three});
-    VectorLayoutSource source({deal});
+    deal.remainCards[North][Spades] = be::holding({Queen});
+    deal.remainCards[East][Spades] = be::holding({King});
+    deal.remainCards[South][Spades] = be::holding({Two});
+    deal.remainCards[West][Spades] = be::holding({Three});
+    be::VectorLayoutSource source({deal});
     auto const bound = [](Deal const&) -> int { return 5; };  // "not dead", at any depth this is asked
 
-    EvaluationResult const result = evaluate(
+    be::EvaluationResult const result = be::evaluate(
         deal,
         North,
         /*tricks_needed=*/1,
         source,
         strategy(1),
-        single_card_defender,
-        EvaluateOptions{.bound = bound, .delta_is_double_dummy_optimal = true});
+        be::single_card_defender,
+        be::EvaluateOptions{.bound = bound, .delta_is_double_dummy_optimal = true});
 
     ASSERT_FALSE(result.error.has_value());
     EXPECT_EQ(result.by_strategy.at(1u).p_make, 0.0);
@@ -730,34 +732,34 @@ TEST_F(TierTwoCutTest, StopsAtTheFirstLiveLayoutWithoutQueryingTheRest)
     layout_a.currentTrickRank[1] = Three;  // West's card, already played
     layout_a.currentTrickSuit[2] = Spades;
     layout_a.currentTrickRank[2] = Ace;    // North's card, already played -- already winning
-    layout_a.remainCards[East][Spades] = holding({Four});  // East's own card, about to play
-    layout_a.remainCards[East][Clubs] = holding({Six});    // untouched filler pool, split one way
-    layout_a.remainCards[West][Clubs] = holding({Seven});
+    layout_a.remainCards[East][Spades] = be::holding({Four});  // East's own card, about to play
+    layout_a.remainCards[East][Clubs] = be::holding({Six});    // untouched filler pool, split one way
+    layout_a.remainCards[West][Clubs] = be::holding({Seven});
 
     Deal layout_b = layout_a;
-    layout_b.remainCards[East][Clubs] = holding({Seven});  // same pool, split the other way
-    layout_b.remainCards[West][Clubs] = holding({Six});
+    layout_b.remainCards[East][Clubs] = be::holding({Seven});  // same pool, split the other way
+    layout_b.remainCards[West][Clubs] = be::holding({Six});
 
-    VectorLayoutSource source({layout_a, layout_b});
+    be::VectorLayoutSource source({layout_a, layout_b});
 
     // Confirm both layouts actually survive make_root() into one node
     // before trusting the early-exit assertion below -- see the fixture
     // comment above for why this is checked directly rather than assumed.
-    std::optional<BeliefNode> const root =
-        make_root(layout_a, North, /*tricks_needed=*/1, source);
+    std::optional<be::BeliefNode> const root =
+        be::make_root(layout_a, North, /*tricks_needed=*/1, source);
     ASSERT_TRUE(root.has_value());
     ASSERT_EQ(root->layouts.size(), 2u);
 
-    ScriptedBound scripted({{layout_a, 5}});  // live; layout_b deliberately unscripted
+    be::ScriptedBound scripted({{layout_a, 5}});  // live; layout_b deliberately unscripted
 
-    EvaluationResult const result = evaluate(
+    be::EvaluationResult const result = be::evaluate(
         layout_a,
         North,
         /*tricks_needed=*/1,
         source,
         strategy(1),
-        single_card_defender,
-        EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
+        be::single_card_defender,
+        be::EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
 
     ASSERT_FALSE(result.error.has_value());
     ASSERT_EQ(scripted.queries().size(), 1u);
@@ -778,17 +780,17 @@ TEST_F(TierTwoCutTest, BitwiseAgreementWithTheUncutPathVerifiedByTemporarilyDisa
     // check was run against.
     Deal const layout_a = make_layout_a();
     Deal const layout_b = make_layout_b();
-    VectorLayoutSource source({layout_a, layout_b});
-    ScriptedBound scripted({{layout_a, 0}, {layout_b, 0}});
+    be::VectorLayoutSource source({layout_a, layout_b});
+    be::ScriptedBound scripted({{layout_a, 0}, {layout_b, 0}});
 
-    EvaluationResult const result = evaluate(
+    be::EvaluationResult const result = be::evaluate(
         layout_a,
         North,
         /*tricks_needed=*/1,
         source,
         strategy(1),
         merging_delta,
-        EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
+        be::EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
 
     ASSERT_FALSE(result.error.has_value());
     EXPECT_EQ(result.by_strategy.at(1u).p_make, 0.0);
@@ -798,24 +800,24 @@ TEST_F(TierTwoCutTest, PiAndDeltaAreNotCalledWhenTheRootIsDeadByTheBound)
 {
     Deal const layout_a = make_layout_a();
     Deal const layout_b = make_layout_b();
-    VectorLayoutSource source({layout_a, layout_b});
-    ScriptedBound scripted({{layout_a, 0}, {layout_b, 0}});
-    RecordingDeclarerStrategy recording_pi(Card{Spades, King});  // never actually asked
+    be::VectorLayoutSource source({layout_a, layout_b});
+    be::ScriptedBound scripted({{layout_a, 0}, {layout_b, 0}});
+    be::RecordingDeclarerStrategy recording_pi(be::Card{Spades, King});  // never actually asked
     bool delta_called = false;
-    auto const recording_delta = [&delta_called](DefenderQuery const&) -> std::vector<WeightedCard>
+    auto const recording_delta = [&delta_called](be::DefenderQuery const&) -> std::vector<be::WeightedCard>
     {
         delta_called = true;
         return {};
     };
 
-    EvaluationResult const result = evaluate(
+    be::EvaluationResult const result = be::evaluate(
         layout_a,
         North,
         /*tricks_needed=*/1,
         source,
         recording_pi.as_strategy(),
         recording_delta,
-        EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
+        be::EvaluateOptions{.bound = scripted.as_bound(), .delta_is_double_dummy_optimal = true});
 
     ASSERT_FALSE(result.error.has_value());
     EXPECT_TRUE(recording_pi.calls().empty());
@@ -838,22 +840,22 @@ class SamplingGateTest : public ::testing::Test
 
 TEST_F(SamplingGateTest, Tier2DoesNotFireOnASampledNodeEvenWhenEveryLayoutIsDead)
 {
-    BeliefNode node{};
+    be::BeliefNode node{};
     node.state.declarer = North;
     node.state.tricks_needed = 1;
     node.state.tricks_won_by_declarer = 0;
     Deal layout{};
     layout.trump = DDS_NOTRUMP;
-    layout.remainCards[North][Spades] = holding({Two});
+    layout.remainCards[North][Spades] = be::holding({Two});
     node.layouts = {layout};
     node.p = {1.0};
     node.kappa = 1.0;
     node.is_sample = true;  // the state the evaluator cannot yet produce
 
     auto const bound = [](Deal const&) -> int { return 0; };  // dead, if it were consulted
-    EvaluateOptions const options{.bound = bound, .delta_is_double_dummy_optimal = true};
+    be::EvaluateOptions const options{.bound = bound, .delta_is_double_dummy_optimal = true};
 
-    EXPECT_FALSE(tier2_dead(node, options));
+    EXPECT_FALSE(be::tier2_dead(node, options));
 }
 
 TEST_F(SamplingGateTest, BothTier1CutsStillFireOnASampledNode)
@@ -862,18 +864,18 @@ TEST_F(SamplingGateTest, BothTier1CutsStillFireOnASampledNode)
     // instead of tier 2 alone would disable both of these on every sampled
     // node too. Pinning that with a separate assertion per tier, rather
     // than leaving it to a comment someone can talk themselves out of.
-    BeliefNode already_made_node{};
+    be::BeliefNode already_made_node{};
     already_made_node.state.declarer = North;
     already_made_node.state.tricks_needed = 1;
     already_made_node.state.tricks_won_by_declarer = 1;  // already made
     already_made_node.is_sample = true;
-    EXPECT_TRUE(already_made(already_made_node.state));
+    EXPECT_TRUE(be::already_made(already_made_node.state));
 
-    BeliefNode dead_node{};
+    be::BeliefNode dead_node{};
     dead_node.state.declarer = North;
     dead_node.state.tricks_needed = 5;  // impossible: nothing left to win 5 tricks from
     dead_node.state.tricks_won_by_declarer = 0;
     dead_node.state.known_holdings = Deal{};  // every hand empty -- tricks_remaining() == 0
     dead_node.is_sample = true;
-    EXPECT_TRUE(is_dead(dead_node.state));
+    EXPECT_TRUE(be::is_dead(dead_node.state));
 }

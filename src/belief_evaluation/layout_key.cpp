@@ -2,6 +2,9 @@
 
 #include <utility/constants.h>
 
+namespace dds::belief_evaluation
+{
+
 namespace
 {
     constexpr std::uint64_t ThirteenBitMask = (std::uint64_t{1} << 13) - 1;
@@ -24,3 +27,5 @@ auto layout_key(Deal const& deal, int defender_seat) -> std::uint64_t
          | (((std::uint64_t(holding[2]) >> 2) & ThirteenBitMask) << 26)
          | (((std::uint64_t(holding[3]) >> 2) & ThirteenBitMask) << 39);
 }
+
+}  // namespace dds::belief_evaluation

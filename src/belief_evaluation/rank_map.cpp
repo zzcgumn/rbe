@@ -3,6 +3,9 @@
 #include <lookup_tables/lookup_tables.hpp>
 #include <utility/constants.h>
 
+namespace dds::belief_evaluation
+{
+
 auto RankMap::to_relative(int suit, int rank) const -> int
 {
     // Out-of-range suit/rank cannot be outstanding, so 0 ("not outstanding")
@@ -54,3 +57,5 @@ auto make_rank_map(Deal const& deal) -> RankMap
     }
     return map;
 }
+
+}  // namespace dds::belief_evaluation

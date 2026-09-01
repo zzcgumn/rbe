@@ -1,12 +1,14 @@
 #include <gtest/gtest.h>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/validation.hpp>
 
 #include "test_support.hpp"
+
+namespace be = dds::belief_evaluation;
 
 namespace
 {
@@ -34,16 +36,16 @@ namespace
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = North;
-        deal.remainCards[North][Spades] = holding({Ace});
-        deal.remainCards[East][Spades] = holding({Two});
-        deal.remainCards[South][Spades] = holding({Three});
-        deal.remainCards[West][Spades] = holding({Jack});
+        deal.remainCards[North][Spades] = be::holding({Ace});
+        deal.remainCards[East][Spades] = be::holding({Two});
+        deal.remainCards[South][Spades] = be::holding({Three});
+        deal.remainCards[West][Spades] = be::holding({Jack});
         return deal;
     }
 
-    auto strategy(StrategyId id) -> DeclarerStrategy
+    auto strategy(be::StrategyId id) -> be::DeclarerStrategy
     {
-        return DeclarerStrategy{.id = id, .play = single_card_declarer_play, .state_key = nullptr};
+        return be::DeclarerStrategy{.id = id, .play = be::single_card_declarer_play, .state_key = nullptr};
     }
 }
 
@@ -58,10 +60,10 @@ class EvaluateTest : public ::testing::Test
 TEST_F(EvaluateTest, CertaintyGivesPMakeOfOne)
 {
     Deal const root_layout = make_one_trick_certain_win();
-    VectorLayoutSource source({root_layout});
+    be::VectorLayoutSource source({root_layout});
 
-    EvaluationResult const result =
-        evaluate(root_layout, North, /*tricks_needed=*/1, source, strategy(1), single_card_defender);
+    be::EvaluationResult const result =
+        be::evaluate(root_layout, North, /*tricks_needed=*/1, source, strategy(1), be::single_card_defender);
 
     ASSERT_FALSE(result.error.has_value());
     ASSERT_EQ(result.by_strategy.count(1u), 1u);
@@ -71,11 +73,11 @@ TEST_F(EvaluateTest, CertaintyGivesPMakeOfOne)
 TEST_F(EvaluateTest, ImpossibilityGivesPMakeOfZero)
 {
     Deal const root_layout = make_one_trick_certain_win();
-    VectorLayoutSource source({root_layout});
+    be::VectorLayoutSource source({root_layout});
 
     // Only one trick exists in the whole ending; needing two is impossible.
-    EvaluationResult const result =
-        evaluate(root_layout, North, /*tricks_needed=*/2, source, strategy(1), single_card_defender);
+    be::EvaluationResult const result =
+        be::evaluate(root_layout, North, /*tricks_needed=*/2, source, strategy(1), be::single_card_defender);
 
     ASSERT_FALSE(result.error.has_value());
     EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 0.0);
@@ -87,52 +89,52 @@ TEST_F(EvaluateTest, ImpossibilityGivesPMakeOfZero)
 TEST_F(EvaluateTest, AnUnenumerableSourceSurfacesAsARootConstructionError)
 {
     Deal const root_layout = make_one_trick_certain_win();
-    UnboundedLayoutSource source;  // size() == nullopt
+    be::UnboundedLayoutSource source;  // size() == nullopt
 
-    EvaluationResult const result = evaluate(
-        root_layout, North, /*tricks_needed=*/1, source, strategy(1), single_card_defender);
+    be::EvaluationResult const result = be::evaluate(
+        root_layout, North, /*tricks_needed=*/1, source, strategy(1), be::single_card_defender);
 
     ASSERT_TRUE(result.error.has_value());
     EXPECT_TRUE(result.by_strategy.empty());
-    EXPECT_EQ(result.error->callback, EvaluationCallback::RootConstruction);
+    EXPECT_EQ(result.error->callback, be::EvaluationCallback::RootConstruction);
     EXPECT_EQ(result.error->seat, North);
 }
 
 TEST_F(EvaluateTest, AnIllegalCardFromPiSurfacesAsADeclarerPlayError)
 {
     Deal const root_layout = make_one_trick_certain_win();
-    VectorLayoutSource source({root_layout});
-    RecordingDeclarerStrategy bad_pi(Card{Hearts, Two});  // North doesn't hold a heart at all
+    be::VectorLayoutSource source({root_layout});
+    be::RecordingDeclarerStrategy bad_pi(be::Card{Hearts, Two});  // North doesn't hold a heart at all
 
-    EvaluationResult const result = evaluate(
-        root_layout, North, /*tricks_needed=*/1, source, bad_pi.as_strategy(), single_card_defender);
+    be::EvaluationResult const result = be::evaluate(
+        root_layout, North, /*tricks_needed=*/1, source, bad_pi.as_strategy(), be::single_card_defender);
 
     ASSERT_TRUE(result.error.has_value());
     EXPECT_TRUE(result.by_strategy.empty());
-    EXPECT_EQ(result.error->callback, EvaluationCallback::DeclarerPlay);
-    EXPECT_EQ(result.error->validation, ValidationError::CardNotHeld);
+    EXPECT_EQ(result.error->callback, be::EvaluationCallback::DeclarerPlay);
+    EXPECT_EQ(result.error->validation, be::ValidationError::CardNotHeld);
     EXPECT_EQ(result.error->seat, North);
-    EXPECT_EQ(result.error->layout.remainCards[North][Spades], holding({Ace}));
+    EXPECT_EQ(result.error->layout.remainCards[North][Spades], be::holding({Ace}));
 }
 
 TEST_F(EvaluateTest, AnIllegalDistributionFromDeltaSurfacesAsADefenderStrategyError)
 {
     Deal const root_layout = make_one_trick_certain_win();
-    VectorLayoutSource source({root_layout});
-    auto const bad_delta = [](DefenderQuery const&) -> std::vector<WeightedCard>
+    be::VectorLayoutSource source({root_layout});
+    auto const bad_delta = [](be::DefenderQuery const&) -> std::vector<be::WeightedCard>
     {
-        return {WeightedCard{Card{Hearts, Two}, 1.0}};  // East doesn't hold a heart at all
+        return {be::WeightedCard{be::Card{Hearts, Two}, 1.0}};  // East doesn't hold a heart at all
     };
 
-    EvaluationResult const result =
-        evaluate(root_layout, North, /*tricks_needed=*/1, source, strategy(1), bad_delta);
+    be::EvaluationResult const result =
+        be::evaluate(root_layout, North, /*tricks_needed=*/1, source, strategy(1), bad_delta);
 
     ASSERT_TRUE(result.error.has_value());
     EXPECT_TRUE(result.by_strategy.empty());
-    EXPECT_EQ(result.error->callback, EvaluationCallback::DefenderStrategy);
-    EXPECT_EQ(result.error->validation, ValidationError::CardNotHeld);
+    EXPECT_EQ(result.error->callback, be::EvaluationCallback::DefenderStrategy);
+    EXPECT_EQ(result.error->validation, be::ValidationError::CardNotHeld);
     EXPECT_EQ(result.error->seat, East);
-    EXPECT_EQ(result.error->layout.remainCards[East][Spades], holding({Two}));
+    EXPECT_EQ(result.error->layout.remainCards[East][Spades], be::holding({Two}));
 }
 
 // --- root-child values ---------------------------------------------------
@@ -149,21 +151,21 @@ TEST_F(EvaluateTest, DeclarerRootChildrenAreAlternativesNotAPartition)
     Deal root_layout{};
     root_layout.trump = DDS_NOTRUMP;
     root_layout.first = North;
-    root_layout.remainCards[North][Spades] = holding({Ace});
-    root_layout.remainCards[North][Hearts] = holding({Ace});
-    root_layout.remainCards[East][Spades] = holding({Two});
-    root_layout.remainCards[East][Hearts] = holding({Two});
-    root_layout.remainCards[South][Spades] = holding({Three});
-    root_layout.remainCards[South][Hearts] = holding({Three});
-    root_layout.remainCards[West][Spades] = holding({Jack});
-    root_layout.remainCards[West][Hearts] = holding({Jack});
-    VectorLayoutSource source({root_layout});
+    root_layout.remainCards[North][Spades] = be::holding({Ace});
+    root_layout.remainCards[North][Hearts] = be::holding({Ace});
+    root_layout.remainCards[East][Spades] = be::holding({Two});
+    root_layout.remainCards[East][Hearts] = be::holding({Two});
+    root_layout.remainCards[South][Spades] = be::holding({Three});
+    root_layout.remainCards[South][Hearts] = be::holding({Three});
+    root_layout.remainCards[West][Spades] = be::holding({Jack});
+    root_layout.remainCards[West][Hearts] = be::holding({Jack});
+    be::VectorLayoutSource source({root_layout});
 
-    EvaluationResult const result = evaluate(
-        root_layout, North, /*tricks_needed=*/2, source, strategy(1), single_card_defender);
+    be::EvaluationResult const result = be::evaluate(
+        root_layout, North, /*tricks_needed=*/2, source, strategy(1), be::single_card_defender);
 
     ASSERT_FALSE(result.error.has_value());
-    EvaluationValue const& value = result.by_strategy.at(1u);
+    be::EvaluationValue const& value = result.by_strategy.at(1u);
     ASSERT_EQ(value.root_children.size(), 2u);
     EXPECT_DOUBLE_EQ(value.root_children[0].value, 1.0);
     EXPECT_DOUBLE_EQ(value.root_children[1].value, 1.0);
@@ -195,17 +197,17 @@ TEST_F(EvaluateTest, DefenderRootChildrenSumToPMake)
     Deal root_layout{};
     root_layout.trump = DDS_NOTRUMP;
     root_layout.first = East;
-    root_layout.remainCards[North][Diamonds] = holding({Ace});
-    root_layout.remainCards[North][Clubs] = holding({Ace});
-    root_layout.remainCards[East][Diamonds] = holding({Queen});
-    root_layout.remainCards[East][Clubs] = holding({Queen});
-    root_layout.remainCards[South][Diamonds] = holding({Two});
-    root_layout.remainCards[South][Clubs] = holding({Two});
-    root_layout.remainCards[West][Diamonds] = holding({Three});
-    root_layout.remainCards[West][Clubs] = holding({Three});
-    VectorLayoutSource source({root_layout});
+    root_layout.remainCards[North][Diamonds] = be::holding({Ace});
+    root_layout.remainCards[North][Clubs] = be::holding({Ace});
+    root_layout.remainCards[East][Diamonds] = be::holding({Queen});
+    root_layout.remainCards[East][Clubs] = be::holding({Queen});
+    root_layout.remainCards[South][Diamonds] = be::holding({Two});
+    root_layout.remainCards[South][Clubs] = be::holding({Two});
+    root_layout.remainCards[West][Diamonds] = be::holding({Three});
+    root_layout.remainCards[West][Clubs] = be::holding({Three});
+    be::VectorLayoutSource source({root_layout});
 
-    auto const delta = [](DefenderQuery const& query) -> std::vector<WeightedCard>
+    auto const delta = [](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
     {
         // East's leading decision: nothing played yet, and East still
         // holds both suits. Every later query (East following the other
@@ -215,21 +217,21 @@ TEST_F(EvaluateTest, DefenderRootChildrenSumToPMake)
         if (is_easts_lead)
         {
             return {
-                WeightedCard{Card{Diamonds, Queen}, 0.5},
-                WeightedCard{Card{Clubs, Queen}, 0.5},
+                be::WeightedCard{be::Card{Diamonds, Queen}, 0.5},
+                be::WeightedCard{be::Card{Clubs, Queen}, 0.5},
             };
         }
-        return single_card_defender(query);
+        return be::single_card_defender(query);
     };
 
-    EvaluationResult const result =
-        evaluate(root_layout, North, /*tricks_needed=*/2, source, strategy(1), delta);
+    be::EvaluationResult const result =
+        be::evaluate(root_layout, North, /*tricks_needed=*/2, source, strategy(1), delta);
 
     ASSERT_FALSE(result.error.has_value())
         << "callback=" << static_cast<int>(result.error->callback)
         << " validation=" << static_cast<int>(result.error->validation)
         << " seat=" << result.error->seat;
-    EvaluationValue const& value = result.by_strategy.at(1u);
+    be::EvaluationValue const& value = result.by_strategy.at(1u);
     ASSERT_EQ(value.root_children.size(), 2u);
     EXPECT_DOUBLE_EQ(value.root_children[0].value, 0.5);
     EXPECT_DOUBLE_EQ(value.root_children[1].value, 0.5);
@@ -243,21 +245,21 @@ TEST_F(EvaluateTest, DefenderRootChildrenSumToPMake)
 TEST_F(EvaluateTest, RetainedRootIsAbsentByDefaultAndPresentWhenRequested)
 {
     Deal const root_layout = make_one_trick_certain_win();
-    VectorLayoutSource source({root_layout});
+    be::VectorLayoutSource source({root_layout});
 
-    EvaluationResult const without_retention = evaluate(
-        root_layout, North, /*tricks_needed=*/1, source, strategy(1), single_card_defender);
+    be::EvaluationResult const without_retention = be::evaluate(
+        root_layout, North, /*tricks_needed=*/1, source, strategy(1), be::single_card_defender);
     ASSERT_FALSE(without_retention.error.has_value());
     EXPECT_FALSE(without_retention.by_strategy.at(1u).retained_root.has_value());
 
-    EvaluationResult const with_retention = evaluate(
+    be::EvaluationResult const with_retention = be::evaluate(
         root_layout,
         North,
         /*tricks_needed=*/1,
         source,
         strategy(1),
-        single_card_defender,
-        EvaluateOptions{.retain_root = true});
+        be::single_card_defender,
+        be::EvaluateOptions{.retain_root = true});
     ASSERT_FALSE(with_retention.error.has_value());
     ASSERT_TRUE(with_retention.by_strategy.at(1u).retained_root.has_value());
     EXPECT_EQ(with_retention.by_strategy.at(1u).retained_root->layouts.size(), 1u);
@@ -268,18 +270,18 @@ TEST_F(EvaluateTest, RetainedRootIsAbsentByDefaultAndPresentWhenRequested)
 TEST_F(EvaluateTest, TheResultIsIndexedByTheCallersOwnStrategyId)
 {
     Deal const root_layout = make_one_trick_certain_win();
-    VectorLayoutSource source({root_layout});
+    be::VectorLayoutSource source({root_layout});
 
-    EvaluationResult const result = evaluate(
+    be::EvaluationResult const result = be::evaluate(
         root_layout,
         North,
         /*tricks_needed=*/1,
         source,
         strategy(9999),
-        single_card_defender);
+        be::single_card_defender);
 
     ASSERT_FALSE(result.error.has_value());
     ASSERT_EQ(result.by_strategy.size(), 1u);
-    ASSERT_EQ(result.by_strategy.count(StrategyId{9999}), 1u);
-    EXPECT_DOUBLE_EQ(result.by_strategy.at(StrategyId{9999}).p_make, 1.0);
+    ASSERT_EQ(result.by_strategy.count(be::StrategyId{9999}), 1u);
+    EXPECT_DOUBLE_EQ(result.by_strategy.at(be::StrategyId{9999}).p_make, 1.0);
 }

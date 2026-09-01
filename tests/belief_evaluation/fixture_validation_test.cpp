@@ -1,12 +1,14 @@
 #include <gtest/gtest-spi.h>
 #include <gtest/gtest.h>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/types.hpp>
 
 #include "test_support.hpp"
+
+using namespace dds::belief_evaluation;
 
 // Guard rails for fixture construction: each helper converts a class of
 // fixture mistake that would otherwise surface as a confusing failure deep

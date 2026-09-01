@@ -9,7 +9,15 @@
 /// this module's `::Card` the moment both are visible in one translation
 /// unit. Keeping the full include out of this header confines the
 /// collision to `double_dummy_bound.cpp`.
+///
+/// Declared here, above `namespace dds::belief_evaluation` below, for the
+/// same reason as `double_dummy_defender.hpp`'s own copy of this note: this
+/// is `::SolverContext` at global scope, not a namespaced, never-defined
+/// lookalike.
 class SolverContext;
+
+namespace dds::belief_evaluation
+{
 
 /// A LayoutBound backed by `solve_board()`: the maximum tricks `declarer`
 /// can take from a given layout, double dummy, regardless of which seat is
@@ -65,3 +73,5 @@ private:
     SolverContext& ctx_;
     int declarer_;
 };
+
+}  // namespace dds::belief_evaluation

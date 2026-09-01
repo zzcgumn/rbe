@@ -2,7 +2,10 @@
 
 #include <cstdint>
 
-#include <belief_evaluation/dds_types.hpp>
+#include <api/dds_data_types.hpp>
+
+namespace dds::belief_evaluation
+{
 
 /// Exact identity of a layout within one belief node: `defender_seat`'s
 /// holding, packed as four 13-bit suits (52 significant bits). Unique only
@@ -17,3 +20,5 @@
 /// shifting, so a malformed `Deal` with stray bits set above rank 14 cannot
 /// leak into an adjacent suit's field of the packed key.
 auto layout_key(Deal const& deal, int defender_seat) -> std::uint64_t;
+
+}  // namespace dds::belief_evaluation

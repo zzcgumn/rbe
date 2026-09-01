@@ -1,20 +1,13 @@
 #include <belief_evaluation/double_dummy_bound.hpp>
 
-// solver_context.hpp and solve_board.hpp both pull in api/dds.h, which
-// declares its own unrelated struct Card -- the collision dds_types.hpp's
-// own doxygen explains. No local rename is needed here: this file's own
-// header (included above, first) chains through evaluate.hpp ->
-// defender_strategy.hpp -> types.hpp -> dds_types.hpp, so the rename has
-// already happened by the time these two are reached below. That does
-// mean the include above must stay first in this file for the rename to
-// still be in effect here -- see double_dummy_bound.hpp's own forward
-// declaration of SolverContext for why the compiler can't just be trusted
-// to reorder these on its own.
 #include <api/solve_board.hpp>
 #include <solver_context/solver_context.hpp>
+#include <utility/constants.h>
 
 #include <belief_evaluation/trick.hpp>
-#include <utility/constants.h>
+
+namespace dds::belief_evaluation
+{
 
 namespace
 {
@@ -67,3 +60,5 @@ auto DoubleDummyBound::as_bound() -> LayoutBound
         return tricks_remaining(temp) - fut.score[0];
     };
 }
+
+}  // namespace dds::belief_evaluation

@@ -5,6 +5,9 @@
 
 #include <utility/constants.h>
 
+namespace dds::belief_evaluation
+{
+
 namespace
 {
     /// The cards named by `fut.equals[i]` -- a rank bitmask in Deal's own
@@ -116,3 +119,5 @@ auto spread(FutureTricks const& fut, SpreadPolicy policy) -> std::vector<Weighte
     }
     return distribution;
 }
+
+}  // namespace dds::belief_evaluation

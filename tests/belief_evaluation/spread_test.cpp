@@ -3,11 +3,13 @@
 
 #include <gtest/gtest.h>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/spread.hpp>
 #include <belief_evaluation/validation.hpp>
+
+using namespace dds::belief_evaluation;
 
 // spread() and SpreadPolicy have no solver dependency and no solve_board
 // call anywhere in this file -- FutureTricks values below are hand-built,

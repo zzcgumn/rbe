@@ -15,7 +15,9 @@
 
 #include <gtest/gtest.h>
 
-#include <belief_evaluation/dds_types.hpp>
+#include <api/dds_data_types.hpp>
+#include <utility/constants.h>
+
 #include <belief_evaluation/declarer_strategy.hpp>
 #include <belief_evaluation/defender_strategy.hpp>
 #include <belief_evaluation/evaluate.hpp>
@@ -24,7 +26,9 @@
 #include <belief_evaluation/trick.hpp>
 #include <belief_evaluation/types.hpp>
 #include <belief_evaluation/validation.hpp>
-#include <utility/constants.h>
+
+namespace dds::belief_evaluation
+{
 
 /// A LayoutSource over a fixed, in-memory list of layouts — the "dumb
 /// ordered index space" the production LayoutSource contract describes,
@@ -525,3 +529,5 @@ private:
     std::vector<std::pair<Deal, int>> table_;
     std::vector<Deal> queries_;
 };
+
+}  // namespace dds::belief_evaluation

@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/trick.hpp>
 #include <belief_evaluation/types.hpp>
+
+namespace be = dds::belief_evaluation;
 
 namespace
 {
@@ -39,7 +41,7 @@ TEST_F(TrickTest, SeatOnPlayAdvancesFromLeaderByCardsAlreadyPlayed)
     deal.first = East;
     deal.currentTrickSuit[0] = Spades;
     deal.currentTrickRank[0] = Ace;  // East played the ace of spades
-    EXPECT_EQ(seat_on_play(deal), South);
+    EXPECT_EQ(be::seat_on_play(deal), South);
 }
 
 TEST_F(TrickTest, SeatOnPlayIsTheLeaderWhenNothingHasBeenPlayed)
@@ -47,7 +49,7 @@ TEST_F(TrickTest, SeatOnPlayIsTheLeaderWhenNothingHasBeenPlayed)
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = West;
-    EXPECT_EQ(seat_on_play(deal), West);
+    EXPECT_EQ(be::seat_on_play(deal), West);
 }
 
 // --- legal_cards ------------------------------------------------------------
@@ -64,7 +66,7 @@ TEST_F(TrickTest, LegalCardsWhenLeadingIsEveryHeldCardInEverySuit)
     deal.remainCards[North][Diamonds] = 1u << King;
     deal.remainCards[North][Clubs] = 1u << Two;
 
-    auto const legal = legal_cards(deal, North);
+    auto const legal = be::legal_cards(deal, North);
     EXPECT_EQ(legal[Spades], 1u << Ace);
     EXPECT_EQ(legal[Hearts], 0u);
     EXPECT_EQ(legal[Diamonds], 1u << King);
@@ -83,7 +85,7 @@ TEST_F(TrickTest, LegalCardsMustFollowTheLedSuitWhenHoldingIt)
     deal.remainCards[East][Spades] = (1u << Queen) | (1u << Three);
     deal.remainCards[East][Hearts] = 1u << Ace;
 
-    auto const legal = legal_cards(deal, East);
+    auto const legal = be::legal_cards(deal, East);
     EXPECT_EQ(legal[Spades], (1u << Queen) | (1u << Three));
     EXPECT_EQ(legal[Hearts], 0u);
 }
@@ -101,7 +103,7 @@ TEST_F(TrickTest, LegalCardsAreEveryHeldCardWhenVoidInTheLedSuit)
     deal.remainCards[East][Hearts] = 1u << Ace;
     deal.remainCards[East][Clubs] = 1u << Two;
 
-    auto const legal = legal_cards(deal, East);
+    auto const legal = be::legal_cards(deal, East);
     EXPECT_EQ(legal[Spades], 0u);
     EXPECT_EQ(legal[Hearts], 1u << Ace);
     EXPECT_EQ(legal[Clubs], 1u << Two);
@@ -126,7 +128,7 @@ TEST_F(TrickTest, HighestCardOfTheLedSuitWinsInNotrump)
     deal.currentTrickSuit[2] = Diamonds;
     deal.currentTrickRank[2] = Three;
 
-    EXPECT_EQ(trick_complete_winner(deal, Card{Diamonds, Queen}), North);
+    EXPECT_EQ(be::trick_complete_winner(deal, be::Card{Diamonds, Queen}), North);
 }
 
 TEST_F(TrickTest, ADiscardNeverWinsEvenIfItOutranksTheLedSuit)
@@ -145,7 +147,7 @@ TEST_F(TrickTest, ADiscardNeverWinsEvenIfItOutranksTheLedSuit)
     deal.currentTrickSuit[2] = Diamonds;
     deal.currentTrickRank[2] = Two;
 
-    EXPECT_EQ(trick_complete_winner(deal, Card{Diamonds, Queen}), North);
+    EXPECT_EQ(be::trick_complete_winner(deal, be::Card{Diamonds, Queen}), North);
 }
 
 TEST_F(TrickTest, ATrumpRuffWinsOverAHigherCardOfTheLedSuit)
@@ -164,7 +166,7 @@ TEST_F(TrickTest, ATrumpRuffWinsOverAHigherCardOfTheLedSuit)
     deal.currentTrickSuit[2] = Hearts;
     deal.currentTrickRank[2] = Three;
 
-    EXPECT_EQ(trick_complete_winner(deal, Card{Spades, Queen}), South);
+    EXPECT_EQ(be::trick_complete_winner(deal, be::Card{Spades, Queen}), South);
 }
 
 // --- play --------------------------------------------------------------
@@ -176,7 +178,7 @@ TEST_F(TrickTest, PlayAppendsToAnInProgressTrickWithoutResolvingIt)
     deal.first = North;
     deal.remainCards[North][Diamonds] = (1u << King) | (1u << Two);
 
-    Deal const after = play(deal, Card{Diamonds, King});
+    Deal const after = play(deal, be::Card{Diamonds, King});
 
     EXPECT_EQ(after.currentTrickSuit[0], Diamonds);
     EXPECT_EQ(after.currentTrickRank[0], King);
@@ -199,7 +201,7 @@ TEST_F(TrickTest, PlayResolvesTheTrickOnTheFourthCard)
     deal.currentTrickRank[2] = Three;
     deal.remainCards[West][Diamonds] = 1u << Queen;
 
-    Deal const after = play(deal, Card{Diamonds, Queen});
+    Deal const after = play(deal, be::Card{Diamonds, Queen});
 
     EXPECT_EQ(after.currentTrickSuit[0], 0);
     EXPECT_EQ(after.currentTrickRank[0], 0);
@@ -221,10 +223,10 @@ TEST_F(TrickTest, PlainSuitTrickInNotrumpEndToEnd)
     deal.remainCards[South][Diamonds] = 1u << Queen;
     deal.remainCards[West][Diamonds] = 1u << Three;
 
-    deal = play(deal, Card{Diamonds, Ace});
-    deal = play(deal, Card{Diamonds, Two});
-    deal = play(deal, Card{Diamonds, Queen});
-    deal = play(deal, Card{Diamonds, Three});
+    deal = play(deal, be::Card{Diamonds, Ace});
+    deal = play(deal, be::Card{Diamonds, Two});
+    deal = play(deal, be::Card{Diamonds, Queen});
+    deal = play(deal, be::Card{Diamonds, Three});
 
     EXPECT_EQ(deal.currentTrickSuit[0], 0);
     EXPECT_EQ(deal.currentTrickRank[0], 0);
@@ -245,10 +247,10 @@ TEST_F(TrickTest, TrickRuffedByADefenderEndToEnd)
     deal.remainCards[South][Hearts] = 1u << Three;  // void in spades, ruffs
     deal.remainCards[West][Spades] = 1u << Queen;
 
-    deal = play(deal, Card{Spades, King});
-    deal = play(deal, Card{Clubs, Two});
-    deal = play(deal, Card{Hearts, Three});
-    deal = play(deal, Card{Spades, Queen});
+    deal = play(deal, be::Card{Spades, King});
+    deal = play(deal, be::Card{Clubs, Two});
+    deal = play(deal, be::Card{Hearts, Three});
+    deal = play(deal, be::Card{Spades, Queen});
 
     EXPECT_EQ(deal.currentTrickSuit[0], 0);
     EXPECT_EQ(deal.first, South);  // South's ruff won
@@ -268,10 +270,10 @@ TEST_F(TrickTest, TrickWithADiscardEndToEnd)
     deal.remainCards[South][Diamonds] = 1u << Two;
     deal.remainCards[West][Diamonds] = 1u << Queen;
 
-    deal = play(deal, Card{Diamonds, King});
-    deal = play(deal, Card{Spades, Ace});
-    deal = play(deal, Card{Diamonds, Two});
-    deal = play(deal, Card{Diamonds, Queen});
+    deal = play(deal, be::Card{Diamonds, King});
+    deal = play(deal, be::Card{Spades, Ace});
+    deal = play(deal, be::Card{Diamonds, Two});
+    deal = play(deal, be::Card{Diamonds, Queen});
 
     EXPECT_EQ(deal.currentTrickSuit[0], 0);
     EXPECT_EQ(deal.first, North);  // North's king wins; East's discard cannot
@@ -291,10 +293,10 @@ TEST_F(TrickTest, TrumpSuitLedEndToEnd)
     deal.remainCards[South][Spades] = 1u << Ace;
     deal.remainCards[West][Spades] = 1u << Queen;
 
-    deal = play(deal, Card{Spades, King});
-    deal = play(deal, Card{Spades, Two});
-    deal = play(deal, Card{Spades, Ace});
-    deal = play(deal, Card{Spades, Queen});
+    deal = play(deal, be::Card{Spades, King});
+    deal = play(deal, be::Card{Spades, Two});
+    deal = play(deal, be::Card{Spades, Ace});
+    deal = play(deal, be::Card{Spades, Queen});
 
     EXPECT_EQ(deal.currentTrickSuit[0], 0);
     EXPECT_EQ(deal.first, South);  // South's ace of trumps was highest

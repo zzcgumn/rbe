@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/layout_key.hpp>
@@ -10,6 +10,8 @@
 #include <belief_evaluation/validation.hpp>
 
 #include "test_support.hpp"
+
+namespace be = dds::belief_evaluation;
 
 namespace
 {
@@ -34,15 +36,15 @@ namespace
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = East;
-        deal.remainCards[East][Diamonds] = holding(east_diamonds);
-        deal.remainCards[West][Clubs] = holding({west_club_rank});
+        deal.remainCards[East][Diamonds] = be::holding(east_diamonds);
+        deal.remainCards[West][Clubs] = be::holding({west_club_rank});
         return deal;
     }
 
-    auto make_node(std::vector<Deal> layouts, std::vector<Probability> p, SampleWeight kappa)
-        -> BeliefNode
+    auto make_node(std::vector<Deal> layouts, std::vector<be::Probability> p, be::SampleWeight kappa)
+        -> be::BeliefNode
     {
-        BeliefNode node{};
+        be::BeliefNode node{};
         node.state.trump = DDS_NOTRUMP;
         node.state.first = North;
         node.state.declarer = North;
@@ -66,21 +68,21 @@ TEST_F(DefenderNodeTest, DeltaIsCalledOncePerLayoutWithThatLayoutAndSeat)
 {
     Deal const layout0 = make_layout({King}, /*west_club_rank=*/Two);
     Deal const layout1 = make_layout({Two}, /*west_club_rank=*/Two);
-    BeliefNode const node = make_node({layout0, layout1}, {0.5, 0.5}, 1.0);
+    be::BeliefNode const node = make_node({layout0, layout1}, {0.5, 0.5}, 1.0);
 
-    ScriptedDefender::Key const key0{layout_key(layout0, East), ""};
-    ScriptedDefender::Key const key1{layout_key(layout1, East), ""};
-    ScriptedDefender defender(
-        {{key0, Card{Diamonds, King}}, {key1, Card{Diamonds, Two}}});
+    be::ScriptedDefender::Key const key0{be::layout_key(layout0, East), ""};
+    be::ScriptedDefender::Key const key1{be::layout_key(layout1, East), ""};
+    be::ScriptedDefender defender(
+        {{key0, be::Card{Diamonds, King}}, {key1, be::Card{Diamonds, Two}}});
 
-    ExpandDefenderResult const result = expand_defender_node(node, defender.as_strategy());
+    be::ExpandDefenderResult const result = be::expand_defender_node(node, defender.as_strategy());
 
     ASSERT_TRUE(result.children.has_value());
     ASSERT_EQ(defender.queries().size(), 2u);
     EXPECT_EQ(defender.queries()[0].seat, East);
-    EXPECT_EQ(defender.queries()[0].layout, layout_key(layout0, East));
+    EXPECT_EQ(defender.queries()[0].layout, be::layout_key(layout0, East));
     EXPECT_EQ(defender.queries()[1].seat, East);
-    EXPECT_EQ(defender.queries()[1].layout, layout_key(layout1, East));
+    EXPECT_EQ(defender.queries()[1].layout, be::layout_key(layout1, East));
 }
 
 // --- criteria 2 and 3: grouping by card, absent rather than p = 0 --------
@@ -89,18 +91,18 @@ TEST_F(DefenderNodeTest, TwoLayoutsScriptedToDifferentCardsProduceTwoSingleLayou
 {
     Deal const layout0 = make_layout({King}, /*west_club_rank=*/Two);
     Deal const layout1 = make_layout({Two}, /*west_club_rank=*/Two);
-    BeliefNode const node = make_node({layout0, layout1}, {0.5, 0.5}, 1.0);
+    be::BeliefNode const node = make_node({layout0, layout1}, {0.5, 0.5}, 1.0);
 
-    ScriptedDefender::Key const key0{layout_key(layout0, East), ""};
-    ScriptedDefender::Key const key1{layout_key(layout1, East), ""};
-    ScriptedDefender defender(
-        {{key0, Card{Diamonds, King}}, {key1, Card{Diamonds, Two}}});
+    be::ScriptedDefender::Key const key0{be::layout_key(layout0, East), ""};
+    be::ScriptedDefender::Key const key1{be::layout_key(layout1, East), ""};
+    be::ScriptedDefender defender(
+        {{key0, be::Card{Diamonds, King}}, {key1, be::Card{Diamonds, Two}}});
 
-    ExpandDefenderResult const result = expand_defender_node(node, defender.as_strategy());
+    be::ExpandDefenderResult const result = be::expand_defender_node(node, defender.as_strategy());
 
     ASSERT_TRUE(result.children.has_value());
     ASSERT_EQ(result.children->size(), 2u);
-    for (BeliefNode const& child : *result.children)
+    for (be::BeliefNode const& child : *result.children)
     {
         EXPECT_EQ(child.layouts.size(), 1u);
         EXPECT_EQ(child.p.size(), 1u);
@@ -124,22 +126,22 @@ TEST_F(DefenderNodeTest, HandComputedPerChildValuesForAStochasticDefence)
     // under a wrong split — hence the per-child assertions below.
     Deal const layout0 = make_layout({King, Two}, /*west_club_rank=*/Two);
     Deal const layout1 = make_layout({King, Two}, /*west_club_rank=*/Ace);
-    BeliefNode const node = make_node({layout0, layout1}, {0.6, 0.4}, 1.0);
+    be::BeliefNode const node = make_node({layout0, layout1}, {0.6, 0.4}, 1.0);
 
-    auto const delta = [](DefenderQuery const& query) -> std::vector<WeightedCard>
+    auto const delta = [](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
     {
-        bool const is_layout0 = query.layout.remainCards[West][Clubs] == holding({Two});
+        bool const is_layout0 = query.layout.remainCards[West][Clubs] == be::holding({Two});
         if (is_layout0)
         {
-            return {WeightedCard{Card{Diamonds, King}, 1.0}};
+            return {be::WeightedCard{be::Card{Diamonds, King}, 1.0}};
         }
         return {
-            WeightedCard{Card{Diamonds, King}, 0.25},
-            WeightedCard{Card{Diamonds, Two}, 0.75},
+            be::WeightedCard{be::Card{Diamonds, King}, 0.25},
+            be::WeightedCard{be::Card{Diamonds, Two}, 0.75},
         };
     };
 
-    ExpandDefenderResult const result = expand_defender_node(node, delta);
+    be::ExpandDefenderResult const result = be::expand_defender_node(node, delta);
 
     ASSERT_TRUE(result.children.has_value());
     ASSERT_EQ(result.children->size(), 2u);
@@ -147,8 +149,8 @@ TEST_F(DefenderNodeTest, HandComputedPerChildValuesForAStochasticDefence)
     // shape (the king's child holds both layouts, the two's child holds
     // only layout 1) rather than by index.
     bool const first_is_king_child = (*result.children)[0].layouts.size() == 2u;
-    BeliefNode const& king_child = first_is_king_child ? (*result.children)[0] : (*result.children)[1];
-    BeliefNode const& two_child = first_is_king_child ? (*result.children)[1] : (*result.children)[0];
+    be::BeliefNode const& king_child = first_is_king_child ? (*result.children)[0] : (*result.children)[1];
+    be::BeliefNode const& two_child = first_is_king_child ? (*result.children)[1] : (*result.children)[0];
 
     ASSERT_EQ(king_child.p.size(), 2u);
     EXPECT_DOUBLE_EQ(king_child.p[0], 0.6);
@@ -166,12 +168,12 @@ TEST_F(DefenderNodeTest, HandComputedPerChildValuesForAStochasticDefence)
     // distribution summing to 1 — the two checks guard the same kind of
     // floating-point drift, so reusing it keeps this test no stricter than
     // the contract delta itself is held to.
-    KahanAccumulator total_child_mass;
-    for (BeliefNode const& child : *result.children)
+    be::KahanAccumulator total_child_mass;
+    for (be::BeliefNode const& child : *result.children)
     {
-        total_child_mass.add(node_mass(child));
+        total_child_mass.add(be::node_mass(child));
     }
-    EXPECT_NEAR(total_child_mass.value(), node_mass(node), 1e-6);
+    EXPECT_NEAR(total_child_mass.value(), be::node_mass(node), 1e-6);
 }
 
 // --- a layout appearing in several children -------------------------------
@@ -212,9 +214,9 @@ TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChi
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = East;
-        deal.remainCards[East][Diamonds] = holding({King, Queen});
-        deal.remainCards[East][Clubs] = holding({east_club_rank});
-        deal.remainCards[West][Clubs] = holding({west_club_rank});
+        deal.remainCards[East][Diamonds] = be::holding({King, Queen});
+        deal.remainCards[East][Clubs] = be::holding({east_club_rank});
+        deal.remainCards[West][Clubs] = be::holding({west_club_rank});
         return deal;
     };
     Deal const layout0 = make_split_diamond_layout(/*east=*/Two, /*west=*/Ace);
@@ -223,27 +225,27 @@ TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChi
     // single-suit-plus-filler remnants (North and South hold nothing) built
     // to exercise expand_defender_node() directly, not full 13-card deals
     // played out via evaluate() -- the check does not apply to this shape.
-    assert_pool_matches({layout0, layout1});
-    assert_forms_one_belief_node({layout0, layout1}, North);
+    be::assert_pool_matches({layout0, layout1});
+    be::assert_forms_one_belief_node({layout0, layout1}, North);
 
-    VectorLayoutSource source({layout0, layout1});
-    BeliefNode const node = *make_root(layout0, North, /*tricks_needed=*/1, source);
+    be::VectorLayoutSource source({layout0, layout1});
+    be::BeliefNode const node = *be::make_root(layout0, North, /*tricks_needed=*/1, source);
     ASSERT_EQ(node.layouts.size(), 2u);  // both layouts survived make_root's filter
 
-    ScriptedDefender::Key const key0{layout_key(layout0, East), ""};
-    ScriptedDefender::Key const key1{layout_key(layout1, East), ""};
-    ScriptedDefender defender = ScriptedDefender::stochastic(
+    be::ScriptedDefender::Key const key0{be::layout_key(layout0, East), ""};
+    be::ScriptedDefender::Key const key1{be::layout_key(layout1, East), ""};
+    be::ScriptedDefender defender = be::ScriptedDefender::stochastic(
         {{key0,
-          {WeightedCard{Card{Diamonds, King}, 0.5}, WeightedCard{Card{Diamonds, Queen}, 0.5}}},
-         {key1, {WeightedCard{Card{Diamonds, King}, 1.0}}}});
+          {be::WeightedCard{be::Card{Diamonds, King}, 0.5}, be::WeightedCard{be::Card{Diamonds, Queen}, 0.5}}},
+         {key1, {be::WeightedCard{be::Card{Diamonds, King}, 1.0}}}});
 
-    ExpandDefenderResult const result = expand_defender_node(node, defender.as_strategy());
+    be::ExpandDefenderResult const result = be::expand_defender_node(node, defender.as_strategy());
 
     ASSERT_TRUE(result.children.has_value());
     ASSERT_EQ(result.children->size(), 2u);
     bool const first_is_king_child = (*result.children)[0].layouts.size() == 2u;
-    BeliefNode const& king_child = first_is_king_child ? (*result.children)[0] : (*result.children)[1];
-    BeliefNode const& queen_child = first_is_king_child ? (*result.children)[1] : (*result.children)[0];
+    be::BeliefNode const& king_child = first_is_king_child ? (*result.children)[0] : (*result.children)[1];
+    be::BeliefNode const& queen_child = first_is_king_child ? (*result.children)[1] : (*result.children)[0];
 
     // The split: layout 0 appears in both children, p correctly multiplied
     // per child.
@@ -257,12 +259,12 @@ TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChi
     EXPECT_DOUBLE_EQ(queen_child.p[0], 0.5);
 
     // Mass conservation.
-    KahanAccumulator total_child_mass;
-    for (BeliefNode const& child : *result.children)
+    be::KahanAccumulator total_child_mass;
+    for (be::BeliefNode const& child : *result.children)
     {
-        total_child_mass.add(node_mass(child));
+        total_child_mass.add(be::node_mass(child));
     }
-    EXPECT_NEAR(total_child_mass.value(), node_mass(node), 1e-6);
+    EXPECT_NEAR(total_child_mass.value(), be::node_mass(node), 1e-6);
 
     // kappa is untouched -- defender children partition p, not kappa.
     EXPECT_DOUBLE_EQ(king_child.kappa, node.kappa);
@@ -273,8 +275,8 @@ TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChi
     // (still showing the queen); the queen's child the reverse -- in
     // *both* entries, not just East's (the one queried), which is exactly
     // what a partial clear would get wrong.
-    unsigned const queen_only = holding({Queen});
-    unsigned const king_only = holding({King});
+    unsigned const queen_only = be::holding({Queen});
+    unsigned const king_only = be::holding({King});
     EXPECT_EQ(king_child.state.known_holdings.remainCards[East][Diamonds], queen_only);
     EXPECT_EQ(king_child.state.known_holdings.remainCards[West][Diamonds], queen_only);
     EXPECT_EQ(queen_child.state.known_holdings.remainCards[East][Diamonds], king_only);
@@ -299,28 +301,28 @@ TEST_F(DefenderNodeTest, AMixedNodeHandlesASplittingAndANonSplittingLayoutTogeth
         deal.first = East;
         deal.remainCards[East][Diamonds] = east_diamonds;
         deal.remainCards[West][Diamonds] = west_diamonds;
-        deal.remainCards[East][Clubs] = holding({east_club});
-        deal.remainCards[West][Clubs] = holding({west_club});
+        deal.remainCards[East][Clubs] = be::holding({east_club});
+        deal.remainCards[West][Clubs] = be::holding({west_club});
         return deal;
     };
-    unsigned const both_honours = holding({King, Queen});
+    unsigned const both_honours = be::holding({King, Queen});
     Deal const layout0 = make_layout_with_split(both_honours, 0u, /*east=*/Two, /*west=*/Ace);
     Deal const layout1 = make_layout_with_split(both_honours, 0u, /*east=*/Ace, /*west=*/Two);
     Deal const layout2 =
-        make_layout_with_split(holding({Queen}), holding({King}), /*east=*/Two, /*west=*/Ace);
-    assert_pool_matches({layout0, layout1, layout2});
-    BeliefNode const node = make_node({layout0, layout1, layout2}, {0.5, 0.3, 0.2}, 1.0);
+        make_layout_with_split(be::holding({Queen}), be::holding({King}), /*east=*/Two, /*west=*/Ace);
+    be::assert_pool_matches({layout0, layout1, layout2});
+    be::BeliefNode const node = make_node({layout0, layout1, layout2}, {0.5, 0.3, 0.2}, 1.0);
 
-    ScriptedDefender::Key const key0{layout_key(layout0, East), ""};
-    ScriptedDefender::Key const key1{layout_key(layout1, East), ""};
-    ScriptedDefender::Key const key2{layout_key(layout2, East), ""};
-    ScriptedDefender defender = ScriptedDefender::stochastic(
+    be::ScriptedDefender::Key const key0{be::layout_key(layout0, East), ""};
+    be::ScriptedDefender::Key const key1{be::layout_key(layout1, East), ""};
+    be::ScriptedDefender::Key const key2{be::layout_key(layout2, East), ""};
+    be::ScriptedDefender defender = be::ScriptedDefender::stochastic(
         {{key0,
-          {WeightedCard{Card{Diamonds, King}, 0.5}, WeightedCard{Card{Diamonds, Queen}, 0.5}}},
-         {key1, {WeightedCard{Card{Diamonds, King}, 1.0}}},
-         {key2, {WeightedCard{Card{Diamonds, Queen}, 1.0}}}});
+          {be::WeightedCard{be::Card{Diamonds, King}, 0.5}, be::WeightedCard{be::Card{Diamonds, Queen}, 0.5}}},
+         {key1, {be::WeightedCard{be::Card{Diamonds, King}, 1.0}}},
+         {key2, {be::WeightedCard{be::Card{Diamonds, Queen}, 1.0}}}});
 
-    ExpandDefenderResult const result = expand_defender_node(node, defender.as_strategy());
+    be::ExpandDefenderResult const result = be::expand_defender_node(node, defender.as_strategy());
 
     ASSERT_TRUE(result.children.has_value());
     ASSERT_EQ(result.children->size(), 2u);
@@ -329,8 +331,8 @@ TEST_F(DefenderNodeTest, AMixedNodeHandlesASplittingAndANonSplittingLayoutTogeth
     // Both children hold two layouts here, so identify by which layout each
     // one's *second* entry is: the king's child holds layout 1 (West holds
     // no diamonds), the queen's child holds layout 2 (West holds the king).
-    BeliefNode const& king_child = first_is_king_child ? (*result.children)[0] : (*result.children)[1];
-    BeliefNode const& queen_child = first_is_king_child ? (*result.children)[1] : (*result.children)[0];
+    be::BeliefNode const& king_child = first_is_king_child ? (*result.children)[0] : (*result.children)[1];
+    be::BeliefNode const& queen_child = first_is_king_child ? (*result.children)[1] : (*result.children)[0];
 
     ASSERT_EQ(king_child.layouts.size(), 2u);
     ASSERT_EQ(king_child.p.size(), 2u);
@@ -342,12 +344,12 @@ TEST_F(DefenderNodeTest, AMixedNodeHandlesASplittingAndANonSplittingLayoutTogeth
     EXPECT_DOUBLE_EQ(queen_child.p[0], 0.25);
     EXPECT_DOUBLE_EQ(queen_child.p[1], 0.20);
 
-    KahanAccumulator total_child_mass;
-    for (BeliefNode const& child : *result.children)
+    be::KahanAccumulator total_child_mass;
+    for (be::BeliefNode const& child : *result.children)
     {
-        total_child_mass.add(node_mass(child));
+        total_child_mass.add(be::node_mass(child));
     }
-    EXPECT_NEAR(total_child_mass.value(), node_mass(node), 1e-6);
+    EXPECT_NEAR(total_child_mass.value(), be::node_mass(node), 1e-6);
 }
 
 // --- criterion 6: a bad distribution is rejected, not asserted -----------
@@ -355,15 +357,15 @@ TEST_F(DefenderNodeTest, AMixedNodeHandlesASplittingAndANonSplittingLayoutTogeth
 TEST_F(DefenderNodeTest, RejectsACardNotHeldBySeat)
 {
     Deal const layout = make_layout({King}, /*west_club_rank=*/Two);
-    BeliefNode const node = make_node({layout}, {1.0}, 1.0);
-    auto const delta = [](DefenderQuery const&) -> std::vector<WeightedCard>
+    be::BeliefNode const node = make_node({layout}, {1.0}, 1.0);
+    auto const delta = [](be::DefenderQuery const&) -> std::vector<be::WeightedCard>
     {
-        return {WeightedCard{Card{Diamonds, Ace}, 1.0}};  // East doesn't hold it
+        return {be::WeightedCard{be::Card{Diamonds, Ace}, 1.0}};  // East doesn't hold it
     };
 
-    ExpandDefenderResult const result = expand_defender_node(node, delta);
+    be::ExpandDefenderResult const result = be::expand_defender_node(node, delta);
     EXPECT_FALSE(result.children.has_value());
-    EXPECT_EQ(result.error, ValidationError::CardNotHeld);
+    EXPECT_EQ(result.error, be::ValidationError::CardNotHeld);
 }
 
 TEST_F(DefenderNodeTest, RejectsACardIllegalForTheTrick)
@@ -372,50 +374,50 @@ TEST_F(DefenderNodeTest, RejectsACardIllegalForTheTrick)
     layout.first = North;               // North led; East is next to play
     layout.currentTrickSuit[0] = Spades;
     layout.currentTrickRank[0] = Two;
-    layout.remainCards[East][Spades] = holding({Queen});  // East holds the led suit too
-    BeliefNode node = make_node({layout}, {1.0}, 1.0);
+    layout.remainCards[East][Spades] = be::holding({Queen});  // East holds the led suit too
+    be::BeliefNode node = make_node({layout}, {1.0}, 1.0);
     node.state.known_holdings = layout;
 
-    auto const delta = [](DefenderQuery const&) -> std::vector<WeightedCard>
+    auto const delta = [](be::DefenderQuery const&) -> std::vector<be::WeightedCard>
     {
-        return {WeightedCard{Card{Diamonds, King}, 1.0}};  // must follow spades instead
+        return {be::WeightedCard{be::Card{Diamonds, King}, 1.0}};  // must follow spades instead
     };
 
-    ExpandDefenderResult const result = expand_defender_node(node, delta);
+    be::ExpandDefenderResult const result = be::expand_defender_node(node, delta);
     EXPECT_FALSE(result.children.has_value());
-    EXPECT_EQ(result.error, ValidationError::CardIllegalForTrick);
+    EXPECT_EQ(result.error, be::ValidationError::CardIllegalForTrick);
 }
 
 TEST_F(DefenderNodeTest, RejectsANonPositiveProbability)
 {
     Deal const layout = make_layout({King, Two}, /*west_club_rank=*/Two);
-    BeliefNode const node = make_node({layout}, {1.0}, 1.0);
-    auto const delta = [](DefenderQuery const&) -> std::vector<WeightedCard>
+    be::BeliefNode const node = make_node({layout}, {1.0}, 1.0);
+    auto const delta = [](be::DefenderQuery const&) -> std::vector<be::WeightedCard>
     {
         return {
-            WeightedCard{Card{Diamonds, King}, 0.0},
-            WeightedCard{Card{Diamonds, Two}, 1.0},
+            be::WeightedCard{be::Card{Diamonds, King}, 0.0},
+            be::WeightedCard{be::Card{Diamonds, Two}, 1.0},
         };
     };
 
-    ExpandDefenderResult const result = expand_defender_node(node, delta);
+    be::ExpandDefenderResult const result = be::expand_defender_node(node, delta);
     EXPECT_FALSE(result.children.has_value());
-    EXPECT_EQ(result.error, ValidationError::ProbabilityNonPositive);
+    EXPECT_EQ(result.error, be::ValidationError::ProbabilityNonPositive);
 }
 
 TEST_F(DefenderNodeTest, RejectsProbabilitiesNotSummingToOne)
 {
     Deal const layout = make_layout({King, Two}, /*west_club_rank=*/Two);
-    BeliefNode const node = make_node({layout}, {1.0}, 1.0);
-    auto const delta = [](DefenderQuery const&) -> std::vector<WeightedCard>
+    be::BeliefNode const node = make_node({layout}, {1.0}, 1.0);
+    auto const delta = [](be::DefenderQuery const&) -> std::vector<be::WeightedCard>
     {
         return {
-            WeightedCard{Card{Diamonds, King}, 0.5},
-            WeightedCard{Card{Diamonds, Two}, 0.25},
+            be::WeightedCard{be::Card{Diamonds, King}, 0.5},
+            be::WeightedCard{be::Card{Diamonds, Two}, 0.25},
         };
     };
 
-    ExpandDefenderResult const result = expand_defender_node(node, delta);
+    be::ExpandDefenderResult const result = be::expand_defender_node(node, delta);
     EXPECT_FALSE(result.children.has_value());
-    EXPECT_EQ(result.error, ValidationError::ProbabilitiesDoNotSumToOne);
+    EXPECT_EQ(result.error, be::ValidationError::ProbabilitiesDoNotSumToOne);
 }

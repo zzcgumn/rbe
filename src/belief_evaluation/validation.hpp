@@ -2,9 +2,13 @@
 
 #include <vector>
 
-#include <belief_evaluation/dds_types.hpp>
+#include <api/dds_data_types.hpp>
+
 #include <belief_evaluation/types.hpp>
 #include <belief_evaluation/defender_strategy.hpp>
+
+namespace dds::belief_evaluation
+{
 
 /// How far a defender distribution's probabilities may sum from exactly
 /// one and still be accepted by `validate_defender_distribution`. Shared
@@ -42,3 +46,5 @@ auto validate_defender_distribution(
     Deal const& layout,
     int seat,
     std::vector<WeightedCard> const& distribution) -> ValidationError;
+
+}  // namespace dds::belief_evaluation

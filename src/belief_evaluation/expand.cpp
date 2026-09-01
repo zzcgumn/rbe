@@ -10,6 +10,9 @@
 #include <belief_evaluation/trick.hpp>
 #include <utility/constants.h>
 
+namespace dds::belief_evaluation
+{
+
 namespace
 {
     /// state advanced by seat playing card: known_holdings and ranks updated
@@ -209,3 +212,5 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
 
     return ExpandDefenderResult{std::move(children), ValidationError::None};
 }
+
+}  // namespace dds::belief_evaluation

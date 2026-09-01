@@ -5,6 +5,9 @@
 
 #include <belief_evaluation/types.hpp>
 
+namespace dds::belief_evaluation
+{
+
 /// One card a defender might play, and the probability the defender model
 /// assigns to it in this layout.
 struct WeightedCard
@@ -38,3 +41,5 @@ struct DefenderQuery
 /// is what licenses evaluating each node of the search in isolation.
 using DefenderStrategy =
     std::function<std::vector<WeightedCard>(DefenderQuery const&)>;
+
+}  // namespace dds::belief_evaluation

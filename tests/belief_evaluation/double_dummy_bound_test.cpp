@@ -1,18 +1,8 @@
 #include <gtest/gtest.h>
 
-#include <belief_evaluation/dds_types.hpp>
-
-// solver_context.hpp and solve_board.hpp both pull in api/dds.h, which
-// declares its own unrelated struct Card -- see dds_types.hpp's own
-// doxygen for the collision and its centralized fix. The include above,
-// which must stay first among this file's belief_evaluation/api includes,
-// has already triggered that rename by the time these two are reached
-// below, so no local #define/#undef is needed here even though this file
-// also constructs a raw SolverContext directly for the orientation tests
-// below.
+#include <api/dds_data_types.hpp>
 #include <api/solve_board.hpp>
 #include <solver_context/solver_context.hpp>
-
 #include <utility/constants.h>
 
 #include <belief_evaluation/double_dummy_bound.hpp>
@@ -20,6 +10,14 @@
 #include <belief_evaluation/evaluate.hpp>
 
 #include "test_support.hpp"
+
+// This file constructs a raw SolverContext directly (for the orientation
+// tests below), so it sees both api/dds.h's own ::Card and this module's
+// dds::belief_evaluation::Card in the same translation unit. Qualifying
+// through this alias rather than `using namespace` keeps every module type
+// unambiguous against dds's -- the two are layout-identical, so an
+// unqualified `Card` would compile as either with no error to catch it.
+namespace be = dds::belief_evaluation;
 
 namespace
 {
@@ -64,10 +62,10 @@ TEST_F(DoubleDummyBoundTest, ScoreIsForTheSideOnLeadNotForDeclarerAbsolutely)
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = first;
-        deal.remainCards[North][Spades] = holding({Ace});
-        deal.remainCards[East][Spades] = holding({Two});
-        deal.remainCards[South][Spades] = holding({Three});
-        deal.remainCards[West][Spades] = holding({Four});
+        deal.remainCards[North][Spades] = be::holding({Ace});
+        deal.remainCards[East][Spades] = be::holding({Two});
+        deal.remainCards[South][Spades] = be::holding({Three});
+        deal.remainCards[West][Spades] = be::holding({Four});
         SolverContext ctx;
         FutureTricks fut{};
         int const status = solve_board(ctx, deal, /*target=*/-1, /*solutions=*/1, /*mode=*/0, &fut);
@@ -110,14 +108,14 @@ namespace
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = East;
-        deal.remainCards[East][Spades] = holding({Ace, King});
-        deal.remainCards[West][Spades] = holding({Queen, Jack});
-        deal.remainCards[North][Spades] = holding({Two, Three});
-        deal.remainCards[South][Spades] = holding({Four, Five});
-        deal.remainCards[North][Clubs] = holding({Ace, King});
-        deal.remainCards[South][Clubs] = holding({Queen, Jack});
-        deal.remainCards[East][Clubs] = holding({Two, Three});
-        deal.remainCards[West][Clubs] = holding({Four, Five});
+        deal.remainCards[East][Spades] = be::holding({Ace, King});
+        deal.remainCards[West][Spades] = be::holding({Queen, Jack});
+        deal.remainCards[North][Spades] = be::holding({Two, Three});
+        deal.remainCards[South][Spades] = be::holding({Four, Five});
+        deal.remainCards[North][Clubs] = be::holding({Ace, King});
+        deal.remainCards[South][Clubs] = be::holding({Queen, Jack});
+        deal.remainCards[East][Clubs] = be::holding({Two, Three});
+        deal.remainCards[West][Clubs] = be::holding({Four, Five});
         return deal;
     }
 
@@ -132,14 +130,14 @@ namespace
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = North;
-        deal.remainCards[North][Spades] = holding({Ace, King});
-        deal.remainCards[East][Spades] = holding({Queen, Jack});
-        deal.remainCards[South][Spades] = holding({Two, Three});
-        deal.remainCards[West][Spades] = holding({Four, Five});
-        deal.remainCards[North][Clubs] = holding({Ace, King});
-        deal.remainCards[East][Clubs] = holding({Queen, Jack});
-        deal.remainCards[South][Clubs] = holding({Two, Three});
-        deal.remainCards[West][Clubs] = holding({Four, Five});
+        deal.remainCards[North][Spades] = be::holding({Ace, King});
+        deal.remainCards[East][Spades] = be::holding({Queen, Jack});
+        deal.remainCards[South][Spades] = be::holding({Two, Three});
+        deal.remainCards[West][Spades] = be::holding({Four, Five});
+        deal.remainCards[North][Clubs] = be::holding({Ace, King});
+        deal.remainCards[East][Clubs] = be::holding({Queen, Jack});
+        deal.remainCards[South][Clubs] = be::holding({Two, Three});
+        deal.remainCards[West][Clubs] = be::holding({Four, Five});
         return deal;
     }
 }
@@ -150,8 +148,8 @@ TEST_F(DoubleDummyBoundTest, ADeclarerWinOutrightBoundsAtTheFullTrickCount)
 {
     Deal const layout = make_north_wins_every_trick();
     SolverContext ctx;
-    DoubleDummyBound provider(ctx, North);
-    LayoutBound const bound = provider.as_bound();
+    be::DoubleDummyBound provider(ctx, North);
+    be::LayoutBound const bound = provider.as_bound();
 
     EXPECT_EQ(bound(layout), 4);
 }
@@ -164,18 +162,18 @@ TEST_F(DoubleDummyBoundTest, ADeclarerLossOutrightBoundsAtZero)
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = North;
-    deal.remainCards[East][Spades] = holding({Ace, King});
-    deal.remainCards[West][Spades] = holding({Queen, Jack});
-    deal.remainCards[North][Spades] = holding({Two, Three});
-    deal.remainCards[South][Spades] = holding({Four, Five});
-    deal.remainCards[East][Clubs] = holding({Ace, King});
-    deal.remainCards[West][Clubs] = holding({Queen, Jack});
-    deal.remainCards[North][Clubs] = holding({Two, Three});
-    deal.remainCards[South][Clubs] = holding({Four, Five});
+    deal.remainCards[East][Spades] = be::holding({Ace, King});
+    deal.remainCards[West][Spades] = be::holding({Queen, Jack});
+    deal.remainCards[North][Spades] = be::holding({Two, Three});
+    deal.remainCards[South][Spades] = be::holding({Four, Five});
+    deal.remainCards[East][Clubs] = be::holding({Ace, King});
+    deal.remainCards[West][Clubs] = be::holding({Queen, Jack});
+    deal.remainCards[North][Clubs] = be::holding({Two, Three});
+    deal.remainCards[South][Clubs] = be::holding({Four, Five});
 
     SolverContext ctx;
-    DoubleDummyBound provider(ctx, North);
-    LayoutBound const bound = provider.as_bound();
+    be::DoubleDummyBound provider(ctx, North);
+    be::LayoutBound const bound = provider.as_bound();
 
     EXPECT_EQ(bound(deal), 0);
 }
@@ -184,8 +182,8 @@ TEST_F(DoubleDummyBoundTest, APositionInBetweenBoundsAtExactlyHalf)
 {
     Deal const layout = make_declarer_wins_exactly_half_the_tricks();
     SolverContext ctx;
-    DoubleDummyBound provider(ctx, North);
-    LayoutBound const bound = provider.as_bound();
+    be::DoubleDummyBound provider(ctx, North);
+    be::LayoutBound const bound = provider.as_bound();
 
     EXPECT_EQ(bound(layout), 2);
 }
@@ -202,8 +200,8 @@ TEST_F(DoubleDummyBoundTest, ADefenderOnLeadStillReportsDeclarersOwnBound)
     layout.first = East;
 
     SolverContext ctx;
-    DoubleDummyBound provider(ctx, North);
-    LayoutBound const bound = provider.as_bound();
+    be::DoubleDummyBound provider(ctx, North);
+    be::LayoutBound const bound = provider.as_bound();
 
     EXPECT_EQ(bound(layout), 4);
 }
@@ -218,8 +216,8 @@ TEST_F(DoubleDummyBoundTest, AMalformedLayoutSurfacesAsTheSentinelNotARealBound)
     // DoubleDummyDefender's own tests exercise.
     Deal const empty_deal{};
     SolverContext ctx;
-    DoubleDummyBound provider(ctx, North);
-    LayoutBound const bound = provider.as_bound();
+    be::DoubleDummyBound provider(ctx, North);
+    be::LayoutBound const bound = provider.as_bound();
 
     EXPECT_EQ(bound(empty_deal), 14);
 }
@@ -255,14 +253,14 @@ namespace
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = East;
-        deal.remainCards[North][Spades] = holding({Queen, Jack});
-        deal.remainCards[South][Spades] = holding({Two, Three});
-        deal.remainCards[East][Spades] = holding({Ace, Four});
-        deal.remainCards[West][Spades] = holding({King, Five});
-        deal.remainCards[North][Clubs] = holding({Six});
-        deal.remainCards[South][Clubs] = holding({Seven});
-        deal.remainCards[East][Clubs] = holding({Eight});
-        deal.remainCards[West][Clubs] = holding({Nine});
+        deal.remainCards[North][Spades] = be::holding({Queen, Jack});
+        deal.remainCards[South][Spades] = be::holding({Two, Three});
+        deal.remainCards[East][Spades] = be::holding({Ace, Four});
+        deal.remainCards[West][Spades] = be::holding({King, Five});
+        deal.remainCards[North][Clubs] = be::holding({Six});
+        deal.remainCards[South][Clubs] = be::holding({Seven});
+        deal.remainCards[East][Clubs] = be::holding({Eight});
+        deal.remainCards[West][Clubs] = be::holding({Nine});
         return deal;
     }
 }
@@ -270,37 +268,37 @@ namespace
 TEST_F(DoubleDummyBoundTest, ReproductionRunBTierOneAndTwoTogetherAgainstAQualifyingDelta)
 {
     Deal const layout = make_declarer_never_wins_a_trick();
-    VectorLayoutSource source({layout});
+    be::VectorLayoutSource source({layout});
     SolverContext ctx;
-    DoubleDummyDefender defender(ctx);
-    DoubleDummyBound provider(ctx, North);
-    DeclarerStrategy const pi{
-        .id = 1, .play = single_card_declarer_play, .state_key = nullptr};
+    be::DoubleDummyDefender defender(ctx);
+    be::DoubleDummyBound provider(ctx, North);
+    be::DeclarerStrategy const pi{
+        .id = 1, .play = be::single_card_declarer_play, .state_key = nullptr};
 
     // Baseline: tier 1 only (no bound supplied, so tier2_dead() never
     // fires -- see its own guard). The true value is 0.0, reached by full
     // recursion through both tricks.
-    EvaluationResult const tier1_only = evaluate(
+    be::EvaluationResult const tier1_only = be::evaluate(
         layout,
         North,
         /*tricks_needed=*/1,
         source,
         pi,
         defender.as_strategy(),
-        EvaluateOptions{.collect_counters = true});
+        be::EvaluateOptions{.collect_counters = true});
 
     // Tier 1 and 2 together: DoubleDummyDefender satisfies
     // delta_is_double_dummy_optimal (target = -1 is trick-maximising for
     // both sides -- see EvaluateOptions::delta_is_double_dummy_optimal's
     // own doxygen), so this is the sound, intended pairing.
-    EvaluationResult const tier1_and_2 = evaluate(
+    be::EvaluationResult const tier1_and_2 = be::evaluate(
         layout,
         North,
         /*tricks_needed=*/1,
         source,
         pi,
         defender.as_strategy(),
-        EvaluateOptions{
+        be::EvaluateOptions{
             .collect_counters = true,
             .bound = provider.as_bound(),
             .delta_is_double_dummy_optimal = true});

@@ -3,7 +3,10 @@
 #include <cstdint>
 #include <optional>
 
-#include <belief_evaluation/dds_types.hpp>
+#include <api/dds_data_types.hpp>
+
+namespace dds::belief_evaluation
+{
 
 /// A dumb, ordered, restartable index space over candidate layouts. Knows
 /// nothing about observations, weights, or the current search node — the
@@ -24,3 +27,5 @@ public:
     /// what makes sampling reproducible.
     virtual auto at(std::uint64_t index) const -> Deal = 0;
 };
+
+}  // namespace dds::belief_evaluation

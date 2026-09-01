@@ -2,6 +2,8 @@
 
 #include <belief_evaluation/renumber.hpp>
 
+using namespace dds::belief_evaluation;
+
 TEST(Renumber, OrderPreservingOverAPoolWithGaps)
 {
     // Pool has bits 0, 2, 4 set (three outstanding cards with gaps at 1, 3).

@@ -1,17 +1,10 @@
 #include <gtest/gtest.h>
 
-#include <belief_evaluation/dds_types.hpp>
+#include <type_traits>
 
-// solver_context.hpp and solve_board.hpp both pull in api/dds.h, which
-// declares its own unrelated struct Card -- see dds_types.hpp's own
-// doxygen for the collision and its centralized fix. The include above,
-// which must stay first among this file's belief_evaluation/api includes,
-// has already triggered that rename by the time these two are reached
-// below, so no local #define/#undef is needed here even though this file
-// also constructs a raw SolverContext directly.
+#include <api/dds_data_types.hpp>
 #include <api/solve_board.hpp>
 #include <solver_context/solver_context.hpp>
-
 #include <utility/constants.h>
 
 #include <belief_evaluation/double_dummy_defender.hpp>
@@ -19,6 +12,14 @@
 #include <belief_evaluation/validation.hpp>
 
 #include "test_support.hpp"
+
+// This file constructs a raw SolverContext directly (unlike the rest of the
+// suite), so it sees both api/dds.h's own ::Card and this module's
+// dds::belief_evaluation::Card in the same translation unit. Qualifying
+// through this alias rather than `using namespace` keeps every module type
+// unambiguous against dds's -- the two are layout-identical, so an
+// unqualified `Card` would compile as either with no error to catch it.
+namespace be = dds::belief_evaluation;
 
 namespace
 {
@@ -54,22 +55,36 @@ TEST_F(DoubleDummyDefenderTest, AHandWithOneLegalCardGetsProbabilityOne)
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = East;
-    deal.remainCards[North][Spades] = holding({Ace});
-    deal.remainCards[East][Spades] = holding({King});
-    deal.remainCards[South][Spades] = holding({Three});
-    deal.remainCards[West][Spades] = holding({Two});
+    deal.remainCards[North][Spades] = be::holding({Ace});
+    deal.remainCards[East][Spades] = be::holding({King});
+    deal.remainCards[South][Spades] = be::holding({Three});
+    deal.remainCards[West][Spades] = be::holding({Two});
 
     SolverContext ctx;
-    DoubleDummyDefender defender(ctx);
-    std::vector<WeightedCard> const distribution =
-        defender.as_strategy()(DefenderQuery{deal, East, ObservationState{}});
+    be::DoubleDummyDefender defender(ctx);
+    std::vector<be::WeightedCard> const distribution =
+        defender.as_strategy()(be::DefenderQuery{deal, East, be::ObservationState{}});
 
     ASSERT_EQ(distribution.size(), 1u);
     EXPECT_EQ(distribution[0].card.suit, Spades);
     EXPECT_EQ(distribution[0].card.rank, King);
     EXPECT_DOUBLE_EQ(distribution[0].probability, 1.0);
     EXPECT_EQ(
-        validate_defender_distribution(deal, East, distribution), ValidationError::None);
+        be::validate_defender_distribution(deal, East, distribution), be::ValidationError::None);
+}
+
+// This file is the one place in the suite where api/dds.h's ::Card and this
+// module's own be::Card are both visible at once -- the two coexisting,
+// asserted rather than assumed, is what the namespace split was for. The
+// two are layout-identical (same members, same types, same order), so this
+// only compiles at all because they are genuinely two distinct types.
+TEST_F(DoubleDummyDefenderTest, DdsAndModuleCardTypesCoexistAndAreDistinct)
+{
+    ::Card const solver_card{Spades, Ace};
+    be::Card const module_card{Spades, Ace};
+    static_assert(!std::is_same_v<decltype(solver_card), decltype(module_card)>);
+    EXPECT_EQ(solver_card.suit, module_card.suit);
+    EXPECT_EQ(solver_card.rank, module_card.rank);
 }
 
 // --- a clearly best card, and why -----------------------------------------
@@ -109,26 +124,26 @@ TEST_F(DoubleDummyDefenderTest, AClearlyBestCardWinsAllTheProbability)
     Deal deal{};
     deal.trump = Spades;
     deal.first = East;
-    deal.remainCards[North][Clubs] = holding({King});
-    deal.remainCards[North][Hearts] = holding({Three});
-    deal.remainCards[South][Spades] = holding({Three});
-    deal.remainCards[South][Hearts] = holding({Ace});
-    deal.remainCards[East][Spades] = holding({Two});
-    deal.remainCards[East][Clubs] = holding({Ace});
-    deal.remainCards[West][Spades] = holding({Four});
-    deal.remainCards[West][Hearts] = holding({Four});
+    deal.remainCards[North][Clubs] = be::holding({King});
+    deal.remainCards[North][Hearts] = be::holding({Three});
+    deal.remainCards[South][Spades] = be::holding({Three});
+    deal.remainCards[South][Hearts] = be::holding({Ace});
+    deal.remainCards[East][Spades] = be::holding({Two});
+    deal.remainCards[East][Clubs] = be::holding({Ace});
+    deal.remainCards[West][Spades] = be::holding({Four});
+    deal.remainCards[West][Hearts] = be::holding({Four});
 
     SolverContext ctx;
-    DoubleDummyDefender defender(ctx);  // TouchingSequence (default); no tie here either way
-    std::vector<WeightedCard> const distribution =
-        defender.as_strategy()(DefenderQuery{deal, East, ObservationState{}});
+    be::DoubleDummyDefender defender(ctx);  // TouchingSequence (default); no tie here either way
+    std::vector<be::WeightedCard> const distribution =
+        defender.as_strategy()(be::DefenderQuery{deal, East, be::ObservationState{}});
 
     ASSERT_EQ(distribution.size(), 1u);
     EXPECT_EQ(distribution[0].card.suit, Clubs);
     EXPECT_EQ(distribution[0].card.rank, Ace);
     EXPECT_DOUBLE_EQ(distribution[0].probability, 1.0);
     EXPECT_EQ(
-        validate_defender_distribution(deal, East, distribution), ValidationError::None);
+        be::validate_defender_distribution(deal, East, distribution), be::ValidationError::None);
 }
 
 TEST_F(DoubleDummyDefenderTest, SolutionsTwoReportsEveryScoreTiedCandidateAcrossSuits)
@@ -149,20 +164,20 @@ TEST_F(DoubleDummyDefenderTest, SolutionsTwoReportsEveryScoreTiedCandidateAcross
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = East;
-    deal.remainCards[North][Spades] = holding({Three});
-    deal.remainCards[North][Hearts] = holding({Three});
-    deal.remainCards[North][Diamonds] = holding({Two});
-    deal.remainCards[North][Clubs] = holding({Two});
-    deal.remainCards[South][Spades] = holding({Four});
-    deal.remainCards[South][Hearts] = holding({Four});
-    deal.remainCards[South][Diamonds] = holding({Three});
-    deal.remainCards[South][Clubs] = holding({Three});
-    deal.remainCards[East][Spades] = holding({Ace, King});
-    deal.remainCards[East][Hearts] = holding({Ace, King});
-    deal.remainCards[West][Spades] = holding({Two});
-    deal.remainCards[West][Hearts] = holding({Two});
-    deal.remainCards[West][Diamonds] = holding({Four});
-    deal.remainCards[West][Clubs] = holding({Four});
+    deal.remainCards[North][Spades] = be::holding({Three});
+    deal.remainCards[North][Hearts] = be::holding({Three});
+    deal.remainCards[North][Diamonds] = be::holding({Two});
+    deal.remainCards[North][Clubs] = be::holding({Two});
+    deal.remainCards[South][Spades] = be::holding({Four});
+    deal.remainCards[South][Hearts] = be::holding({Four});
+    deal.remainCards[South][Diamonds] = be::holding({Three});
+    deal.remainCards[South][Clubs] = be::holding({Three});
+    deal.remainCards[East][Spades] = be::holding({Ace, King});
+    deal.remainCards[East][Hearts] = be::holding({Ace, King});
+    deal.remainCards[West][Spades] = be::holding({Two});
+    deal.remainCards[West][Hearts] = be::holding({Two});
+    deal.remainCards[West][Diamonds] = be::holding({Four});
+    deal.remainCards[West][Clubs] = be::holding({Four});
 
     SolverContext ctx;
     FutureTricks two_solutions{};
@@ -220,27 +235,27 @@ TEST_F(DoubleDummyDefenderTest, ATouchingSequenceSpreadsEvenlyUnderTouchingSeque
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = North;
-    deal.remainCards[North][Spades] = holding({King, Queen});
-    deal.remainCards[East][Spades] = holding({Two});
-    deal.remainCards[East][Hearts] = holding({Two});
-    deal.remainCards[South][Spades] = holding({Three});
-    deal.remainCards[South][Hearts] = holding({Three});
-    deal.remainCards[West][Spades] = holding({Four});
-    deal.remainCards[West][Hearts] = holding({Four});
+    deal.remainCards[North][Spades] = be::holding({King, Queen});
+    deal.remainCards[East][Spades] = be::holding({Two});
+    deal.remainCards[East][Hearts] = be::holding({Two});
+    deal.remainCards[South][Spades] = be::holding({Three});
+    deal.remainCards[South][Hearts] = be::holding({Three});
+    deal.remainCards[West][Spades] = be::holding({Four});
+    deal.remainCards[West][Hearts] = be::holding({Four});
 
     SolverContext ctx;
-    DoubleDummyDefender defender(ctx, SpreadPolicy::TouchingSequence);
-    std::vector<WeightedCard> const distribution =
-        defender.as_strategy()(DefenderQuery{deal, North, ObservationState{}});
+    be::DoubleDummyDefender defender(ctx, be::SpreadPolicy::TouchingSequence);
+    std::vector<be::WeightedCard> const distribution =
+        defender.as_strategy()(be::DefenderQuery{deal, North, be::ObservationState{}});
 
     ASSERT_EQ(distribution.size(), 2u);
-    for (WeightedCard const& entry : distribution)
+    for (be::WeightedCard const& entry : distribution)
     {
         EXPECT_EQ(entry.card.suit, Spades);
         EXPECT_DOUBLE_EQ(entry.probability, 0.5);
     }
     EXPECT_EQ(
-        validate_defender_distribution(deal, North, distribution), ValidationError::None);
+        be::validate_defender_distribution(deal, North, distribution), be::ValidationError::None);
 }
 
 // --- the case that distinguishes TouchingSequence from AllOptimal ---------
@@ -259,44 +274,44 @@ TEST_F(DoubleDummyDefenderTest, TwoTiedSuitsDistinguishTouchingSequenceFromAllOp
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = East;
-    deal.remainCards[North][Spades] = holding({Three});
-    deal.remainCards[North][Hearts] = holding({Three});
-    deal.remainCards[North][Diamonds] = holding({Two});
-    deal.remainCards[North][Clubs] = holding({Two});
-    deal.remainCards[South][Spades] = holding({Four});
-    deal.remainCards[South][Hearts] = holding({Four});
-    deal.remainCards[South][Diamonds] = holding({Three});
-    deal.remainCards[South][Clubs] = holding({Three});
-    deal.remainCards[East][Spades] = holding({Ace, King});
-    deal.remainCards[East][Hearts] = holding({Ace, King});
-    deal.remainCards[West][Spades] = holding({Two});
-    deal.remainCards[West][Hearts] = holding({Two});
-    deal.remainCards[West][Diamonds] = holding({Four});
-    deal.remainCards[West][Clubs] = holding({Four});
+    deal.remainCards[North][Spades] = be::holding({Three});
+    deal.remainCards[North][Hearts] = be::holding({Three});
+    deal.remainCards[North][Diamonds] = be::holding({Two});
+    deal.remainCards[North][Clubs] = be::holding({Two});
+    deal.remainCards[South][Spades] = be::holding({Four});
+    deal.remainCards[South][Hearts] = be::holding({Four});
+    deal.remainCards[South][Diamonds] = be::holding({Three});
+    deal.remainCards[South][Clubs] = be::holding({Three});
+    deal.remainCards[East][Spades] = be::holding({Ace, King});
+    deal.remainCards[East][Hearts] = be::holding({Ace, King});
+    deal.remainCards[West][Spades] = be::holding({Two});
+    deal.remainCards[West][Hearts] = be::holding({Two});
+    deal.remainCards[West][Diamonds] = be::holding({Four});
+    deal.remainCards[West][Clubs] = be::holding({Four});
 
     SolverContext ctx;
 
-    DoubleDummyDefender touching(ctx, SpreadPolicy::TouchingSequence);
-    std::vector<WeightedCard> const touching_distribution =
-        touching.as_strategy()(DefenderQuery{deal, East, ObservationState{}});
+    be::DoubleDummyDefender touching(ctx, be::SpreadPolicy::TouchingSequence);
+    std::vector<be::WeightedCard> const touching_distribution =
+        touching.as_strategy()(be::DefenderQuery{deal, East, be::ObservationState{}});
     ASSERT_EQ(touching_distribution.size(), 2u);
     int const touching_suit = touching_distribution[0].card.suit;
-    for (WeightedCard const& entry : touching_distribution)
+    for (be::WeightedCard const& entry : touching_distribution)
     {
         EXPECT_EQ(entry.card.suit, touching_suit);  // one suit only
         EXPECT_DOUBLE_EQ(entry.probability, 0.5);
     }
     EXPECT_EQ(
-        validate_defender_distribution(deal, East, touching_distribution),
-        ValidationError::None);
+        be::validate_defender_distribution(deal, East, touching_distribution),
+        be::ValidationError::None);
 
-    DoubleDummyDefender all_optimal(ctx, SpreadPolicy::AllOptimal);
-    std::vector<WeightedCard> const all_optimal_distribution =
-        all_optimal.as_strategy()(DefenderQuery{deal, East, ObservationState{}});
+    be::DoubleDummyDefender all_optimal(ctx, be::SpreadPolicy::AllOptimal);
+    std::vector<be::WeightedCard> const all_optimal_distribution =
+        all_optimal.as_strategy()(be::DefenderQuery{deal, East, be::ObservationState{}});
     ASSERT_EQ(all_optimal_distribution.size(), 4u);  // both suits' AK pairs
     int spade_count = 0;
     int heart_count = 0;
-    for (WeightedCard const& entry : all_optimal_distribution)
+    for (be::WeightedCard const& entry : all_optimal_distribution)
     {
         EXPECT_DOUBLE_EQ(entry.probability, 0.25);
         if (entry.card.suit == Spades)
@@ -311,8 +326,8 @@ TEST_F(DoubleDummyDefenderTest, TwoTiedSuitsDistinguishTouchingSequenceFromAllOp
     EXPECT_EQ(spade_count, 2);
     EXPECT_EQ(heart_count, 2);
     EXPECT_EQ(
-        validate_defender_distribution(deal, East, all_optimal_distribution),
-        ValidationError::None);
+        be::validate_defender_distribution(deal, East, all_optimal_distribution),
+        be::ValidationError::None);
 }
 
 // --- a non-zero solve_board status --------------------------------------
@@ -329,20 +344,20 @@ TEST_F(DoubleDummyDefenderTest, ANonZeroSolveBoardStatusSurfacesAsARejectedEmpty
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = North;
-    deal.remainCards[North][Spades] = holding({Ace});
-    deal.remainCards[East][Spades] = holding({Ace});  // duplicate
-    deal.remainCards[South][Spades] = holding({Three});
-    deal.remainCards[West][Spades] = holding({Four});
+    deal.remainCards[North][Spades] = be::holding({Ace});
+    deal.remainCards[East][Spades] = be::holding({Ace});  // duplicate
+    deal.remainCards[South][Spades] = be::holding({Three});
+    deal.remainCards[West][Spades] = be::holding({Four});
 
     SolverContext ctx;
-    DoubleDummyDefender defender(ctx);
-    std::vector<WeightedCard> const distribution =
-        defender.as_strategy()(DefenderQuery{deal, North, ObservationState{}});
+    be::DoubleDummyDefender defender(ctx);
+    std::vector<be::WeightedCard> const distribution =
+        defender.as_strategy()(be::DefenderQuery{deal, North, be::ObservationState{}});
 
     EXPECT_TRUE(distribution.empty());
     EXPECT_EQ(
-        validate_defender_distribution(deal, North, distribution),
-        ValidationError::ProbabilitiesDoNotSumToOne);
+        be::validate_defender_distribution(deal, North, distribution),
+        be::ValidationError::ProbabilitiesDoNotSumToOne);
 }
 
 // --- the collapse: no touching sequences anywhere reduces to a
@@ -358,21 +373,21 @@ TEST_F(DoubleDummyDefenderTest, NoTouchingSequencesAnywhereReproducesAScriptedRe
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = East;
-    deal.remainCards[North][Spades] = holding({Ace});
-    deal.remainCards[East][Spades] = holding({King});
-    deal.remainCards[South][Spades] = holding({Three});
-    deal.remainCards[West][Spades] = holding({Two});
+    deal.remainCards[North][Spades] = be::holding({Ace});
+    deal.remainCards[East][Spades] = be::holding({King});
+    deal.remainCards[South][Spades] = be::holding({Three});
+    deal.remainCards[West][Spades] = be::holding({Two});
 
-    VectorLayoutSource source({deal});
-    DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
+    be::VectorLayoutSource source({deal});
+    be::DeclarerStrategy const pi{.id = 1, .play = be::single_card_declarer_play, .state_key = nullptr};
 
     SolverContext ctx;
-    DoubleDummyDefender dd_defender(ctx, SpreadPolicy::TouchingSequence);
-    EvaluationResult const dd_result =
-        evaluate(deal, North, /*tricks_needed=*/1, source, pi, dd_defender.as_strategy());
+    be::DoubleDummyDefender dd_defender(ctx, be::SpreadPolicy::TouchingSequence);
+    be::EvaluationResult const dd_result =
+        be::evaluate(deal, North, /*tricks_needed=*/1, source, pi, dd_defender.as_strategy());
 
-    EvaluationResult const scripted_result =
-        evaluate(deal, North, /*tricks_needed=*/1, source, pi, single_card_defender);
+    be::EvaluationResult const scripted_result =
+        be::evaluate(deal, North, /*tricks_needed=*/1, source, pi, be::single_card_defender);
 
     ASSERT_FALSE(dd_result.error.has_value());
     ASSERT_FALSE(scripted_result.error.has_value());

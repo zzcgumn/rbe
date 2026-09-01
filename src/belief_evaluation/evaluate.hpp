@@ -12,6 +12,9 @@
 #include <belief_evaluation/node.hpp>
 #include <belief_evaluation/validation.hpp>
 
+namespace dds::belief_evaluation
+{
+
 /// Which callback — or which stage of the evaluator itself — produced a
 /// reported EvaluationError.
 enum class EvaluationCallback
@@ -274,3 +277,5 @@ auto evaluate(
     DeclarerStrategy const& pi,
     DefenderStrategy const& delta,
     EvaluateOptions const& options = {}) -> EvaluationResult;
+
+}  // namespace dds::belief_evaluation

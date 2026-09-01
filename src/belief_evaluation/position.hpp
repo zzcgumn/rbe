@@ -4,6 +4,9 @@
 
 #include <utility/constants.h>
 
+namespace dds::belief_evaluation
+{
+
 /// A minimal trick-play position for stating the renumbering isomorphism:
 /// each hand's outstanding holding per suit, in dds's aggregate bit
 /// convention (bit i = the (i+2)-th absolute rank), the trump suit, and the
@@ -36,3 +39,5 @@ auto trick_winner(
 
 /// Removes one card from `hand`'s holding in `position`, in place.
 auto play_card(Position& position, int hand, int suit, int bit_position) -> void;
+
+}  // namespace dds::belief_evaluation

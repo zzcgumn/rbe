@@ -8,6 +8,9 @@
 #include <belief_evaluation/node.hpp>
 #include <belief_evaluation/validation.hpp>
 
+namespace dds::belief_evaluation
+{
+
 /// The result of expanding one node: either the child, or the
 /// ValidationError a callback's return violated. A local, minimal shape —
 /// evaluate.hpp's EvaluationError is what carries the fuller context (which
@@ -68,3 +71,5 @@ struct ExpandDefenderResult
 /// reported via the result rather than asserted.
 auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
     -> ExpandDefenderResult;
+
+}  // namespace dds::belief_evaluation

@@ -1,32 +1,10 @@
 #include <belief_evaluation/double_dummy_defender.hpp>
 
-// api/dds.h -- pulled in transitively by solver_context.hpp (whose own
-// public interface exposes dds.h's internal move-generation types
-// directly) and by api/solve_board.hpp -- declares its own unrelated
-// "simple card representation" also named `struct Card`, alongside ExtCard
-// and MoveType, the ones actually used by the solver's own internals
-// (moves.cpp, heuristic_sorting.hpp). `Card` itself need not be used
-// anywhere to collide: the moment both headers are visible in one
-// translation unit, both declare an unqualified global `::Card`, which is
-// a hard redefinition error regardless of whether either one is ever
-// referenced. That collides head-on with this module's own `::Card`
-// (belief_evaluation/types.hpp), used throughout this module's whole
-// public surface -- as they must both be visible here, since this file is
-// the one place that both calls the solver and builds a WeightedCard
-// result from it.
-//
-// No local rename is needed, though: dds_types.hpp (see its own doxygen)
-// centralizes exactly this rename, and this file's own header (included
-// above, first) already chains through defender_strategy.hpp ->
-// types.hpp -> dds_types.hpp, so api/dds.h's Card has already been
-// renamed to DdsInternalCard by the time solve_board.hpp /
-// solver_context.hpp are reached below. That does mean the include above
-// must stay first in this file for the rename to still be in effect here
-// -- double_dummy_defender.hpp forward-declares SolverContext for exactly
-// this reason, so it does not trigger an earlier, unmangled inclusion of
-// its own.
 #include <api/solve_board.hpp>
 #include <solver_context/solver_context.hpp>
+
+namespace dds::belief_evaluation
+{
 
 DoubleDummyDefender::DoubleDummyDefender(SolverContext& ctx, SpreadPolicy policy)
     : ctx_(ctx), policy_(policy)
@@ -64,3 +42,5 @@ auto DoubleDummyDefender::as_strategy() -> DefenderStrategy
         return spread(fut, policy_);
     };
 }
+
+}  // namespace dds::belief_evaluation

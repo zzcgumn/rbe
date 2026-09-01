@@ -12,7 +12,16 @@
 /// this header confines that collision to double_dummy_defender.cpp, the
 /// one file that actually needs both -- see its own top-of-file comment for
 /// how it resolves it.
+///
+/// Declared here, above `namespace dds::belief_evaluation` below: this is
+/// `library/src/solver_context/solver_context.hpp`'s `::SolverContext`, at
+/// global scope. A forward declaration inside the namespace block would
+/// instead declare a distinct, never-defined
+/// `dds::belief_evaluation::SolverContext`.
 class SolverContext;
+
+namespace dds::belief_evaluation
+{
 
 /// A DefenderStrategy that solves `query.layout` double dummy
 /// (`solve_board`) and spreads probability over the result via `policy`
@@ -54,3 +63,5 @@ private:
     SolverContext& ctx_;
     SpreadPolicy policy_;
 };
+
+}  // namespace dds::belief_evaluation

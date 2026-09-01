@@ -5,6 +5,9 @@
 
 #include <belief_evaluation/kahan.hpp>
 
+namespace dds::belief_evaluation
+{
+
 auto make_belief_view(BeliefNode const& node, std::vector<BeliefEntry>& scratch) -> BeliefView
 {
     KahanAccumulator total_p;
@@ -30,3 +33,5 @@ auto make_belief_view(BeliefNode const& node, std::vector<BeliefEntry>& scratch)
     return BeliefView{
         std::span<BeliefEntry const>(scratch), node.is_sample, node.layouts.size()};
 }
+
+}  // namespace dds::belief_evaluation

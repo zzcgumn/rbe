@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/kahan.hpp>
@@ -10,6 +10,8 @@
 #include <belief_evaluation/validation.hpp>
 
 #include "test_support.hpp"
+
+namespace be = dds::belief_evaluation;
 
 // The tests whose expected values are derived by hand rather than read off
 // the code. This evaluator is the reference every later, scalable
@@ -44,16 +46,16 @@ namespace
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = North;
-        deal.remainCards[North][Spades] = holding({Ace});
-        deal.remainCards[East][Spades] = holding({east_low});
-        deal.remainCards[South][Spades] = holding({3});
-        deal.remainCards[West][Spades] = holding({west_low});
+        deal.remainCards[North][Spades] = be::holding({Ace});
+        deal.remainCards[East][Spades] = be::holding({east_low});
+        deal.remainCards[South][Spades] = be::holding({3});
+        deal.remainCards[West][Spades] = be::holding({west_low});
         return deal;
     }
 
-    auto strategy(StrategyId id) -> DeclarerStrategy
+    auto strategy(be::StrategyId id) -> be::DeclarerStrategy
     {
-        return DeclarerStrategy{.id = id, .play = single_card_declarer_play, .state_key = nullptr};
+        return be::DeclarerStrategy{.id = id, .play = be::single_card_declarer_play, .state_key = nullptr};
     }
 }
 
@@ -70,7 +72,7 @@ TEST_F(OracleTest, CertaintyOverASeveralLayoutBeliefSpace)
     // Two/Four are split between the defenders. P_make == 1 for any of
     // three distinct splits, proving the belief machinery does not
     // perturb a determined answer.
-    VectorLayoutSource source(
+    be::VectorLayoutSource source(
         {make_certain_win_layout(Two, /*west=*/4),
          make_certain_win_layout(4, /*west=*/Two),
          make_certain_win_layout(Two, /*west=*/Two)});
@@ -83,12 +85,12 @@ TEST_F(OracleTest, CertaintyOverASeveralLayoutBeliefSpace)
     // assert_pool_matches / assert_forms_one_belief_node are deliberately
     // not applied across all three here -- each layout is still internally
     // well-formed, which is all assert_equal_hand_sizes checks.
-    assert_equal_hand_sizes(source.at(0));
-    assert_equal_hand_sizes(source.at(1));
-    assert_equal_hand_sizes(source.at(2));
+    be::assert_equal_hand_sizes(source.at(0));
+    be::assert_equal_hand_sizes(source.at(1));
+    be::assert_equal_hand_sizes(source.at(2));
 
-    EvaluationResult const result =
-        evaluate(source.at(0), North, /*tricks_needed=*/1, source, strategy(1), single_card_defender);
+    be::EvaluationResult const result =
+        be::evaluate(source.at(0), North, /*tricks_needed=*/1, source, strategy(1), be::single_card_defender);
 
     ASSERT_FALSE(result.error.has_value());
     EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);
@@ -99,15 +101,15 @@ TEST_F(OracleTest, CertaintyOverASeveralLayoutBeliefSpace)
 TEST_F(OracleTest, Impossibility)
 {
     Deal const layout = make_certain_win_layout(Two, 4);
-    assert_equal_hand_sizes(layout);
-    VectorLayoutSource source({layout});
+    be::assert_equal_hand_sizes(layout);
+    be::VectorLayoutSource source({layout});
 
     // Only one trick exists in the whole ending; two is unreachable no
     // matter what anyone does. Worth having even though it is trivially
     // true: a mass-accounting bug that inflates everything would show up
     // here immediately.
-    EvaluationResult const result =
-        evaluate(layout, North, /*tricks_needed=*/2, source, strategy(1), single_card_defender);
+    be::EvaluationResult const result =
+        be::evaluate(layout, North, /*tricks_needed=*/2, source, strategy(1), be::single_card_defender);
 
     ASSERT_FALSE(result.error.has_value());
     EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 0.0);
@@ -125,10 +127,10 @@ TEST_F(OracleTest, ASingleDefenderChoiceCarriesNoMassOnTheUnchosenBranch)
     Deal layout{};
     layout.trump = DDS_NOTRUMP;
     layout.first = East;
-    layout.remainCards[North][Spades] = holding({Ace});
-    layout.remainCards[East][Spades] = holding({King, Two});
-    layout.remainCards[South][Spades] = holding({3});
-    layout.remainCards[West][Spades] = holding({4});
+    layout.remainCards[North][Spades] = be::holding({Ace});
+    layout.remainCards[East][Spades] = be::holding({King, Two});
+    layout.remainCards[South][Spades] = be::holding({3});
+    layout.remainCards[West][Spades] = be::holding({4});
     // Not assert_equal_hand_sizes(layout): East genuinely holds one more
     // card than the other three hands here (the whole point is giving East
     // a real choice), so this fixture fails that check. It is not the
@@ -137,13 +139,13 @@ TEST_F(OracleTest, ASingleDefenderChoiceCarriesNoMassOnTheUnchosenBranch)
     // and never recurses through to the point where the imbalance would
     // bite -- recorded as a finding rather than silently retrofitted or
     // used to loosen the check.
-    VectorLayoutSource source({layout});
-    BeliefNode const node = *make_root(layout, North, /*tricks_needed=*/1, source);
+    be::VectorLayoutSource source({layout});
+    be::BeliefNode const node = *be::make_root(layout, North, /*tricks_needed=*/1, source);
 
-    ScriptedDefender::Key const key{layout_key(layout, East), ""};
-    ScriptedDefender defender({{key, Card{Spades, King}}});  // scripts the king, never the two
+    be::ScriptedDefender::Key const key{be::layout_key(layout, East), ""};
+    be::ScriptedDefender defender({{key, be::Card{Spades, King}}});  // scripts the king, never the two
 
-    ExpandDefenderResult const result = expand_defender_node(node, defender.as_strategy());
+    be::ExpandDefenderResult const result = be::expand_defender_node(node, defender.as_strategy());
 
     ASSERT_TRUE(result.children.has_value());
     ASSERT_EQ(result.children->size(), 1u);  // exactly one child: the king's
@@ -206,20 +208,20 @@ namespace
         Deal deal{};
         deal.trump = DDS_NOTRUMP;
         deal.first = North;
-        deal.remainCards[North][Spades] = holding({Two});
-        deal.remainCards[North][Clubs] = holding({Two});
-        deal.remainCards[South][Spades] = holding({Ace, Jack});
-        deal.remainCards[East][Spades] = holding({King, Six});
-        deal.remainCards[West][Spades] = holding({Seven});
-        deal.remainCards[West][Clubs] = holding({Five});
+        deal.remainCards[North][Spades] = be::holding({Two});
+        deal.remainCards[North][Clubs] = be::holding({Two});
+        deal.remainCards[South][Spades] = be::holding({Ace, Jack});
+        deal.remainCards[East][Spades] = be::holding({King, Six});
+        deal.remainCards[West][Spades] = be::holding({Seven});
+        deal.remainCards[West][Clubs] = be::holding({Five});
         return deal;
     }
 
     auto make_two_way_guess_layout1() -> Deal
     {
         Deal deal = make_two_way_guess_layout0();
-        deal.remainCards[East][Spades] = holding({Six, Seven});
-        deal.remainCards[West][Spades] = holding({King});
+        deal.remainCards[East][Spades] = be::holding({Six, Seven});
+        deal.remainCards[West][Spades] = be::holding({King});
         return deal;
     }
 
@@ -228,20 +230,20 @@ namespace
     /// Ace and Jack), where it verifies the information set is genuine --
     /// two equally-likely, observationally-identical entries -- before
     /// committing, blind to the hidden layout, to the Jack.
-    auto play_two_way_guess(ObservationState const& state, BeliefView const& view) -> Card
+    auto play_two_way_guess(be::ObservationState const& state, be::BeliefView const& view) -> be::Card
     {
-        int const seat = seat_on_play(state.known_holdings);
+        int const seat = be::seat_on_play(state.known_holdings);
         bool const is_dummys_decision =
-            seat == South && state.known_holdings.remainCards[South][Spades] == holding({Ace, Jack});
+            seat == South && state.known_holdings.remainCards[South][Spades] == be::holding({Ace, Jack});
 
         if (! is_dummys_decision)
         {
-            return lowest_legal_card(state.known_holdings, seat);
+            return be::lowest_legal_card(state.known_holdings, seat);
         }
 
         EXPECT_EQ(view.entries.size(), 2u);
-        KahanAccumulator total_posterior;
-        for (BeliefEntry const& entry : view.entries)
+        be::KahanAccumulator total_posterior;
+        for (be::BeliefEntry const& entry : view.entries)
         {
             EXPECT_NEAR(entry.posterior, 0.5, 1e-12);
             total_posterior.add(entry.posterior);
@@ -268,7 +270,7 @@ namespace
         EXPECT_EQ(first.currentTrickSuit[0], second.currentTrickSuit[0]);
         EXPECT_EQ(first.currentTrickRank[0], second.currentTrickRank[0]);
 
-        return Card{Spades, Jack};
+        return be::Card{Spades, Jack};
     }
 
     /// The same fixed "always play the jack" policy, without the info-set
@@ -276,16 +278,16 @@ namespace
     /// TheTwoWayGuessCollapsesToOneIfTheLinePerLayoutIsAllowedToDiffer),
     /// where a genuine two-entry belief view never arises and asserting
     /// one would be asserting the wrong thing.
-    auto play_jack_forced(ObservationState const& state, BeliefView const&) -> Card
+    auto play_jack_forced(be::ObservationState const& state, be::BeliefView const&) -> be::Card
     {
-        int const seat = seat_on_play(state.known_holdings);
+        int const seat = be::seat_on_play(state.known_holdings);
         bool const is_dummys_decision =
-            seat == South && state.known_holdings.remainCards[South][Spades] == holding({Ace, Jack});
+            seat == South && state.known_holdings.remainCards[South][Spades] == be::holding({Ace, Jack});
         if (is_dummys_decision)
         {
-            return Card{Spades, Jack};
+            return be::Card{Spades, Jack};
         }
-        return lowest_legal_card(state.known_holdings, seat);
+        return be::lowest_legal_card(state.known_holdings, seat);
     }
 }
 
@@ -293,15 +295,15 @@ TEST_F(OracleTest, TheTwoWayGuess)
 {
     Deal const layout0 = make_two_way_guess_layout0();
     Deal const layout1 = make_two_way_guess_layout1();
-    assert_equal_hand_sizes(layout0);
-    assert_equal_hand_sizes(layout1);
-    assert_pool_matches({layout0, layout1});
-    assert_forms_one_belief_node({layout0, layout1}, North);
-    VectorLayoutSource source({layout0, layout1});
+    be::assert_equal_hand_sizes(layout0);
+    be::assert_equal_hand_sizes(layout1);
+    be::assert_pool_matches({layout0, layout1});
+    be::assert_forms_one_belief_node({layout0, layout1}, North);
+    be::VectorLayoutSource source({layout0, layout1});
 
-    DeclarerStrategy const pi{.id = 1, .play = play_two_way_guess, .state_key = nullptr};
-    EvaluationResult const result =
-        evaluate(layout0, North, /*tricks_needed=*/2, source, pi, single_card_defender);
+    be::DeclarerStrategy const pi{.id = 1, .play = play_two_way_guess, .state_key = nullptr};
+    be::EvaluationResult const result =
+        be::evaluate(layout0, North, /*tricks_needed=*/2, source, pi, be::single_card_defender);
 
     ASSERT_FALSE(result.error.has_value())
         << "callback=" << static_cast<int>(result.error->callback)
@@ -322,19 +324,19 @@ TEST_F(OracleTest, TheTwoWayGuessCollapsesToOneIfTheLinePerLayoutIsAllowedToDiff
     // whole world.
     Deal const layout0 = make_two_way_guess_layout0();
     Deal const layout1 = make_two_way_guess_layout1();
-    assert_equal_hand_sizes(layout0);
-    assert_equal_hand_sizes(layout1);
-    assert_pool_matches({layout0, layout1});
-    assert_forms_one_belief_node({layout0, layout1}, North);
+    be::assert_equal_hand_sizes(layout0);
+    be::assert_equal_hand_sizes(layout1);
+    be::assert_pool_matches({layout0, layout1});
+    be::assert_forms_one_belief_node({layout0, layout1}, North);
 
-    DeclarerStrategy const pi{.id = 1, .play = play_jack_forced, .state_key = nullptr};
+    be::DeclarerStrategy const pi{.id = 1, .play = play_jack_forced, .state_key = nullptr};
 
-    VectorLayoutSource source0({layout0});
-    EvaluationResult const result0 =
-        evaluate(layout0, North, /*tricks_needed=*/2, source0, pi, single_card_defender);
-    VectorLayoutSource source1({layout1});
-    EvaluationResult const result1 =
-        evaluate(layout1, North, /*tricks_needed=*/2, source1, pi, single_card_defender);
+    be::VectorLayoutSource source0({layout0});
+    be::EvaluationResult const result0 =
+        be::evaluate(layout0, North, /*tricks_needed=*/2, source0, pi, be::single_card_defender);
+    be::VectorLayoutSource source1({layout1});
+    be::EvaluationResult const result1 =
+        be::evaluate(layout1, North, /*tricks_needed=*/2, source1, pi, be::single_card_defender);
 
     ASSERT_FALSE(result0.error.has_value());
     ASSERT_FALSE(result1.error.has_value());
@@ -362,43 +364,43 @@ TEST_F(OracleTest, DeltaActuallyMatters)
     Deal layout{};
     layout.trump = DDS_NOTRUMP;
     layout.first = East;
-    layout.remainCards[North][Spades] = holding({Queen});
-    layout.remainCards[North][Clubs] = holding({Two});
-    layout.remainCards[East][Spades] = holding({King, Two});
-    layout.remainCards[South][Spades] = holding({3});
-    layout.remainCards[South][Clubs] = holding({3});
-    layout.remainCards[West][Spades] = holding({4});
-    layout.remainCards[West][Clubs] = holding({4});
-    assert_equal_hand_sizes(layout);
-    VectorLayoutSource source({layout});
+    layout.remainCards[North][Spades] = be::holding({Queen});
+    layout.remainCards[North][Clubs] = be::holding({Two});
+    layout.remainCards[East][Spades] = be::holding({King, Two});
+    layout.remainCards[South][Spades] = be::holding({3});
+    layout.remainCards[South][Clubs] = be::holding({3});
+    layout.remainCards[West][Spades] = be::holding({4});
+    layout.remainCards[West][Clubs] = be::holding({4});
+    be::assert_equal_hand_sizes(layout);
+    be::VectorLayoutSource source({layout});
 
     // Each only overrides East's *leading* decision, i.e. only while East
     // still holds both cards -- every other query (West following, or
     // East's own forced follow-up in trick 2 once one of its two spades
     // is already gone) falls back to the forced/lowest response.
     auto const east_still_has_the_choice = [](Deal const& layout)
-    { return layout.remainCards[East][Spades] == holding({King, Two}); };
-    auto const delta_plays_king = [=](DefenderQuery const& query) -> std::vector<WeightedCard>
+    { return layout.remainCards[East][Spades] == be::holding({King, Two}); };
+    auto const delta_plays_king = [=](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
     {
         if (query.seat == East && east_still_has_the_choice(query.layout))
         {
-            return {WeightedCard{Card{Spades, King}, 1.0}};
+            return {be::WeightedCard{be::Card{Spades, King}, 1.0}};
         }
-        return single_card_defender(query);
+        return be::single_card_defender(query);
     };
-    auto const delta_plays_two = [=](DefenderQuery const& query) -> std::vector<WeightedCard>
+    auto const delta_plays_two = [=](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
     {
         if (query.seat == East && east_still_has_the_choice(query.layout))
         {
-            return {WeightedCard{Card{Spades, Two}, 1.0}};
+            return {be::WeightedCard{be::Card{Spades, Two}, 1.0}};
         }
-        return single_card_defender(query);
+        return be::single_card_defender(query);
     };
 
-    EvaluationResult const with_king =
-        evaluate(layout, North, /*tricks_needed=*/1, source, strategy(1), delta_plays_king);
-    EvaluationResult const with_two =
-        evaluate(layout, North, /*tricks_needed=*/1, source, strategy(1), delta_plays_two);
+    be::EvaluationResult const with_king =
+        be::evaluate(layout, North, /*tricks_needed=*/1, source, strategy(1), delta_plays_king);
+    be::EvaluationResult const with_two =
+        be::evaluate(layout, North, /*tricks_needed=*/1, source, strategy(1), delta_plays_two);
 
     ASSERT_FALSE(with_king.error.has_value())
         << "callback=" << static_cast<int>(with_king.error->callback)
@@ -419,17 +421,17 @@ TEST_F(OracleTest, DeterminismAcrossRepeatedEvaluationAndLayoutOrder)
 {
     Deal const layout0 = make_two_way_guess_layout0();
     Deal const layout1 = make_two_way_guess_layout1();
-    assert_equal_hand_sizes(layout0);
-    assert_equal_hand_sizes(layout1);
-    assert_pool_matches({layout0, layout1});
-    assert_forms_one_belief_node({layout0, layout1}, North);
-    DeclarerStrategy const pi{.id = 1, .play = play_two_way_guess, .state_key = nullptr};
+    be::assert_equal_hand_sizes(layout0);
+    be::assert_equal_hand_sizes(layout1);
+    be::assert_pool_matches({layout0, layout1});
+    be::assert_forms_one_belief_node({layout0, layout1}, North);
+    be::DeclarerStrategy const pi{.id = 1, .play = play_two_way_guess, .state_key = nullptr};
 
-    VectorLayoutSource source_ab({layout0, layout1});
-    EvaluationResult const first =
-        evaluate(layout0, North, /*tricks_needed=*/2, source_ab, pi, single_card_defender);
-    EvaluationResult const second =
-        evaluate(layout0, North, /*tricks_needed=*/2, source_ab, pi, single_card_defender);
+    be::VectorLayoutSource source_ab({layout0, layout1});
+    be::EvaluationResult const first =
+        be::evaluate(layout0, North, /*tricks_needed=*/2, source_ab, pi, be::single_card_defender);
+    be::EvaluationResult const second =
+        be::evaluate(layout0, North, /*tricks_needed=*/2, source_ab, pi, be::single_card_defender);
 
     ASSERT_FALSE(first.error.has_value());
     ASSERT_FALSE(second.error.has_value());
@@ -437,9 +439,9 @@ TEST_F(OracleTest, DeterminismAcrossRepeatedEvaluationAndLayoutOrder)
     // and delta: a strategy accumulating state across calls fails here.
     EXPECT_EQ(first.by_strategy.at(1u).p_make, second.by_strategy.at(1u).p_make);
 
-    VectorLayoutSource source_ba({layout1, layout0});  // layouts in the opposite order
-    EvaluationResult const reordered =
-        evaluate(layout0, North, /*tricks_needed=*/2, source_ba, pi, single_card_defender);
+    be::VectorLayoutSource source_ba({layout1, layout0});  // layouts in the opposite order
+    be::EvaluationResult const reordered =
+        be::evaluate(layout0, North, /*tricks_needed=*/2, source_ba, pi, be::single_card_defender);
     ASSERT_FALSE(reordered.error.has_value());
     EXPECT_EQ(first.by_strategy.at(1u).p_make, reordered.by_strategy.at(1u).p_make);
 }

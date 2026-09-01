@@ -2,8 +2,12 @@
 
 #include <vector>
 
-#include <belief_evaluation/dds_types.hpp>
+#include <api/dds_data_types.hpp>
+
 #include <belief_evaluation/defender_strategy.hpp>
+
+namespace dds::belief_evaluation
+{
 
 /// Which set of cards a DoubleDummyDefender spreads probability over, given
 /// a solved position's `FutureTricks`. The two differ in more than
@@ -55,3 +59,5 @@ enum class SpreadPolicy
 /// Pure and solver-free: takes an already-solved `FutureTricks`, no
 /// `solve_board` call. `fut.cards == 0` returns an empty distribution.
 auto spread(FutureTricks const& fut, SpreadPolicy policy) -> std::vector<WeightedCard>;
+
+}  // namespace dds::belief_evaluation

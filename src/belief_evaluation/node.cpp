@@ -7,6 +7,9 @@
 #include <belief_evaluation/rank_map.hpp>
 #include <utility/constants.h>
 
+namespace dds::belief_evaluation
+{
+
 namespace
 {
     /// The outstanding pool one suit's two defenders hold between them,
@@ -207,3 +210,5 @@ auto tricks_remaining(ObservationState const& state) -> int
     bool const declarer_already_played = declarer_position < played_to_current_trick;
     return declarer_already_played ? card_count + 1 : card_count;
 }
+
+}  // namespace dds::belief_evaluation

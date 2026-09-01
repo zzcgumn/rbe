@@ -2,6 +2,9 @@
 
 #include <cmath>
 
+namespace dds::belief_evaluation
+{
+
 namespace
 {
     auto is_held(Deal const& deal, int seat, Card const& card) -> bool
@@ -112,3 +115,5 @@ auto validate_defender_distribution(
 
     return ValidationError::None;
 }
+
+}  // namespace dds::belief_evaluation

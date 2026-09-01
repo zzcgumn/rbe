@@ -4,6 +4,8 @@
 
 #include <belief_evaluation/kahan.hpp>
 
+using namespace dds::belief_evaluation;
+
 TEST(KahanAccumulator, RecoversPrecisionNaiveSummationLoses)
 {
     constexpr int count = 100000;

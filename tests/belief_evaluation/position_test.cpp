@@ -7,6 +7,8 @@
 #include <belief_evaluation/position.hpp>
 #include <belief_evaluation/renumber.hpp>
 
+using namespace dds::belief_evaluation;
+
 namespace
 {
     // The pool (OR of all four hands' holdings) per suit, fixed for the

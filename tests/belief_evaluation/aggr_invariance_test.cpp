@@ -2,10 +2,12 @@
 
 #include <vector>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/rank_map.hpp>
+
+using namespace dds::belief_evaluation;
 
 TEST(AggrInvariance, IdenticalAcrossEveryDefenderSplitOfTheSamePool)
 {

@@ -1,11 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/evaluate.hpp>
 
 #include "test_support.hpp"
+
+using namespace dds::belief_evaluation;
 
 // The module's instrumentation mechanism: EvaluationCounters, populated only
 // behind EvaluateOptions::collect_counters, and today carrying nothing more
