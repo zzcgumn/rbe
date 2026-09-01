@@ -7,7 +7,15 @@
 #include <belief_evaluation/types.hpp>
 #include <belief_evaluation/rank_map.hpp>
 
-using namespace dds::belief_evaluation;
+// A namespace alias plus targeted `using` declarations, not `using namespace
+// dds::belief_evaluation;` -- this file includes api/dds_data_types.hpp
+// directly (declaring global ::Card), so a `using namespace` here would make
+// any future bare `Card` reference ambiguous between ::Card and
+// dds::belief_evaluation::Card rather than a clear compile error naming
+// which one was meant.
+namespace be = dds::belief_evaluation;
+using be::RankMap;
+using be::make_rank_map;
 
 class RankMapTest : public ::testing::Test
 {

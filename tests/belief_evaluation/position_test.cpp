@@ -7,7 +7,16 @@
 #include <belief_evaluation/position.hpp>
 #include <belief_evaluation/renumber.hpp>
 
-using namespace dds::belief_evaluation;
+// A namespace alias plus targeted `using` declarations, not `using namespace
+// dds::belief_evaluation;` -- see the other test files in this directory for
+// why: kept consistent even though this particular file doesn't yet include
+// anything that makes api/dds_data_types.hpp's global ::Card visible.
+namespace be = dds::belief_evaluation;
+using be::Position;
+using be::legal_plays;
+using be::play_card;
+using be::renumber;
+using be::trick_winner;
 
 namespace
 {

@@ -7,7 +7,23 @@
 
 #include "test_support.hpp"
 
-using namespace dds::belief_evaluation;
+// A namespace alias plus targeted `using` declarations, not `using namespace
+// dds::belief_evaluation;` -- this file includes api/dds_data_types.hpp
+// directly (declaring global ::Card), so a `using namespace` here would make
+// any future bare `Card` reference ambiguous between ::Card and
+// dds::belief_evaluation::Card rather than a clear compile error naming
+// which one was meant.
+namespace be = dds::belief_evaluation;
+using be::DeclarerStrategy;
+using be::EvaluateOptions;
+using be::EvaluationResult;
+using be::EvaluationValue;
+using be::StrategyId;
+using be::VectorLayoutSource;
+using be::evaluate;
+using be::holding;
+using be::single_card_declarer_play;
+using be::single_card_defender;
 
 // The module's instrumentation mechanism: EvaluationCounters, populated only
 // behind EvaluateOptions::collect_counters, and today carrying nothing more

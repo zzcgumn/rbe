@@ -8,7 +8,17 @@
 
 #include "test_support.hpp"
 
-using namespace dds::belief_evaluation;
+// A namespace alias plus targeted `using` declarations, not `using namespace
+// dds::belief_evaluation;` -- this file includes api/dds_data_types.hpp
+// directly (declaring global ::Card), so a `using namespace` here would make
+// any future bare `Card` reference ambiguous between ::Card and
+// dds::belief_evaluation::Card rather than a clear compile error naming
+// which one was meant.
+namespace be = dds::belief_evaluation;
+using be::assert_equal_hand_sizes;
+using be::assert_forms_one_belief_node;
+using be::assert_pool_matches;
+using be::holding;
 
 // Guard rails for fixture construction: each helper converts a class of
 // fixture mistake that would otherwise surface as a confusing failure deep

@@ -8,7 +8,20 @@
 #include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/node.hpp>
 
-using namespace dds::belief_evaluation;
+// A namespace alias plus targeted `using` declarations, not `using namespace
+// dds::belief_evaluation;` -- this file's include chain (belief_view.hpp /
+// node.hpp) already makes api/dds_data_types.hpp's global ::Card visible, so
+// a `using namespace` here would make any future bare `Card` reference
+// ambiguous between ::Card and dds::belief_evaluation::Card rather than a
+// clear compile error naming which one was meant.
+namespace be = dds::belief_evaluation;
+using be::BeliefEntry;
+using be::BeliefNode;
+using be::BeliefView;
+using be::KahanAccumulator;
+using be::Probability;
+using be::SampleWeight;
+using be::make_belief_view;
 
 namespace
 {

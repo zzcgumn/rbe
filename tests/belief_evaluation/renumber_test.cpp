@@ -2,7 +2,13 @@
 
 #include <belief_evaluation/renumber.hpp>
 
-using namespace dds::belief_evaluation;
+// A namespace alias plus a targeted `using` declaration, not `using
+// namespace dds::belief_evaluation;` -- see the other test files in this
+// directory for why: kept consistent even though this particular file
+// doesn't yet include anything that makes api/dds_data_types.hpp's global
+// ::Card visible.
+namespace be = dds::belief_evaluation;
+using be::renumber;
 
 TEST(Renumber, OrderPreservingOverAPoolWithGaps)
 {

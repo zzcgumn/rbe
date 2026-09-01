@@ -8,7 +8,14 @@
 
 #include <belief_evaluation/layout_key.hpp>
 
-using namespace dds::belief_evaluation;
+// A namespace alias plus a targeted `using` declaration, not `using
+// namespace dds::belief_evaluation;` -- this file includes
+// api/dds_data_types.hpp directly (declaring global ::Card), so a `using
+// namespace` here would make any future bare `Card` reference ambiguous
+// between ::Card and dds::belief_evaluation::Card rather than a clear
+// compile error naming which one was meant.
+namespace be = dds::belief_evaluation;
+using be::layout_key;
 
 namespace
 {
