@@ -3,9 +3,9 @@
 #include <algorithm>
 #include <vector>
 
-#include <api/dll.h>
 #include <utility/constants.h>
 
+#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/layout_key.hpp>
 
 namespace

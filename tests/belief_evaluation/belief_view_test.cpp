@@ -2,7 +2,6 @@
 
 #include <vector>
 
-#include <api/dll.h>
 #include <utility/constants.h>
 
 #include <belief_evaluation/belief_view.hpp>

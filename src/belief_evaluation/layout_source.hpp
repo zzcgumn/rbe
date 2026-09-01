@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <optional>
 
-#include <api/dll.h>
+#include <belief_evaluation/dds_types.hpp>
 
 /// A dumb, ordered, restartable index space over candidate layouts. Knows
 /// nothing about observations, weights, or the current search node — the

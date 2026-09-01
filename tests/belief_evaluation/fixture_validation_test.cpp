@@ -1,9 +1,9 @@
 #include <gtest/gtest-spi.h>
 #include <gtest/gtest.h>
 
-#include <api/dll.h>
 #include <utility/constants.h>
 
+#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/types.hpp>
 
 #include "test_support.hpp"

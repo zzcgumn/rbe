@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include <api/dll.h>
+#include <belief_evaluation/dds_types.hpp>
 
 /// Exact identity of a layout within one belief node: `defender_seat`'s
 /// holding, packed as four 13-bit suits (52 significant bits). Unique only

@@ -2,8 +2,7 @@
 
 #include <vector>
 
-#include <api/dll.h>
-
+#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/types.hpp>
 #include <belief_evaluation/defender_strategy.hpp>
 

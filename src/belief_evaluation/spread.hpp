@@ -2,8 +2,7 @@
 
 #include <vector>
 
-#include <api/dll.h>
-
+#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/defender_strategy.hpp>
 
 /// Which set of cards a DoubleDummyDefender spreads probability over, given

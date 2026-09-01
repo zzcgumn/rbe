@@ -7,8 +7,9 @@
 #include <string>
 #include <utility>
 
-#include <api/dll.h>
 #include <utility/constants.h>
+
+#include <belief_evaluation/dds_types.hpp>
 
 /// A single card. Suits and ranks are otherwise passed as separate `int`s
 /// throughout dds; this exists purely as a convenient callback return/param.

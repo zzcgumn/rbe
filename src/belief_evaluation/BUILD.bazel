@@ -19,6 +19,7 @@ cc_library(
     hdrs = [
         "belief_view.hpp",
         "declarer_strategy.hpp",
+        "dds_types.hpp",
         "defender_strategy.hpp",
         "evaluate.hpp",
         "expand.hpp",

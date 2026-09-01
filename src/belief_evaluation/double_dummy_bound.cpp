@@ -1,17 +1,17 @@
 #include <belief_evaluation/double_dummy_bound.hpp>
 
-// api/dds.h -- pulled in transitively by solver_context.hpp and by
-// api/solve_board.hpp -- declares its own unrelated struct Card that
-// collides with belief_evaluation::Card the moment both are visible in one
-// translation unit. See double_dummy_defender.cpp's own top-of-file
-// comment for the full explanation; the same trick applies here, and
-// these must be the first inclusion of solver_context.hpp / api/dds.h in
-// this translation unit for the rename to take effect (double_dummy_
-// bound.hpp forward-declares SolverContext for exactly this reason).
-#define Card DdsInternalCard
+// solver_context.hpp and solve_board.hpp both pull in api/dds.h, which
+// declares its own unrelated struct Card -- the collision dds_types.hpp's
+// own doxygen explains. No local rename is needed here: this file's own
+// header (included above, first) chains through evaluate.hpp ->
+// defender_strategy.hpp -> types.hpp -> dds_types.hpp, so the rename has
+// already happened by the time these two are reached below. That does
+// mean the include above must stay first in this file for the rename to
+// still be in effect here -- see double_dummy_bound.hpp's own forward
+// declaration of SolverContext for why the compiler can't just be trusted
+// to reorder these on its own.
 #include <api/solve_board.hpp>
 #include <solver_context/solver_context.hpp>
-#undef Card
 
 #include <belief_evaluation/trick.hpp>
 #include <utility/constants.h>

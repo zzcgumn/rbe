@@ -1,17 +1,18 @@
 #include <gtest/gtest.h>
 
-// api/dds.h -- pulled in transitively by solver_context.hpp and by
-// api/solve_board.hpp -- declares its own unrelated struct Card that
-// collides with belief_evaluation's. See double_dummy_defender.cpp's own
-// top-of-file comment for the full explanation; renamed locally here for
-// the same reason, since this file also needs to construct a raw
-// SolverContext directly for the orientation tests below.
-#define Card DdsInternalCard
+#include <belief_evaluation/dds_types.hpp>
+
+// solver_context.hpp and solve_board.hpp both pull in api/dds.h, which
+// declares its own unrelated struct Card -- see dds_types.hpp's own
+// doxygen for the collision and its centralized fix. The include above,
+// which must stay first among this file's belief_evaluation/api includes,
+// has already triggered that rename by the time these two are reached
+// below, so no local #define/#undef is needed here even though this file
+// also constructs a raw SolverContext directly for the orientation tests
+// below.
 #include <api/solve_board.hpp>
 #include <solver_context/solver_context.hpp>
-#undef Card
 
-#include <api/dll.h>
 #include <utility/constants.h>
 
 #include <belief_evaluation/double_dummy_bound.hpp>

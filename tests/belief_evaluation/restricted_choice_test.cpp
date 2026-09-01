@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include <api/dll.h>
 #include <utility/constants.h>
 
+#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/kahan.hpp>

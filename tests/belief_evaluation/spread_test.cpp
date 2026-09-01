@@ -3,9 +3,9 @@
 
 #include <gtest/gtest.h>
 
-#include <api/dll.h>
 #include <utility/constants.h>
 
+#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/spread.hpp>
 #include <belief_evaluation/validation.hpp>
 

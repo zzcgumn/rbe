@@ -2,9 +2,9 @@
 
 #include <array>
 
-#include <api/dll.h>
 #include <utility/constants.h>
 
+#include <belief_evaluation/dds_types.hpp>
 #include <belief_evaluation/types.hpp>
 
 // The only two places in the module that convert between dds's two rank bit
