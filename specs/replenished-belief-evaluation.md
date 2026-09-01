@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-08-30
+last-updated: 2026-09-01
 ---
 
 # Replenished Belief Evaluation
@@ -322,6 +322,11 @@ is still absent (a third, injected-bound-free tier; per-layout pruning).
   starts to matter.
 
 ## Key entry points
+
+Everything this capability declares lives in `dds::belief_evaluation`.
+`api/dds.h` separately declares its own unrelated, layout-identical `Card`
+at global scope; the two coexist by namespace, with no rename or include-
+ordering trick anywhere in the module.
 
 - `library/src/belief_evaluation/types.hpp` — `Card`, `StrategyId`,
   `StateKey`, `ObservationState`, `BeliefEntry`, `BeliefView`, `RankMap`,
