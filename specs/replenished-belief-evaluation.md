@@ -35,7 +35,7 @@ is still absent (a third, injected-bound-free tier; per-layout pruning).
 > Per-symbol detail lives in doxygen; these are the facts that span the whole
 > capability.
 
-- **A layout is a `Deal`** (`api/dll.h`). A belief space is a set of `Deal`
+- **A layout is a `Deal`** (`api/dds_data_types.hpp`). A belief space is a set of `Deal`
   values that share declarer's holding, dummy's holding, and the cards played
   so far, differing only in how the outstanding cards are split between the
   two defenders. Nothing in the type system enforces this; it is a contract
