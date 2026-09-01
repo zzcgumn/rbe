@@ -3,15 +3,17 @@
 #include <belief_evaluation/defender_strategy.hpp>
 #include <belief_evaluation/spread.hpp>
 
-/// Forward-declared, not included: `solver_context.hpp`'s own public
-/// interface (SearchContext::best_move() and friends) exposes api/dds.h's
-/// internal move-generation types directly, and api/dds.h declares its own
-/// unrelated `struct Card` that collides head-on with this module's own
-/// `::Card` (belief_evaluation/types.hpp) the moment both are visible in
-/// one translation unit. Keeping the full solver_context.hpp include out of
-/// this header confines that collision to double_dummy_defender.cpp, the
-/// one file that actually needs both -- see its own top-of-file comment for
-/// how it resolves it.
+/// Forward-declared, not included: every current includer of this header
+/// already needs the full `solver_context.hpp` (double_dummy_defender.cpp
+/// itself, its test, and double_dummy_bound.hpp/.cpp, its solver-linked
+/// sibling), so this buys nothing measurable today -- but `solver_context.hpp`
+/// is a genuinely heavy header (measured directly: compiling a translation
+/// unit that includes it costs roughly 25x what one with just this forward
+/// declaration does, on the order of 200ms extra per TU), and a future
+/// includer that only needs to *reference* a `SolverContext` -- without
+/// constructing one or calling into the solver -- pays that cost on every
+/// build for nothing. Kept for that future consumer rather than dropped
+/// for lack of one today.
 ///
 /// Declared here, above `namespace dds::belief_evaluation` below: this is
 /// `library/src/solver_context/solver_context.hpp`'s `::SolverContext`, at

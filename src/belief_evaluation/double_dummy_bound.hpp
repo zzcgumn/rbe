@@ -3,12 +3,14 @@
 #include <belief_evaluation/evaluate.hpp>
 
 /// Forward-declared, not included -- same reason as
-/// `DoubleDummyDefender`'s own forward declaration: `solver_context.hpp`
-/// exposes `api/dds.h`'s internal move-generation types directly, and
-/// `api/dds.h` declares its own unrelated `struct Card` that collides with
-/// this module's `::Card` the moment both are visible in one translation
-/// unit. Keeping the full include out of this header confines the
-/// collision to `double_dummy_bound.cpp`.
+/// `DoubleDummyDefender`'s own forward declaration, including the same
+/// measurement: every current includer of this header already needs the
+/// full `solver_context.hpp`, so this buys nothing measurable today, but
+/// the header itself is genuinely heavy (~25x a translation unit's compile
+/// time over just this forward declaration, on the order of 200ms extra
+/// per TU) and a future includer that only references `SolverContext`
+/// without calling into the solver pays that for nothing. Kept for that
+/// future consumer.
 ///
 /// Declared here, above `namespace dds::belief_evaluation` below, for the
 /// same reason as `double_dummy_defender.hpp`'s own copy of this note: this

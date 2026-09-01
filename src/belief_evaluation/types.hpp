@@ -16,13 +16,14 @@ namespace dds::belief_evaluation
 /// A single card. Suits and ranks are otherwise passed as separate `int`s
 /// throughout dds; this exists purely as a convenient callback return/param.
 ///
-/// `api/dds.h` (solver-internal, not included from anywhere in this module)
-/// separately declares its own unrelated `struct Card` in the same global
-/// namespace. If a future include here ever pulls that header in
-/// transitively, the two collide -- see `double_dummy_defender.cpp`'s
-/// top-of-file comment for how the one place that currently needs both
-/// resolves it, and keep any new include out of the way of that trick's
-/// ordering assumption rather than duplicating the workaround ad hoc.
+/// `api/dds.h` separately declares its own unrelated, layout-identical
+/// `struct Card` (same two `int` members, same order) at global scope --
+/// unrelated in meaning, since the two carry different rank conventions in
+/// different places in this codebase. The two coexist in the same
+/// translation unit by namespace: this one is `dds::belief_evaluation::Card`,
+/// that one is `::Card`, and nothing here needs to avoid or reorder an
+/// include to keep them apart. See `namespace_collision_test.cpp` for both
+/// referenced side by side.
 struct Card
 {
     int suit;  ///< 0=S, 1=H, 2=D, 3=C
