@@ -9,7 +9,17 @@
 #include <belief_evaluation/spread.hpp>
 #include <belief_evaluation/validation.hpp>
 
-using namespace dds::belief_evaluation;
+// A namespace alias plus targeted `using` declarations, not `using namespace
+// dds::belief_evaluation;` -- this file also includes api/dds_data_types.hpp
+// (declaring global ::Card) via belief_evaluation/spread.hpp's own chain, so
+// a `using namespace` here would make any future bare `Card` reference in
+// this file ambiguous between ::Card and dds::belief_evaluation::Card rather
+// than a clear compile error naming which one was meant.
+namespace be = dds::belief_evaluation;
+using be::ProbabilitySumTolerance;
+using be::SpreadPolicy;
+using be::WeightedCard;
+using be::spread;
 
 // spread() and SpreadPolicy have no solver dependency and no solve_board
 // call anywhere in this file -- FutureTricks values below are hand-built,

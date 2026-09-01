@@ -2,7 +2,16 @@
 
 #include <belief_evaluation/node.hpp>
 
-using namespace dds::belief_evaluation;
+// A namespace alias plus targeted `using` declarations, not `using namespace
+// dds::belief_evaluation;` -- this file also includes api/dds_data_types.hpp
+// (declaring global ::Card) via belief_evaluation/node.hpp's own chain, so a
+// `using namespace` here would make any future bare `Card` reference in this
+// file ambiguous between ::Card and dds::belief_evaluation::Card rather than
+// a clear compile error naming which one was meant.
+namespace be = dds::belief_evaluation;
+using be::BeliefNode;
+using be::is_terminal;
+using be::terminal_value;
 
 class TerminalTest : public ::testing::Test
 {
