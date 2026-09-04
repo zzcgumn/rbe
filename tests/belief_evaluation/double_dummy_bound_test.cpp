@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include <api/dds_data_types.hpp>
 #include <api/solve_board.hpp>
 #include <solver_context/solver_context.hpp>
@@ -321,4 +323,77 @@ TEST_F(DoubleDummyBoundTest, ReproductionRunBTierOneAndTwoTogetherAgainstAQualif
         tier1_only.by_strategy.at(1u).counters->nodes_visited);
     // Fires at the very root: exactly 1 node visited with tier 2 enabled.
     EXPECT_EQ(tier1_and_2.by_strategy.at(1u).counters->nodes_visited, 1u);
+}
+
+TEST_F(DoubleDummyBoundTest, TierTwoCutRateUnderSamplingIsExactlyZeroBecauseOfTheGateNotByAccident)
+{
+    // The same fixture, real bound and real defender as the reproduction
+    // run above -- reused, not re-derived, per this file's own established
+    // pattern -- but this time with genuinely more than one consistent
+    // layout in the source, so a sample_size can actually bind. Five
+    // identical copies of make_declarer_never_wins_a_trick(): duplicate
+    // content is fine here (is_consistent compares each candidate against
+    // the root layout, and an exact copy of the root trivially matches),
+    // and DoubleDummyBound computes the identical answer (0 tricks) for
+    // every one of them, since the property driving that answer -- the
+    // spades holding -- is the same in every copy.
+    //
+    // A zero tier-2 rate is trivially achievable by not measuring, by a
+    // fixture with no bound, or by a bound that never fires -- none of
+    // that is what this test shows. The unsampled run below fires the cut
+    // on this exact bound and delta (tier2_cuts >= 1); the sampled run,
+    // same bound, same delta, same layouts, fires it zero times. The only
+    // difference between the two runs is is_sample.
+    std::vector<Deal> layouts;
+    for (int i = 0; i < 5; ++i)
+    {
+        layouts.push_back(make_declarer_never_wins_a_trick());
+    }
+    be::assert_pool_matches(layouts);
+    be::assert_forms_one_belief_node(layouts, North);
+    be::VectorLayoutSource source(layouts);
+    SolverContext ctx;
+    be::DoubleDummyDefender defender(ctx);
+    be::DoubleDummyBound provider(ctx, North);
+    be::DeclarerStrategy const pi{
+        .id = 1, .play = be::single_card_declarer_play, .state_key = nullptr};
+
+    be::EvaluationResult const unsampled = be::evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/1,
+        source,
+        pi,
+        defender.as_strategy(),
+        be::EvaluateOptions{
+            .collect_counters = true,
+            .bound = provider.as_bound(),
+            .delta_is_double_dummy_optimal = true});
+    ASSERT_FALSE(unsampled.error.has_value());
+    ASSERT_TRUE(unsampled.by_strategy.at(1u).counters.has_value());
+    EXPECT_GT(unsampled.by_strategy.at(1u).counters->tier2_cuts, 0u);
+    EXPECT_EQ(unsampled.by_strategy.at(1u).p_make, 0.0);
+
+    be::EvaluationResult const sampled = be::evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/1,
+        source,
+        pi,
+        defender.as_strategy(),
+        be::EvaluateOptions{
+            .collect_counters = true,
+            .bound = provider.as_bound(),
+            .delta_is_double_dummy_optimal = true,
+            .sample_size = 2u});
+    ASSERT_FALSE(sampled.error.has_value());
+    ASSERT_TRUE(sampled.by_strategy.at(1u).counters.has_value());
+    EXPECT_EQ(sampled.by_strategy.at(1u).counters->tier2_cuts, 0u);
+    // The true value happens to be 0.0 either way here (declarer really
+    // does never win a trick in this fixture), so this is not itself
+    // evidence the gate did anything -- tier2_cuts is. Asserted anyway,
+    // for the same reason the unsampled run's own value is: a mechanism
+    // that reaches a plausible-looking wrong number is worse than one
+    // that visibly fails.
+    EXPECT_EQ(sampled.by_strategy.at(1u).p_make, 0.0);
 }

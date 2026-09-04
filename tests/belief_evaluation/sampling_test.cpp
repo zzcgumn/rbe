@@ -414,3 +414,146 @@ TEST_F(SamplingTest, ABudgetLargeEnoughNotToBindMatchesExhaustiveBehaviourBitwis
             generously_budgeted.by_strategy.at(1u).root_children[i].value);
     }
 }
+
+TEST_F(SamplingTest, ALargeSampleWithMGreaterThanNIsStillBitIdenticalToExhaustive)
+{
+    // A sample of 3 from a space of 4 shows nothing -- this fixture is
+    // larger than any this module has built for a sampling test so far:
+    // 25 consistent layouts (via the same distinct-club-filler pattern
+    // used throughout this file), sampled with an M generous enough never
+    // to bind. The claim under test is the same as the smaller M > N
+    // tests above; this is a larger fixture, not a materially different
+    // property.
+    std::vector<Deal> const layouts = make_layouts_with_distinct_fillers(25);
+    assert_pool_matches(layouts);
+    assert_forms_one_belief_node(layouts, North);
+    VectorLayoutSource const source(layouts);
+
+    EvaluationResult const exhaustive =
+        evaluate(layouts.front(), North, /*tricks_needed=*/1, source, strategy(1), single_card_defender);
+    EvaluationResult const sampled = evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.sample_size = 1000u});
+
+    ASSERT_FALSE(exhaustive.error.has_value());
+    ASSERT_FALSE(sampled.error.has_value());
+    EXPECT_EQ(exhaustive.by_strategy.at(1u).p_make, sampled.by_strategy.at(1u).p_make);
+    ASSERT_EQ(
+        exhaustive.by_strategy.at(1u).root_children.size(),
+        sampled.by_strategy.at(1u).root_children.size());
+    for (std::size_t i = 0; i < exhaustive.by_strategy.at(1u).root_children.size(); ++i)
+    {
+        EXPECT_EQ(
+            exhaustive.by_strategy.at(1u).root_children[i].value,
+            sampled.by_strategy.at(1u).root_children[i].value);
+    }
+}
+
+namespace
+{
+    constexpr int Hearts = 1;
+
+    /// North holds a certain winner in each of two independent suits
+    /// (spades' Ace, hearts' Ace) so both tricks always resolve North's
+    /// way regardless of the defenders' own split. East's own card in
+    /// each suit is independently one of {Two, Three} -- two bits, four
+    /// layouts -- so East's forced play (single_card_defender: its only
+    /// legal card) splits the tree at two genuinely different depths: the
+    /// spades bit at the very root (East leads trick 1), the hearts bit
+    /// only after trick 1 has fully resolved and North has led trick 2.
+    /// South holds a fixed, irrelevant low card (Four) in each suit; West
+    /// holds whichever of {Two, Three} East does not.
+    auto make_deep_layout(int east_spade, int east_heart) -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = East;
+        deal.remainCards[North][Spades] = holding({Ace});
+        deal.remainCards[North][Hearts] = holding({Ace});
+        deal.remainCards[South][Spades] = holding({Four});
+        deal.remainCards[South][Hearts] = holding({Four});
+        deal.remainCards[East][Spades] = holding({east_spade});
+        deal.remainCards[East][Hearts] = holding({east_heart});
+        deal.remainCards[West][Spades] = holding({east_spade == Two ? Three : Two});
+        deal.remainCards[West][Hearts] = holding({east_heart == Two ? Three : Two});
+        return deal;
+    }
+}
+
+TEST_F(SamplingTest, SampleSizeByDepthShowsCollapseAcrossSeveralPliesOnADeepExhaustiveTree)
+{
+    // No sample_size here -- populated on the exhaustive path too, where
+    // it is a fact about the tree's own shape rather than about a sample
+    // (RootConstructionResult::outcome's own doxygen makes the same point
+    // about SourceExhausted). Four layouts, two independent splitting
+    // bits at two different depths:
+    //
+    //   depth 0: root, East on lead for trick 1 -- 1 node, all 4 layouts
+    //     merged (the spades bit has not been resolved yet).
+    //   depth 1-3: South, West, North play out trick 1 -- 2 nodes (the
+    //     spades bit split the moment East's own root-level play was
+    //     dispatched), 2 layouts each (the hearts bit is still
+    //     unresolved within each branch).
+    //   depth 4: North leads trick 2 -- still 2 nodes, 2 layouts each.
+    //   depth 5: East on play for trick 2 -- still 2 nodes (the split
+    //     happens going *to* depth 6, not here).
+    //   depth 6-8: South, West play out trick 2, then the node right
+    //     after West's own card resolves the trick and tricks_won reaches
+    //     tricks_needed (2) -- 4 nodes, 1 layout each; the already-made
+    //     cut fires at depth 8, but the node there is still visited and
+    //     recorded before it does.
+    //
+    // Read together: min goes 4 -> 2 -> 2 -> 1, the collapse from a
+    // single root node down to four singletons, spread across two
+    // genuinely different plies rather than a single one -- deep enough,
+    // and derived from the fixture's own construction above, not read off
+    // a run.
+    std::vector<Deal> const layouts = {
+        make_deep_layout(Two, Two),
+        make_deep_layout(Two, Three),
+        make_deep_layout(Three, Two),
+        make_deep_layout(Three, Three),
+    };
+    assert_pool_matches(layouts);
+    assert_forms_one_belief_node(layouts, North);
+    VectorLayoutSource const source(layouts);
+
+    EvaluationResult const result = evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/2,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.collect_counters = true});
+
+    ASSERT_FALSE(result.error.has_value());
+    EvaluationValue const& value = result.by_strategy.at(1u);
+    ASSERT_TRUE(value.counters.has_value());
+    EXPECT_EQ(value.p_make, 1.0);  // both tricks certain, no genuine choice anywhere
+    std::vector<be::DepthSampleStats> const& by_depth = value.counters->sample_size_by_depth;
+    ASSERT_EQ(by_depth.size(), 9u);
+
+    EXPECT_EQ(by_depth[0].nodes, 1u);
+    EXPECT_EQ(by_depth[0].layout_sum, 4u);
+    EXPECT_EQ(by_depth[0].layout_min, 4u);
+
+    for (std::size_t depth : {std::size_t{1}, std::size_t{2}, std::size_t{3}, std::size_t{4}, std::size_t{5}})
+    {
+        EXPECT_EQ(by_depth[depth].nodes, 2u) << "depth " << depth;
+        EXPECT_EQ(by_depth[depth].layout_sum, 4u) << "depth " << depth;
+        EXPECT_EQ(by_depth[depth].layout_min, 2u) << "depth " << depth;
+    }
+
+    for (std::size_t depth : {std::size_t{6}, std::size_t{7}, std::size_t{8}})
+    {
+        EXPECT_EQ(by_depth[depth].nodes, 4u) << "depth " << depth;
+        EXPECT_EQ(by_depth[depth].layout_sum, 4u) << "depth " << depth;
+        EXPECT_EQ(by_depth[depth].layout_min, 1u) << "depth " << depth;
+    }
+}
