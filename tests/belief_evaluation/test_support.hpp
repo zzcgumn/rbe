@@ -7,6 +7,7 @@
 
 #include <bit>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -527,6 +528,66 @@ private:
     }
 
     std::vector<std::pair<Deal, int>> table_;
+    std::vector<Deal> queries_;
+};
+
+/// A predicate-table LayoutBound test double: pairs of a predicate over the
+/// whole Deal and a claimed bound, tried in order, first match wins -- for a
+/// fixture spanning more than one ply, where ScriptedBound's exact-Deal
+/// matching cannot serve. tier2_dead() is checked at *every* node, and each
+/// play produces a genuinely different Deal (see cuts_test.cpp's own
+/// comment on this, above the fixtures that first ran into it), so a table
+/// keyed on exact Deal identity answers only the one node it was built for.
+/// The fixture author writes the predicate instead ("North still holds two
+/// cards", "the club filler is still with East") -- the generalisation of
+/// the per-fixture filler-suit lambda reinvented by hand at each call site.
+///
+/// A predicate table, not a table keyed on cards-remaining alone: the
+/// cards-remaining case is expressible as one predicate here (see the
+/// fixture in cuts_test.cpp that does exactly this), and the reverse is not
+/// true -- a fixture whose bound depends on something other than depth
+/// (which defender holds which filler, say) cannot be expressed by a table
+/// keyed on cards-remaining alone.
+///
+/// Records every layout it is asked about, and fails loudly (ADD_FAILURE,
+/// non-fatal) when no predicate matches, exactly as ScriptedBound does: a
+/// silent fallback would turn an incomplete script into a passing test
+/// against a different bound than the one the expected values were
+/// hand-derived from. ScriptedBound itself is untouched and stays exactly
+/// where a check is confined to one node -- this is an alternative for the
+/// case it cannot serve, not a replacement.
+class PredicateBound
+{
+public:
+    explicit PredicateBound(std::vector<std::pair<std::function<bool(Deal const&)>, int>> table)
+        : table_(std::move(table))
+    {
+    }
+
+    auto as_bound() -> LayoutBound
+    {
+        return [this](Deal const& layout) -> int
+        {
+            queries_.push_back(layout);
+            for (auto const& [predicate, bound] : table_)
+            {
+                if (predicate(layout))
+                {
+                    return bound;
+                }
+            }
+            ADD_FAILURE() << "PredicateBound: no predicate matched this layout";
+            return 0;
+        };
+    }
+
+    auto queries() const -> std::vector<Deal> const&
+    {
+        return queries_;
+    }
+
+private:
+    std::vector<std::pair<std::function<bool(Deal const&)>, int>> table_;
     std::vector<Deal> queries_;
 };
 
