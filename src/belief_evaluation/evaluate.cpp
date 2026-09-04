@@ -62,6 +62,42 @@ namespace
         }
     }
 
+    /// tier1_made_cuts's single write site, following count_node()'s
+    /// pattern: one small helper per counter, each checking the null
+    /// `counters` pointer the same way. Called at both sites the
+    /// already_made() cut fires -- p_make() and evaluate()'s own
+    /// root-handling block, which mirrors every cut for the reason
+    /// documented at count_node()'s own paired call.
+    auto count_tier1_made_cut(EvaluationCounters* counters) -> void
+    {
+        if (counters != nullptr)
+        {
+            counters->tier1_made_cuts += 1;
+        }
+    }
+
+    /// tier1_dead_cuts's single write site, following count_node()'s
+    /// pattern. Called at both sites the is_dead() cut fires -- p_make()
+    /// and evaluate()'s own root-handling block.
+    auto count_tier1_dead_cut(EvaluationCounters* counters) -> void
+    {
+        if (counters != nullptr)
+        {
+            counters->tier1_dead_cuts += 1;
+        }
+    }
+
+    /// tier2_cuts's single write site, following count_node()'s pattern.
+    /// Called at both sites the tier2_dead() cut fires -- p_make() and
+    /// evaluate()'s own root-handling block.
+    auto count_tier2_cut(EvaluationCounters* counters) -> void
+    {
+        if (counters != nullptr)
+        {
+            counters->tier2_cuts += 1;
+        }
+    }
+
     /// Everything the recursion carries unchanged from the root down to
     /// every node, declarer or defender, sample or exhaustive. Held by
     /// const reference and passed down unmodified at every call --
@@ -121,15 +157,18 @@ namespace
         count_node(ctx.counters);
         if (already_made(node.state))
         {
+            count_tier1_made_cut(ctx.counters);
             return node_mass(node);
         }
         if (is_dead(node.state))
         {
+            count_tier1_dead_cut(ctx.counters);
             return 0.0;  // node_mass(node) discarded here, not conserved -- the contract fails in
                           // every layout this node holds, whatever happens next
         }
         if (tier2_dead(node, ctx.options))
         {
+            count_tier2_cut(ctx.counters);
             return 0.0;  // same non-conservation as tier 1's dead cut above -- see its own comment
         }
         // is_terminal(node) is never true here, not just its "made" branch: a
@@ -270,6 +309,7 @@ auto evaluate(
         // root_children stays empty for the same reason it does at a
         // terminal root: no first-card decision exists to report
         // alternatives for.
+        count_tier1_made_cut(counters_ptr);
         value.p_make = node_mass(root);
     }
     else if (is_dead(root.state))
@@ -279,6 +319,7 @@ auto evaluate(
         // p_make stays 0.0 and root_children stays empty -- there is no
         // point reporting alternatives for a first card when every one of
         // them leads to the same impossible outcome.
+        count_tier1_dead_cut(counters_ptr);
         value.p_make = 0.0;
     }
     else if (tier2_dead(root, options))
@@ -286,6 +327,7 @@ auto evaluate(
         // Tier 2's cut, mirrored here for the same reason: every layout
         // the root holds is dead by the injected bound, under the
         // caller's own double-dummy-optimal declaration.
+        count_tier2_cut(counters_ptr);
         value.p_make = 0.0;
     }
     else if (is_terminal(root))

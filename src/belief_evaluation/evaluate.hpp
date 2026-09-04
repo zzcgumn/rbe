@@ -153,6 +153,22 @@ struct EvaluationCounters
     /// the same fixture's uncut run, which is how a cut's tests prove it
     /// actually fired rather than merely computing the right number.
     std::uint64_t nodes_visited = 0;
+
+    /// Every already_made() cut that fired: the contract is already made in
+    /// every layout the node holds, so the node's mass is returned directly
+    /// without expanding it.
+    std::uint64_t tier1_made_cuts = 0;
+
+    /// Every is_dead() cut that fired: the contract cannot be made from the
+    /// node in even one layout, so 0.0 is returned directly without
+    /// expanding it.
+    std::uint64_t tier1_dead_cuts = 0;
+
+    /// Every tier2_dead() cut that fired: every layout the node holds is
+    /// dead under the caller's injected bound and delta_is_double_dummy_optimal
+    /// declaration. Gated on !is_sample, so this stays 0 on any run where
+    /// the root (or an ancestor) was sampled.
+    std::uint64_t tier2_cuts = 0;
 };
 
 /// `P_make` for one declarer strategy against one defender strategy, plus

@@ -149,3 +149,38 @@ TEST_F(CountersTest, CollectingCountersDoesNotChangeTheAnswerEitherDirection)
             with_counters.by_strategy.at(1u).root_children[i].value);
     }
 }
+
+// tier1_made_cuts, tier1_dead_cuts and tier2_cuts, alongside nodes_visited:
+// each counts its own tier's cut and no other's. This fixture's own
+// already-made cut (see NodesVisitedMatchesTheHandCountedTree's hand-counted
+// tree above -- node 5, the instant tricks_won_by_declarer first reaches
+// tricks_needed) fires through p_make()'s own write site, not the mirrored
+// one in evaluate()'s root-handling block, since the root here (node 1) has
+// not yet won any tricks. Neither of the other two cuts is ever in a
+// position to fire on this fixture: nothing here is ever dead, and no bound
+// is supplied. cuts_test.cpp's DeadCutTest has the "vice versa" half of this
+// proof (a fixture where the dead cut fires and the made cut does not), and
+// its own tests for both cuts firing through evaluate()'s root-handling
+// block instead of p_make() -- the site a sweep of p_make() alone would
+// miss.
+TEST_F(CountersTest, TierCutCountersDistinguishTheAlreadyMadeCutFromTheOthers)
+{
+    Deal const root_layout = make_one_trick_one_legal_card_each();
+    VectorLayoutSource source({root_layout});
+
+    EvaluationResult const result = evaluate(
+        root_layout,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.collect_counters = true});
+
+    ASSERT_FALSE(result.error.has_value());
+    EvaluationValue const& value = result.by_strategy.at(1u);
+    ASSERT_TRUE(value.counters.has_value());
+    EXPECT_EQ(value.counters->tier1_made_cuts, 1u);
+    EXPECT_EQ(value.counters->tier1_dead_cuts, 0u);
+    EXPECT_EQ(value.counters->tier2_cuts, 0u);
+}

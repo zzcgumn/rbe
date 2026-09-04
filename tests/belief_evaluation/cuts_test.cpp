@@ -302,6 +302,36 @@ TEST_F(AlreadyMadeCutTest, PiIsNotCalledWhenTheContractIsAlreadyMadeAtTheRoot)
     EXPECT_TRUE(result.by_strategy.at(0u).root_children.empty());
 }
 
+TEST_F(AlreadyMadeCutTest, TierCutCountersFireAtTheRootBlockSite)
+{
+    // Same fixture and tricks_needed as
+    // PiIsNotCalledWhenTheContractIsAlreadyMadeAtTheRoot above -- that test
+    // pins the cut firing at the root by call count; this one pins the
+    // same firing by its counter. The cut fires through evaluate()'s own
+    // root-handling block, never reaching a p_make() call at all -- the
+    // site a sweep of p_make() alone would miss. counters_test.cpp's
+    // TierCutCountersDistinguishTheAlreadyMadeCutFromTheOthers has the
+    // p_make()-site half of this counter's own proof.
+    Deal const root_layout = make_two_certain_tricks();
+    be::VectorLayoutSource source({root_layout});
+
+    be::EvaluationResult const result = be::evaluate(
+        root_layout,
+        North,
+        /*tricks_needed=*/0,
+        source,
+        strategy(1),
+        be::single_card_defender,
+        be::EvaluateOptions{.collect_counters = true});
+
+    ASSERT_FALSE(result.error.has_value());
+    be::EvaluationValue const& value = result.by_strategy.at(1u);
+    ASSERT_TRUE(value.counters.has_value());
+    EXPECT_EQ(value.counters->tier1_made_cuts, 1u);
+    EXPECT_EQ(value.counters->tier1_dead_cuts, 0u);
+    EXPECT_EQ(value.counters->tier2_cuts, 0u);
+}
+
 // Tier 1's dead cut, the mirror of the already-made cut above: a node where
 // declarer cannot reach tricks_needed even by winning every remaining trick
 // evaluates to 0.0 without recursing further -- sound unconditionally, same
@@ -412,6 +442,38 @@ TEST_F(DeadCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison)
     // message).
 }
 
+TEST_F(DeadCutTest, TierCutCountersDistinguishTheDeadCutFromTheOthers)
+{
+    // Same fixture and tricks_needed as this class's own
+    // StopsExpansionAssertedAgainstAOneTrickShortComparison above (the
+    // with_early_cut run: the dead cut fires at node 5, deep in p_make(),
+    // not at the root -- the root here, node 1, is not yet dead either).
+    // Neither of the other two cuts is ever in a position to fire on this
+    // fixture: nothing here is ever already made before it is dead, and no
+    // bound is supplied. This is the "vice versa" half of the proof that
+    // each counter counts its own tier -- counters_test.cpp's own
+    // TierCutCountersDistinguishTheAlreadyMadeCutFromTheOthers is the
+    // other half.
+    Deal const root_layout = make_east_wins_first_trick();
+    be::VectorLayoutSource source({root_layout});
+
+    be::EvaluationResult const result = be::evaluate(
+        root_layout,
+        North,
+        /*tricks_needed=*/2,
+        source,
+        strategy(1),
+        be::single_card_defender,
+        be::EvaluateOptions{.collect_counters = true});
+
+    ASSERT_FALSE(result.error.has_value());
+    be::EvaluationValue const& value = result.by_strategy.at(1u);
+    ASSERT_TRUE(value.counters.has_value());
+    EXPECT_EQ(value.counters->tier1_dead_cuts, 1u);
+    EXPECT_EQ(value.counters->tier1_made_cuts, 0u);
+    EXPECT_EQ(value.counters->tier2_cuts, 0u);
+}
+
 TEST_F(DeadCutTest, PiAndDeltaAreNotCalledWhenTheRootIsAlreadyDead)
 {
     // tricks_needed = 4: no suit here has four tricks in it at all
@@ -437,6 +499,34 @@ TEST_F(DeadCutTest, PiAndDeltaAreNotCalledWhenTheRootIsAlreadyDead)
     // RecordingDeclarerStrategy::as_strategy() fixes id = 0.
     EXPECT_EQ(result.by_strategy.at(0u).p_make, 0.0);
     EXPECT_TRUE(result.by_strategy.at(0u).root_children.empty());
+}
+
+TEST_F(DeadCutTest, TierCutCountersFireAtTheRootBlockSite)
+{
+    // Same fixture and tricks_needed as
+    // PiAndDeltaAreNotCalledWhenTheRootIsAlreadyDead above -- that test
+    // pins the cut firing at the root by call count; this one pins the
+    // same firing by its counter. The cut fires through evaluate()'s own
+    // root-handling block, never reaching a p_make() call at all --
+    // the site a sweep of p_make() alone would miss.
+    Deal const root_layout = make_east_wins_first_trick();
+    be::VectorLayoutSource source({root_layout});
+
+    be::EvaluationResult const result = be::evaluate(
+        root_layout,
+        North,
+        /*tricks_needed=*/4,
+        source,
+        strategy(1),
+        be::single_card_defender,
+        be::EvaluateOptions{.collect_counters = true});
+
+    ASSERT_FALSE(result.error.has_value());
+    be::EvaluationValue const& value = result.by_strategy.at(1u);
+    ASSERT_TRUE(value.counters.has_value());
+    EXPECT_EQ(value.counters->tier1_dead_cuts, 1u);
+    EXPECT_EQ(value.counters->tier1_made_cuts, 0u);
+    EXPECT_EQ(value.counters->tier2_cuts, 0u);
 }
 
 // The LayoutBound injection seam: a caller-supplied double-dummy upper
@@ -535,6 +625,40 @@ TEST_F(TierTwoCutTest, FiresWhenEveryLayoutIsDeadAndTheDeclarationIsMade)
     ASSERT_FALSE(result.error.has_value());
     EXPECT_EQ(result.by_strategy.at(1u).p_make, 0.0);
     EXPECT_TRUE(result.by_strategy.at(1u).root_children.empty());
+}
+
+TEST_F(TierTwoCutTest, TierCutCountersFireAtTheRootBlockSite)
+{
+    // Same fixture, bound and declaration as
+    // FiresWhenEveryLayoutIsDeadAndTheDeclarationIsMade above -- that test
+    // pins the cut's value; this one pins the same firing by its counter.
+    // Both layouts are dead by the bound before a single card is played,
+    // so the cut fires through evaluate()'s own root-handling block, never
+    // reaching a p_make() call at all -- the site a sweep of p_make()
+    // alone would miss.
+    Deal const layout_a = make_layout_a();
+    Deal const layout_b = make_layout_b();
+    be::VectorLayoutSource source({layout_a, layout_b});
+    be::ScriptedBound scripted({{layout_a, 0}, {layout_b, 0}});
+
+    be::EvaluationResult const result = be::evaluate(
+        layout_a,
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        merging_delta,
+        be::EvaluateOptions{
+            .collect_counters = true,
+            .bound = scripted.as_bound(),
+            .delta_is_double_dummy_optimal = true});
+
+    ASSERT_FALSE(result.error.has_value());
+    be::EvaluationValue const& value = result.by_strategy.at(1u);
+    ASSERT_TRUE(value.counters.has_value());
+    EXPECT_EQ(value.counters->tier2_cuts, 1u);
+    EXPECT_EQ(value.counters->tier1_made_cuts, 0u);
+    EXPECT_EQ(value.counters->tier1_dead_cuts, 0u);
 }
 
 
