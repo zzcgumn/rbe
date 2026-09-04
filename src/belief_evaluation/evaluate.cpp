@@ -62,6 +62,30 @@ namespace
         }
     }
 
+    /// Everything the recursion carries unchanged from the root down to
+    /// every node, declarer or defender, sample or exhaustive. Held by
+    /// const reference and passed down unmodified at every call --
+    /// widening this struct is how the recursion gains new read-only
+    /// context in future without touching every call site's parameter
+    /// list again.
+    ///
+    /// `error` is deliberately not a member: it is a mutable out-parameter
+    /// the recursion writes to report a callback failure, and burying a
+    /// mutable out-parameter in a struct named "context" would make it
+    /// stop looking like one. `depth` is deliberately not a member either
+    /// (see p_make()'s own parameter list): it is the one thing that
+    /// genuinely differs per call, so it stays a plain parameter rather
+    /// than forcing every level either to copy it into a by-value context
+    /// or to pay for a by-const-reference context header just for one
+    /// field that changes every call.
+    struct SearchContext
+    {
+        DeclarerStrategy const& pi;
+        DefenderStrategy const& delta;
+        EvaluateOptions const& options;
+        EvaluationCounters* counters;  // null unless collecting
+    };
+
     /// The recursion: P_make(node) = terminal_value(node), or the sum (for
     /// a defender node) / the single value (for a declarer node) over its
     /// children. Once `error` is set, every further call is a no-op
@@ -74,22 +98,27 @@ namespace
     /// so that stays true as call sites are added, not because it is
     /// reachable today.
     ///
-    /// `counters` is null unless EvaluateOptions::collect_counters was set;
-    /// every write to it goes through count_node() so collection stays a
-    /// single well-known site as more counters arrive.
+    /// `ctx.counters` is null unless EvaluateOptions::collect_counters was
+    /// set; every write to it goes through count_node() so collection
+    /// stays a single well-known site as more counters arrive.
+    ///
+    /// `depth` is the node's distance from the root, which is depth 0.
+    /// evaluate() dispatches the root itself, outside this function (see
+    /// its own root-handling block, which mirrors every cut here for that
+    /// reason), so the root never reaches this function and every call
+    /// site below passes `depth + 1` -- there is no call site that passes
+    /// depth 0.
     auto p_make(
         BeliefNode const& node,
-        DeclarerStrategy const& pi,
-        DefenderStrategy const& delta,
-        std::optional<EvaluationError>& error,
-        EvaluationCounters* counters,
-        EvaluateOptions const& options) -> double
+        SearchContext const& ctx,
+        int depth,
+        std::optional<EvaluationError>& error) -> double
     {
         if (error.has_value())
         {
             return 0.0;
         }
-        count_node(counters);
+        count_node(ctx.counters);
         if (already_made(node.state))
         {
             return node_mass(node);
@@ -99,7 +128,7 @@ namespace
             return 0.0;  // node_mass(node) discarded here, not conserved -- the contract fails in
                           // every layout this node holds, whatever happens next
         }
-        if (tier2_dead(node, options))
+        if (tier2_dead(node, ctx.options))
         {
             return 0.0;  // same non-conservation as tier 1's dead cut above -- see its own comment
         }
@@ -125,17 +154,17 @@ namespace
 
         if (is_declarer_side(node.state, seat))
         {
-            ExpandResult const result = expand_declarer_node(node, pi);
+            ExpandResult const result = expand_declarer_node(node, ctx.pi);
             if (! result.child.has_value())
             {
                 error = EvaluationError{
                     result.error, EvaluationCallback::DeclarerPlay, seat, node.state.known_holdings};
                 return 0.0;
             }
-            return p_make(*result.child, pi, delta, error, counters, options);
+            return p_make(*result.child, ctx, depth + 1, error);
         }
 
-        ExpandDefenderResult const result = expand_defender_node(node, delta);
+        ExpandDefenderResult const result = expand_defender_node(node, ctx.delta);
         if (! result.children.has_value())
         {
             error = EvaluationError{
@@ -146,7 +175,7 @@ namespace
         KahanAccumulator total;
         for (BeliefNode const& child : *result.children)
         {
-            total.add(p_make(child, pi, delta, error, counters, options));
+            total.add(p_make(child, ctx, depth + 1, error));
             if (error.has_value())
             {
                 return 0.0;
@@ -225,6 +254,7 @@ auto evaluate(
     // sites below are unconditional and cost nothing when off — count_node()
     // itself is the single place that checks the flag (via nullness).
     EvaluationCounters* const counters_ptr = options.collect_counters ? &counters : nullptr;
+    SearchContext const ctx{pi, delta, options, counters_ptr};
 
     // The root's own visit — same site p_make() counts a node at, but
     // outside p_make() because the root's dispatch happens here rather than
@@ -321,8 +351,8 @@ auto evaluate(
             for (std::size_t i = 0; i < legal.size(); ++i)
             {
                 double const candidate_value = (i == chosen_index)
-                    ? p_make(*chosen.child, pi, delta, error, counters_ptr, options)
-                    : p_make(other_children[other_i++], pi, delta, error, counters_ptr, options);
+                    ? p_make(*chosen.child, ctx, /*depth=*/1, error)
+                    : p_make(other_children[other_i++], ctx, /*depth=*/1, error);
                 if (error.has_value())
                 {
                     return EvaluationResult{{}, error};
@@ -351,7 +381,7 @@ auto evaluate(
             value.root_children.reserve(expanded.children->size());
             for (BeliefNode const& child : *expanded.children)
             {
-                double const child_value = p_make(child, pi, delta, error, counters_ptr, options);
+                double const child_value = p_make(child, ctx, /*depth=*/1, error);
                 if (error.has_value())
                 {
                     return EvaluationResult{{}, error};
