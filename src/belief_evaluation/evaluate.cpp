@@ -277,7 +277,8 @@ auto evaluate(
     DefenderStrategy const& delta,
     EvaluateOptions const& options) -> EvaluationResult
 {
-    RootConstructionResult const root_result = make_root(root_layout, declarer, tricks_needed, source);
+    RootConstructionResult const root_result = make_root(
+        root_layout, declarer, tricks_needed, source, RootOptions{.sample_size = options.sample_size});
     if (! root_result.node.has_value())
     {
         EvaluationError const error{

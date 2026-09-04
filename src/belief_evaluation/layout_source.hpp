@@ -25,6 +25,21 @@ public:
     /// The layout at `index` in this source's fixed order. Repeated calls
     /// with the same index must return the same layout — determinism here is
     /// what makes sampling reproducible.
+    ///
+    /// **A caller obligation this type cannot check or enforce**: sampling
+    /// (`make_root`, `EvaluateOptions::sample_size`) takes a *prefix* of
+    /// this order rather than drawing from it at random, on the premise
+    /// that the order itself is already effectively random with respect to
+    /// which layouts are consistent with any given root — "a randomised
+    /// array of all possible layouts", in the evaluator's own terms. A
+    /// source that is not shuffled (sorted, or grouped by some property
+    /// correlated with consistency) yields a systematically biased sample
+    /// with no diagnostic anywhere in this evaluator: nothing here can
+    /// distinguish a well-shuffled source from a badly-ordered one, since
+    /// both simply return layouts in whatever order `at()` presents them.
+    /// The existing fixed-order test sources in this suite are exactly
+    /// what their own tests want and remain correct — this obligation
+    /// binds a *sampling* caller, not every caller.
     virtual auto at(std::uint64_t index) const -> Deal = 0;
 };
 

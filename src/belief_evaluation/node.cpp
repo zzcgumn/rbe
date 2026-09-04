@@ -102,7 +102,8 @@ auto make_root(
     Deal const& root_layout,
     int declarer,
     int tricks_needed,
-    LayoutSource const& source) -> RootConstructionResult
+    LayoutSource const& source,
+    RootOptions const& options) -> RootConstructionResult
 {
     std::optional<std::uint64_t> const size = source.size();
     if (! size.has_value())
@@ -129,8 +130,18 @@ auto make_root(
     // growth is safe here: nothing holds a reference into node.layouts
     // until after this function returns a fully-built node, so growth
     // during construction cannot invalidate anything a caller has seen.
-    for (std::uint64_t i = 0; i < *size; ++i)
+    //
+    // Scanned from index 0 regardless of whether options.sample_size is
+    // set: any randomness in which layouts get drawn is the source's own
+    // ordering, never this loop's -- see RootOptions and this function's
+    // own doxygen.
+    std::uint64_t i = 0;
+    for (; i < *size; ++i)
     {
+        if (options.sample_size.has_value() && node.layouts.size() >= *options.sample_size)
+        {
+            break;
+        }
         Deal const candidate = source.at(i);
         if (is_consistent(candidate, root_layout, declarer, dummy))
         {
@@ -143,6 +154,16 @@ auto make_root(
     {
         return RootConstructionResult{std::nullopt, RootFailure::NoLayoutSurvived};
     }
+
+    // True exactly when the cap actually bound: the sample size was
+    // reached (so the loop above broke early via the check at the top of
+    // its body) with the scan not yet at source's end. A supplied
+    // sample_size that never binds (M >= N) leaves is_sample false and the
+    // node byte-for-byte the exhaustive one -- see this function's own
+    // doxygen for why options.sample_size.has_value() alone would be
+    // wrong here.
+    node.is_sample =
+        options.sample_size.has_value() && node.layouts.size() >= *options.sample_size && i < *size;
 
     node.kappa = 1.0 / static_cast<double>(node.layouts.size());
     return RootConstructionResult{std::move(node), RootFailure::None};

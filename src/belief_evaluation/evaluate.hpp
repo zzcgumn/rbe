@@ -132,6 +132,15 @@ struct EvaluateOptions
     /// contract. The bound is an upper bound on double-dummy play; nothing
     /// here checks that δ delivers double-dummy play.
     bool delta_is_double_dummy_optimal = false;
+
+    /// Cap the number of layouts drawn for the root, absent for exhaustive
+    /// enumeration (every consistent layout, unchanged behaviour). When
+    /// present, threaded straight through to `make_root` as
+    /// `RootOptions::sample_size` — see that field, and `make_root`'s own
+    /// doxygen, for the exact scanning and `is_sample` semantics. No seed
+    /// anywhere: the source's own ordering is where any randomness has to
+    /// live (see `LayoutSource::at`'s doxygen), not here.
+    std::optional<std::uint64_t> sample_size;
 };
 
 /// Instrumentation `evaluate()` can report about its own run, populated

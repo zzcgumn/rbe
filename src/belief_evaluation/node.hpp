@@ -57,10 +57,45 @@ struct RootConstructionResult
     RootFailure failure = RootFailure::None;
 };
 
-/// Builds the root node of an exhaustive evaluation over `source`: every
-/// layout `source` enumerates that is consistent with `root_layout` (see
-/// below) gets `p_i = 1`, and `kappa = 1 / N` where N is the number of
-/// layouts that survive — not `source`'s raw size.
+/// `make_root`'s optional behaviour, distinct from `EvaluateOptions`
+/// (`evaluate()`'s own parameter): `make_root` is usable standalone
+/// (`node_test.cpp` depends on this), and most of `EvaluateOptions` —
+/// `bound`, `delta_is_double_dummy_optimal`, `retain_root` — means nothing
+/// at this layer, so threading that whole type down here would couple
+/// `make_root` to fields it never reads.
+struct RootOptions
+{
+    /// Cap the number of layouts drawn from `source`, absent for exhaustive
+    /// enumeration (every consistent layout). See `make_root`'s own
+    /// doxygen for the exact scanning behaviour and what this does to
+    /// `is_sample`.
+    std::optional<std::uint64_t> sample_size;
+};
+
+/// Builds the root node over `source`: scans from index 0 and takes every
+/// layout consistent with `root_layout` (see below), each getting `p_i = 1`,
+/// up to `options.sample_size` if one is supplied — absent, every consistent
+/// layout is taken, the exhaustive case. `kappa = 1 / node.layouts.size()`
+/// either way: M caps the loop, it never reaches the weight, so a node's
+/// mass is always exactly 1 regardless of how many layouts it actually
+/// holds.
+///
+/// `node.is_sample` is true exactly when the scan stopped **because** the
+/// cap was reached, not merely because a cap was supplied — reaching
+/// `options.sample_size` with the scan not yet at `source`'s end. A sample
+/// size of `M >= N` (N being however many layouts actually survive
+/// filtering) takes the whole consistent set in source order before the cap
+/// ever binds, so `is_sample` is false and the result is byte-for-byte the
+/// exhaustive one: same layouts, same order, same `kappa`. This is why
+/// `is_sample` cannot be `options.sample_size.has_value()` directly — that
+/// would report a sample on a node that genuinely holds the whole space,
+/// silently breaking `space_size` and licensing tier 2's cut to switch off
+/// somewhere it is still sound.
+///
+/// No seed anywhere in this function or `RootOptions`: the caller's
+/// `source` is the only source of randomness a sampled draw can have (see
+/// `LayoutSource::at`'s own doxygen) — scanning from index 0 is a
+/// deterministic prefix of whatever order `source` already presents.
 ///
 /// A candidate layout is consistent with `root_layout` when it shares
 /// `root_layout`'s trump, `first`, and current-trick state exactly; shares
@@ -74,13 +109,15 @@ struct RootConstructionResult
 ///
 /// The result carries no node, with a specific `RootFailure`, rather than
 /// asserting — `source` is user-supplied — when `source.size()` is
-/// `std::nullopt` (exhaustive evaluation has no bound to enumerate without
-/// one), or when no layout survives filtering.
+/// `std::nullopt` (no bound to enumerate, or to scan a prefix of, without
+/// one), or when no layout survives filtering (whether or not a sample size
+/// was requested — an empty result is an empty result either way).
 auto make_root(
     Deal const& root_layout,
     int declarer,
     int tricks_needed,
-    LayoutSource const& source) -> RootConstructionResult;
+    LayoutSource const& source,
+    RootOptions const& options = {}) -> RootConstructionResult;
 
 /// kappa * Sigma_i p_i, accumulated through KahanAccumulator. The node's
 /// total probability mass, independent of what tricks_won_by_declarer says
