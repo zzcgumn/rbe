@@ -27,11 +27,13 @@ struct BeliefNode
     SampleWeight kappa = 0.0;
 
     /// Whether this node's layouts are a sample of a larger space rather
-    /// than the whole of it. Currently always false — nothing in this
-    /// exhaustive evaluator samples — but a stored, propagated field rather
-    /// than a literal at each call site, so a future sampling evaluator has
-    /// one place to set it true instead of every construction site to hunt
-    /// down. See BeliefView::is_sample, which this feeds.
+    /// than the whole of it. Set at construction (`make_root`'s own
+    /// doxygen has the exact condition) and propagated to every child in
+    /// both expansion paths — once true anywhere on the path to a node, it
+    /// stays true for that node and everything below it, since a child
+    /// built from a sample can never be more complete than its parent. See
+    /// BeliefView::is_sample, which this feeds, and tier2_dead(), which
+    /// gates on it.
     bool is_sample = false;
 };
 

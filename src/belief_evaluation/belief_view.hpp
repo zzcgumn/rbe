@@ -26,10 +26,19 @@ namespace dds::belief_evaluation
 /// mutated while it is live. `node` is `const` so nothing reachable through
 /// it can mutate the layouts underneath the view.
 ///
-/// `is_sample` is copied from `node.is_sample` (currently always false — no
-/// sampling exists yet) and `space_size` is the node's own layout count —
-/// the whole belief space the node genuinely holds, not an estimate, since
-/// this evaluator is exhaustive and never samples.
+/// `is_sample` is copied from `node.is_sample` directly. `space_size` is
+/// `node.layouts.size()` **only when `node.is_sample` is false** — 0
+/// otherwise, per `BeliefView::space_size`'s own doxygen ("0 when
+/// unknown"). On a sampled node the true belief-space size genuinely is
+/// unknown: the evaluator has seen a prefix of the source and has no idea
+/// how many consistent layouts lie beyond it, so reporting
+/// `node.layouts.size()` there would hand a strategy a false certainty — a
+/// node down to one drawn layout announcing a belief space of size one,
+/// inviting exactly the strategy-fusion-by-the-back-door failure
+/// algorithm.md warns about. A strategy that wants the number of layouts it
+/// is actually reasoning over still has `entries.size()`; `space_size` adds
+/// nothing on a sampled node but a wrong number, so it reports nothing
+/// instead.
 auto make_belief_view(BeliefNode const& node, std::vector<BeliefEntry>& scratch) -> BeliefView;
 
 }  // namespace dds::belief_evaluation

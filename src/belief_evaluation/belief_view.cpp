@@ -31,7 +31,9 @@ auto make_belief_view(BeliefNode const& node, std::vector<BeliefEntry>& scratch)
     }
 
     return BeliefView{
-        std::span<BeliefEntry const>(scratch), node.is_sample, node.layouts.size()};
+        std::span<BeliefEntry const>(scratch),
+        node.is_sample,
+        node.is_sample ? 0 : node.layouts.size()};
 }
 
 }  // namespace dds::belief_evaluation

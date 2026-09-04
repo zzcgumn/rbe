@@ -245,10 +245,12 @@ auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool
     // layout in this node is dead" from the layouts the node happens to
     // hold; on a sample that is only "every layout *drawn* is dead", which
     // says nothing about every layout in the true space, so a layout that
-    // would have made could simply not have been drawn. is_sample is
-    // always false today -- nothing in this evaluator samples yet -- so
-    // this is a no-op today and load-bearing only once something sets it
-    // true.
+    // would have made could simply not have been drawn. Once a root sample
+    // size is requested and actually binds, is_sample propagates true to
+    // every descendant through both expansion paths, switching this cut
+    // off across the whole tree from that point on -- stricter than
+    // algorithm.md, which forbids the cut only at or below a replenishment
+    // floor this evaluator does not yet have.
     if (node.is_sample)
     {
         return false;

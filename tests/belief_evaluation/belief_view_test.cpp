@@ -103,3 +103,28 @@ TEST_F(BeliefViewTest, IsSampleIsCopiedFromTheNodeNotHardcoded)
 
     EXPECT_TRUE(view.is_sample);
 }
+
+TEST_F(BeliefViewTest, SpaceSizeIsZeroOnASampledNodeEvenThoughEntriesStillCarriesEveryDrawnLayout)
+{
+    // The false-certainty failure this exists to prevent: on a sampled
+    // node the true belief-space size is genuinely unknown (the evaluator
+    // has seen a prefix of the source, not the whole of it), so
+    // space_size reports 0 -- BeliefView::space_size's own documented
+    // meaning for "unknown" -- rather than the drawn count, which would
+    // hand a strategy a false certainty about how determined the position
+    // is. Nothing else about the view changes: entries still carries every
+    // one of the three drawn layouts and its normalised posterior, exactly
+    // as the unsampled case above does.
+    BeliefNode node = make_node_with_p({0.4, 0.3, 0.3}, /*kappa=*/1.0);
+    node.is_sample = true;
+
+    std::vector<BeliefEntry> scratch;
+    BeliefView const view = make_belief_view(node, scratch);
+
+    EXPECT_TRUE(view.is_sample);
+    EXPECT_EQ(view.space_size, 0u);
+    ASSERT_EQ(view.entries.size(), 3u);
+    EXPECT_NEAR(view.entries[0].posterior, 0.4, 1e-12);
+    EXPECT_NEAR(view.entries[1].posterior, 0.3, 1e-12);
+    EXPECT_NEAR(view.entries[2].posterior, 0.3, 1e-12);
+}
