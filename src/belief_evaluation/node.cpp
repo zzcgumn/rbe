@@ -102,12 +102,12 @@ auto make_root(
     Deal const& root_layout,
     int declarer,
     int tricks_needed,
-    LayoutSource const& source) -> std::optional<BeliefNode>
+    LayoutSource const& source) -> RootConstructionResult
 {
     std::optional<std::uint64_t> const size = source.size();
     if (! size.has_value())
     {
-        return std::nullopt;
+        return RootConstructionResult{std::nullopt, RootFailure::SourceNotEnumerable};
     }
 
     int const dummy = (declarer + 2) % DDS_HANDS;
@@ -141,11 +141,11 @@ auto make_root(
 
     if (node.layouts.empty())
     {
-        return std::nullopt;
+        return RootConstructionResult{std::nullopt, RootFailure::NoLayoutSurvived};
     }
 
     node.kappa = 1.0 / static_cast<double>(node.layouts.size());
-    return node;
+    return RootConstructionResult{std::move(node), RootFailure::None};
 }
 
 auto node_mass(BeliefNode const& node) -> double

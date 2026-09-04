@@ -35,6 +35,28 @@ struct BeliefNode
     bool is_sample = false;
 };
 
+/// Why `make_root` could not build a node — `None` when it could.
+/// Deliberately not `ValidationError`: that enum is documented as distinct
+/// rejection reasons for a user-supplied *callback* return, and `source` is
+/// not a callback; reusing it here would make `ValidationError::None` mean
+/// two unrelated things.
+enum class RootFailure
+{
+    None,
+    SourceNotEnumerable,  ///< source.size() is std::nullopt
+    NoLayoutSurvived,      ///< source.size() had a value, but no candidate passed the consistency filter
+};
+
+/// `make_root`'s own result: the node on success, or `std::nullopt` paired
+/// with the specific reason it could not be built. `node` and `failure`
+/// disagree only in the way `EvaluationResult::by_strategy` and `error` do —
+/// `node.has_value()` and `failure == RootFailure::None` always agree.
+struct RootConstructionResult
+{
+    std::optional<BeliefNode> node;
+    RootFailure failure = RootFailure::None;
+};
+
 /// Builds the root node of an exhaustive evaluation over `source`: every
 /// layout `source` enumerates that is consistent with `root_layout` (see
 /// below) gets `p_i = 1`, and `kappa = 1 / N` where N is the number of
@@ -50,14 +72,15 @@ struct BeliefNode
 /// (`RankMap::aggr`) invariant across every layout, which is what licenses
 /// one renumbering for the whole node.
 ///
-/// Returns `std::nullopt` rather than asserting — `source` is user-supplied
-/// — when `source.size()` is `std::nullopt` (exhaustive evaluation has no
-/// bound to enumerate without one), or when no layout survives filtering.
+/// The result carries no node, with a specific `RootFailure`, rather than
+/// asserting — `source` is user-supplied — when `source.size()` is
+/// `std::nullopt` (exhaustive evaluation has no bound to enumerate without
+/// one), or when no layout survives filtering.
 auto make_root(
     Deal const& root_layout,
     int declarer,
     int tricks_needed,
-    LayoutSource const& source) -> std::optional<BeliefNode>;
+    LayoutSource const& source) -> RootConstructionResult;
 
 /// kappa * Sigma_i p_i, accumulated through KahanAccumulator. The node's
 /// total probability mass, independent of what tricks_won_by_declarer says

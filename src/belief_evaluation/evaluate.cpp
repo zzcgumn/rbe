@@ -277,14 +277,18 @@ auto evaluate(
     DefenderStrategy const& delta,
     EvaluateOptions const& options) -> EvaluationResult
 {
-    std::optional<BeliefNode> const root_opt = make_root(root_layout, declarer, tricks_needed, source);
-    if (! root_opt.has_value())
+    RootConstructionResult const root_result = make_root(root_layout, declarer, tricks_needed, source);
+    if (! root_result.node.has_value())
     {
         EvaluationError const error{
-            ValidationError::None, EvaluationCallback::RootConstruction, declarer, root_layout};
+            ValidationError::None,
+            EvaluationCallback::RootConstruction,
+            declarer,
+            root_layout,
+            root_result.failure};
         return EvaluationResult{{}, error};
     }
-    BeliefNode const& root = *root_opt;
+    BeliefNode const& root = *root_result.node;
 
     std::optional<EvaluationError> error;
     EvaluationValue value{};

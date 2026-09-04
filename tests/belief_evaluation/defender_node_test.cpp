@@ -229,7 +229,7 @@ TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChi
     be::assert_forms_one_belief_node({layout0, layout1}, North);
 
     be::VectorLayoutSource source({layout0, layout1});
-    be::BeliefNode const node = *be::make_root(layout0, North, /*tricks_needed=*/1, source);
+    be::BeliefNode const node = *be::make_root(layout0, North, /*tricks_needed=*/1, source).node;
     ASSERT_EQ(node.layouts.size(), 2u);  // both layouts survived make_root's filter
 
     be::ScriptedDefender::Key const key0{be::layout_key(layout0, East), ""};

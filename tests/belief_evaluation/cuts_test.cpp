@@ -870,7 +870,7 @@ TEST_F(TierTwoCutTest, StopsAtTheFirstLiveLayoutWithoutQueryingTheRest)
     // before trusting the early-exit assertion below -- see the fixture
     // comment above for why this is checked directly rather than assumed.
     std::optional<be::BeliefNode> const root =
-        be::make_root(layout_a, North, /*tricks_needed=*/1, source);
+        be::make_root(layout_a, North, /*tricks_needed=*/1, source).node;
     ASSERT_TRUE(root.has_value());
     ASSERT_EQ(root->layouts.size(), 2u);
 

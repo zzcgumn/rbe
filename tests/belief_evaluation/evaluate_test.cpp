@@ -98,6 +98,31 @@ TEST_F(EvaluateTest, AnUnenumerableSourceSurfacesAsARootConstructionError)
     EXPECT_TRUE(result.by_strategy.empty());
     EXPECT_EQ(result.error->callback, be::EvaluationCallback::RootConstruction);
     EXPECT_EQ(result.error->seat, North);
+    EXPECT_EQ(result.error->root_failure, be::RootFailure::SourceNotEnumerable);
+}
+
+TEST_F(EvaluateTest, ANoLayoutSurvivingSourceSurfacesAsARootConstructionErrorWithADistinctCause)
+{
+    // The distinguishing half of the proof root_failure exists for: an unenumerable
+    // source and a source that enumerates fine but has nothing consistent
+    // with root_layout both surface as RootConstruction, but with different
+    // root_failure values -- the test right above this one pins the first,
+    // this one pins the second.
+    Deal const root_layout = make_one_trick_certain_win();
+    Deal inconsistent_layout = root_layout;
+    // Declarer's own holding must match root_layout's exactly to survive
+    // make_root's filter -- this doesn't.
+    inconsistent_layout.remainCards[North][Spades] = be::holding({Two});
+    be::VectorLayoutSource source({inconsistent_layout});
+
+    be::EvaluationResult const result = be::evaluate(
+        root_layout, North, /*tricks_needed=*/1, source, strategy(1), be::single_card_defender);
+
+    ASSERT_TRUE(result.error.has_value());
+    EXPECT_TRUE(result.by_strategy.empty());
+    EXPECT_EQ(result.error->callback, be::EvaluationCallback::RootConstruction);
+    EXPECT_EQ(result.error->seat, North);
+    EXPECT_EQ(result.error->root_failure, be::RootFailure::NoLayoutSurvived);
 }
 
 TEST_F(EvaluateTest, AnIllegalCardFromPiSurfacesAsADeclarerPlayError)

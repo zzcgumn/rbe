@@ -24,6 +24,7 @@ using be::VectorLayoutSource;
 using be::card_count;
 using be::holding;
 using be::make_root;
+using be::RootFailure;
 using be::tricks_remaining;
 
 namespace
@@ -84,7 +85,7 @@ TEST_F(NodeTest, RootInvariantsHoldOverEveryLayoutThatSurvivesFiltering)
     Deal const root_layout = make_root_layout();
     VectorLayoutSource source({make_root_layout(), make_swapped_split_layout()});
 
-    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
     ASSERT_TRUE(node.has_value());
 
     ASSERT_EQ(node->layouts.size(), 2u);
@@ -114,7 +115,7 @@ TEST_F(NodeTest, KappaIsOneOverTheSurvivingCountNotTheRawSourceSize)
     VectorLayoutSource source(
         {make_root_layout(), make_swapped_split_layout(), make_wrong_dummy_layout()});
 
-    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
     ASSERT_TRUE(node.has_value());
     ASSERT_EQ(node->layouts.size(), 2u);
     EXPECT_DOUBLE_EQ(node->kappa, 0.5);
@@ -125,7 +126,7 @@ TEST_F(NodeTest, ASourceThatCannotReportItsSizeIsReportedAsAnError)
     Deal const root_layout = make_root_layout();
     UnboundedLayoutSource source;
 
-    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
     EXPECT_FALSE(node.has_value());
 }
 
@@ -134,8 +135,29 @@ TEST_F(NodeTest, ASourceWhereNoLayoutSurvivesIsReportedAsAnError)
     Deal const root_layout = make_root_layout();
     VectorLayoutSource source({make_wrong_dummy_layout()});
 
-    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
     EXPECT_FALSE(node.has_value());
+}
+
+TEST_F(NodeTest, TheTwoFailureCausesAreDistinguishable)
+{
+    // "source.size() is nullopt" and "no layout survived filtering" both
+    // leave RootConstructionResult::node empty, but for genuinely different
+    // reasons a caller (and a test) can tell apart via ::failure -- the gap
+    // EvaluationError::root_failure's own doxygen used to admit.
+    Deal const root_layout = make_root_layout();
+    UnboundedLayoutSource unbounded_source;
+    VectorLayoutSource empty_result_source({make_wrong_dummy_layout()});
+
+    auto const unenumerable = make_root(root_layout, North, /*tricks_needed=*/2, unbounded_source);
+    auto const nothing_survived =
+        make_root(root_layout, North, /*tricks_needed=*/2, empty_result_source);
+
+    EXPECT_FALSE(unenumerable.node.has_value());
+    EXPECT_EQ(unenumerable.failure, RootFailure::SourceNotEnumerable);
+    EXPECT_FALSE(nothing_survived.node.has_value());
+    EXPECT_EQ(nothing_survived.failure, RootFailure::NoLayoutSurvived);
+    EXPECT_NE(unenumerable.failure, nothing_survived.failure);
 }
 
 TEST_F(NodeTest, ADifferentDefenderSplitOfTheSamePoolSurvivesFiltering)
@@ -143,7 +165,7 @@ TEST_F(NodeTest, ADifferentDefenderSplitOfTheSamePoolSurvivesFiltering)
     Deal const root_layout = make_root_layout();
     VectorLayoutSource source({make_swapped_split_layout()});
 
-    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
     ASSERT_TRUE(node.has_value());
     ASSERT_EQ(node->layouts.size(), 1u);
     EXPECT_EQ(node->layouts[0].remainCards[East][2], holding({Jack}));
@@ -155,7 +177,7 @@ TEST_F(NodeTest, ALayoutDifferingInDummysHoldingDoesNotSurviveFiltering)
     Deal const root_layout = make_root_layout();
     VectorLayoutSource source({make_root_layout(), make_wrong_dummy_layout()});
 
-    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
     ASSERT_TRUE(node.has_value());
     EXPECT_EQ(node->layouts.size(), 1u);  // only make_root_layout() survives
 }
@@ -165,7 +187,7 @@ TEST_F(NodeTest, CommonKnowledgeFieldsAreSetFromTheRootLayoutAndCaller)
     Deal const root_layout = make_root_layout();
     VectorLayoutSource source({make_root_layout()});
 
-    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/7, source);
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/7, source).node;
     ASSERT_TRUE(node.has_value());
     EXPECT_EQ(node->state.trump, DDS_NOTRUMP);
     EXPECT_EQ(node->state.first, North);
@@ -196,7 +218,7 @@ TEST_F(NodeTest, HistoryIsSeededFromCardsAlreadyPlayedToTheRootsTrickInProgress)
     root_layout.remainCards[East][0] = 0;                // two already played
     VectorLayoutSource source({root_layout});
 
-    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/7, source);
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/7, source).node;
     ASSERT_TRUE(node.has_value());
     ASSERT_EQ(node->state.history.number, 2);
     EXPECT_EQ(node->state.history.suit[0], 0);
@@ -213,7 +235,7 @@ TEST_F(NodeTest, TricksRemainingAtATrickBoundaryEqualsDeclarersOwnCardCount)
     // nothing played, so two tricks remain.
     Deal const root_layout = make_root_layout();
     VectorLayoutSource source({root_layout});
-    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
     ASSERT_TRUE(node.has_value());
 
     EXPECT_EQ(tricks_remaining(node->state), 2);
@@ -229,7 +251,7 @@ TEST_F(NodeTest, TricksRemainingCrossCheckedAgainstADefendersOwnHolding)
     // this is exactly the mistake tricks_remaining() itself must not make.
     Deal const root_layout = make_root_layout();
     VectorLayoutSource source({root_layout});
-    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
     ASSERT_TRUE(node.has_value());
     ASSERT_EQ(node->layouts.size(), 1u);
 
@@ -261,7 +283,7 @@ TEST_F(NodeTest, TricksRemainingMidTrickIsOneShortForAHandThatHasAlreadyPlayed)
     root_layout.currentTrickRank[0] = King;
     root_layout.remainCards[North][0] = holding({Ace});  // king already played
     VectorLayoutSource source({root_layout});
-    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
     ASSERT_TRUE(node.has_value());
 
     ASSERT_EQ(card_count(node->state.known_holdings, North), 1);  // declarer's own count: one short
@@ -282,7 +304,7 @@ TEST_F(NodeTest, TricksRemainingMidTrickTwoCardsInIsStillCorrectForTheLeader)
     root_layout.remainCards[North][0] = holding({Ace});  // king already played
     root_layout.remainCards[East][2] = 0;                // queen already played
     VectorLayoutSource source({root_layout});
-    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
     ASSERT_TRUE(node.has_value());
 
     ASSERT_EQ(card_count(node->state.known_holdings, North), 1);
@@ -306,7 +328,7 @@ TEST_F(NodeTest, TricksRemainingMidTrickIsNotShortForAHandThatHasNotPlayedYet)
     root_layout.remainCards[North][0] = holding({Ace});  // king already played
     root_layout.remainCards[East][2] = 0;                // queen already played
     VectorLayoutSource source({root_layout});
-    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source);
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
     ASSERT_TRUE(node.has_value());
 
     // tricks_remaining() reads state.declarer directly, not "the real

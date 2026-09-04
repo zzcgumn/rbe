@@ -140,7 +140,7 @@ TEST_F(OracleTest, ASingleDefenderChoiceCarriesNoMassOnTheUnchosenBranch)
     // bite -- recorded as a finding rather than silently retrofitted or
     // used to loosen the check.
     be::VectorLayoutSource source({layout});
-    be::BeliefNode const node = *be::make_root(layout, North, /*tricks_needed=*/1, source);
+    be::BeliefNode const node = *be::make_root(layout, North, /*tricks_needed=*/1, source).node;
 
     be::ScriptedDefender::Key const key{be::layout_key(layout, East), ""};
     be::ScriptedDefender defender({{key, be::Card{Spades, King}}});  // scripts the king, never the two

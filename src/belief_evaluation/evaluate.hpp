@@ -35,15 +35,18 @@ enum class EvaluationCallback
 /// contract for a `DefenderStrategy` error; and the root layout passed to
 /// `evaluate()` for a `RootConstruction` error.
 ///
-/// `validation` is `ValidationError::None` for a `RootConstruction` error —
-/// `make_root()` does not yet distinguish "source.size() is nullopt" from
-/// "no layout survived filtering"; `callback` alone identifies the failure.
+/// `validation` is always `ValidationError::None` for a `RootConstruction`
+/// error — there is no callback return to validate; `root_failure` carries
+/// the actual cause instead, and is meaningful only for a `RootConstruction`
+/// error (`RootFailure::None` otherwise, the same way `seat` and `layout`
+/// carry a different meaning per `callback` value already).
 struct EvaluationError
 {
     ValidationError validation;
     EvaluationCallback callback;
     int seat;
     Deal layout;
+    RootFailure root_failure = RootFailure::None;
 };
 
 /// The value of one candidate action at the root, and the card that leads
