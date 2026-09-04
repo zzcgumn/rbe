@@ -20,7 +20,9 @@ using be::EvaluateOptions;
 using be::EvaluationResult;
 using be::EvaluationValue;
 using be::RootConstructionResult;
+using be::RootFailure;
 using be::RootOptions;
+using be::ScanOutcome;
 using be::StrategyId;
 using be::VectorLayoutSource;
 using be::assert_forms_one_belief_node;
@@ -28,6 +30,7 @@ using be::assert_pool_matches;
 using be::evaluate;
 using be::holding;
 using be::make_root;
+using be::node_mass;
 using be::single_card_declarer_play;
 using be::single_card_defender;
 
@@ -273,4 +276,141 @@ TEST_F(SamplingTest, TierTwoNeverFiresOnceTheRootIsAGenuineSample)
     ASSERT_TRUE(sampled.by_strategy.at(1u).counters.has_value());
     EXPECT_EQ(sampled.by_strategy.at(1u).counters->tier2_cuts, 0u);
     EXPECT_EQ(sampled.by_strategy.at(1u).p_make, 1.0);  // the true value, reached despite the bound
+}
+
+// The scan budget: caps RootOptions/EvaluateOptions::scan_budget calls to
+// source.at() specifically, independently of sample_size -- a degraded but
+// usable answer when it binds and still finds something, a genuine failure
+// (distinct from NoLayoutSurvived) when it binds and finds nothing at all.
+
+TEST_F(SamplingTest, ScanOutcomeReflectsWhyTheScanStopped)
+{
+    // Three runs against the same 5-layout, all-consistent source, one per
+    // ScanOutcome value: no caps at all (SourceExhausted -- the exhaustive
+    // case, which is why the enum has no separate "not sampling" value); a
+    // sample_size that binds before the source runs out (SampleFilled); a
+    // scan_budget that binds before sample_size and before the source runs
+    // out (BudgetExhausted).
+    std::vector<Deal> const layouts = make_layouts_with_distinct_fillers(5);
+    assert_pool_matches(layouts);
+    assert_forms_one_belief_node(layouts, North);
+    VectorLayoutSource const source(layouts);
+
+    RootConstructionResult const exhaustive =
+        make_root(layouts.front(), North, /*tricks_needed=*/1, source);
+    ASSERT_TRUE(exhaustive.node.has_value());
+    EXPECT_EQ(exhaustive.outcome, ScanOutcome::SourceExhausted);
+    EXPECT_FALSE(exhaustive.node->is_sample);
+
+    RootConstructionResult const sample_filled = make_root(
+        layouts.front(), North, /*tricks_needed=*/1, source, RootOptions{.sample_size = 2u});
+    ASSERT_TRUE(sample_filled.node.has_value());
+    EXPECT_EQ(sample_filled.outcome, ScanOutcome::SampleFilled);
+    EXPECT_TRUE(sample_filled.node->is_sample);
+
+    RootConstructionResult const budget_exhausted = make_root(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/1,
+        source,
+        RootOptions{.sample_size = 5u, .scan_budget = 2u});
+    ASSERT_TRUE(budget_exhausted.node.has_value());
+    EXPECT_EQ(budget_exhausted.outcome, ScanOutcome::BudgetExhausted);
+    EXPECT_EQ(budget_exhausted.node->layouts.size(), 2u);
+    EXPECT_TRUE(budget_exhausted.node->is_sample);
+}
+
+TEST_F(SamplingTest, KappaStaysOneOverLayoutsActuallyDrawnUnderABudget)
+{
+    // The test that would catch kappa computed as 1/scan_budget's target
+    // instead of 1/(layouts actually drawn): node_mass = kappa *
+    // sum(p_i), and if kappa used the wrong denominator, mass would fall
+    // silently below 1 with nothing to flag it -- see make_root's own
+    // doxygen. Bitwise, not EXPECT_DOUBLE_EQ: this is the criterion, not
+    // an approximation of it.
+    std::vector<Deal> const layouts = make_layouts_with_distinct_fillers(5);
+    assert_pool_matches(layouts);
+    assert_forms_one_belief_node(layouts, North);
+    VectorLayoutSource const source(layouts);
+
+    RootConstructionResult const result = make_root(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/1,
+        source,
+        RootOptions{.sample_size = 5u, .scan_budget = 2u});
+
+    ASSERT_TRUE(result.node.has_value());
+    EXPECT_EQ(result.node->layouts.size(), 2u);
+    EXPECT_DOUBLE_EQ(result.node->kappa, 0.5);
+    EXPECT_EQ(node_mass(*result.node), 1.0);
+}
+
+namespace
+{
+    /// `base` with declarer's own holding changed so it fails
+    /// is_consistent() against any root sharing `base`'s original
+    /// declarer holding -- a candidate the scan will burn a source.at()
+    /// call on without ever adding a layout.
+    auto make_inconsistent_variant(Deal base) -> Deal
+    {
+        base.remainCards[North][Spades] = holding({Two, Three});
+        return base;
+    }
+}
+
+TEST_F(SamplingTest, BudgetExhaustedBeforeAnyLayoutSurvivesIsAFailureDistinctFromNoLayoutSurvived)
+{
+    // Budget covers only the first two (both inconsistent) of three source
+    // entries; the third, past the budget, is consistent -- so this is
+    // genuinely "the budget ran out before finding one", not "the whole
+    // source was checked and rejected everything". The two must not be
+    // confused: a caller seeing NoLayoutSurvived would go fix their source,
+    // which would accomplish nothing here.
+    Deal const root_layout = make_layouts_with_distinct_fillers(1).front();
+    std::vector<Deal> const source_layouts = {
+        make_inconsistent_variant(root_layout),
+        make_inconsistent_variant(root_layout),
+        root_layout,
+    };
+    VectorLayoutSource const source(source_layouts);
+
+    RootConstructionResult const result = make_root(
+        root_layout, North, /*tricks_needed=*/1, source, RootOptions{.scan_budget = 2u});
+
+    EXPECT_FALSE(result.node.has_value());
+    EXPECT_EQ(result.failure, RootFailure::ScanBudgetExhausted);
+    EXPECT_NE(result.failure, RootFailure::NoLayoutSurvived);
+}
+
+TEST_F(SamplingTest, ABudgetLargeEnoughNotToBindMatchesExhaustiveBehaviourBitwise)
+{
+    std::vector<Deal> const layouts = make_layouts_with_distinct_fillers(3);
+    assert_pool_matches(layouts);
+    assert_forms_one_belief_node(layouts, North);
+    VectorLayoutSource const source(layouts);
+
+    EvaluationResult const exhaustive =
+        evaluate(layouts.front(), North, /*tricks_needed=*/1, source, strategy(1), single_card_defender);
+    EvaluationResult const generously_budgeted = evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.sample_size = 1000u, .scan_budget = 1000u});
+
+    ASSERT_FALSE(exhaustive.error.has_value());
+    ASSERT_FALSE(generously_budgeted.error.has_value());
+    EXPECT_EQ(exhaustive.by_strategy.at(1u).p_make, generously_budgeted.by_strategy.at(1u).p_make);
+    ASSERT_EQ(
+        exhaustive.by_strategy.at(1u).root_children.size(),
+        generously_budgeted.by_strategy.at(1u).root_children.size());
+    for (std::size_t i = 0; i < exhaustive.by_strategy.at(1u).root_children.size(); ++i)
+    {
+        EXPECT_EQ(
+            exhaustive.by_strategy.at(1u).root_children[i].value,
+            generously_budgeted.by_strategy.at(1u).root_children[i].value);
+    }
 }

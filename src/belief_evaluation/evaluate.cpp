@@ -278,7 +278,11 @@ auto evaluate(
     EvaluateOptions const& options) -> EvaluationResult
 {
     RootConstructionResult const root_result = make_root(
-        root_layout, declarer, tricks_needed, source, RootOptions{.sample_size = options.sample_size});
+        root_layout,
+        declarer,
+        tricks_needed,
+        source,
+        RootOptions{.sample_size = options.sample_size, .scan_budget = options.scan_budget});
     if (! root_result.node.has_value())
     {
         EvaluationError const error{

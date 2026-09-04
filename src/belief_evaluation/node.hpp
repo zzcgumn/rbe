@@ -43,18 +43,52 @@ struct BeliefNode
 enum class RootFailure
 {
     None,
-    SourceNotEnumerable,  ///< source.size() is std::nullopt
-    NoLayoutSurvived,      ///< source.size() had a value, but no candidate passed the consistency filter
+    SourceNotEnumerable,   ///< source.size() is std::nullopt
+    NoLayoutSurvived,      ///< the whole source was scanned, but no candidate passed the consistency filter
+    /// `RootOptions::scan_budget` ran out before a single consistent layout
+    /// was found, with the source not yet exhausted -- distinct from
+    /// `NoLayoutSurvived`, which means the *whole* source was checked and
+    /// rejected everything. A caller seeing `NoLayoutSurvived` should fix
+    /// their source; a caller seeing this should raise the budget instead
+    /// -- collapsing the two would send them to debug the wrong thing.
+    ScanBudgetExhausted,
+};
+
+/// Why a scan (of `make_root`'s own root-level draw, or -- reusing this
+/// same signal -- a future node-local one at depth) stopped where it did.
+/// `SourceExhausted` is the *exhaustive* case too: with no sample size and
+/// no budget, a scan always ends this way, so this enum has no separate
+/// "not sampling" value.
+enum class ScanOutcome
+{
+    /// The whole source was scanned (index reached `source.size()`). The
+    /// node holds every consistent layout that exists -- whatever
+    /// `sample_size` or `scan_budget` were, they did not need to bind.
+    /// `is_sample` is false.
+    SourceExhausted,
+    /// `sample_size` was reached before the source was exhausted. More
+    /// consistent layouts may exist beyond where scanning stopped.
+    /// `is_sample` is true.
+    SampleFilled,
+    /// `scan_budget` was reached before `sample_size` (or with no
+    /// `sample_size` set) and before the source was exhausted -- a
+    /// degraded draw, not a failure, provided at least one layout survived
+    /// (see `RootFailure::ScanBudgetExhausted` for when none did).
+    /// `is_sample` is true.
+    BudgetExhausted,
 };
 
 /// `make_root`'s own result: the node on success, or `std::nullopt` paired
 /// with the specific reason it could not be built. `node` and `failure`
 /// disagree only in the way `EvaluationResult::by_strategy` and `error` do —
 /// `node.has_value()` and `failure == RootFailure::None` always agree.
+/// `outcome` is meaningful only on success (`node.has_value()`) — why the
+/// scan stopped where it did, not just whether it succeeded.
 struct RootConstructionResult
 {
     std::optional<BeliefNode> node;
     RootFailure failure = RootFailure::None;
+    ScanOutcome outcome = ScanOutcome::SourceExhausted;
 };
 
 /// `make_root`'s optional behaviour, distinct from `EvaluateOptions`
@@ -70,27 +104,47 @@ struct RootOptions
     /// doxygen for the exact scanning behaviour and what this does to
     /// `is_sample`.
     std::optional<std::uint64_t> sample_size;
+
+    /// Cap the number of `source.at()` calls the scan may make, absent for
+    /// an unbounded scan. Counted in `at()` calls specifically, not
+    /// consistent layouts found and not loop iterations that happen to be
+    /// cheap: `at()` is the expensive operation (virtual, user-implemented,
+    /// in production likely to build a `Deal`), and it is what a future
+    /// scan-to-hit measurement counts too, so counting anything else here
+    /// would make the two incommensurable. Meaningless on its own without
+    /// `sample_size` — a budget with no sample size caps a scan that would
+    /// have stopped at the source's own end anyway.
+    std::optional<std::uint64_t> scan_budget;
 };
 
 /// Builds the root node over `source`: scans from index 0 and takes every
 /// layout consistent with `root_layout` (see below), each getting `p_i = 1`,
-/// up to `options.sample_size` if one is supplied — absent, every consistent
-/// layout is taken, the exhaustive case. `kappa = 1 / node.layouts.size()`
-/// either way: M caps the loop, it never reaches the weight, so a node's
-/// mass is always exactly 1 regardless of how many layouts it actually
-/// holds.
+/// up to `options.sample_size` if one is supplied and up to
+/// `options.scan_budget` calls to `source.at()` if one is supplied — both
+/// absent, every consistent layout is taken, the exhaustive case.
+/// `kappa = 1 / node.layouts.size()` in every case: neither cap ever
+/// reaches the weight, so a node's mass is always exactly 1 regardless of
+/// how many layouts it actually holds or why the scan stopped drawing them.
 ///
-/// `node.is_sample` is true exactly when the scan stopped **because** the
-/// cap was reached, not merely because a cap was supplied — reaching
-/// `options.sample_size` with the scan not yet at `source`'s end. A sample
-/// size of `M >= N` (N being however many layouts actually survive
-/// filtering) takes the whole consistent set in source order before the cap
-/// ever binds, so `is_sample` is false and the result is byte-for-byte the
-/// exhaustive one: same layouts, same order, same `kappa`. This is why
-/// `is_sample` cannot be `options.sample_size.has_value()` directly — that
-/// would report a sample on a node that genuinely holds the whole space,
-/// silently breaking `space_size` and licensing tier 2's cut to switch off
-/// somewhere it is still sound.
+/// `result.outcome` reports why the scan stopped — see `ScanOutcome` — and
+/// `node.is_sample` is true exactly when `outcome != SourceExhausted`: the
+/// scan stopped **because** a cap bound, not merely because one was
+/// supplied. A `sample_size` of `M >= N` (N being however many layouts
+/// actually survive filtering) takes the whole consistent set in source
+/// order before either cap ever binds, so `outcome` is `SourceExhausted`,
+/// `is_sample` is false, and the result is byte-for-byte the exhaustive
+/// one: same layouts, same order, same `kappa`. This is why `is_sample`
+/// cannot be `options.sample_size.has_value()` directly — that would
+/// report a sample on a node that genuinely holds the whole space, silently
+/// breaking `space_size` and licensing tier 2's cut to switch off somewhere
+/// it is still sound. The same reasoning applies to `scan_budget`: reaching
+/// it exactly as the source also runs out is `SourceExhausted`, not
+/// `BudgetExhausted` — there was nothing left to find regardless.
+///
+/// If both `sample_size` and `scan_budget` would bind at the same point,
+/// `sample_size` wins and `outcome` is `SampleFilled`: the scan is checked
+/// against `sample_size` first at each step, so a layout that fills the
+/// sample is never charged against the budget.
 ///
 /// No seed anywhere in this function or `RootOptions`: the caller's
 /// `source` is the only source of randomness a sampled draw can have (see
@@ -109,9 +163,13 @@ struct RootOptions
 ///
 /// The result carries no node, with a specific `RootFailure`, rather than
 /// asserting — `source` is user-supplied — when `source.size()` is
-/// `std::nullopt` (no bound to enumerate, or to scan a prefix of, without
-/// one), or when no layout survives filtering (whether or not a sample size
-/// was requested — an empty result is an empty result either way).
+/// `std::nullopt`; when no layout survives filtering after the whole source
+/// was scanned (`NoLayoutSurvived`); or when `scan_budget` ran out before a
+/// single consistent layout was found, with the source not yet exhausted
+/// (`ScanBudgetExhausted`, distinct from `NoLayoutSurvived` — see that
+/// value's own doxygen). A budget that ran out but still found at least one
+/// layout is not a failure at all: it returns a node, degraded, with
+/// `outcome == BudgetExhausted`.
 auto make_root(
     Deal const& root_layout,
     int declarer,

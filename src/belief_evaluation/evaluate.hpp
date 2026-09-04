@@ -141,6 +141,16 @@ struct EvaluateOptions
     /// anywhere: the source's own ordering is where any randomness has to
     /// live (see `LayoutSource::at`'s doxygen), not here.
     std::optional<std::uint64_t> sample_size;
+
+    /// Cap the number of `source.at()` calls the root's own scan may make,
+    /// threaded through to `make_root` as `RootOptions::scan_budget` — see
+    /// that field for what it counts and why. Meaningless on its own
+    /// without `sample_size`: a budget with no sample size caps a scan
+    /// that would have stopped at the source's own end anyway. A budget
+    /// that binds is not an error — see `RootFailure::ScanBudgetExhausted`
+    /// for the one case that still is (nothing survived before the budget
+    /// ran out).
+    std::optional<std::uint64_t> scan_budget;
 };
 
 /// Instrumentation `evaluate()` can report about its own run, populated
