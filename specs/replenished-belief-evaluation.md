@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-09-01
+last-updated: 2026-09-04
 ---
 
 # Replenished Belief Evaluation
@@ -22,13 +22,16 @@ hidden layouts — into a search over the belief space instead, following
 throughout for the theory and does not restate.
 
 This document describes the capability as it stands today: the vocabulary,
-the four injection contracts, the renumbering scheme, and an exhaustive
-evaluator that computes `P_make` exactly over a belief space small enough to
-enumerate in full. No sampling, no replenishment. Early cuts exist —
-unconditional arithmetic ones that skip subtrees contributing exactly zero,
-and one gated, injected-bound one — but change no answer; see "Behaviour &
-invariants" for what makes each sound and "Known gaps / non-goals" for what
-is still absent (a third, injected-bound-free tier; per-layout pruning).
+the injection contracts, the renumbering scheme, an exhaustive evaluator that
+computes `P_make` exactly over a belief space small enough to enumerate in
+full, and a sampling mode that draws a bounded prefix of a larger one instead.
+No replenishment yet, so a sampled run is knowingly degraded — see "Behaviour
+& invariants" for exactly what that means and what has and has not been done
+about it. Early cuts exist — unconditional arithmetic ones that skip
+subtrees contributing exactly zero, and one gated, injected-bound one — but
+change no answer; see "Behaviour & invariants" for what makes each sound and
+"Known gaps / non-goals" for what is still absent (a third, injected-bound-
+free tier; per-layout pruning; replenishment).
 
 ## Behaviour & invariants
 
@@ -202,6 +205,40 @@ is still absent (a third, injected-bound-free tier; per-layout pruning).
   progress, declarer's and dummy's exact holdings, and a defender split of
   the same outstanding pool — not the source's raw size, which may include
   layouts the root position rules out.
+- **Sampling narrows the same root-construction scan to a bounded prefix,
+  not a different mechanism.** With a sample size `M` supplied, `make_root`
+  scans a `LayoutSource` from index 0, exactly as the exhaustive case does,
+  and stops once `M` consistent layouts are found rather than continuing to
+  the source's end; a scan budget additionally caps how many `at()` calls
+  the search may spend looking, independently of `M`. `kappa` stays `1 /
+  M'` — the count of layouts *actually* drawn, never the requested `M` —
+  the same line the exhaustive case already has, unchanged: `κ = 1/M` would
+  leave a truncated draw's mass below 1 and silently bias every answer
+  downward by exactly how short the scan fell, while `κ = 1/M'` keeps mass
+  at exactly 1 and makes the result the sample mean over what was actually
+  drawn, which is what it is. `is_sample` is true exactly when the scan
+  stopped because a cap bound — reaching `M` or the budget with the source
+  not yet exhausted — never merely because a sample size was supplied: a
+  requested `M` at or above however many layouts actually exist takes the
+  whole consistent set before either cap can bind, and that run is
+  byte-for-byte the exhaustive one. `is_sample` then propagates to every
+  child through both expansion paths, so it is a fact about the whole
+  subtree beneath a sampled node, not only the node itself.
+- **A sampling evaluator with no replenishment is knowingly degraded, and
+  that is not a defect being tracked toward a fix in this document.** A
+  sample can end up containing only one layout consistent with the play so
+  far, and reporting a value from that layout hands a declarer strategy a
+  false certainty about a position that is genuinely still open — the
+  strategy-fusion-by-the-back-door failure
+  `docs/replenished_belief_evaluation/algorithm.md` warns about. `is_sample`
+  and `BeliefView::space_size` (below) both exist to make a collapsed
+  sample visible to a strategy that looks; neither removes the
+  degradation, and no heuristic compensation for it lives anywhere in this
+  capability — an evaluator that quietly compensated for a collapsed
+  sample would be worse than one that is honestly degraded, since the
+  compensation would be untested and unmeasured. Replenishing the sample as
+  it shrinks is the fix, and is out of scope for the capability as it
+  stands today (see "Known gaps / non-goals").
 - **A `BeliefView`'s posterior is normalised within the node, and sample
   weight never crosses into it.** The posterior a declarer strategy is
   handed is `p_i / Σ_j p_j` over the node's current layouts — not the raw
@@ -211,6 +248,16 @@ is still absent (a third, injected-bound-free tier; per-layout pruning).
   declarer strategy would let a strategy infer the sampling regime, which
   is exactly the kind of dependence that would make a sampled evaluator's
   results irreproducible.
+- **`BeliefView::space_size` is 0 on a sampled node, using the value the
+  field already documents for "unknown".** On a sampled node the true size
+  of the belief space is genuinely unknown — the evaluator has seen a
+  bounded prefix of a `LayoutSource`, not the whole of it — so reporting
+  `entries.size()` there would be a false certainty of exactly the kind the
+  sampling degradation above describes: a node down to one drawn layout
+  would announce a belief space of size one. A strategy that wants the
+  number of layouts it is actually reasoning over still has
+  `entries.size()` from the view's own span; `space_size` on a sampled node
+  adds nothing but a wrong number, so it reports nothing instead.
 - **An exhaustive evaluation returns the root value and root-child values,
   and retains no tree unless asked to.** Nodes are built on the recursion
   stack and released as each subtree completes; retaining a belief set at
@@ -289,44 +336,68 @@ is still absent (a third, injected-bound-free tier; per-layout pruning).
   later — a per-layout cut would reproduce every test in this capability's
   suite bitwise (most scripted π here does not read its belief view) while
   being wrong for any π that does, which is every real one.
-- **Two caller obligations cannot be validated, and are named together for
+- **Four caller obligations cannot be validated, and are named together for
   that reason.** An injected `LayoutBound` is checkable against nothing
   short of solving the position, which is the work it exists to avoid; the
   `delta_is_double_dummy_optimal` declaration cannot be checked at all, ever.
   Both fail silently — a bound that is too high, or a declaration that does
   not hold, produces a wrong probability with no error surfaced anywhere.
   `DeclarerStrategy::state_key` (above) is the third obligation of this kind
-  already in this module; a future caller-supplied contract this evaluator
+  already in this module. The fourth: a `LayoutSource` supplied to a
+  sampling evaluator must present its layouts in an order that is already
+  effectively random with respect to consistency with any given root —
+  "a randomised array of all possible layouts", in
+  `docs/replenished_belief_evaluation/algorithm.md`'s own terms — since
+  sampling takes a prefix of that order rather than drawing from it at
+  random (see "Sampling narrows..." above). A source that is sorted, or
+  grouped by some property correlated with consistency, yields a
+  systematically biased sample with no diagnostic anywhere in this
+  evaluator: nothing here can distinguish a well-shuffled source from a
+  badly-ordered one, since both simply return layouts in whatever order
+  `at()` presents them. A future caller-supplied contract this evaluator
   cannot verify belongs in this same register, not treated as a new kind of
   risk each time.
 - **Instrumentation is reported in the result, behind an opt-in, and cannot
   change any answer.** `EvaluationCounters`, populated only when
   `EvaluateOptions::collect_counters` is set, holds facts about a run's own
-  shape or cost (node count today; per-depth sample size, replenishment
-  count and scan-to-hit are the known future additions) — never a value
-  read back into `p_make`. This is a constraint on every future counter
-  this capability adds, not just a fact about the ones that exist today: a
-  counters flag that perturbs the answer is a bug invisible to any test that
-  does not run the same fixture both ways.
-- **The sampling gate: tier 2 is gated on `! node.is_sample`, tier 1 is not,
-  and today the gate is a no-op.** Nothing in this evaluator sets
-  `is_sample` yet — it stays false everywhere, all the way from the exact
-  reasons above. Tier 1's own soundness argument does not depend on whether
-  a node holds the whole remaining space or a sample of it (common knowledge
-  either way); tier 2's does — "every layout this node holds is dead" is
-  "every layout *drawn* is dead" on a sample, which says nothing about the
-  true space a made contract might still be hiding in. Gating both cuts
-  together, rather than tier 2 alone, would look like the safe choice and
-  would in fact disable two cuts that were never unsound on a sample in the
-  first place, silently, at exactly the point a future sampling evaluator
-  starts to matter.
+  shape or cost — node count; cut counts by tier; sample size by depth
+  (nodes, layout-count sum, and running minimum, each per recursion depth,
+  root at 0) today; replenishment count and scan-to-hit are the known
+  future additions — never a value read back into `p_make`. This is a
+  constraint on every future counter this capability adds, not just a fact
+  about the ones that exist today: a counters flag that perturbs the answer
+  is a bug invisible to any test that does not run the same fixture both
+  ways.
+- **The sampling gate: tier 2 is gated on `! node.is_sample`, tier 1 is
+  not, and the gate is fully engaged across the whole tree the moment a
+  sample size is supplied and actually binds.** `is_sample` propagates to
+  every child through both expansion paths, so once a root is a genuine
+  sample, tier 2 never fires again anywhere beneath it. Tier 1's own
+  soundness argument does not depend on whether a node holds the whole
+  remaining space or a sample of it (common knowledge either way); tier
+  2's does — "every layout this node holds is dead" is "every layout
+  *drawn* is dead" on a sample, which says nothing about the true space a
+  made contract might still be hiding in. Gating both cuts together,
+  rather than tier 2 alone, would look like the safe choice and would in
+  fact disable two cuts that were never unsound on a sample in the first
+  place. This is also **stricter than**
+  `docs/replenished_belief_evaluation/algorithm.md`, which forbids early
+  cuts only "at a node that is at or below the replenishment floor": this
+  capability has no replenishment and so no floor to gate on instead,
+  which is a fact a future replenishment scheme inherits knowingly rather
+  than one this document should let it discover by surprise — whether a
+  replenishment floor should refine this gate is an open question this
+  document does not answer. Until it is answered, a measured tier-2 cut
+  rate of zero under sampling is a fact about this gate, not evidence the
+  cut itself is somehow unneeded.
 
 ## Key entry points
 
 Everything this capability declares lives in `dds::belief_evaluation`.
-`api/dds.h` separately declares its own unrelated, layout-identical `Card`
-at global scope; the two coexist by namespace, with no rename or include-
-ordering trick anywhere in the module.
+`api/dds_data_types.hpp` separately declares its own unrelated,
+layout-identical `Card` at global scope (reached transitively through
+`api/dds.h`, a thin aggregator); the two coexist by namespace, with no
+rename or include-ordering trick anywhere in the module.
 
 - `library/src/belief_evaluation/types.hpp` — `Card`, `StrategyId`,
   `StateKey`, `ObservationState`, `BeliefEntry`, `BeliefView`, `RankMap`,
@@ -345,11 +416,16 @@ ordering trick anywhere in the module.
   `legal_cards()`, `trick_complete_winner()`, `play()`, and the module's one
   boundary between `Deal`'s absolute-rank bit convention and the compacted
   convention `RankMap`, `renumber()` and every lookup table use.
-- `library/src/belief_evaluation/node.hpp` — `BeliefNode`, `make_root()`,
+- `library/src/belief_evaluation/node.hpp` — `BeliefNode`, `RootOptions`,
+  `RootConstructionResult`, `RootFailure`, `ScanOutcome`, `make_root()`,
   `node_mass()`, `terminal_value()`, `is_terminal()`, `tricks_remaining()`.
-  The last is derived from declarer's own holding, never the union pool a
-  defender's `known_holdings` entry is — summing across all four entries
-  double-counts every outstanding card.
+  `make_root()`'s result carries the node and a specific failure cause
+  rather than a bare `std::optional`, and (on success) a `ScanOutcome`
+  recording why the scan stopped — exhausted the source, filled the
+  requested sample, or ran out of budget. `tricks_remaining()` is derived
+  from declarer's own holding, never the union pool a defender's
+  `known_holdings` entry is — summing across all four entries double-counts
+  every outstanding card.
 - `library/src/belief_evaluation/belief_view.hpp` — `make_belief_view()`.
 - `library/src/belief_evaluation/expand.hpp` — `expand_declarer_node()`,
   `make_declarer_children()`, `expand_defender_node()`, and their result
@@ -381,7 +457,11 @@ ordering trick anywhere in the module.
 
 ## Known gaps / non-goals
 
-- No sampling or replenishment, and no rescaling of sample weight.
+- No replenishment: a sampled node's layout count only ever shrinks as
+  defenders play, and nothing tops it back up from the layouts a scan never
+  reached. See "Behaviour & invariants" for what this means in practice
+  (a knowingly degraded evaluator) and for what sampling itself now does
+  cover (a bounded root draw with a scan budget).
 - No third cut tier: no top-trick / quick-tricks analysis (`quick_tricks.cpp`
   / `later_tricks.cpp`), and no double-dummy result cache beyond whatever an
   injected `LayoutBound` implementation chooses to do internally.
