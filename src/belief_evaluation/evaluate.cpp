@@ -98,6 +98,36 @@ namespace
         }
     }
 
+    /// sample_size_by_depth's single write site, following count_node()'s
+    /// pattern, called at the exact same two sites (p_make() and
+    /// evaluate()'s own root-handling block) with the exact same node and
+    /// depth count_node() itself uses -- every node reached is recorded
+    /// here, not only ones a cut later touches, matching nodes_visited's
+    /// own "terminal or expanded, including the root" scope. Grows the
+    /// vector on demand: see EvaluationCounters::sample_size_by_depth's own
+    /// doxygen for why a trailing zero-entry must never mean "reached but
+    /// empty".
+    auto record_sample_size(EvaluationCounters* counters, BeliefNode const& node, int depth) -> void
+    {
+        if (counters == nullptr)
+        {
+            return;
+        }
+        auto const index = static_cast<std::size_t>(depth);
+        if (index >= counters->sample_size_by_depth.size())
+        {
+            counters->sample_size_by_depth.resize(index + 1);
+        }
+        DepthSampleStats& stats = counters->sample_size_by_depth[index];
+        auto const layouts = static_cast<std::uint64_t>(node.layouts.size());
+        if (stats.nodes == 0 || layouts < stats.layout_min)
+        {
+            stats.layout_min = layouts;
+        }
+        stats.layout_sum += layouts;
+        stats.nodes += 1;
+    }
+
     /// Everything the recursion carries unchanged from the root down to
     /// every node, declarer or defender, sample or exhaustive. Held by
     /// const reference and passed down unmodified at every call --
@@ -155,6 +185,7 @@ namespace
             return 0.0;
         }
         count_node(ctx.counters);
+        record_sample_size(ctx.counters, node, depth);
         if (already_made(node.state))
         {
             count_tier1_made_cut(ctx.counters);
@@ -310,6 +341,7 @@ auto evaluate(
     // outside p_make() because the root's dispatch happens here rather than
     // through a p_make() call on itself.
     count_node(counters_ptr);
+    record_sample_size(counters_ptr, root, /*depth=*/0);
 
     if (already_made(root.state))
     {

@@ -167,6 +167,26 @@ struct EvaluateOptions
 /// `std::vector<...>` member indexed by depth, added alongside the scalar
 /// fields below, not a reshaping of this type — nothing here needs to
 /// anticipate that further than leaving room for it.
+
+/// Per-depth aggregate of `node.layouts.size()` across every node reached
+/// at that depth. A node's layout count is not uniform within a depth —
+/// defender expansion splits a node's layouts across children by which
+/// card each layout's defender played — so no single statistic answers
+/// "the sample size at depth d"; this carries enough to compute the three
+/// that matter: `layout_sum / nodes` for the mean (reads naturally, is
+/// what "how fast does the sample collapse" is usually asking);
+/// `layout_min` directly, the alarming number (a single node down to one
+/// layout is where a strategy gets its false certainty); and `layout_sum`
+/// on its own, which — by mass conservation — tracks total surviving
+/// layouts but *hides* collapse, since many tiny nodes and one large one
+/// sum the same as a uniform spread.
+struct DepthSampleStats
+{
+    std::uint64_t nodes = 0;       ///< nodes reached at this depth
+    std::uint64_t layout_sum = 0;  ///< sum of node.layouts.size() across those nodes
+    std::uint64_t layout_min = 0;  ///< the smallest node.layouts.size() seen at this depth; meaningless if nodes == 0
+};
+
 struct EvaluationCounters
 {
     /// Every BeliefNode reached and evaluated for a value — terminal or
@@ -191,6 +211,21 @@ struct EvaluationCounters
     /// declaration. Gated on !is_sample, so this stays 0 on any run where
     /// the root (or an ancestor) was sampled.
     std::uint64_t tier2_cuts = 0;
+
+    /// Index i is depth i's own DepthSampleStats, root at depth 0 (the same
+    /// indexing p_make()'s own depth parameter uses). Grown as depth is
+    /// reached, not pre-sized to the tree's
+    /// maximum possible depth — a cut ending a branch early would otherwise
+    /// leave trailing zero-entries that read as "the sample collapsed to
+    /// nothing" rather than "nothing went that deep". An index beyond
+    /// `size() - 1` — not merely an entry with `nodes == 0` — is what
+    /// means "no node was ever visited at this depth"; every populated
+    /// entry has `nodes >= 1`, since `make_root` and every child-
+    /// construction function guarantee at least one layout survives, which
+    /// in turn guarantees the node itself exists to be counted. Populated
+    /// on the exhaustive path too, where it is a fact about the tree's own
+    /// shape rather than about a sample.
+    std::vector<DepthSampleStats> sample_size_by_depth;
 };
 
 /// `P_make` for one declarer strategy against one defender strategy, plus
