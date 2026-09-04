@@ -32,11 +32,11 @@ auto DoubleDummyDefender::as_strategy() -> DefenderStrategy
             solve_board(ctx_, query.layout, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &fut);
         if (status != RETURN_NO_FAULT)
         {
-            // Not silently empty-and-ignored: expand_defender_node's call
-            // to validate_defender_distribution rejects an empty
-            // distribution as ProbabilitiesDoNotSumToOne, so this surfaces
-            // as a real ExpandDefenderResult::error rather than being
-            // swallowed.
+            // Not silently empty-and-ignored: expand_defender_node reports
+            // an empty distribution as ValidationError::DistributionEmpty
+            // directly, so this surfaces as a real
+            // ExpandDefenderResult::error naming its actual cause (a solver
+            // failure, not a malformed script) rather than being swallowed.
             return {};
         }
         return spread(fut, policy_);

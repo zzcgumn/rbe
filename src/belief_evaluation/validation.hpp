@@ -29,6 +29,18 @@ enum class ValidationError
     CardIllegalForTrick,         ///< the seat holds the led suit but the card is of another suit
     ProbabilityNonPositive,      ///< a WeightedCard's probability is <= 0, NaN, or +-infinite
     ProbabilitiesDoNotSumToOne,  ///< the distribution's probabilities do not sum to 1 within tolerance
+    /// The distribution is empty. `validate_defender_distribution` never
+    /// reports this value itself -- an empty distribution fails its own
+    /// sum-to-one check honestly, since zero genuinely is not one, so that
+    /// function's answer for this input stays ProbabilitiesDoNotSumToOne.
+    /// `expand_defender_node` (expand.hpp) draws this distinction before
+    /// delegating to it: at the evaluator's boundary with a user callback
+    /// the useful question is not "which invariant broke" but "what did
+    /// the caller do wrong", and "you returned nothing" is more actionable
+    /// than "your probabilities sum to 0". The two functions disagreeing
+    /// on the same empty input is deliberate, not an inconsistency to
+    /// reconcile.
+    DistributionEmpty,
 };
 
 /// Validates a card a declarer strategy returned from `play`: held by `seat`

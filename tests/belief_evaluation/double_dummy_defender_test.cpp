@@ -9,6 +9,7 @@
 
 #include <belief_evaluation/double_dummy_defender.hpp>
 #include <belief_evaluation/evaluate.hpp>
+#include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/validation.hpp>
 
 #include "test_support.hpp"
@@ -337,10 +338,15 @@ TEST_F(DoubleDummyDefenderTest, ANonZeroSolveBoardStatusSurfacesAsARejectedEmpty
     // A malformed deal -- the same card (the ace of spades) held by two
     // hands at once -- which solve_board rejects outright rather than
     // solving. DoubleDummyDefender does not invent a second error-reporting
-    // path: it returns an empty distribution, and the existing
-    // validate_defender_distribution rejects that (ProbabilitiesDoNotSumToOne)
-    // exactly as expand_defender_node would for any other invalid script,
-    // which is what actually surfaces the error to a caller.
+    // path: it returns an empty distribution, exactly the same shape any
+    // other defender strategy that fails uses. Called directly here (not
+    // through expand_defender_node), so it is validate_defender_distribution
+    // -- a pure predicate about a distribution against a layout -- that this
+    // test asks, and an empty distribution genuinely does fail its
+    // sum-to-one check: ProbabilitiesDoNotSumToOne. A caller going through
+    // expand_defender_node instead sees ValidationError::DistributionEmpty,
+    // that function's own more actionable answer for the same input -- see
+    // its doxygen for why the two deliberately disagree.
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = North;
@@ -358,6 +364,43 @@ TEST_F(DoubleDummyDefenderTest, ANonZeroSolveBoardStatusSurfacesAsARejectedEmpty
     EXPECT_EQ(
         be::validate_defender_distribution(deal, North, distribution),
         be::ValidationError::ProbabilitiesDoNotSumToOne);
+}
+
+TEST_F(DoubleDummyDefenderTest, ASolverFailureThroughExpandDefenderNodeSurfacesAsDistributionEmpty)
+{
+    // The same malformed deal as the test above -- reused, not re-derived --
+    // but driven through expand_defender_node this time, the path a real
+    // caller actually takes rather than calling
+    // validate_defender_distribution directly. That is the whole point:
+    // this is where DoubleDummyDefender's own solver failure must surface
+    // as ValidationError::DistributionEmpty, not
+    // ProbabilitiesDoNotSumToOne, since expand_defender_node now draws that
+    // distinction before ever delegating.
+    Deal deal{};
+    deal.trump = DDS_NOTRUMP;
+    deal.first = North;
+    deal.remainCards[North][Spades] = be::holding({Ace});
+    deal.remainCards[East][Spades] = be::holding({Ace});  // duplicate
+    deal.remainCards[South][Spades] = be::holding({Three});
+    deal.remainCards[West][Spades] = be::holding({Four});
+
+    be::BeliefNode node{};
+    node.state.trump = deal.trump;
+    node.state.first = deal.first;
+    node.state.declarer = South;  // arbitrary: expand_defender_node never consults it
+    node.state.tricks_needed = 1;
+    node.state.known_holdings = deal;
+    node.layouts = {deal};
+    node.p = {1.0};
+    node.kappa = 1.0;
+
+    SolverContext ctx;
+    be::DoubleDummyDefender defender(ctx);
+    be::ExpandDefenderResult const result = be::expand_defender_node(node, defender.as_strategy());
+
+    EXPECT_FALSE(result.children.has_value());
+    EXPECT_EQ(result.error, be::ValidationError::DistributionEmpty);
+    EXPECT_EQ(result.offending_layout.remainCards[North][Spades], deal.remainCards[North][Spades]);
 }
 
 // --- the collapse: no touching sequences anywhere reduces to a

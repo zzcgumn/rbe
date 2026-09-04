@@ -66,9 +66,12 @@ struct ExpandDefenderResult
 /// probability to a card is absent from that card's child, not present
 /// with `p = 0`, and a layout may legitimately appear in more than one
 /// child. `kappa` is unchanged in every child; defender children partition
-/// `p`, not `kappa`. Every distribution `delta` returns is checked through
-/// `validate_defender_distribution`; a violation aborts expansion and is
-/// reported via the result rather than asserted.
+/// `p`, not `kappa`. An empty distribution is reported as
+/// `ValidationError::DistributionEmpty` directly, before
+/// `validate_defender_distribution` is even called -- see that enum
+/// value's own doxygen for why. Every other distribution `delta` returns is
+/// checked through `validate_defender_distribution`; a violation aborts
+/// expansion and is reported via the result rather than asserted.
 auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
     -> ExpandDefenderResult;
 

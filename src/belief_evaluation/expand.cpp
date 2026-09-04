@@ -142,6 +142,14 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
         DefenderQuery const query{layout, seat, node.state};
         std::vector<WeightedCard> const distribution = delta(query);  // once per layout
 
+        // Drawn here, before delegating, rather than inside
+        // validate_defender_distribution: see ValidationError::DistributionEmpty's
+        // own doxygen for why the two functions deliberately disagree on
+        // this one input.
+        if (distribution.empty())
+        {
+            return ExpandDefenderResult{std::nullopt, ValidationError::DistributionEmpty, layout};
+        }
         ValidationError const error = validate_defender_distribution(layout, seat, distribution);
         if (error != ValidationError::None)
         {
