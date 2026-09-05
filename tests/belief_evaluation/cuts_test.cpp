@@ -1043,12 +1043,11 @@ TEST_F(PredicateBoundTest, AnswersEveryNodeInATwoTrickFixtureWithoutATableEntryP
 }
 
 // The sampling gate: tier2_dead() is gated on !node.is_sample; neither
-// tier-1 cut is. Nothing in the evaluator sets is_sample yet (make_root()
-// always leaves it false), so these tests construct a BeliefNode directly
-// -- a state the evaluator itself cannot yet produce today, deliberately,
-// per tier2_dead()'s own doxygen. already_made()/is_dead() are exposed the
-// same way is_terminal()/terminal_value() are, precisely so a test can do
-// this.
+// tier-1 cut is. These tests construct a BeliefNode directly rather than
+// driving is_sample true through evaluate() (which make_root can do now),
+// to isolate the predicate itself from the rest of the recursion.
+// already_made()/is_dead() are exposed the same way is_terminal()/
+// terminal_value() are, precisely so a test can do this.
 
 class SamplingGateTest : public ::testing::Test
 {

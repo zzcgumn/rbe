@@ -81,11 +81,16 @@ using LayoutBound = std::function<int(Deal const&)>;
 /// retained tree — a belief set kept at every node — is affordable only
 /// when asked for; see EvaluationValue::retained_root.
 ///
-/// Four fields now, and growing as later capabilities add their own — this
+/// Six fields now, and growing as later capabilities add their own — this
 /// stays a flat struct of independently-defaulted options rather than
-/// acquiring internal structure of its own; if that stops reading clearly
-/// as options accumulate, that is worth revisiting then, not pre-empting
-/// here.
+/// acquiring internal structure of its own. `sample_size` and
+/// `scan_budget` are the first pair that are not independent of each
+/// other (a budget with no sample size just caps a scan that would have
+/// stopped at the source's own end anyway) — noted here rather than
+/// treated as a reason to restructure, since each field's own doxygen
+/// already states the coupling and the struct still reads clearly. If a
+/// future field stops that being true, that is worth revisiting then, not
+/// pre-empting here.
 struct EvaluateOptions
 {
     bool retain_root = false;
@@ -153,21 +158,6 @@ struct EvaluateOptions
     std::optional<std::uint64_t> scan_budget;
 };
 
-/// Instrumentation `evaluate()` can report about its own run, populated
-/// only when EvaluateOptions::collect_counters is set — see
-/// EvaluationValue::counters. Nothing here is read back into `p_make`;
-/// every field is purely a fact about this run's own shape or cost.
-///
-/// This is the module's shared instrumentation mechanism, not a type
-/// specific to whatever fills it in first. Later additions belong here
-/// rather than in a parallel mechanism of their own — some of what a
-/// future capability adds will naturally be per-depth rather than scalar
-/// (sample size, replenishment count, and scan-to-hit, each broken out by
-/// recursion depth, are the known examples). That arrives as its own
-/// `std::vector<...>` member indexed by depth, added alongside the scalar
-/// fields below, not a reshaping of this type — nothing here needs to
-/// anticipate that further than leaving room for it.
-
 /// Per-depth aggregate of `node.layouts.size()` across every node reached
 /// at that depth. A node's layout count is not uniform within a depth —
 /// defender expansion splits a node's layouts across children by which
@@ -187,6 +177,19 @@ struct DepthSampleStats
     std::uint64_t layout_min = 0;  ///< the smallest node.layouts.size() seen at this depth; meaningless if nodes == 0
 };
 
+/// Instrumentation `evaluate()` can report about its own run, populated
+/// only when EvaluateOptions::collect_counters is set — see
+/// EvaluationValue::counters. Nothing here is read back into `p_make`;
+/// every field is purely a fact about this run's own shape or cost.
+///
+/// This is the module's shared instrumentation mechanism, not a type
+/// specific to whatever fills it in first: node count, cut counts by
+/// tier, and sample size by depth (`DepthSampleStats`, above) all live
+/// here. Later additions belong here too rather than in a parallel
+/// mechanism of their own — replenishment count and scan-to-hit, each
+/// broken out by recursion depth, are the known future examples, arriving
+/// as their own `std::vector<...>` members indexed by depth alongside
+/// `sample_size_by_depth` below, not a reshaping of this type.
 struct EvaluationCounters
 {
     /// Every BeliefNode reached and evaluated for a value — terminal or
@@ -313,11 +316,13 @@ auto is_dead(ObservationState const& state) -> bool;
 /// whether the node is a full space or a sample of one. This cut instead
 /// concludes "every layout in this node is dead" from the layouts the node
 /// happens to hold; on a sample that is only "every layout *drawn* is
-/// dead", which says nothing about every layout in the true space. Nothing
-/// in this evaluator sets `is_sample` yet, so this gate is a no-op today --
-/// load-bearing only once a future sampling evaluator sets it true, and
-/// testable today only by constructing a `BeliefNode` with `is_sample =
-/// true` by hand.
+/// dead", which says nothing about every layout in the true space. The
+/// moment a root is a genuine sample, `is_sample` propagates true to every
+/// child through both expansion paths, so this gate is fully engaged
+/// across the whole tree beneath it -- stricter than
+/// `docs/replenished_belief_evaluation/algorithm.md`, which forbids early
+/// cuts only at or below a replenishment floor this evaluator does not yet
+/// have.
 ///
 /// Stops at the first live layout (`bound(layout) >=` what is still
 /// needed) rather than calling `bound` for every layout: each call is a
@@ -334,9 +339,12 @@ auto is_dead(ObservationState const& state) -> bool;
 /// below `node`, so that problem cannot arise.
 auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool;
 
-/// Exhaustively evaluates `P_make` for `pi` against `delta` over every
-/// layout `source` enumerates that is consistent with `root_layout` (see
-/// `make_root`). No sampling, no replenishment. Early cuts (already_made(),
+/// Evaluates `P_make` for `pi` against `delta` over the root belief space
+/// `make_root` builds from `source`: every layout consistent with
+/// `root_layout` by default, or — if `options.sample_size` is supplied — a
+/// bounded prefix of them (see `EvaluateOptions::sample_size` and
+/// `make_root`'s own doxygen). No replenishment: a sampled root's layout
+/// count only ever shrinks as defenders play. Early cuts (already_made(),
 /// is_dead(), tier2_dead() above) skip subtrees that are guaranteed to
 /// contribute exactly zero to the result — none of them change any answer;
 /// see `specs/replenished-belief-evaluation.md` for what makes each sound.

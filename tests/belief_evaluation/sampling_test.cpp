@@ -36,8 +36,8 @@ using be::single_card_defender;
 
 // Root sampling: make_root scans source from index 0 and takes the first
 // (up to) RootOptions::sample_size consistent layouts, rather than every
-// one -- the plan's headline change, and the first place anything in this
-// module samples. Every fixture below asserts layouts.size() directly:
+// one -- the first place anything in this module samples. Every fixture
+// below asserts layouts.size() directly:
 // make_root now has two reasons to return fewer layouts than a fixture
 // author intended (the consistency filter and the cap), and a fixture that
 // does not pin the count cannot tell them apart.
@@ -185,9 +185,8 @@ TEST_F(SamplingTest, MEqualToNLeavesIsSampleFalseAndMatchesExhaustiveBitwise)
 TEST_F(SamplingTest, MGreaterThanNLeavesIsSampleFalseAndMatchesExhaustiveBitwise)
 {
     // Same fixture and same proof as the M == N test above, at the other
-    // side of the boundary the plan calls out explicitly: a cap that is
-    // never reached at all, not one that is reached exactly as the source
-    // runs out.
+    // side of the M vs. N boundary: a cap that is never reached at all,
+    // not one that is reached exactly as the source runs out.
     std::vector<Deal> const layouts = make_layouts_with_distinct_fillers(3);
     assert_pool_matches(layouts);
     assert_forms_one_belief_node(layouts, North);

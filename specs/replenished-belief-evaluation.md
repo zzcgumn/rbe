@@ -437,9 +437,8 @@ rename or include-ordering trick anywhere in the module.
   `already_made()`, `is_dead()`, `tier2_dead()` — exposed (not
   `evaluate.cpp`-private) for the same reason `is_terminal()` /
   `terminal_value()` are: so a test can construct an `ObservationState` /
-  `BeliefNode` directly and check a cut condition without going through the
-  whole recursion, including states the evaluator itself cannot yet
-  produce (`is_sample = true`).
+  `BeliefNode` directly and check a cut condition in isolation, without
+  going through the whole recursion.
 - `library/src/belief_evaluation/spread.hpp` — `SpreadPolicy`, `spread()`.
   Part of the core library: solver-free, taking an already-solved
   `FutureTricks`.
