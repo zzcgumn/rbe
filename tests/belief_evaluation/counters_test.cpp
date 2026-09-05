@@ -26,8 +26,8 @@ using be::single_card_declarer_play;
 using be::single_card_defender;
 
 // The module's instrumentation mechanism: EvaluationCounters, populated only
-// behind EvaluateOptions::collect_counters, and today carrying nothing more
-// than nodes_visited -- there are no cuts yet for it to report on.
+// behind EvaluateOptions::collect_counters. This file covers nodes_visited,
+// the per-tier cut counters, and sample_size_by_depth.
 
 namespace
 {
