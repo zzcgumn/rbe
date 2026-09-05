@@ -291,9 +291,8 @@ struct EvaluationResult
 ///
 /// Exposed (rather than kept private to evaluate.cpp) for the same reason
 /// `is_terminal()`/`terminal_value()` are: so a test can construct an
-/// `ObservationState`/`BeliefNode` by hand and check the cut condition
-/// directly, including states the evaluator itself cannot yet produce
-/// (see `tier2_dead()`'s own `is_sample` note).
+/// `ObservationState`/`BeliefNode` by hand and check the cut condition in
+/// isolation, without going through the whole recursion.
 auto already_made(ObservationState const& state) -> bool;
 
 /// Tier 1's dead cut, the mirror of already_made(): true once declarer

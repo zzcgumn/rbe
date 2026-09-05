@@ -1065,7 +1065,7 @@ TEST_F(SamplingGateTest, Tier2DoesNotFireOnASampledNodeEvenWhenEveryLayoutIsDead
     node.layouts = {layout};
     node.p = {1.0};
     node.kappa = 1.0;
-    node.is_sample = true;  // the state the evaluator cannot yet produce
+    node.is_sample = true;  // still constructed by hand here to isolate the predicate
 
     auto const bound = [](Deal const&) -> int { return 0; };  // dead, if it were consulted
     be::EvaluateOptions const options{.bound = bound, .delta_is_double_dummy_optimal = true};
