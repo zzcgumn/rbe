@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-09-04
+last-updated: 2026-09-06
 ---
 
 # Replenished Belief Evaluation
@@ -24,14 +24,16 @@ throughout for the theory and does not restate.
 This document describes the capability as it stands today: the vocabulary,
 the injection contracts, the renumbering scheme, an exhaustive evaluator that
 computes `P_make` exactly over a belief space small enough to enumerate in
-full, and a sampling mode that draws a bounded prefix of a larger one instead.
-No replenishment yet, so a sampled run is knowingly degraded — see "Behaviour
-& invariants" for exactly what that means and what has and has not been done
-about it. Early cuts exist — unconditional arithmetic ones that skip
-subtrees contributing exactly zero, and one gated, injected-bound one — but
-change no answer; see "Behaviour & invariants" for what makes each sound and
-"Known gaps / non-goals" for what is still absent (a third, injected-bound-
-free tier; per-layout pruning; replenishment).
+full, a sampling mode that draws a bounded prefix of a larger one instead,
+and replenishment — topping a node whose sample has collapsed back up from
+the same source, node-local and only to the extent the source can still
+supply matching layouts. See "Behaviour & invariants" for exactly what
+replenishment does and does not fix, and what a sampled run's own caveats
+still are with it absent (the default). Early cuts exist — unconditional
+arithmetic ones that skip subtrees contributing exactly zero, and one gated,
+injected-bound one — but change no answer; see "Behaviour & invariants" for
+what makes each sound and "Known gaps / non-goals" for what is still absent
+(a third, injected-bound-free tier; per-layout pruning).
 
 ## Behaviour & invariants
 
@@ -222,23 +224,72 @@ free tier; per-layout pruning; replenishment).
   requested `M` at or above however many layouts actually exist takes the
   whole consistent set before either cap can bind, and that run is
   byte-for-byte the exhaustive one. `is_sample` then propagates to every
-  child through both expansion paths, so it is a fact about the whole
-  subtree beneath a sampled node, not only the node itself.
-- **A sampling evaluator with no replenishment is knowingly degraded, and
-  that is not a defect being tracked toward a fix in this document.** A
+  child through both expansion paths as a starting point — not a fact
+  pinned for the rest of the subtree beneath it, since a node's own
+  replenishment scan can later set it back to `false` there (see the
+  paragraphs on replenishment and on the sampling gate below).
+- **A sampling evaluator's collapse is bounded by replenishment, to the
+  extent the source can still supply matching layouts; with
+  `EvaluateOptions::replenish_below` absent (the default), nothing about a
+  sampled run differs from what this bullet has always described.** A
   sample can end up containing only one layout consistent with the play so
   far, and reporting a value from that layout hands a declarer strategy a
   false certainty about a position that is genuinely still open — the
   strategy-fusion-by-the-back-door failure
   `docs/replenished_belief_evaluation/algorithm.md` warns about. `is_sample`
   and `BeliefView::space_size` (below) both exist to make a collapsed
-  sample visible to a strategy that looks; neither removes the
-  degradation, and no heuristic compensation for it lives anywhere in this
-  capability — an evaluator that quietly compensated for a collapsed
-  sample would be worse than one that is honestly degraded, since the
-  compensation would be untested and unmeasured. Replenishing the sample as
-  it shrinks is the fix, and is out of scope for the capability as it
-  stands today (see "Known gaps / non-goals").
+  sample visible to a strategy that looks. With `replenish_below` set, a
+  node whose own layout count falls below it is topped back up towards
+  `sample_size` before the node is evaluated further — see the
+  replenishment paragraph below — so the collapse this bullet describes is
+  bounded rather than unchecked. It is bounded only by what the source can
+  still supply: a node whose own scan has already exhausted the source
+  along its path stays exactly as collapsed as it was, and the
+  false-certainty risk this bullet describes applies in full to whatever
+  remains uncovered. With `replenish_below` absent, the evaluator behaves
+  exactly as it always did: no heuristic compensation for a collapsed
+  sample lives anywhere in this capability, and an evaluator that quietly
+  compensated for one would be worse than one that is honestly degraded,
+  since the compensation would be untested and unmeasured.
+- **Replenishment tops a node back up from the same `LayoutSource`,
+  triggered by layout count alone, and rescales `kappa` so the node's mass
+  is unchanged.** When triggered, `evaluate()` scans the source — from
+  index 0, the same order every scan in this capability uses — for
+  layouts consistent with the root that also match every card already
+  played on this specific node's path, before any early cut is evaluated
+  at the node and before any `BeliefView` is built over it: a cut
+  evaluated on a node about to be topped up, or a view built over layouts
+  about to grow underneath it, is exactly the failure this ordering
+  prevents. The trigger reads only the node's own layout count — never
+  `is_sample`, how many layouts are already made or dead, or any other
+  property of the node — since
+  `docs/replenished_belief_evaluation/algorithm.md` is explicit that the
+  rule may depend only on sample size or total probability mass, and
+  anything else is a bias smuggled into what should be a purely
+  mechanical top-up. Each newly-found layout's own `p_j` is accumulated by
+  replaying δ along the path from the root at every defender ply already
+  played — the same multiplicative accumulation `p` already undergoes
+  during ordinary expansion, so a replenished layout's weight does not
+  depend on draw order, on when replenishment fired, or on what else was
+  already in the node. `kappa` is rescaled by the ratio of the node's
+  total probability mass before and after (`κ' = κ · E / E'`, both sums
+  Kahan-compensated the same way `node_mass` accumulates), so the node's
+  mass is unchanged to floating-point tolerance across every
+  replenishment — a stronger, node-local instance of the defender-node
+  mass conservation described above, which this reduces to exactly when
+  nothing is found to add.
+- **A replenished layout arrives below declarer decisions already taken
+  without it, and the evaluator computes a sample mean over a belief set
+  assembled progressively, not the true posterior.**
+  `docs/replenished_belief_evaluation/algorithm.md` accepts this — new
+  layouts are added to the search tree only under the node at which
+  replenishment fires, never retroactively into a decision already taken
+  above it — and it is tractable precisely because a replenished layout's
+  `p_j` is a function of the candidate and the observed history alone: it
+  does not depend on draw order, on when replenishment fired during the
+  search, or on what else the node already held. A reader who does not
+  know this will over-read the result as the true posterior probability
+  rather than as what it actually is.
 - **A `BeliefView`'s posterior is normalised within the node, and sample
   weight never crosses into it.** The posterior a declarer strategy is
   handed is `p_i / Σ_j p_j` over the node's current layouts — not the raw
@@ -362,34 +413,51 @@ free tier; per-layout pruning; replenishment).
   `EvaluateOptions::collect_counters` is set, holds facts about a run's own
   shape or cost — node count; cut counts by tier; sample size by depth
   (nodes, layout-count sum, and running minimum, each per recursion depth,
-  root at 0) today; replenishment count and scan-to-hit are the known
-  future additions — never a value read back into `p_make`. This is a
-  constraint on every future counter this capability adds, not just a fact
-  about the ones that exist today: a counters flag that perturbs the answer
-  is a bug invisible to any test that does not run the same fixture both
-  ways.
+  root at 0); and replenishment by depth (scans attempted, scans that
+  added at least one layout, layouts added, and `source.at()` calls, each
+  per recursion depth, and structurally all zero at the root, where
+  replenishment never happens) — never a value read back into `p_make`.
+  This is a constraint on every future counter this capability adds, not
+  just a fact about the ones that exist today: a counters flag that
+  perturbs the answer is a bug invisible to any test that does not run the
+  same fixture both ways.
 - **The sampling gate: tier 2 is gated on `! node.is_sample`, tier 1 is
-  not, and the gate is fully engaged across the whole tree the moment a
-  sample size is supplied and actually binds.** `is_sample` propagates to
-  every child through both expansion paths, so once a root is a genuine
-  sample, tier 2 never fires again anywhere beneath it. Tier 1's own
-  soundness argument does not depend on whether a node holds the whole
-  remaining space or a sample of it (common knowledge either way); tier
-  2's does — "every layout this node holds is dead" is "every layout
-  *drawn* is dead" on a sample, which says nothing about the true space a
-  made contract might still be hiding in. Gating both cuts together,
-  rather than tier 2 alone, would look like the safe choice and would in
-  fact disable two cuts that were never unsound on a sample in the first
-  place. This is also **stricter than**
-  `docs/replenished_belief_evaluation/algorithm.md`, which forbids early
-  cuts only "at a node that is at or below the replenishment floor": this
-  capability has no replenishment and so no floor to gate on instead,
-  which is a fact a future replenishment scheme inherits knowingly rather
-  than one this document should let it discover by surprise — whether a
-  replenishment floor should refine this gate is an open question this
-  document does not answer. Until it is answered, a measured tier-2 cut
-  rate of zero under sampling is a fact about this gate, not evidence the
-  cut itself is somehow unneeded.
+  not.** Tier 1's own soundness argument does not depend on whether a node
+  holds the whole remaining space or a sample of it (common knowledge
+  either way); tier 2's does — "every layout this node holds is dead" is
+  "every layout *drawn* is dead" on a sample, which says nothing about the
+  true space a made contract might still be hiding in. Gating both cuts
+  together, rather than tier 2 alone, would look like the safe choice and
+  would in fact disable two cuts that were never unsound on a sample in
+  the first place.
+- **This capability has a replenishment floor
+  (`EvaluateOptions::replenish_below`) and declines to refine tier 2's
+  gate to it — a decision, recorded here as one, not an oversight.**
+  `docs/replenished_belief_evaluation/algorithm.md` permits early cuts
+  once a node reaches such a floor; re-enabling tier 2 there would buy a
+  cut of unproven value — an injected-bound call costs several times a
+  defender-node call and saves no downstream solve — at the price of a
+  second soundness argument to maintain as the floor moves. Early cuts are
+  evaluated *after* replenishment at a node, not before, which is how the
+  intent behind algorithm.md's floor rule (a cut must not fire on a node
+  collapsed below what replenishment could have topped it back up to) is
+  honoured without the gate itself tracking a floor. The gate therefore
+  stays exactly `! node.is_sample`, deliberately stricter than
+  `docs/replenished_belief_evaluation/algorithm.md` allows, and remains
+  so.
+- **A node whose own replenishment scan exhausts the source is not a
+  floor exception to the decision above — it is the gate working exactly
+  as documented, on a node that is honestly no longer a sample.** Such a
+  node genuinely holds the whole of its own remaining belief space (see
+  `BeliefNode::is_sample`'s own doxygen for the exact condition), so
+  `is_sample` is `false` there and tier 2 fires through the same
+  unchanged gate — not because a floor was reached, but because the flag
+  the gate has always read is, for that specific node, honestly true.
+  `is_sample` is consequently not monotone down the tree: a child whose
+  own scan exhausts can be strictly more complete than its still-sampled
+  parent. A reader who observes a non-zero tier-2 cut rate under sampling
+  should read it as this case, not as the decision above having been
+  quietly reversed.
 
 ## Key entry points
 
@@ -418,6 +486,7 @@ rename or include-ordering trick anywhere in the module.
   convention `RankMap`, `renumber()` and every lookup table use.
 - `library/src/belief_evaluation/node.hpp` — `BeliefNode`, `RootOptions`,
   `RootConstructionResult`, `RootFailure`, `ScanOutcome`, `make_root()`,
+  `root_observation_state()`, `history_for()`, `is_consistent()`,
   `node_mass()`, `terminal_value()`, `is_terminal()`, `tricks_remaining()`.
   `make_root()`'s result carries the node and a specific failure cause
   rather than a bare `std::optional`, and (on success) a `ScanOutcome`
@@ -425,7 +494,21 @@ rename or include-ordering trick anywhere in the module.
   requested sample, or ran out of budget. `tricks_remaining()` is derived
   from declarer's own holding, never the union pool a defender's
   `known_holdings` entry is — summing across all four entries double-counts
-  every outstanding card.
+  every outstanding card. `root_observation_state()`, `history_for()` and
+  `is_consistent()` are the exact computations `make_root()` itself uses to
+  build a root's state and filter candidates, exposed so a node-local
+  replenishment scan (below) goes through the identical logic rather than
+  a second copy of it.
+- `library/src/belief_evaluation/replenishment.hpp` —
+  `replay_candidate()`, `ReplayResult`, `scan_for_replenishment()`,
+  `ScanCandidate`, `ScanResult`. `replay_candidate()` plays a root-space
+  candidate forward along a node's own played sequence, accumulating
+  `p_j` through δ at every defender ply; `scan_for_replenishment()` scans
+  a `LayoutSource` for candidates a node does not already hold, in the
+  same source order and to the same `at()`-call budget definition
+  `RootOptions::scan_budget` uses. Solver-free, in the core library
+  target, like the rest of this list above the double-dummy entries
+  below.
 - `library/src/belief_evaluation/belief_view.hpp` — `make_belief_view()`.
 - `library/src/belief_evaluation/expand.hpp` — `expand_declarer_node()`,
   `make_declarer_children()`, `expand_defender_node()`, and their result
@@ -456,11 +539,11 @@ rename or include-ordering trick anywhere in the module.
 
 ## Known gaps / non-goals
 
-- No replenishment: a sampled node's layout count only ever shrinks as
-  defenders play, and nothing tops it back up from the layouts a scan never
-  reached. See "Behaviour & invariants" for what this means in practice
-  (a knowingly degraded evaluator) and for what sampling itself now does
-  cover (a bounded root draw with a scan budget).
+- Replenishment resamples from the front of the source rather than
+  enumerating the part of the belief space not already sampled, which
+  would also let it use the whole remaining space when that part is
+  small. See "Behaviour & invariants" for what replenishment does cover
+  and its own caveats.
 - No third cut tier: no top-trick / quick-tricks analysis (`quick_tricks.cpp`
   / `later_tricks.cpp`), and no double-dummy result cache beyond whatever an
   injected `LayoutBound` implementation chooses to do internally.
