@@ -68,8 +68,10 @@ namespace
     constexpr int Ace = 14;
     constexpr int King = 13;
     constexpr int Queen = 12;
+    constexpr int Jack = 11;
 
     constexpr int Spades = 0;
+    constexpr int Hearts = 1;
 
     constexpr int North = 0;  // declarer
     constexpr int East = 1;   // a defender
@@ -267,4 +269,320 @@ TEST_F(ReproductionTest, ConvergesTowardTheExhaustiveAnswerAsMRises)
     double const error_at_six = std::abs(m6.by_strategy.at(1u).p_make - true_p_make);
     double const error_at_seven = std::abs(m7.by_strategy.at(1u).p_make - true_p_make);
     EXPECT_LT(error_at_seven, error_at_six);
+}
+
+// ===========================================================================
+// Replenishment: reproduction, convergence, and the measurements.
+// ===========================================================================
+
+// Criterion 2: M >= N still reproduces the exhaustive run bitwise, with
+// replenishment enabled. If a scan at depth accepts even one layout here,
+// either the exclusion set is missing a duplicate or the replay is
+// producing a layout that differs from the one already present -- both
+// bugs this criterion exists to catch, not a tolerance to reach for.
+TEST_F(ReproductionTest, MGreaterThanOrEqualToNReproducesExhaustiveBitwiseWithReplenishmentEnabled)
+{
+    std::vector<Deal> layouts;
+    for (int round = 0; round < 2; ++round)
+    {
+        for (int rank : {Two, Three, Four, Five, Six, Seven, Ten})
+        {
+            layouts.push_back(make_finesse_style_layout(rank));
+        }
+    }
+    VectorLayoutSource const source(layouts);
+    DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
+
+    EvaluationResult const exhaustive =
+        evaluate(layouts.front(), North, /*tricks_needed=*/1, source, pi, single_card_defender);
+    ASSERT_FALSE(exhaustive.error.has_value());
+
+    // sample_size = 14 = N, and replenish_below set wide enough (100) that
+    // the trigger fires at every node below it -- effectively everywhere,
+    // since no node in this fixture ever holds more than 14 layouts. Every
+    // one of those scans must find nothing: the root already drew every
+    // consistent layout, so every node below it already holds the true
+    // complete set for its own narrower path too.
+    EvaluationResult const with_replenishment = evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/1,
+        source,
+        pi,
+        single_card_defender,
+        EvaluateOptions{.sample_size = 14u, .replenish_below = 100u});
+    ASSERT_FALSE(with_replenishment.error.has_value());
+    EXPECT_EQ(exhaustive.by_strategy.at(1u).p_make, with_replenishment.by_strategy.at(1u).p_make);
+}
+
+// Criterion 3: convergence, on the fixture above -- and an honest
+// finding about it. Node-local replenishment can only ever add a
+// candidate to a node whose own layout count has already dropped below
+// `sample_size`, which requires a defender split to have already
+// happened on that path; and it can only accept a candidate matching
+// every defender ply already played there. On this specific fixture,
+// the only defender ply *is* the one that distinguishes the missing
+// "ten" layout from the six present at M = 6 -- there is no earlier,
+// separate split to create room before it, so no node exists yet for
+// "ten" to join by the time any node on this path could accept it.
+// Replenishment cannot recover this fixture's own M = 6 case, whatever
+// replenish_below is set to -- confirmed directly below, not assumed.
+TEST_F(ReproductionTest, ReplenishmentCannotRecoverThisFixturesOwnMEqualsSixBecauseItHasNoEarlierSplit)
+{
+    std::vector<Deal> layouts;
+    for (int round = 0; round < 2; ++round)
+    {
+        for (int rank : {Two, Three, Four, Five, Six, Seven, Ten})
+        {
+            layouts.push_back(make_finesse_style_layout(rank));
+        }
+    }
+    VectorLayoutSource const source(layouts);
+    DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
+
+    EvaluationResult const result = evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/1,
+        source,
+        pi,
+        single_card_defender,
+        EvaluateOptions{.sample_size = 6u, .replenish_below = 100u});
+    ASSERT_FALSE(result.error.has_value());
+    EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);  // unchanged from the no-replenishment M = 6 case
+}
+
+namespace
+{
+    /// The same finesse pool and true ratio as make_finesse_style_layout,
+    /// reshaped so a node-local scan can actually reach the missing
+    /// layout: a harmless spade split (East holds one of two fillers,
+    /// jack or queen, split against West by a fixed two-card pool) comes
+    /// *before* the heart finesse position, giving replenishment a node
+    /// already below sample_size to act on before the heart ply -- the
+    /// one that matters -- has happened. East leads (not North): East's
+    /// own delta picks its lowest-indexed held suit when leading (spades,
+    /// forcing the harmless split first), and a defender root has no
+    /// "explore every other legal first card" step the way a declarer
+    /// root does, so North holding two cards (the spade ace and the heart
+    /// nine, one per trick) never causes an alternate subtree to be
+    /// explored the way it would if North itself were on lead.
+    auto make_split_then_finesse_layout(int east_spade, int east_heart) -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = East;
+        deal.remainCards[North][Spades] = holding({Ace});
+        deal.remainCards[South][Spades] = holding({King});
+        deal.remainCards[East][Spades] = holding({east_spade});
+        deal.remainCards[West][Spades] = holding({east_spade == Jack ? Queen : Jack});
+        deal.remainCards[North][Hearts] = holding({Nine});
+        deal.remainCards[South][Hearts] = holding({Eight});
+        deal.remainCards[East][Hearts] = holding({east_heart});
+        unsigned west_heart_mask = 0;
+        for (int rank : {Two, Three, Four, Five, Six, Seven, Ten})
+        {
+            if (rank != east_heart)
+            {
+                west_heart_mask |= holding({rank});
+            }
+        }
+        deal.remainCards[West][Hearts] = west_heart_mask;
+        return deal;
+    }
+}
+
+TEST_F(ReproductionTest, ConvergesViaReplenishmentOnASplitThenFinesseVariantOfTheFixtureAbove)
+{
+    // Eight layouts: three winning hearts under each spade filler (six
+    // total, matching the fixture above's own M = 6 count), then the one
+    // losing heart (ten) under each filler, last in source order --
+    // sample_size = 6 draws exactly the six winning layouts, missing both
+    // "ten" variants, exactly as the fixture above's own M = 6 does for
+    // its seventh.
+    std::vector<Deal> const layouts{
+        make_split_then_finesse_layout(Jack, Two),
+        make_split_then_finesse_layout(Queen, Three),
+        make_split_then_finesse_layout(Jack, Four),
+        make_split_then_finesse_layout(Queen, Five),
+        make_split_then_finesse_layout(Jack, Six),
+        make_split_then_finesse_layout(Queen, Seven),
+        make_split_then_finesse_layout(Jack, Ten),
+        make_split_then_finesse_layout(Queen, Ten),
+    };
+    be::assert_pool_matches(layouts);
+    VectorLayoutSource const source(layouts);
+    DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
+
+    EvaluationResult const exhaustive =
+        evaluate(layouts.front(), North, /*tricks_needed=*/2, source, pi, single_card_defender);
+    ASSERT_FALSE(exhaustive.error.has_value());
+    // Hand-derived: 6 of 8 layouts win (every heart but the two tens), 2
+    // lose -- 6/8 = 3/4. A different ratio from the earlier fixture's own
+    // 6/7, by construction: recovering the *same* ratio would need the
+    // missing layout to be the fixture's only defender ply, which is
+    // exactly the shape the test above proves replenishment cannot reach.
+    EXPECT_NEAR(exhaustive.by_strategy.at(1u).p_make, 0.75, 1e-9);
+
+    EvaluationResult const m6_no_replenishment = evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/2,
+        source,
+        pi,
+        single_card_defender,
+        EvaluateOptions{.sample_size = 6u});
+    ASSERT_FALSE(m6_no_replenishment.error.has_value());
+    EXPECT_DOUBLE_EQ(m6_no_replenishment.by_strategy.at(1u).p_make, 1.0);
+
+    EvaluationResult const m6_with_replenishment = evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/2,
+        source,
+        pi,
+        single_card_defender,
+        EvaluateOptions{.sample_size = 6u, .replenish_below = 6u});
+    ASSERT_FALSE(m6_with_replenishment.error.has_value());
+    // Side by side: 1.0 without replenishment, 0.75 with it -- exactly the
+    // exhaustive answer, not merely closer to it.
+    double const p_make_without = m6_no_replenishment.by_strategy.at(1u).p_make;
+    double const p_make_with = m6_with_replenishment.by_strategy.at(1u).p_make;
+    EXPECT_DOUBLE_EQ(p_make_without, 1.0);
+    EXPECT_NEAR(p_make_with, 0.75, 1e-9);
+    EXPECT_LT(std::abs(p_make_with - 0.75), std::abs(p_make_without - 0.75));
+}
+
+// Criterion 4: mass conserved across a fixture that replenishes
+// repeatedly -- both spade branches above replenish once each, so the
+// same fixture already exercises this; checked here against the total
+// mass directly (kappa * layout count is not observable from outside,
+// but node_mass's own invariant is exactly what the exhaustive-vs-
+// replenished agreement above already certifies: if either replenishment
+// had rescaled kappa wrongly, the two runs above would not agree to
+// floating-point tolerance, and they do).
+TEST_F(ReproductionTest, MassIsConservedAcrossRepeatedReplenishmentOnTheSplitThenFinesseFixture)
+{
+    std::vector<Deal> const layouts{
+        make_split_then_finesse_layout(Jack, Two),
+        make_split_then_finesse_layout(Queen, Three),
+        make_split_then_finesse_layout(Jack, Four),
+        make_split_then_finesse_layout(Queen, Five),
+        make_split_then_finesse_layout(Jack, Six),
+        make_split_then_finesse_layout(Queen, Seven),
+        make_split_then_finesse_layout(Jack, Ten),
+        make_split_then_finesse_layout(Queen, Ten),
+    };
+    VectorLayoutSource const source(layouts);
+    DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
+
+    EvaluationResult const result = evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/2,
+        source,
+        pi,
+        single_card_defender,
+        EvaluateOptions{.collect_counters = true, .sample_size = 6u, .replenish_below = 6u});
+    ASSERT_FALSE(result.error.has_value());
+    ASSERT_TRUE(result.by_strategy.at(1u).counters.has_value());
+
+    // Both spade branches replenish (2 attempts, both succeeding) -- the
+    // repeated-replenishment case this criterion asks for.
+    std::uint64_t total_attempted = 0;
+    std::uint64_t total_succeeded = 0;
+    for (be::DepthReplenishmentStats const& stats : result.by_strategy.at(1u).counters->replenishment_by_depth)
+    {
+        total_attempted += stats.attempted;
+        total_succeeded += stats.succeeded;
+    }
+    EXPECT_EQ(total_attempted, 2u);
+    EXPECT_EQ(total_succeeded, 2u);
+
+    // Mass conservation itself: the total probability mass this run
+    // reports (p_make summed with what every dead branch discarded is not
+    // observable from outside, but the exhaustive-agreement test above
+    // already is the mass-conservation check in its strongest form -- a
+    // kappa rescaled even one ULP wrong at either branch would show up
+    // there as a p_make that does not match the true 3/4 to tolerance.
+    // Restated here directly: p_make itself is a mass (node_mass summed
+    // up the tree), and it lands on the hand-derived value.
+    EXPECT_NEAR(result.by_strategy.at(1u).p_make, 0.75, 1e-9);
+}
+
+// Criterion 5: scan-to-hit by depth, and delta calls per replenishment.
+TEST_F(ReproductionTest, ScanToHitAndDeltaCallsPerReplenishmentAreReportedOnTheSplitThenFinesseFixture)
+{
+    std::vector<Deal> const layouts{
+        make_split_then_finesse_layout(Jack, Two),
+        make_split_then_finesse_layout(Queen, Three),
+        make_split_then_finesse_layout(Jack, Four),
+        make_split_then_finesse_layout(Queen, Five),
+        make_split_then_finesse_layout(Jack, Six),
+        make_split_then_finesse_layout(Queen, Seven),
+        make_split_then_finesse_layout(Jack, Ten),
+        make_split_then_finesse_layout(Queen, Ten),
+    };
+    VectorLayoutSource const source(layouts);
+    DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
+
+    std::uint64_t delta_calls = 0;
+    be::DefenderStrategy const counting_delta = [&](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
+    {
+        ++delta_calls;
+        return single_card_defender(query);
+    };
+
+    EvaluationResult const result = evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/2,
+        source,
+        pi,
+        counting_delta,
+        EvaluateOptions{.collect_counters = true, .sample_size = 6u, .replenish_below = 6u});
+    ASSERT_FALSE(result.error.has_value());
+    ASSERT_TRUE(result.by_strategy.at(1u).counters.has_value());
+
+    // Scan-to-hit by depth: at() calls per layout added, derived from the
+    // stored counts rather than timed. Both branches' scans land at depth
+    // 1 (East, the root's own seat, leads the spade split -- its children
+    // are reached at depth 1, not depth 2, since evaluate()'s own root
+    // block dispatches the split itself). Each branch's own scan examines
+    // all 8 source entries: its own already-present layouts, the other
+    // filler's layouts rejected on the recorded spade ply (no delta
+    // call), and the matching "ten" accepted -- 8 at() calls each, 16
+    // total, 2 layouts added -- a scan-to-hit of 8.
+    std::vector<be::DepthReplenishmentStats> const& by_depth =
+        result.by_strategy.at(1u).counters->replenishment_by_depth;
+    std::uint64_t total_at_calls = 0;
+    std::uint64_t total_layouts_added = 0;
+    for (be::DepthReplenishmentStats const& stats : by_depth)
+    {
+        total_at_calls += stats.at_calls;
+        total_layouts_added += stats.layouts_added;
+    }
+    ASSERT_GT(total_layouts_added, 0u);
+    double const scan_to_hit = static_cast<double>(total_at_calls) / static_cast<double>(total_layouts_added);
+    EXPECT_DOUBLE_EQ(total_at_calls, 16.0);
+    EXPECT_DOUBLE_EQ(total_layouts_added, 2.0);
+    EXPECT_DOUBLE_EQ(scan_to_hit, 8.0);
+
+    // Delta calls, hand-derived from the fixture's own shape. Four
+    // defender plies exist in this two-trick ending -- East's spade lead
+    // (history 0), West's spade follow (history 2), East's heart follow
+    // (history 5), West's heart follow, completing trick 2 (history 7) --
+    // North and South are declarer-side throughout and call delta never.
+    // Ordinary expansion: East's spade ply queries delta once per root
+    // layout (6, since the root itself is the split here); each of the
+    // other three defender plies queries delta once per layout then
+    // present in each branch (4 per branch, post-replenishment, since
+    // both "ten" layouts join before West's spade ply is ever reached) --
+    // 3 plies * 4 layouts * 2 branches = 24. Replay: each replenished
+    // "ten" candidate's own p_j is accumulated by replaying delta at
+    // every defender ply already crossed at the point it joins (depth 1,
+    // right after East's spade lead) -- exactly the one ply, East's own
+    // spade lead -- so 1 replay delta call per candidate, 2 total.
+    // Grand total: 6 + 24 + 2 = 32.
+    EXPECT_EQ(delta_calls, 32u);
 }
