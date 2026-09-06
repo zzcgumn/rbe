@@ -59,11 +59,21 @@ struct BeliefNode
     /// Whether this node's layouts are a sample of a larger space rather
     /// than the whole of it. Set at construction (`make_root`'s own
     /// doxygen has the exact condition) and propagated to every child in
-    /// both expansion paths — once true anywhere on the path to a node, it
-    /// stays true for that node and everything below it, since a child
-    /// built from a sample can never be more complete than its parent. See
-    /// BeliefView::is_sample, which this feeds, and tier2_dead(), which
-    /// gates on it.
+    /// both expansion paths — a child starts by inheriting its parent's
+    /// value, true or false.
+    ///
+    /// **Not monotone.** A node whose own node-local replenishment scan
+    /// reaches `ScanOutcome::SourceExhausted` sets this back to `false`
+    /// there, whatever the parent's own value was: that node's own scan
+    /// genuinely covered the whole of its path's remaining belief space,
+    /// so it is no longer a sample, regardless of how it was reached. A
+    /// child built from a sample is *not* guaranteed to be less complete
+    /// than its parent — replenishment is exactly the mechanism that can
+    /// make it more complete. The flip never propagates upward: it is a
+    /// fact about this node's own scan, and says nothing about the
+    /// parent's, whose own layout set is still whatever prefix was drawn
+    /// for it. See `BeliefView::is_sample`, which this feeds, and
+    /// `tier2_dead()`, which gates on it.
     bool is_sample = false;
 };
 

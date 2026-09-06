@@ -171,12 +171,17 @@ namespace
     /// Tops `node` back up towards `ctx.options.sample_size` from
     /// `ctx.source` when `node.layouts.size()` is below
     /// `ctx.options.replenish_below`, rescaling `kappa` so the node's mass
-    /// is unchanged. Returns `std::nullopt` when nothing changes -- no
-    /// threshold set, the trigger not met, no `sample_size` to top up to
-    /// (see `EvaluateOptions::replenish_below`'s own doxygen for why that
-    /// case is treated as "nothing to do" rather than an error), or a scan
-    /// that found nothing new -- in every one of those cases the caller
-    /// must fall back to using `node` itself unchanged, not a copy of it.
+    /// is unchanged, and setting `is_sample = false` when the scan reaches
+    /// `ScanOutcome::SourceExhausted` -- the node then genuinely holds the
+    /// whole of its own remaining belief space, whether or not that scan
+    /// added anything (see `ScanOutcome`'s own doxygen). Returns
+    /// `std::nullopt` when nothing changes at all -- no threshold set, the
+    /// trigger not met, no `sample_size` to top up to (see
+    /// `EvaluateOptions::replenish_below`'s own doxygen for why that case
+    /// is treated as "nothing to do" rather than an error), or a scan that
+    /// found nothing new *and* did not exhaust the source (bound by the
+    /// budget instead) -- in every one of those cases the caller must fall
+    /// back to using `node` itself unchanged, not a copy of it.
     ///
     /// The trigger is `node.layouts.size() < *ctx.options.replenish_below`
     /// and **nothing else** -- not gated on `node.is_sample`, not on how
@@ -233,32 +238,52 @@ namespace
                 EvaluationError{scan.error, EvaluationCallback::DefenderStrategy, scan.seat, scan.offending_layout};
             return std::nullopt;
         }
-        if (scan.candidates.empty())
+        bool const exhausted = scan.outcome == ScanOutcome::SourceExhausted;
+        if (scan.candidates.empty() && ! exhausted)
         {
-            return std::nullopt;  // the ordinary "nothing more available" outcome; node is unchanged
+            return std::nullopt;  // the ordinary "nothing more available (yet)" outcome; node is unchanged
         }
 
         BeliefNode replenished = node;
-        KahanAccumulator mass_before;
-        for (Probability const p_i : replenished.p)
+        if (! scan.candidates.empty())
         {
-            mass_before.add(p_i);
+            KahanAccumulator mass_before;
+            for (Probability const p_i : replenished.p)
+            {
+                mass_before.add(p_i);
+            }
+
+            for (ScanCandidate const& candidate : scan.candidates)
+            {
+                replenished.layouts.push_back(candidate.layout);
+                replenished.p.push_back(candidate.p_j);
+                replenished.root_keys.push_back(candidate.root_key);
+            }
+
+            KahanAccumulator mass_after;
+            for (Probability const p_i : replenished.p)
+            {
+                mass_after.add(p_i);
+            }
+
+            // See this function's own doxygen for why the "nothing added"
+            // case above returns before ever reaching this division.
+            replenished.kappa *= mass_before.value() / mass_after.value();
         }
 
-        for (ScanCandidate const& candidate : scan.candidates)
+        // The node's own scan reached the end of source: it now holds
+        // every layout its path admits, exactly as make_root's root-level
+        // scan does when it runs to completion. Not a refinement of
+        // tier2_dead()'s gate -- that stays exactly !node.is_sample, no
+        // floor -- this only lets a node report the flag honestly once it
+        // genuinely holds the whole of its own remaining space. Does not
+        // propagate upward: a child's own exhaustion says nothing about
+        // its parent, whose own layout set is still whatever prefix was
+        // drawn for it.
+        if (exhausted)
         {
-            replenished.layouts.push_back(candidate.layout);
-            replenished.p.push_back(candidate.p_j);
-            replenished.root_keys.push_back(candidate.root_key);
+            replenished.is_sample = false;
         }
-
-        KahanAccumulator mass_after;
-        for (Probability const p_i : replenished.p)
-        {
-            mass_after.add(p_i);
-        }
-
-        replenished.kappa *= mass_before.value() / mass_after.value();
         return replenished;
     }
 
@@ -405,10 +430,12 @@ auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool
     // says nothing about every layout in the true space, so a layout that
     // would have made could simply not have been drawn. Once a root sample
     // size is requested and actually binds, is_sample propagates true to
-    // every descendant through both expansion paths, switching this cut
-    // off across the whole tree from that point on -- stricter than
-    // algorithm.md, which forbids the cut only at or below a replenishment
-    // floor this evaluator does not yet have.
+    // every descendant through both expansion paths, switching this cut off
+    // from there down -- except at a node whose own replenishment scan
+    // exhausts source, which sets is_sample back to false there (see that
+    // field's own doxygen) and re-engages this exact same gate, honestly:
+    // such a node genuinely holds the whole of its own remaining space, not
+    // a floor-based exception to what this function checks.
     if (node.is_sample)
     {
         return false;

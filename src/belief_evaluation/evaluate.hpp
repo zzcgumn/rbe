@@ -346,13 +346,19 @@ auto is_dead(ObservationState const& state) -> bool;
 /// whether the node is a full space or a sample of one. This cut instead
 /// concludes "every layout in this node is dead" from the layouts the node
 /// happens to hold; on a sample that is only "every layout *drawn* is
-/// dead", which says nothing about every layout in the true space. The
-/// moment a root is a genuine sample, `is_sample` propagates true to every
-/// child through both expansion paths, so this gate is fully engaged
-/// across the whole tree beneath it -- stricter than
-/// `docs/replenished_belief_evaluation/algorithm.md`, which forbids early
-/// cuts only at or below a replenishment floor this evaluator does not yet
-/// have.
+/// dead", which says nothing about every layout in the true space. A root
+/// that is a genuine sample propagates `is_sample = true` to every child
+/// through both expansion paths, switching this gate off from there down
+/// -- except at a node whose own replenishment scan reaches
+/// `ScanOutcome::SourceExhausted`, which sets `is_sample` back to `false`
+/// there (see that field's own doxygen): the gate fires again at exactly
+/// such a node, through this same unchanged condition, because it
+/// genuinely holds the whole of its own remaining space and is no longer
+/// a sample by any honest reading of the flag. This is not a refinement to
+/// a replenishment floor -- `docs/replenished_belief_evaluation/algorithm.md`
+/// permits early cuts once a node reaches such a floor, and this gate does
+/// not track one; it only ever asks the one question `! node.is_sample`
+/// already asks, which happens to become true here too.
 ///
 /// Stops at the first live layout (`bound(layout) >=` what is still
 /// needed) rather than calling `bound` for every layout: each call is a

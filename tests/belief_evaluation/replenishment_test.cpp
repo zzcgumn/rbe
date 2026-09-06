@@ -7,6 +7,7 @@
 #include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
+#include <belief_evaluation/belief_view.hpp>
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/kahan.hpp>
@@ -34,6 +35,7 @@ using be::root_observation_state;
 using be::scan_for_replenishment;
 using be::single_card_declarer_play;
 using be::single_card_defender;
+using be::tier2_dead;
 
 namespace
 {
@@ -291,4 +293,136 @@ TEST_F(ReplenishmentTest, AbsentReplenishBelowLeavesTheFixtureBitIdenticalToASam
     ASSERT_FALSE(first.error.has_value());
     ASSERT_FALSE(second.error.has_value());
     EXPECT_EQ(first.by_strategy.at(1u).p_make, second.by_strategy.at(1u).p_make);
+}
+
+// ===========================================================================
+// Exhaustion at depth: one node whose own scan exhausts source, one
+// sibling whose own scan does not -- both descend from a root that IS a
+// genuine sample, both built by hand the same way the mass-conservation
+// test above builds one, so tier2_dead() can be checked directly.
+// ===========================================================================
+
+TEST_F(ReplenishmentTest, ExhaustedNodeIsNoLongerASampleAndItsSiblingStays)
+{
+    // Five root-space layouts: two share spade = three (hearts two,
+    // three), two share spade = five (heart five, six), and one more
+    // spade = three entry (heart four) sits last in source order. A
+    // sample_size = 3 root draws only the first three (spade = three
+    // twice, spade = five once); East's spade ply then splits that into
+    // a 2-layout "three" branch and a 1-layout "five" branch.
+    std::vector<Deal> const source_layouts{
+        make_layout(Three, Two),
+        make_layout(Three, Three),
+        make_layout(Five, Five),
+        make_layout(Three, Four),
+        make_layout(Five, Six),
+    };
+    be::assert_pool_matches(source_layouts);
+    VectorLayoutSource const source(source_layouts);
+    Deal const root_layout = source_layouts.front();
+
+    // The root, sampled: is_sample true, three layouts drawn.
+    be::RootConstructionResult const root_result =
+        be::make_root(root_layout, North, /*tricks_needed=*/2, source, be::RootOptions{.sample_size = 3u});
+    ASSERT_TRUE(root_result.node.has_value());
+    ASSERT_TRUE(root_result.node->is_sample);
+    ASSERT_EQ(root_result.node->layouts.size(), 3u);
+
+    be::Card const norths_ace{Spades, Ace};
+
+    auto const build_branch = [&](int east_spade, std::vector<int> const& drawn_hearts) -> BeliefNode
+    {
+        BeliefNode branch{};
+        branch.state = root_result.node->state;
+        branch.state = be::advance_state(branch.state, norths_ace);
+        be::Card const easts_spade{Spades, east_spade};
+        branch.state = be::advance_state(branch.state, easts_spade);
+        branch.is_sample = true;  // inherited from the sampled root, through both plies above
+        for (int heart : drawn_hearts)
+        {
+            Deal layout = play(make_layout(east_spade, heart), norths_ace);
+            layout = play(layout, easts_spade);
+            branch.layouts.push_back(layout);
+            branch.p.push_back(1.0);
+            branch.root_keys.push_back(layout_key(make_layout(east_spade, heart), East));
+        }
+        branch.kappa = 1.0 / 3.0;
+        return branch;
+    };
+
+    BeliefNode three_branch = build_branch(Three, {Two, Three});
+    BeliefNode five_branch = build_branch(Five, {Five});
+
+    // Replenish both by hand, exactly as replenish_node() does: scan,
+    // rescale if anything was found, flip is_sample on SourceExhausted.
+    auto const replenish = [&](BeliefNode& branch, std::uint64_t wanted) -> ScanResult
+    {
+        ScanResult const scan =
+            scan_for_replenishment(branch, root_layout, source, single_card_defender, wanted, std::nullopt);
+        EXPECT_EQ(scan.error, be::ValidationError::None);
+        bool const exhausted = scan.outcome == be::ScanOutcome::SourceExhausted;
+        if (! scan.candidates.empty())
+        {
+            KahanAccumulator before;
+            for (Probability const p_i : branch.p)
+            {
+                before.add(p_i);
+            }
+            for (auto const& candidate : scan.candidates)
+            {
+                branch.layouts.push_back(candidate.layout);
+                branch.p.push_back(candidate.p_j);
+                branch.root_keys.push_back(candidate.root_key);
+            }
+            KahanAccumulator after;
+            for (Probability const p_i : branch.p)
+            {
+                after.add(p_i);
+            }
+            branch.kappa *= before.value() / after.value();
+        }
+        if (exhausted)
+        {
+            branch.is_sample = false;
+        }
+        return scan;
+    };
+
+    // three_branch wants 1 (3 - 2) and finds it (spade = three, heart =
+    // four) before the source runs out -- SampleFilled, not exhausted.
+    ScanResult const three_scan = replenish(three_branch, /*wanted=*/1);
+    EXPECT_EQ(three_scan.outcome, be::ScanOutcome::SampleFilled);
+    EXPECT_EQ(three_branch.layouts.size(), 3u);
+    EXPECT_TRUE(three_branch.is_sample);
+
+    // five_branch wants 2 (3 - 1) but only one more spade = five layout
+    // exists anywhere in source -- it finds that one and then runs out:
+    // SourceExhausted, with something found, not nothing.
+    ScanResult const five_scan = replenish(five_branch, /*wanted=*/2);
+    EXPECT_EQ(five_scan.outcome, be::ScanOutcome::SourceExhausted);
+    EXPECT_EQ(five_branch.layouts.size(), 2u);
+    EXPECT_FALSE(five_branch.is_sample);
+
+    // criterion 6: the root itself is untouched by either child's own scan.
+    EXPECT_TRUE(root_result.node->is_sample);
+
+    // criteria 3 and 4: the same injected (dead) bound, the same
+    // declaration, one node fires and the other does not, and the only
+    // difference between them is is_sample.
+    auto const always_dead = [](Deal const&) -> int { return 0; };
+    be::EvaluateOptions const options{.bound = always_dead, .delta_is_double_dummy_optimal = true};
+
+    EXPECT_TRUE(tier2_dead(five_branch, options));    // exhausted: the gate fires
+    EXPECT_FALSE(tier2_dead(three_branch, options));  // still a sample: the gate stays off
+
+    // space_size, criterion 5 -- make_belief_view needs no change at all,
+    // and this is worth pinning directly: the exhausted node reports its
+    // true size, the sampled sibling reports 0.
+    std::vector<be::BeliefEntry> scratch_five;
+    be::BeliefView const five_view = be::make_belief_view(five_branch, scratch_five);
+    EXPECT_EQ(five_view.space_size, five_branch.layouts.size());
+
+    std::vector<be::BeliefEntry> scratch_three;
+    be::BeliefView const three_view = be::make_belief_view(three_branch, scratch_three);
+    EXPECT_EQ(three_view.space_size, 0u);
 }
