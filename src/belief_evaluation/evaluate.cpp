@@ -144,12 +144,27 @@ namespace
     /// than forcing every level either to copy it into a by-value context
     /// or to pay for a by-const-reference context header just for one
     /// field that changes every call.
+    ///
+    /// `declarer` and `tricks_needed` are deliberately absent too, despite
+    /// being genuinely fixed for the whole recursion: both are already
+    /// reachable at every node through `node.state.declarer` and
+    /// `node.state.tricks_needed` -- common knowledge, identical across
+    /// every layout the node holds. A second path to the same fact would
+    /// let the two drift.
+    ///
+    /// `root_layout` and `source` are both const references to objects
+    /// owned by evaluate()'s caller and outliving the whole recursion --
+    /// SearchContext itself is only ever constructed on evaluate()'s own
+    /// stack and passed down by const reference, never copied or held by
+    /// value anywhere below it.
     struct SearchContext
     {
         DeclarerStrategy const& pi;
         DefenderStrategy const& delta;
         EvaluateOptions const& options;
         EvaluationCounters* counters;  // null unless collecting
+        Deal const& root_layout;
+        LayoutSource const& source;
     };
 
     /// The recursion: P_make(node) = terminal_value(node), or the sum (for
@@ -335,7 +350,7 @@ auto evaluate(
     // sites below are unconditional and cost nothing when off — count_node()
     // itself is the single place that checks the flag (via nullness).
     EvaluationCounters* const counters_ptr = options.collect_counters ? &counters : nullptr;
-    SearchContext const ctx{pi, delta, options, counters_ptr};
+    SearchContext const ctx{pi, delta, options, counters_ptr, root_layout, source};
 
     // The root's own visit — same site p_make() counts a node at, but
     // outside p_make() because the root's dispatch happens here rather than
