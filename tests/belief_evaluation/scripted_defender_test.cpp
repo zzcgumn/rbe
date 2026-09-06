@@ -177,6 +177,46 @@ TEST_F(ScriptedDefenderTest, RecordingWorksTheSameForTheMultiEntryConstructor)
     EXPECT_EQ(defender.queries()[0].layout, be::layout_key(layout, East));
 }
 
+// --- replay stability: called twice on the same ply, answers identically -
+
+TEST_F(ScriptedDefenderTest, CalledTwiceOnTheSamePlyReturnsTheIdenticalDistributionBothTimes)
+{
+    // A property replenishment leans on directly: delta is called once
+    // during the original expansion and again during a later replay of the
+    // same ply, and the two calls must agree bitwise or a replenished
+    // layout's p_j would not match what the drawn layouts carry.
+    // ScriptedDefender is a table lookup on
+    // {layout_key(query.layout, query.seat), position_string(query.state)}
+    // -- replay-stable by construction, since position_string derives from
+    // state.history, which reproduces identically on replay (see
+    // replenishment_scan_test.cpp's own fixtures, which depend on exactly
+    // this). Pinned here so a future change to ScriptedDefender that broke
+    // it would fail cheaply, in this file, rather than as an unexplained
+    // p_j mismatch three files away.
+    Deal const layout = make_layout();
+    be::ObservationState state{};
+    state.history.number = 1;
+    state.history.suit[0] = 0;
+    state.history.rank[0] = 14;
+
+    be::ScriptedDefender::Key const key{be::layout_key(layout, East), "0:14,"};
+    be::ScriptedDefender defender = be::ScriptedDefender::stochastic(
+        {{key, {be::WeightedCard{be::Card{2, King}, 0.5}, be::WeightedCard{be::Card{2, Queen}, 0.5}}}});
+
+    auto const strategy = defender.as_strategy();
+    be::DefenderQuery const query{layout, East, state};
+    std::vector<be::WeightedCard> const first_call = strategy(query);
+    std::vector<be::WeightedCard> const second_call = strategy(query);
+
+    ASSERT_EQ(first_call.size(), second_call.size());
+    for (std::size_t i = 0; i < first_call.size(); ++i)
+    {
+        EXPECT_EQ(first_call[i].card.suit, second_call[i].card.suit);
+        EXPECT_EQ(first_call[i].card.rank, second_call[i].card.rank);
+        EXPECT_EQ(first_call[i].probability, second_call[i].probability);  // bitwise, not just near
+    }
+}
+
 TEST_F(ScriptedDefenderTest, AScriptedDistributionNotSummingToOneIsALoudNonFatalFailure)
 {
     Deal const layout = make_layout();

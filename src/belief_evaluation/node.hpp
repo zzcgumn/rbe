@@ -174,6 +174,24 @@ struct RootOptions
 /// this search began.
 auto history_for(Deal const& root_layout) -> PlayTraceBin;
 
+/// The `ObservationState` `make_root` builds at the root, before any layout
+/// is scanned: `trump`/`first` from `root_layout` verbatim, `history` from
+/// `history_for(root_layout)`, `declarer`/`tricks_needed` from the caller,
+/// `tricks_won_by_declarer = 0` (a root always starts fresh -- a trick
+/// already in progress is not a trick already won), `known_holdings` the
+/// declarer/dummy-exact, defender-pooled `Deal` `make_root`'s own doxygen
+/// describes, and `ranks` from it.
+///
+/// Exposed so a node-local replay can rebuild the exact sequence of
+/// intermediate common-knowledge states the original expansion queried a
+/// defender strategy with — advancing from *this*, one recorded card at a
+/// time via `advance_state` (`expand.hpp`), reproduces every intermediate
+/// state bit for bit, since both the state and its advancement are pure
+/// functions of the same inputs the original expansion used. The recursion
+/// itself retains none of these states, so rebuilding from here is the only
+/// way to recover them.
+auto root_observation_state(Deal const& root_layout, int declarer, int tricks_needed) -> ObservationState;
+
 /// Builds the root node over `source`: scans from index 0 and takes every
 /// layout consistent with `root_layout` (see below), each getting `p_i = 1`,
 /// up to `options.sample_size` if one is supplied and up to

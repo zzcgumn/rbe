@@ -16,58 +16,6 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    /// state advanced by seat playing card: known_holdings and ranks updated
-    /// via trick.hpp's play(), the card appended to history, and
-    /// tricks_won_by_declarer incremented if this play resolved a trick in
-    /// declarer's or dummy's favour. Trump, declarer, tricks_needed and
-    /// `first` (the root's leader, not the current trick's — see
-    /// ObservationState's own doxygen) are unaffected by a single card.
-    ///
-    /// known_holdings' declarer and dummy entries are each hand's exact
-    /// holding, but its two defender entries are both set to the *union*
-    /// pool the two defenders share (see known_holdings_for in node.cpp) —
-    /// so play(), which clears the card from only seat_on_play's own slot,
-    /// is correct for a declarer or dummy play but leaves a defender's
-    /// played card sitting in the *other* defender's identical pool entry.
-    /// Clearing the card from every hand's slot first — safe, since a card
-    /// can only ever be set in the slot(s) that actually hold it — fixes
-    /// this uniformly for both cases without needing to know which kind of
-    /// seat played.
-    auto advance_state(ObservationState const& state, Card const& card) -> ObservationState
-    {
-        ObservationState next = state;
-        Deal known = state.known_holdings;
-        for (int hand = 0; hand < DDS_HANDS; ++hand)
-        {
-            known.remainCards[hand][card.suit] &= ~(1u << card.rank);
-        }
-        Deal const advanced = play(known, card);
-
-        // play() clears currentTrick* only on the branch that resolves a
-        // trick; the append branch always leaves at least one slot
-        // non-zero. So "every slot zero after" is exactly "this play
-        // resolved the trick", with no need to also inspect the state
-        // before the play.
-        bool const trick_resolved = advanced.currentTrickRank[0] == 0
-            && advanced.currentTrickRank[1] == 0 && advanced.currentTrickRank[2] == 0;
-        if (trick_resolved)
-        {
-            int const dummy = (state.declarer + 2) % DDS_HANDS;
-            int const winner = advanced.first;
-            if (winner == state.declarer || winner == dummy)
-            {
-                next.tricks_won_by_declarer += 1;
-            }
-        }
-
-        next.known_holdings = advanced;
-        next.ranks = make_rank_map(advanced);
-        next.history.suit[next.history.number] = card.suit;
-        next.history.rank[next.history.number] = card.rank;
-        next.history.number += 1;
-        return next;
-    }
-
     /// A total order over Card, for grouping defender children by the card
     /// played — Card itself declares no comparison, and doesn't need one
     /// anywhere else in the module.
@@ -75,6 +23,51 @@ namespace
     {
         return card.suit * 100 + card.rank;
     }
+}
+
+auto advance_state(ObservationState const& state, Card const& card) -> ObservationState
+{
+    // known_holdings' declarer and dummy entries are each hand's exact
+    // holding, but its two defender entries are both set to the *union*
+    // pool the two defenders share (see known_holdings_for in node.cpp) —
+    // so play(), which clears the card from only seat_on_play's own slot,
+    // is correct for a declarer or dummy play but leaves a defender's
+    // played card sitting in the *other* defender's identical pool entry.
+    // Clearing the card from every hand's slot first — safe, since a card
+    // can only ever be set in the slot(s) that actually hold it — fixes
+    // this uniformly for both cases without needing to know which kind of
+    // seat played.
+    ObservationState next = state;
+    Deal known = state.known_holdings;
+    for (int hand = 0; hand < DDS_HANDS; ++hand)
+    {
+        known.remainCards[hand][card.suit] &= ~(1u << card.rank);
+    }
+    Deal const advanced = play(known, card);
+
+    // play() clears currentTrick* only on the branch that resolves a
+    // trick; the append branch always leaves at least one slot
+    // non-zero. So "every slot zero after" is exactly "this play
+    // resolved the trick", with no need to also inspect the state
+    // before the play.
+    bool const trick_resolved = advanced.currentTrickRank[0] == 0 && advanced.currentTrickRank[1] == 0
+        && advanced.currentTrickRank[2] == 0;
+    if (trick_resolved)
+    {
+        int const dummy = (state.declarer + 2) % DDS_HANDS;
+        int const winner = advanced.first;
+        if (winner == state.declarer || winner == dummy)
+        {
+            next.tricks_won_by_declarer += 1;
+        }
+    }
+
+    next.known_holdings = advanced;
+    next.ranks = make_rank_map(advanced);
+    next.history.suit[next.history.number] = card.suit;
+    next.history.rank[next.history.number] = card.rank;
+    next.history.number += 1;
+    return next;
 }
 
 auto make_declarer_children(BeliefNode const& parent, std::vector<Card> const& cards)

@@ -11,6 +11,23 @@
 namespace dds::belief_evaluation
 {
 
+/// `state` advanced by `seat_on_play(state.known_holdings)` playing `card`:
+/// `known_holdings` and `ranks` updated via `trick.hpp`'s `play()`, the card
+/// appended to `history`, and `tricks_won_by_declarer` incremented if this
+/// play resolved a trick in declarer's or dummy's favour. `trump`,
+/// `declarer`, `tricks_needed` and `first` (the root's leader, not the
+/// current trick's — see `ObservationState`'s own doxygen) are unaffected by
+/// a single card.
+///
+/// Exposed (rather than kept private to `make_declarer_children` and
+/// `expand_defender_node`, which use it to build every child's state) so a
+/// node-local replay can rebuild the exact same intermediate states a
+/// defender strategy was asked about during the original expansion —
+/// `advance_state` replayed from the root's own state, alongside the layout
+/// replay, is the only way those intermediate states are recovered, since
+/// the recursion itself retains none of them.
+auto advance_state(ObservationState const& state, Card const& card) -> ObservationState;
+
 /// The result of expanding one node: either the child, or the
 /// ValidationError a callback's return violated. A local, minimal shape —
 /// evaluate.hpp's EvaluationError is what carries the fuller context (which

@@ -92,6 +92,22 @@ auto history_for(Deal const& root_layout) -> PlayTraceBin
     return history;
 }
 
+auto root_observation_state(Deal const& root_layout, int declarer, int tricks_needed) -> ObservationState
+{
+    int const dummy = (declarer + 2) % DDS_HANDS;
+
+    ObservationState state{};
+    state.trump = root_layout.trump;
+    state.first = root_layout.first;
+    state.history = history_for(root_layout);
+    state.declarer = declarer;
+    state.tricks_needed = tricks_needed;
+    state.tricks_won_by_declarer = 0;
+    state.known_holdings = known_holdings_for(root_layout, declarer, dummy);
+    state.ranks = make_rank_map(root_layout);
+    return state;
+}
+
 auto make_root(
     Deal const& root_layout,
     int declarer,
@@ -120,14 +136,7 @@ auto make_root(
     int const dummy = (declarer + 2) % DDS_HANDS;
 
     BeliefNode node{};
-    node.state.trump = root_layout.trump;
-    node.state.first = root_layout.first;
-    node.state.history = history_for(root_layout);
-    node.state.declarer = declarer;
-    node.state.tricks_needed = tricks_needed;
-    node.state.tricks_won_by_declarer = 0;
-    node.state.known_holdings = known_holdings_for(root_layout, declarer, dummy);
-    node.state.ranks = make_rank_map(root_layout);
+    node.state = root_observation_state(root_layout, declarer, tricks_needed);
 
     // Not reserved to *size: source.size() is user-supplied and may be far
     // larger than the number of layouts that actually survive filtering
