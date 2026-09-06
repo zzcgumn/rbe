@@ -208,6 +208,32 @@ struct DepthSampleStats
     std::uint64_t layout_min = 0;  ///< the smallest node.layouts.size() seen at this depth; meaningless if nodes == 0
 };
 
+/// Per-depth aggregate of every node-local replenishment scan attempted at
+/// that depth. Follows `DepthSampleStats`' own precedent -- one struct per
+/// depth holding several related counts, not four parallel vectors.
+///
+/// `attempted` and `succeeded` are both counted, not folded into one,
+/// because they answer different questions: `attempted - succeeded` is
+/// exactly how often a scan ran and found nothing (the number that says
+/// whether `BeliefNode::no_more_available` is doing real work or is cheap
+/// insurance that rarely bites); `succeeded` against `layouts_added` gives
+/// the average top-up size. `at_calls` sums every such scan's own
+/// `ScanResult::at_calls`, counted the same way `RootOptions::scan_budget`
+/// counts them, so a scan-to-hit ratio (`at_calls` per `layouts_added`) is
+/// derivable from this alone -- deliberately not stored as a ratio itself,
+/// since a ratio cannot be summed across depths or runs and ratio-shaped
+/// data should not be either. Never incremented at the root: replenishment
+/// does not happen there (`make_root` just built it from a fresh scan), so
+/// depth 0's entry, if it exists at all (from `sample_size_by_depth`
+/// sharing the same indexing), is structurally all zero.
+struct DepthReplenishmentStats
+{
+    std::uint64_t attempted = 0;      ///< replenishment scans that actually ran at this depth
+    std::uint64_t succeeded = 0;      ///< of those, how many added at least one layout
+    std::uint64_t layouts_added = 0;  ///< total layouts added across every scan at this depth
+    std::uint64_t at_calls = 0;       ///< total source.at() calls across every scan at this depth
+};
+
 /// Instrumentation `evaluate()` can report about its own run, populated
 /// only when EvaluateOptions::collect_counters is set — see
 /// EvaluationValue::counters. Nothing here is read back into `p_make`;
@@ -215,12 +241,10 @@ struct DepthSampleStats
 ///
 /// This is the module's shared instrumentation mechanism, not a type
 /// specific to whatever fills it in first: node count, cut counts by
-/// tier, and sample size by depth (`DepthSampleStats`, above) all live
-/// here. Later additions belong here too rather than in a parallel
-/// mechanism of their own — replenishment count and scan-to-hit, each
-/// broken out by recursion depth, are the known future examples, arriving
-/// as their own `std::vector<...>` members indexed by depth alongside
-/// `sample_size_by_depth` below, not a reshaping of this type.
+/// tier, sample size by depth (`DepthSampleStats`), and replenishment
+/// counts and scan-to-hit by depth (`DepthReplenishmentStats`) all live
+/// here, each arriving as its own member rather than reshaping the type
+/// that came before it. A later addition belongs here too, the same way.
 struct EvaluationCounters
 {
     /// Every BeliefNode reached and evaluated for a value — terminal or
@@ -260,6 +284,16 @@ struct EvaluationCounters
     /// on the exhaustive path too, where it is a fact about the tree's own
     /// shape rather than about a sample.
     std::vector<DepthSampleStats> sample_size_by_depth;
+
+    /// Index i is depth i's own DepthReplenishmentStats, same indexing as
+    /// `sample_size_by_depth`, grown on demand the same way and for the
+    /// same reason (a trailing zero-entry must never be confused with
+    /// "nothing went that deep" -- an index beyond `size() - 1` is what
+    /// means that here too). Populated whether or not any scan at that
+    /// depth actually found anything; an unpopulated depth (index beyond
+    /// `size() - 1`) means replenishment was never even attempted there,
+    /// which is different from attempting and finding nothing.
+    std::vector<DepthReplenishmentStats> replenishment_by_depth;
 };
 
 /// `P_make` for one declarer strategy against one defender strategy, plus

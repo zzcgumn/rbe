@@ -162,7 +162,8 @@ auto scan_for_replenishment(
         ReplayResult const replay = replay_candidate(candidate, root_layout, node.state, delta);
         if (replay.error != ValidationError::None)
         {
-            return ScanResult{{}, ScanOutcome::SourceExhausted, replay.error, replay.seat, replay.offending_layout};
+            return ScanResult{
+                {}, ScanOutcome::SourceExhausted, replay.error, replay.seat, replay.offending_layout, scanned};
         }
         if (! replay.layout.has_value())
         {
@@ -178,6 +179,7 @@ auto scan_for_replenishment(
     result.outcome = (i >= *size)
         ? ScanOutcome::SourceExhausted
         : ((result.candidates.size() >= wanted) ? ScanOutcome::SampleFilled : ScanOutcome::BudgetExhausted);
+    result.at_calls = scanned;
     return result;
 }
 

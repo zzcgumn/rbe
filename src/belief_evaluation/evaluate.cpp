@@ -129,6 +129,40 @@ namespace
         stats.nodes += 1;
     }
 
+    /// replenishment_by_depth's single write site, following
+    /// record_sample_size()'s own pattern -- except there is only **one**
+    /// call site for this one (inside replenish_node(), guarded by the
+    /// same "a scan actually ran" condition that guards everything else
+    /// replenishment does), not two: replenishment never happens at the
+    /// root, so depth 0's entry would only ever be able to record zeros,
+    /// and evaluate()'s own root-handling block has nothing to call this
+    /// with. Left unsaid, the next reader familiar with count_node()'s and
+    /// record_sample_size()'s own two-site pattern would assume this one
+    /// needed a root-block call too, and add one that could only ever add
+    /// zero.
+    auto record_replenishment_attempt(
+        EvaluationCounters* counters,
+        int depth,
+        bool succeeded,
+        std::uint64_t layouts_added,
+        std::uint64_t at_calls) -> void
+    {
+        if (counters == nullptr)
+        {
+            return;
+        }
+        auto const index = static_cast<std::size_t>(depth);
+        if (index >= counters->replenishment_by_depth.size())
+        {
+            counters->replenishment_by_depth.resize(index + 1);
+        }
+        DepthReplenishmentStats& stats = counters->replenishment_by_depth[index];
+        stats.attempted += 1;
+        stats.succeeded += succeeded ? 1 : 0;
+        stats.layouts_added += layouts_added;
+        stats.at_calls += at_calls;
+    }
+
     /// Everything the recursion carries unchanged from the root down to
     /// every node, declarer or defender, sample or exhaustive. Held by
     /// const reference and passed down unmodified at every call --
@@ -211,6 +245,7 @@ namespace
     auto replenish_node(
         BeliefNode const& node,
         SearchContext const& ctx,
+        int depth,
         std::optional<EvaluationError>& error) -> std::optional<BeliefNode>
     {
         if (! ctx.options.replenish_below.has_value())
@@ -242,6 +277,8 @@ namespace
 
         ScanResult const scan =
             scan_for_replenishment(node, ctx.root_layout, ctx.source, ctx.delta, wanted, ctx.options.scan_budget);
+        record_replenishment_attempt(
+            ctx.counters, depth, ! scan.candidates.empty(), scan.candidates.size(), scan.at_calls);
         if (scan.error != ValidationError::None)
         {
             error =
@@ -345,7 +382,7 @@ namespace
         // options.replenish_below, replenish_node returns nullopt having
         // touched nothing, so this costs one function call and nothing
         // else on the path every existing test still takes.
-        std::optional<BeliefNode> const replenished = replenish_node(node, ctx, error);
+        std::optional<BeliefNode> const replenished = replenish_node(node, ctx, depth, error);
         if (error.has_value())
         {
             return 0.0;

@@ -106,7 +106,10 @@ struct ScanCandidate
 /// the layouts it already had. `candidates` and `outcome` are meaningful
 /// only when `error` is `ValidationError::None`; `seat` and
 /// `offending_layout` only when it is not, mirroring `ReplayResult`'s own
-/// shape for the same reason.
+/// shape for the same reason. `at_calls` -- how many `source.at()` calls
+/// this scan made -- is meaningful regardless: it is what a caller's own
+/// scan-to-hit instrumentation reports on, whether the scan succeeded,
+/// found nothing, or hit a contract violation partway through.
 struct ScanResult
 {
     std::vector<ScanCandidate> candidates;
@@ -114,6 +117,7 @@ struct ScanResult
     ValidationError error = ValidationError::None;
     int seat = -1;
     Deal offending_layout{};
+    std::uint64_t at_calls = 0;
 };
 
 /// Scans `source` from index 0 for layouts consistent with `root_layout`

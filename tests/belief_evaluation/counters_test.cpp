@@ -37,6 +37,7 @@ namespace
     constexpr int Ace = 14;
 
     constexpr int Spades = 0;
+    constexpr int Hearts = 1;
 
     constexpr int North = 0;  // declarer
     constexpr int East = 1;   // a defender
@@ -316,4 +317,137 @@ TEST_F(CountersTest, SampleSizeByDepthShowsTheCollapseFromASampledRootAcrossAPly
         EXPECT_EQ(by_depth[depth].layout_sum, 2u) << "depth " << depth;
         EXPECT_EQ(by_depth[depth].layout_min, 1u) << "depth " << depth;
     }
+}
+
+// replenishment_by_depth: a per-depth aggregate of every node-local
+// replenishment scan -- attempted, succeeded, layouts added, at() calls.
+//
+// A node's own layout count only ever drops via a defender split (a
+// declarer ply always copies its parent's count unchanged), so a fixture
+// that wants replenishment to have anything to do needs a split first --
+// sample_size alone controls both the root's own draw and what
+// replenishment tops up towards, so a node still holding exactly
+// sample_size layouts always computes a wanted count of zero. This is the
+// same split-then-replenish shape replenishment_test.cpp's own
+// no-more-available fixture uses.
+
+namespace
+{
+    /// East holds a genuine choice of two spade fillers (three or five,
+    /// split against West by the same fixed pool); North holds only the
+    /// spade ace, so evaluate()'s root block has no alternative first
+    /// card to explore. A third source entry (spade = three again, a
+    /// different heart filler) is a second, genuinely new root-space
+    /// layout the "three" branch's own scan can find; nothing equivalent
+    /// exists anywhere in source for the "five" branch.
+    auto make_split_layout(int east_spade, int east_heart_filler) -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = North;
+        deal.remainCards[North][Spades] = holding({Ace});
+        deal.remainCards[South][Spades] = holding({Two});
+        deal.remainCards[East][Spades] = holding({east_spade});
+        deal.remainCards[West][Spades] = holding({east_spade == Three ? Jack : Three});
+        deal.remainCards[East][Hearts] = holding({east_heart_filler});  // never played
+        deal.remainCards[West][Hearts] = holding({east_heart_filler == Two ? Three : Two});
+        return deal;
+    }
+}
+
+TEST_F(CountersTest, CollectingCountersDoesNotChangeTheAnswerEitherDirectionWithReplenishment)
+{
+    // Same paired-run check as CollectingCountersDoesNotChangeTheAnswer-
+    // EitherDirection above, extended to a fixture where replenishment
+    // actually fires -- collecting counters must not perturb the answer
+    // there either.
+    std::vector<Deal> const layouts{
+        make_split_layout(Three, Two), make_split_layout(Jack, Two), make_split_layout(Three, Three)};
+    VectorLayoutSource source(layouts);
+    EvaluateOptions const without_counters_options{.sample_size = 2u, .replenish_below = 2u};
+    EvaluateOptions const with_counters_options{
+        .collect_counters = true, .sample_size = 2u, .replenish_below = 2u};
+
+    EvaluationResult const without_counters = evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        without_counters_options);
+    EvaluationResult const with_counters = evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        with_counters_options);
+
+    ASSERT_FALSE(without_counters.error.has_value());
+    ASSERT_FALSE(with_counters.error.has_value());
+    EXPECT_EQ(without_counters.by_strategy.at(1u).p_make, with_counters.by_strategy.at(1u).p_make);
+}
+
+TEST_F(CountersTest, ReplenishmentByDepthMatchesTheHandDerivedVector)
+{
+    // sample_size = 2 draws one layout of each spade filler at the root
+    // (source order: three, jack). East's spade ply (depth 1, node still
+    // at 2 layouts -- 2 < replenish_below(2) is false, no attempt there)
+    // splits them into two one-layout branches, both reached at depth 2.
+    //
+    // The "three" branch: 1 < 2 triggers, wants 1. Its scan examines all
+    // 3 source entries: "three, two" already present (1 at() call), "jack,
+    // two" does not hold the recorded spade (1 at() call, no delta), "three,
+    // three" is new and matches (1 at() call, delta certain) -- 3 at()
+    // calls, 1 layout added, exhausted (reached the end of source).
+    //
+    // The "five" branch: 1 < 2 triggers, wants 1. Its scan also examines
+    // all 3 entries -- "three, two" and "three, three" both fail the
+    // recorded-spade check (1 at() call each, no delta), "jack, two" is
+    // already present (1 at() call) -- 3 at() calls, nothing added,
+    // exhausted.
+    //
+    // Both attempts land at depth 2: attempted = 2, succeeded = 1,
+    // layouts_added = 1, at_calls = 3 + 3 = 6.
+    std::vector<Deal> const layouts{
+        make_split_layout(Three, Two), make_split_layout(Jack, Two), make_split_layout(Three, Three)};
+    VectorLayoutSource source(layouts);
+
+    EvaluationResult const result = evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/1,
+        source,
+        strategy(1),
+        single_card_defender,
+        EvaluateOptions{.collect_counters = true, .sample_size = 2u, .replenish_below = 2u});
+
+    ASSERT_FALSE(result.error.has_value());
+    EvaluationValue const& value = result.by_strategy.at(1u);
+    ASSERT_TRUE(value.counters.has_value());
+    std::vector<be::DepthReplenishmentStats> const& by_depth = value.counters->replenishment_by_depth;
+
+    // Grown only as far as the one depth that ever attempted a scan
+    // (depth 2): depths 0 and 1 exist only as the same structurally-zero
+    // entries sample_size_by_depth's own doxygen describes for the same
+    // reason, never explicitly written.
+    ASSERT_EQ(by_depth.size(), 3u);
+    EXPECT_EQ(by_depth[0].attempted, 0u);
+    EXPECT_EQ(by_depth[1].attempted, 0u);
+
+    EXPECT_EQ(by_depth[2].attempted, 2u);
+    EXPECT_EQ(by_depth[2].succeeded, 1u);
+    EXPECT_EQ(by_depth[2].layouts_added, 1u);
+    EXPECT_EQ(by_depth[2].at_calls, 6u);
+
+    // criterion 5: sample_size_by_depth reflects the post-replenishment
+    // count at depth 2 -- the "three" branch grew to 2, the "five" branch
+    // stayed at 1, so layout_min (the smaller of the two) is 1, but
+    // layout_sum (3) already shows the top-up: 1 + 1 pre-replenishment
+    // would have summed to 2, not 3.
+    ASSERT_GT(value.counters->sample_size_by_depth.size(), 2u);
+    EXPECT_EQ(value.counters->sample_size_by_depth[2].layout_sum, 3u);
+    EXPECT_EQ(value.counters->sample_size_by_depth[2].layout_min, 1u);
 }
