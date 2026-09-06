@@ -19,6 +19,7 @@
 
 namespace be = dds::belief_evaluation;
 using be::BeliefNode;
+using be::CountingLayoutSource;
 using be::DeclarerStrategy;
 using be::EvaluateOptions;
 using be::EvaluationResult;
@@ -425,4 +426,78 @@ TEST_F(ReplenishmentTest, ExhaustedNodeIsNoLongerASampleAndItsSiblingStays)
     std::vector<be::BeliefEntry> scratch_three;
     be::BeliefView const three_view = be::make_belief_view(three_branch, scratch_three);
     EXPECT_EQ(three_view.space_size, 0u);
+}
+
+// ===========================================================================
+// The no-more-available flag: once a node's own scan exhausts source, every
+// descendant below it skips its own replenishment scan entirely, rather
+// than repeating a full source scan that can only ever find nothing.
+// ===========================================================================
+
+TEST_F(ReplenishmentTest, ADescendantOfANodeThatCannotBeToppedUpMakesNoFurtherAtCalls)
+{
+    // A single forced trick. East's spade ply (depth 1) splits the root's
+    // two drawn layouts (one per spade filler) into two one-layout
+    // branches -- only a split can make replenishment have anything to
+    // do, since a declarer ply never changes a node's own layout count.
+    // A third source entry (spade = three again, a different heart filler)
+    // gives the "three" branch something new to find; the "five" branch
+    // has nothing waiting for it anywhere in source. North holds only the
+    // spade ace -- unlike make_layout's own two-trick shape -- so
+    // evaluate()'s root block has no alternative first card to explore
+    // alongside it, keeping this fixture to the one line being counted.
+    auto const make_fixture = [](int east_spade, int east_heart_filler) -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = North;
+        deal.remainCards[North][Spades] = holding({Ace});
+        deal.remainCards[South][Spades] = holding({Two});
+        deal.remainCards[East][Spades] = holding({east_spade});
+        deal.remainCards[West][Spades] = holding({east_spade == Three ? Five : Three});
+        // Never played in this single-trick fixture: purely a root-space
+        // identity distinguisher, the same way east_spade's own complement
+        // distinguishes the spade split. Kept consistent across candidates
+        // via the same fixed 2-card pool split as the spades above.
+        deal.remainCards[East][Hearts] = holding({east_heart_filler});
+        deal.remainCards[West][Hearts] = holding({east_heart_filler == Two ? Three : Two});
+        return deal;
+    };
+    std::vector<Deal> const source_layouts{
+        make_fixture(Three, Two), make_fixture(Five, Two), make_fixture(Three, Three)};
+    be::assert_pool_matches(source_layouts);
+    VectorLayoutSource const underlying(source_layouts);
+    CountingLayoutSource source(underlying);
+    DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
+
+    // sample_size = 2 draws one layout of each spade filler at the root
+    // (source order: three, five). replenish_below = 2: after the split,
+    // each one-layout branch is below it and triggers at depth 2.
+    EvaluationResult const result = evaluate(
+        source_layouts.front(),
+        North,
+        /*tricks_needed=*/1,
+        source,
+        pi,
+        single_card_defender,
+        EvaluateOptions{.sample_size = 2u, .replenish_below = 2u});
+    ASSERT_FALSE(result.error.has_value());
+
+    // criterion 4: the answer is exactly what it must be regardless of how
+    // many (redundant) scans ran -- North's ace is forced and unbeatable,
+    // so the contract always makes.
+    EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);
+
+    // criterion 3, hand-derived: root's own scan stops after 2 of the 3
+    // entries (2 at() calls). At depth 2, the "three" branch's own scan
+    // examines all 3 entries once (3 at() calls) to find its one new
+    // "three" layout, exhausting in the process; the "five" branch's own
+    // scan also examines all 3 (3 at() calls) and finds nothing, also
+    // exhausting. 2 + 3 + 3 = 8 total. Every node below that point on
+    // either branch is still below replenish_below (the "five" branch
+    // never grows past 1) and would cost 3 more at() calls apiece
+    // scanning for nothing -- three such nodes on the "five" branch alone
+    // (South's play, West's play, the already_made() terminal) would add
+    // 9 more, for 17 total, were the flag not stopping them.
+    EXPECT_EQ(source.at_calls(), 8u);
 }

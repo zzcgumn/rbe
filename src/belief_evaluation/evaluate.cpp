@@ -225,6 +225,16 @@ namespace
         {
             return std::nullopt;  // trigger not met
         }
+        if (node.no_more_available)
+        {
+            // A scan somewhere on this path already reached the end of
+            // source and found this node's own narrower history was not
+            // among what survived -- see that field's own doxygen for why
+            // scanning again below here cannot find anything new either.
+            // Checked after the trigger (cheap) but before the scan
+            // (expensive), which is the whole point of carrying it.
+            return std::nullopt;
+        }
 
         std::uint64_t const target = *ctx.options.sample_size;
         std::uint64_t const current = static_cast<std::uint64_t>(node.layouts.size());
@@ -280,9 +290,14 @@ namespace
         // propagate upward: a child's own exhaustion says nothing about
         // its parent, whose own layout set is still whatever prefix was
         // drawn for it.
+        //
+        // no_more_available is set from this exact same signal -- see its
+        // own doxygen for why it is nonetheless a separate field from
+        // is_sample, not a second name for the same fact.
         if (exhausted)
         {
             replenished.is_sample = false;
+            replenished.no_more_available = true;
         }
         return replenished;
     }

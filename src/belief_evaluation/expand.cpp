@@ -94,6 +94,7 @@ auto make_declarer_children(BeliefNode const& parent, std::vector<Card> const& c
         child.kappa = parent.kappa;  // every child gets the parent's full
                                       // mass, not a share of it.
         child.is_sample = parent.is_sample;
+        child.no_more_available = parent.no_more_available;
         children.push_back(std::move(child));
     }
     return children;
@@ -190,6 +191,7 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
         child.kappa = node.kappa;  // kappa is untouched; defender children
                                     // partition p, not kappa.
         child.is_sample = node.is_sample;
+        child.no_more_available = node.no_more_available;
         children.push_back(std::move(child));
     }
 

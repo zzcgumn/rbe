@@ -75,6 +75,27 @@ struct BeliefNode
     /// for it. See `BeliefView::is_sample`, which this feeds, and
     /// `tier2_dead()`, which gates on it.
     bool is_sample = false;
+
+    /// Whether a node-local replenishment scan somewhere on the path to
+    /// this node has already reached `ScanOutcome::SourceExhausted`. A
+    /// **separate** field from `is_sample`, set from the exact same signal
+    /// at the node that exhausted, and propagated to every child in both
+    /// expansion paths the same way -- but the two mean different things,
+    /// and must be able to diverge: `is_sample` is about whether *this*
+    /// node holds everything its own path admits (the fact tier2_dead()'s
+    /// soundness argument needs); this one is about whether *scanning
+    /// again below here* could possibly find anything new. A descendant's
+    /// own history is a strict extension of this node's, so any candidate
+    /// that would match the descendant's history would already have
+    /// matched this node's shorter one too -- which is exactly why a scan
+    /// triggered below an exhausted ancestor is pointless, whatever that
+    /// descendant's own `is_sample` reads. Never cleared once set, for the
+    /// same reason: the source does not change mid-search, so the fact
+    /// stays true for the rest of the path regardless of what else
+    /// happens. Checked by the replenishment trigger before it scans, so
+    /// the recursion pays a full source scan for "still nothing" at most
+    /// once per path rather than once per node below that point.
+    bool no_more_available = false;
 };
 
 /// Why `make_root` could not build a node — `None` when it could.
