@@ -223,6 +223,26 @@ TEST_F(SamplingTest, MGreaterThanNLeavesIsSampleFalseAndMatchesExhaustiveBitwise
     }
 }
 
+TEST_F(SamplingTest, SampleSizeZeroIsRejectedRatherThanMisreportedAsNoLayoutSurvived)
+{
+    // sample_size = 0 must not be confused with "the source was checked and
+    // had nothing consistent in it" -- the source here genuinely holds
+    // three consistent layouts (the fixtures above already prove
+    // make_layouts_with_distinct_fillers produces layouts make_root
+    // accepts), never inspected because the request itself was degenerate.
+    std::vector<Deal> const layouts = make_layouts_with_distinct_fillers(3);
+    assert_pool_matches(layouts);
+    assert_forms_one_belief_node(layouts, North);
+    VectorLayoutSource const source(layouts);
+
+    RootConstructionResult const result =
+        make_root(layouts.front(), North, /*tricks_needed=*/1, source, RootOptions{.sample_size = 0u});
+
+    EXPECT_FALSE(result.node.has_value());
+    EXPECT_EQ(result.failure, RootFailure::SampleSizeZero);
+    EXPECT_NE(result.failure, RootFailure::NoLayoutSurvived);
+}
+
 TEST_F(SamplingTest, TierTwoNeverFiresOnceTheRootIsAGenuineSample)
 {
     // A bound scripted to claim every layout dead (0 tricks), which is

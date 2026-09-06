@@ -54,6 +54,17 @@ enum class RootFailure
     /// their source; a caller seeing this should raise the budget instead
     /// -- collapsing the two would send them to debug the wrong thing.
     ScanBudgetExhausted,
+    /// `RootOptions::sample_size` was present and exactly 0 -- a request for
+    /// a sample of nothing, rejected before the scan makes a single
+    /// `source.at()` call. Distinct from `NoLayoutSurvived` on purpose: that
+    /// code means the source was actually checked and had nothing
+    /// consistent in it, which a caller fixes by looking at their source;
+    /// this one means the request itself was degenerate regardless of what
+    /// the source holds, which a caller fixes by looking at `sample_size`
+    /// instead. Collapsing the two (the loop's own break condition,
+    /// `node.layouts.size() >= *sample_size`, is trivially true at 0 before
+    /// anything is scanned) would send a caller to debug the wrong thing.
+    SampleSizeZero,
 };
 
 /// Why a scan (of `make_root`'s own root-level draw, or -- reusing this
@@ -104,7 +115,9 @@ struct RootOptions
     /// Cap the number of layouts drawn from `source`, absent for exhaustive
     /// enumeration (every consistent layout). See `make_root`'s own
     /// doxygen for the exact scanning behaviour and what this does to
-    /// `is_sample`.
+    /// `is_sample`. A present value of exactly 0 is a degenerate request,
+    /// not a valid draw of nothing, and is rejected as
+    /// `RootFailure::SampleSizeZero` before any layout is inspected.
     std::optional<std::uint64_t> sample_size;
 
     /// Cap the number of `source.at()` calls the scan may make, absent for
@@ -171,8 +184,11 @@ struct RootOptions
 ///
 /// The result carries no node, with a specific `RootFailure`, rather than
 /// asserting — `source` is user-supplied — when `source.size()` is
-/// `std::nullopt`; when no layout survives filtering after the whole source
-/// was scanned (`NoLayoutSurvived`); or when `scan_budget` ran out before a
+/// `std::nullopt`; when `sample_size` is present and exactly 0
+/// (`SampleSizeZero`, checked before the scan makes a single `source.at()`
+/// call, so it never gets the chance to be confused with either failure
+/// below); when no layout survives filtering after the whole source was
+/// scanned (`NoLayoutSurvived`); or when `scan_budget` ran out before a
 /// single consistent layout was found, with the source not yet exhausted
 /// (`ScanBudgetExhausted`, distinct from `NoLayoutSurvived` — see that
 /// value's own doxygen). A budget that ran out but still found at least one

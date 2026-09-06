@@ -111,6 +111,18 @@ auto make_root(
         return RootConstructionResult{std::nullopt, RootFailure::SourceNotEnumerable};
     }
 
+    // Checked before the scan touches source.at() at all: a sample_size of
+    // exactly 0 would otherwise satisfy the loop's own break condition
+    // (node.layouts.size() >= *sample_size, trivially true at 0) on its
+    // very first check, producing an empty node whose outcome computes to
+    // SampleFilled and whose failure would then read NoLayoutSurvived --
+    // misreporting a degenerate request as "the source was checked and had
+    // nothing consistent in it," which it was never given the chance to be.
+    if (options.sample_size.has_value() && *options.sample_size == 0)
+    {
+        return RootConstructionResult{std::nullopt, RootFailure::SampleSizeZero};
+    }
+
     int const dummy = (declarer + 2) % DDS_HANDS;
 
     BeliefNode node{};
