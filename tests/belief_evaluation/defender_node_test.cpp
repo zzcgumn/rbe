@@ -51,6 +51,11 @@ namespace
         node.state.tricks_needed = 1;
         node.state.tricks_won_by_declarer = 0;
         node.state.known_holdings = layouts.front();
+        node.root_keys.reserve(layouts.size());
+        for (Deal const& layout : layouts)
+        {
+            node.root_keys.push_back(be::layout_key(layout, (North + 1) % DDS_HANDS));
+        }
         node.layouts = std::move(layouts);
         node.p = std::move(p);
         node.kappa = kappa;
@@ -350,6 +355,42 @@ TEST_F(DefenderNodeTest, AMixedNodeHandlesASplittingAndANonSplittingLayoutTogeth
         total_child_mass.add(be::node_mass(child));
     }
     EXPECT_NEAR(total_child_mass.value(), be::node_mass(node), 1e-6);
+}
+
+// --- root_keys partition exactly as p does --------------------------------
+
+TEST_F(DefenderNodeTest, RootKeysArePartitionedExactlyLikePInTheSameLoop)
+{
+    Deal const layout0 = make_layout({King}, /*west_club_rank=*/Two);
+    Deal const layout1 = make_layout({Two}, /*west_club_rank=*/Two);
+    be::BeliefNode const node = make_node({layout0, layout1}, {0.5, 0.5}, 1.0);
+    ASSERT_EQ(node.root_keys.size(), 2u);
+
+    be::ScriptedDefender::Key const key0{be::layout_key(layout0, East), ""};
+    be::ScriptedDefender::Key const key1{be::layout_key(layout1, East), ""};
+    be::ScriptedDefender defender(
+        {{key0, be::Card{Diamonds, King}}, {key1, be::Card{Diamonds, Two}}});
+
+    be::ExpandDefenderResult const result = be::expand_defender_node(node, defender.as_strategy());
+
+    ASSERT_TRUE(result.children.has_value());
+    ASSERT_EQ(result.children->size(), 2u);
+    for (be::BeliefNode const& child : *result.children)
+    {
+        ASSERT_EQ(child.root_keys.size(), child.p.size());
+        ASSERT_EQ(child.root_keys.size(), child.layouts.size());
+    }
+    // Each single-layout child's root_keys entry is the parent's own entry
+    // for whichever layout it held, not the other one -- the same
+    // one-to-one correspondence p carries.
+    be::BeliefNode const& king_child =
+        (*result.children)[0].layouts.front().remainCards[East][Diamonds] == be::holding({King})
+        ? (*result.children)[0]
+        : (*result.children)[1];
+    be::BeliefNode const& two_child =
+        (&king_child == &(*result.children)[0]) ? (*result.children)[1] : (*result.children)[0];
+    EXPECT_EQ(king_child.root_keys[0], node.root_keys[0]);
+    EXPECT_EQ(two_child.root_keys[0], node.root_keys[1]);
 }
 
 // --- criterion 6: a bad distribution is rejected, not asserted -----------

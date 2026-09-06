@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <cstdint>
 #include <map>
 
 #include <belief_evaluation/belief_view.hpp>
@@ -94,6 +95,9 @@ auto make_declarer_children(BeliefNode const& parent, std::vector<Card> const& c
 
         child.p = parent.p;          // untouched: declarer's play does not
                                       // filter or reweight the belief space.
+        child.root_keys = parent.root_keys;  // copied whole: declarer's play
+                                              // neither filters nor renames
+                                              // any layout's root-space identity.
         child.kappa = parent.kappa;  // every child gets the parent's full
                                       // mass, not a share of it.
         child.is_sample = parent.is_sample;
@@ -135,6 +139,7 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
     std::map<int, Card> card_by_key;
     std::map<int, std::vector<Deal>> layouts_by_key;
     std::map<int, std::vector<Probability>> p_by_key;
+    std::map<int, std::vector<std::uint64_t>> root_keys_by_key;
 
     for (std::size_t i = 0; i < node.layouts.size(); ++i)
     {
@@ -165,6 +170,14 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
             // nothing else. The normalised posterior pi sees (belief_view.hpp)
             // is computed from this on demand, never stored back.
             p_by_key[key].push_back(node.p[i] * entry.probability);
+            // Pushed in this same loop, in this same order, into a third
+            // map alongside layouts_by_key and p_by_key -- see
+            // BeliefNode::root_keys' own doxygen for why a root-space key
+            // must never be recomputed from a node-depth Deal (distinct
+            // root-space layouts can replay to the same Deal here), which
+            // is what pushing in a second pass or deriving it from the
+            // child's own layouts afterwards would silently do.
+            root_keys_by_key[key].push_back(node.root_keys[i]);
         }
     }
 
@@ -180,6 +193,7 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
             child.layouts.push_back(play(layout, card));
         }
         child.p = p_by_key[key];
+        child.root_keys = root_keys_by_key[key];
         child.kappa = node.kappa;  // kappa is untouched; defender children
                                     // partition p, not kappa.
         child.is_sample = node.is_sample;

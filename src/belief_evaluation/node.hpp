@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -17,13 +18,32 @@ namespace dds::belief_evaluation
 /// weight, not any one layout's — it is never combined with `p` into a
 /// single stored `w = kappa * p_i`, so that rescaling `kappa` at a node
 /// moves every layout's weight at once rather than requiring `p` to be
-/// rewritten. `layouts` and `p` stay the same length; that invariant is
-/// relied on wherever the node is read.
+/// rewritten. `layouts`, `p` and `root_keys` stay the same length — a
+/// three-way invariant, not two: every position `i` describes one layout,
+/// its weight, and its identity in root space together, and that invariant
+/// is relied on wherever the node is read.
 struct BeliefNode
 {
     ObservationState state;
     std::vector<Deal> layouts;   ///< never grows after construction; stable while any BeliefView over it is live
     std::vector<Probability> p;  ///< parallel to layouts
+
+    /// `layout_key(root-space candidate, (declarer + 1) % DDS_HANDS)` for
+    /// each entry in `layouts`, parallel to it — the layout's identity in
+    /// **root space**, computed once at `make_root` from the candidate
+    /// before any card is played, and carried unchanged from then on. Never
+    /// recomputed from `layouts[i]` itself: two distinct root-space layouts
+    /// that differ only in cards which have since been played replay
+    /// forward to bit-identical node-depth `Deal`s, so a key derived from
+    /// `layouts[i]` at this node would collide where the root-space
+    /// candidates do not. The defender seat is fixed at
+    /// `(declarer + 1) % DDS_HANDS` everywhere this is computed — either
+    /// defender's holding determines the layout, since the other's is the
+    /// pool's complement, but the seat must never vary between one
+    /// computation of a key and another or the same layout would hash
+    /// differently in each.
+    std::vector<std::uint64_t> root_keys;
+
     SampleWeight kappa = 0.0;
 
     /// Whether this node's layouts are a sample of a larger space rather

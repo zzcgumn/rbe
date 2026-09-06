@@ -40,6 +40,7 @@ namespace
         node.state.known_holdings = layout;
         node.layouts = {layout};
         node.p = {1.0};
+        node.root_keys = {be::layout_key(layout, West)};
         node.kappa = 1.0;
         return node;
     }
@@ -113,6 +114,22 @@ TEST_F(DeclarerNodeTest, TheChildsBeliefSetAndWeightsCarryOverFromTheParent)
     EXPECT_EQ(child.layouts[0].remainCards[North][0], expected.remainCards[North][0]);
     EXPECT_EQ(child.layouts[0].currentTrickSuit[0], expected.currentTrickSuit[0]);
     EXPECT_EQ(child.layouts[0].currentTrickRank[0], expected.currentTrickRank[0]);
+}
+
+TEST_F(DeclarerNodeTest, RootKeysCarryOverUnchangedFromTheParent)
+{
+    // make_declarer_children copies root_keys whole -- declarer's own play
+    // neither filters nor renames any layout's root-space identity, unlike
+    // p or layouts.
+    be::BeliefNode const node = make_declarer_on_play_node();
+    be::RecordingDeclarerStrategy recorder(be::Card{0, Ace});
+
+    be::ExpandResult const result = be::expand_declarer_node(node, recorder.as_strategy());
+
+    ASSERT_TRUE(result.child.has_value());
+    be::BeliefNode const& child = *result.child;
+    ASSERT_EQ(child.root_keys.size(), child.layouts.size());
+    EXPECT_EQ(child.root_keys, node.root_keys);
 }
 
 TEST_F(DeclarerNodeTest, ACardNotHeldIsRejectedThroughValidateDeclarerCard)

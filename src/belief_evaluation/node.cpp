@@ -4,6 +4,7 @@
 #include <cassert>
 
 #include <belief_evaluation/kahan.hpp>
+#include <belief_evaluation/layout_key.hpp>
 #include <belief_evaluation/rank_map.hpp>
 #include <utility/constants.h>
 
@@ -170,6 +171,11 @@ auto make_root(
         {
             node.layouts.push_back(candidate);
             node.p.push_back(1.0);
+            // Root-space key, computed from the candidate before any card is
+            // played and with a fixed defender seat -- see
+            // BeliefNode::root_keys' own doxygen for why both of those must
+            // hold everywhere this is computed.
+            node.root_keys.push_back(layout_key(candidate, (declarer + 1) % DDS_HANDS));
         }
     }
 

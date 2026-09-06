@@ -1,3 +1,5 @@
+#include <cstdint>
+
 #include <gtest/gtest.h>
 
 #include <api/dds_data_types.hpp>
@@ -23,6 +25,7 @@ using be::UnboundedLayoutSource;
 using be::VectorLayoutSource;
 using be::card_count;
 using be::holding;
+using be::layout_key;
 using be::make_root;
 using be::RootFailure;
 using be::tricks_remaining;
@@ -225,6 +228,68 @@ TEST_F(NodeTest, HistoryIsSeededFromCardsAlreadyPlayedToTheRootsTrickInProgress)
     EXPECT_EQ(node->state.history.rank[0], King);
     EXPECT_EQ(node->state.history.suit[1], 0);
     EXPECT_EQ(node->state.history.rank[1], Two);
+}
+
+// --- root_keys ---------------------------------------------------------
+
+TEST_F(NodeTest, MakeRootPopulatesRootKeysOneForEachSurvivingLayoutWithTheFixedSeat)
+{
+    Deal const root_layout = make_root_layout();
+    VectorLayoutSource source({make_root_layout(), make_swapped_split_layout()});
+
+    std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
+    ASSERT_TRUE(node.has_value());
+    ASSERT_EQ(node->root_keys.size(), node->layouts.size());
+
+    // The fixed seat is (declarer + 1) % DDS_HANDS = East -- see
+    // BeliefNode::root_keys' own doxygen for why the seat must never vary.
+    int const fixed_seat = (North + 1) % DDS_HANDS;
+    for (std::size_t i = 0; i < node->layouts.size(); ++i)
+    {
+        EXPECT_EQ(node->root_keys[i], layout_key(node->layouts[i], fixed_seat));
+    }
+    // The two surviving layouts split the diamond pool the other way round
+    // from each other, so their keys must differ.
+    EXPECT_NE(node->root_keys[0], node->root_keys[1]);
+}
+
+TEST_F(NodeTest, RootSpaceKeysStayDistinctEvenWhenNodeDepthDealsHaveConverged)
+{
+    // Two root-space layouts, an honour swapped between the defenders --
+    // East holds the diamond king and West the queen in one, the other way
+    // round in the other. Once both honours are gone from the table (the
+    // line of play that consumes both), a node holding one entry from each
+    // would show bit-identical Deals for the two: exactly the case a
+    // node-depth key would collide on, and root_keys must not (see
+    // BeliefNode::root_keys' own doxygen and node.hpp's rationale for why
+    // the exclusion set this feeds must key root space, never node depth).
+    Deal root_a = make_root_layout();
+    root_a.remainCards[East][2] = holding({King});
+    root_a.remainCards[West][2] = holding({Queen});
+    Deal root_b = make_root_layout();
+    root_b.remainCards[East][2] = holding({Queen});
+    root_b.remainCards[West][2] = holding({King});
+
+    int const fixed_seat = (North + 1) % DDS_HANDS;
+    std::uint64_t const key_a = layout_key(root_a, fixed_seat);
+    std::uint64_t const key_b = layout_key(root_b, fixed_seat);
+    ASSERT_NE(key_a, key_b);  // the swap is genuinely visible before any card is played
+
+    // The Deal a node would show once the diamond honours are both gone --
+    // the same value regardless of which root candidate supplied it.
+    Deal after_play = make_root_layout();
+    after_play.remainCards[East][2] = 0;
+    after_play.remainCards[West][2] = 0;
+
+    BeliefNode node{};
+    node.layouts = {after_play, after_play};
+    node.p = {0.5, 0.5};
+    node.root_keys = {key_a, key_b};
+
+    ASSERT_EQ(node.root_keys.size(), node.layouts.size());
+    EXPECT_EQ(node.layouts[0].remainCards[East][2], node.layouts[1].remainCards[East][2]);
+    EXPECT_EQ(node.layouts[0].remainCards[West][2], node.layouts[1].remainCards[West][2]);
+    EXPECT_NE(node.root_keys[0], node.root_keys[1]);  // a node-depth-derived key would have collided here
 }
 
 // --- tricks_remaining() ----------------------------------------------------
