@@ -1,10 +1,14 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
+#include <vector>
 
 #include <api/dds_data_types.hpp>
 
 #include <belief_evaluation/defender_strategy.hpp>
+#include <belief_evaluation/layout_source.hpp>
+#include <belief_evaluation/node.hpp>
 #include <belief_evaluation/types.hpp>
 #include <belief_evaluation/validation.hpp>
 
@@ -80,5 +84,73 @@ auto replay_candidate(
     Deal const& root_layout,
     ObservationState const& node_state,
     DefenderStrategy const& delta) -> ReplayResult;
+
+/// One layout the node-local scan accepted: the replayed `Deal`, its
+/// accumulated `p_j` (see `replay_candidate`), and its root-space key (see
+/// `BeliefNode::root_keys`) -- carried alongside the layout rather than
+/// recomputed later, since the scan already derived it to check the
+/// exclusion set.
+struct ScanCandidate
+{
+    Deal layout;
+    Probability p_j;
+    std::uint64_t root_key;
+};
+
+/// The result of a node-local replenishment scan: the accepted candidates,
+/// or a `delta` contract violation encountered while replaying one of
+/// them. No `RootFailure`-shaped failure exists here: a scan that finds
+/// nothing is an ordinary outcome, not an error -- the node simply keeps
+/// the layouts it already had. `candidates` and `outcome` are meaningful
+/// only when `error` is `ValidationError::None`; `seat` only when it is
+/// not, mirroring `ReplayResult`'s own shape for the same reason.
+struct ScanResult
+{
+    std::vector<ScanCandidate> candidates;
+    ScanOutcome outcome = ScanOutcome::SourceExhausted;
+    ValidationError error = ValidationError::None;
+    int seat = -1;
+};
+
+/// Scans `source` from index 0 for layouts consistent with `root_layout`
+/// that satisfy `node`'s own played sequence (see `replay_candidate`) and
+/// are not already among `node.root_keys`, up to `wanted` candidates and
+/// `budget` calls to `source.at()`.
+///
+/// The filters apply in this order, for cost and not only correctness: `at()`,
+/// then `is_consistent` (the same cheap check `make_root` itself applies —
+/// a candidate outside the belief space at all is rejected before anything
+/// else looks at it), then the root-space exclusion set (cheap, and
+/// possible before any replay precisely because the key is root-space —
+/// see `BeliefNode::root_keys`), then `replay_candidate` (which folds the
+/// history-following check and `delta`'s own accumulation into one pass —
+/// a candidate rejected on a card it does not hold costs no `delta` call).
+/// A candidate already present in `node.root_keys` costs no `delta` call
+/// either, for the same reason.
+///
+/// `budget` counts `source.at()` calls specifically, matching
+/// `RootOptions::scan_budget`'s own definition exactly, so a node-local
+/// scan-to-hit measurement is commensurable with the root's.
+///
+/// `ScanOutcome`'s tie-break is kept identical to `make_root`'s: reaching
+/// `wanted` and `budget` at the same step reports `SampleFilled`, since
+/// `wanted` is checked first at every step. Reaching the end of `source`
+/// reports `SourceExhausted` even if nothing was accepted — the node holds
+/// everything its own path admits, which is what licenses `is_sample` being
+/// set to false at such a node (see `ScanOutcome`'s own doxygen, written for
+/// exactly this reuse).
+///
+/// `node`'s own declarer (`node.state.declarer`) is used throughout, not a
+/// separate parameter -- common knowledge, identical across every layout
+/// the node holds. `source.size()` is assumed to have already been
+/// validated: `node` could not exist at all unless some earlier
+/// `make_root` call already required `source.size()` to be present.
+auto scan_for_replenishment(
+    BeliefNode const& node,
+    Deal const& root_layout,
+    LayoutSource const& source,
+    DefenderStrategy const& delta,
+    std::uint64_t wanted,
+    std::optional<std::uint64_t> budget) -> ScanResult;
 
 }  // namespace dds::belief_evaluation

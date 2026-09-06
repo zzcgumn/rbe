@@ -192,6 +192,15 @@ auto history_for(Deal const& root_layout) -> PlayTraceBin;
 /// way to recover them.
 auto root_observation_state(Deal const& root_layout, int declarer, int tricks_needed) -> ObservationState;
 
+/// Whether `candidate` belongs in the same belief space as `root` -- see
+/// `make_root`'s own doxygen for the exact rule (shared trump/first/
+/// current-trick state, exact declarer and dummy holdings, and the same
+/// outstanding pool per suit split between the two defenders however they
+/// like). `make_root`'s root-level scan and a node-local replenishment scan
+/// both filter on exactly this, so both go through this one function rather
+/// than two copies of the same five-way comparison drifting apart.
+auto is_consistent(Deal const& candidate, Deal const& root, int declarer, int dummy) -> bool;
+
 /// Builds the root node over `source`: scans from index 0 and takes every
 /// layout consistent with `root_layout` (see below), each getting `p_i = 1`,
 /// up to `options.sample_size` if one is supplied and up to

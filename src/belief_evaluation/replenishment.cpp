@@ -1,8 +1,10 @@
 #include <belief_evaluation/replenishment.hpp>
 
 #include <cassert>
+#include <unordered_set>
 
 #include <belief_evaluation/expand.hpp>
+#include <belief_evaluation/layout_key.hpp>
 #include <belief_evaluation/node.hpp>
 #include <belief_evaluation/trick.hpp>
 #include <utility/constants.h>
@@ -106,6 +108,77 @@ auto replay_candidate(
         state = advance_state(state, card);
     }
     return ReplayResult{working, p_j, ValidationError::None, -1};
+}
+
+auto scan_for_replenishment(
+    BeliefNode const& node,
+    Deal const& root_layout,
+    LayoutSource const& source,
+    DefenderStrategy const& delta,
+    std::uint64_t wanted,
+    std::optional<std::uint64_t> budget) -> ScanResult
+{
+    std::optional<std::uint64_t> const size = source.size();
+    // Guaranteed: this node could not exist at all unless some earlier
+    // make_root call already required source.size() to be present -- a
+    // node-local scan is never the first thing to ask.
+    assert(size.has_value());
+
+    int const declarer = node.state.declarer;
+    int const dummy = (declarer + 2) % DDS_HANDS;
+    int const fixed_seat = (declarer + 1) % DDS_HANDS;
+
+    std::unordered_set<std::uint64_t> const already_present(node.root_keys.begin(), node.root_keys.end());
+
+    ScanResult result;
+    std::uint64_t scanned = 0;
+    std::uint64_t i = 0;
+    for (; i < *size; ++i)
+    {
+        // wanted checked before budget at every step, mirroring make_root's
+        // own tie-break: a candidate that fills the want is never charged
+        // against the budget.
+        if (result.candidates.size() >= wanted)
+        {
+            break;
+        }
+        if (budget.has_value() && scanned >= *budget)
+        {
+            break;
+        }
+        Deal const candidate = source.at(i);
+        ++scanned;
+
+        if (! is_consistent(candidate, root_layout, declarer, dummy))
+        {
+            continue;  // not in this belief space at all -- the cheap check, tried first
+        }
+        std::uint64_t const key = layout_key(candidate, fixed_seat);
+        if (already_present.contains(key))
+        {
+            continue;  // already in the node -- no delta call spent finding that out
+        }
+
+        ReplayResult const replay = replay_candidate(candidate, root_layout, node.state, delta);
+        if (replay.error != ValidationError::None)
+        {
+            return ScanResult{{}, ScanOutcome::SourceExhausted, replay.error, replay.seat};
+        }
+        if (! replay.layout.has_value())
+        {
+            continue;  // did not follow this line -- the ordinary rejection
+        }
+        result.candidates.push_back(ScanCandidate{*replay.layout, replay.p_j, key});
+    }
+
+    // Why the scan stopped, mirroring make_root's own derivation: the
+    // source ran out (i reached *size, whatever either cap was), else
+    // whichever cap actually bound, wanted taking priority to match the
+    // loop's own check order above.
+    result.outcome = (i >= *size)
+        ? ScanOutcome::SourceExhausted
+        : ((result.candidates.size() >= wanted) ? ScanOutcome::SampleFilled : ScanOutcome::BudgetExhausted);
+    return result;
 }
 
 }  // namespace dds::belief_evaluation

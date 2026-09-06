@@ -147,14 +147,16 @@ struct EvaluateOptions
     /// live (see `LayoutSource::at`'s doxygen), not here.
     std::optional<std::uint64_t> sample_size;
 
-    /// Cap the number of `source.at()` calls the root's own scan may make,
-    /// threaded through to `make_root` as `RootOptions::scan_budget` — see
-    /// that field for what it counts and, importantly, that it applies
-    /// whether or not `sample_size` is set: a `scan_budget` narrower than
-    /// the source binds and degrades the root on its own. A budget that
-    /// binds is not an error — see `RootFailure::ScanBudgetExhausted` for
-    /// the one case that still is (nothing survived before the budget ran
-    /// out).
+    /// Cap the number of `source.at()` calls a single scan may make — the
+    /// root's own, via `RootOptions::scan_budget` (see that field for what
+    /// it counts), and, identically, any node-local replenishment scan:
+    /// this is a **per-scan** cap, not a per-run total, so a node-local
+    /// scan starts a fresh budget of its own rather than sharing what the
+    /// root already spent. Applies whether or not `sample_size` is set: a
+    /// `scan_budget` narrower than the source binds and degrades the root
+    /// on its own. A budget that binds is not an error — see
+    /// `RootFailure::ScanBudgetExhausted` for the one case that still is
+    /// (nothing survived before the budget ran out).
     std::optional<std::uint64_t> scan_budget;
 };
 

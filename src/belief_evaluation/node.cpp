@@ -28,36 +28,6 @@ namespace
         return pool;
     }
 
-    auto is_consistent(Deal const& candidate, Deal const& root, int declarer, int dummy) -> bool
-    {
-        if (candidate.trump != root.trump || candidate.first != root.first)
-        {
-            return false;
-        }
-        for (int i = 0; i < 3; ++i)
-        {
-            if (candidate.currentTrickSuit[i] != root.currentTrickSuit[i]
-                || candidate.currentTrickRank[i] != root.currentTrickRank[i])
-            {
-                return false;
-            }
-        }
-
-        for (int suit = 0; suit < DDS_SUITS; ++suit)
-        {
-            if (candidate.remainCards[declarer][suit] != root.remainCards[declarer][suit]
-                || candidate.remainCards[dummy][suit] != root.remainCards[dummy][suit])
-            {
-                return false;
-            }
-            if (defender_pool(candidate, declarer, dummy, suit)
-                != defender_pool(root, declarer, dummy, suit))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
 
     /// `root`'s declarer and dummy holdings verbatim; each defender's entry
     /// replaced by the union pool the two defenders hold between them, per
@@ -78,6 +48,36 @@ namespace
         }
         return result;
     }
+}
+
+auto is_consistent(Deal const& candidate, Deal const& root, int declarer, int dummy) -> bool
+{
+    if (candidate.trump != root.trump || candidate.first != root.first)
+    {
+        return false;
+    }
+    for (int i = 0; i < 3; ++i)
+    {
+        if (candidate.currentTrickSuit[i] != root.currentTrickSuit[i]
+            || candidate.currentTrickRank[i] != root.currentTrickRank[i])
+        {
+            return false;
+        }
+    }
+
+    for (int suit = 0; suit < DDS_SUITS; ++suit)
+    {
+        if (candidate.remainCards[declarer][suit] != root.remainCards[declarer][suit]
+            || candidate.remainCards[dummy][suit] != root.remainCards[dummy][suit])
+        {
+            return false;
+        }
+        if (defender_pool(candidate, declarer, dummy, suit) != defender_pool(root, declarer, dummy, suit))
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 auto history_for(Deal const& root_layout) -> PlayTraceBin

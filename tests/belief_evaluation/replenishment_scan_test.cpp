@@ -16,10 +16,12 @@ using be::DeclarerStrategy;
 using be::ExpandDefenderResult;
 using be::ExpandResult;
 using be::ReplayResult;
+using be::ScanResult;
 using be::VectorLayoutSource;
 using be::holding;
 using be::make_root;
 using be::replay_candidate;
+using be::scan_for_replenishment;
 
 namespace
 {
@@ -321,6 +323,186 @@ TEST_F(ThreePlyReplayTest, ADeltaContractViolationDuringReplayIsReportedNotAsser
 
     ReplayResult const result = replay_candidate(root_layout_, root_layout_, king_child_.state, broken_delta);
     EXPECT_FALSE(result.layout.has_value());
+    EXPECT_EQ(result.error, be::ValidationError::DistributionEmpty);
+    EXPECT_EQ(result.seat, East);
+}
+
+// ===========================================================================
+// scan_for_replenishment: a one-ply-deep node, and a source holding one
+// root-space candidate already in the node, one genuinely new one, and one
+// inconsistent with the root altogether.
+// ===========================================================================
+
+namespace
+{
+    /// East on lead, holding the recorded king plus one more diamond that
+    /// varies between the two root-space candidates below (the pool stays
+    /// {king, two, ace} either way); West holds the complement. North and
+    /// South hold nothing relevant, per this file's established convention
+    /// for fixtures that exercise expansion directly.
+    auto make_scan_root(int east_second_card, int west_card) -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = East;
+        deal.remainCards[East][Diamonds] = holding({King, east_second_card});
+        deal.remainCards[West][Diamonds] = holding({west_card});
+        return deal;
+    }
+
+    /// Consistent with neither scan-root candidate: North holds a card
+    /// (the two of spades) the two candidates above do not give it at all
+    /// (they give North nothing), so `is_consistent`'s declarer-holdings
+    /// comparison rejects it before anything else does.
+    auto make_inconsistent_layout() -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = East;
+        deal.remainCards[North][Spades] = holding({Two});
+        deal.remainCards[East][Diamonds] = holding({King, Two});
+        deal.remainCards[West][Diamonds] = holding({Ace});
+        return deal;
+    }
+}
+
+class ScanForReplenishmentTest : public ::testing::Test
+{
+protected:
+    void SetUp() override
+    {
+        candidate_a_ = make_scan_root(/*east_second=*/Two, /*west=*/Ace);
+        candidate_b_ = make_scan_root(/*east_second=*/Ace, /*west=*/Two);
+        root_layout_ = candidate_a_;
+
+        VectorLayoutSource const root_source({candidate_a_});
+        root_ = *make_root(root_layout_, North, /*tricks_needed=*/1, root_source).node;
+        ASSERT_EQ(root_.state.history.number, 0);
+
+        be::ScriptedDefender::Key const key_a{be::layout_key(candidate_a_, East), ""};
+        be::ScriptedDefender::Key const key_b{be::layout_key(candidate_b_, East), ""};
+        defender_.emplace(std::map<be::ScriptedDefender::Key, be::Card>{
+            {key_a, be::Card{Diamonds, King}}, {key_b, be::Card{Diamonds, King}}});
+
+        ExpandDefenderResult const result = be::expand_defender_node(root_, defender_->as_strategy());
+        ASSERT_TRUE(result.children.has_value());
+        ASSERT_EQ(result.children->size(), 1u);  // both candidates would play the king; only A is drawn here
+        node_ = result.children->front();
+        ASSERT_EQ(node_.state.history.number, 1);
+        ASSERT_EQ(node_.root_keys.size(), 1u);
+        ASSERT_EQ(node_.root_keys[0], be::layout_key(candidate_a_, East));
+    }
+
+    Deal candidate_a_;
+    Deal candidate_b_;
+    Deal root_layout_;
+    BeliefNode root_;
+    BeliefNode node_;
+    std::optional<be::ScriptedDefender> defender_;
+};
+
+// --- criterion 1: a scan finds a new candidate, with its p_j and outcome -
+
+TEST_F(ScanForReplenishmentTest, FindsTheOneNewConsistentCandidateAndReportsSampleFilled)
+{
+    // A third entry after the wanted candidate, so filling the want stops
+    // the scan strictly before the source itself runs out -- matching
+    // make_root's own rule that reaching a cap exactly as the source also
+    // ends is SourceExhausted, not SampleFilled (there was nothing left to
+    // find regardless). candidate_a_ here is never even reached.
+    VectorLayoutSource const scan_source({candidate_a_, candidate_b_, candidate_a_});
+    ScanResult const result =
+        scan_for_replenishment(node_, root_layout_, scan_source, defender_->as_strategy(), /*wanted=*/1, std::nullopt);
+
+    EXPECT_EQ(result.error, be::ValidationError::None);
+    ASSERT_EQ(result.candidates.size(), 1u);
+    EXPECT_EQ(result.candidates[0].root_key, be::layout_key(candidate_b_, East));
+    EXPECT_DOUBLE_EQ(result.candidates[0].p_j, 1.0);  // East's king is certain in this script
+    EXPECT_EQ(result.outcome, be::ScanOutcome::SampleFilled);
+}
+
+// --- criterion 4: an already-present candidate costs no delta call -------
+
+TEST_F(ScanForReplenishmentTest, AnAlreadyPresentCandidateIsSkippedWithoutCallingDelta)
+{
+    int delta_calls = 0;
+    be::DefenderStrategy const counting_delta = [&](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
+    {
+        ++delta_calls;
+        return defender_->as_strategy()(query);
+    };
+
+    VectorLayoutSource const scan_source({candidate_a_, candidate_b_});
+    ScanResult const result =
+        scan_for_replenishment(node_, root_layout_, scan_source, counting_delta, /*wanted=*/2, std::nullopt);
+
+    ASSERT_EQ(result.candidates.size(), 1u);  // only B is new; A is already in node_
+    EXPECT_EQ(delta_calls, 1);                // exactly one call, for B -- none spent rejecting A
+}
+
+// --- the consistency filter rejects a layout outside the belief space ----
+
+TEST_F(ScanForReplenishmentTest, AnInconsistentLayoutIsSkippedBeforeAnyReplayOrDeltaCall)
+{
+    Deal const inconsistent = make_inconsistent_layout();
+    int delta_calls = 0;
+    be::DefenderStrategy const counting_delta = [&](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
+    {
+        ++delta_calls;
+        return defender_->as_strategy()(query);
+    };
+
+    VectorLayoutSource const scan_source({inconsistent, candidate_b_});
+    ScanResult const result =
+        scan_for_replenishment(node_, root_layout_, scan_source, counting_delta, /*wanted=*/2, std::nullopt);
+
+    ASSERT_EQ(result.candidates.size(), 1u);  // only B; the inconsistent layout never reached delta
+    EXPECT_EQ(delta_calls, 1);
+}
+
+// --- criterion 5: the budget counts source.at() calls ---------------------
+
+TEST_F(ScanForReplenishmentTest, ABudgetOfOneStopsAfterASingleAtCallAndReportsBudgetExhausted)
+{
+    // candidate_a_ at index 0 is already present (skipped, no delta), but
+    // still costs the one at() call the budget allows -- index 1
+    // (candidate_b_, genuinely new) is never reached.
+    VectorLayoutSource const scan_source({candidate_a_, candidate_b_});
+    ScanResult const result = scan_for_replenishment(
+        node_, root_layout_, scan_source, defender_->as_strategy(), /*wanted=*/5, /*budget=*/1u);
+
+    EXPECT_TRUE(result.candidates.empty());
+    EXPECT_EQ(result.outcome, be::ScanOutcome::BudgetExhausted);
+}
+
+// --- criterion 6: the source runs out and nothing was accepted -----------
+
+TEST_F(ScanForReplenishmentTest, ExhaustingTheSourceWithNothingAcceptedIsStillSourceExhausted)
+{
+    // Both entries are already present in node_'s exclusion set (B is
+    // added to it by hand here, simulating an already-fully-replenished
+    // node), so the scan accepts nothing yet still reaches the end.
+    node_.root_keys.push_back(be::layout_key(candidate_b_, East));
+
+    VectorLayoutSource const scan_source({candidate_a_, candidate_b_});
+    ScanResult const result = scan_for_replenishment(
+        node_, root_layout_, scan_source, defender_->as_strategy(), /*wanted=*/5, std::nullopt);
+
+    EXPECT_TRUE(result.candidates.empty());
+    EXPECT_EQ(result.outcome, be::ScanOutcome::SourceExhausted);
+}
+
+// --- a delta contract violation during the scan is reported ---------------
+
+TEST_F(ScanForReplenishmentTest, ADeltaContractViolationDuringTheScanIsReportedNotAsserted)
+{
+    auto const broken_delta = [](be::DefenderQuery const&) -> std::vector<be::WeightedCard> { return {}; };
+    VectorLayoutSource const scan_source({candidate_b_});
+
+    ScanResult const result =
+        scan_for_replenishment(node_, root_layout_, scan_source, broken_delta, /*wanted=*/1, std::nullopt);
+
+    EXPECT_TRUE(result.candidates.empty());
     EXPECT_EQ(result.error, be::ValidationError::DistributionEmpty);
     EXPECT_EQ(result.seat, East);
 }
