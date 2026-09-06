@@ -158,6 +158,22 @@ struct RootOptions
     std::optional<std::uint64_t> scan_budget;
 };
 
+/// The cards already played to `root_layout`'s trick in progress (0..3 of
+/// them), in order — the only prior history recoverable from a `Deal`: once
+/// a trick resolves, `currentTrick*` is cleared and no record of what was
+/// played to it survives, so a root that starts after one or more completed
+/// tricks can never have those tricks reconstructed from `root_layout`
+/// alone. Rank 0 is the empty-slot sentinel, matching `validation.cpp`'s
+/// `led_suit()` and `trick.cpp`'s `played_count()`.
+///
+/// Exposed (rather than kept private to `make_root`, which seeds
+/// `ObservationState::history` from exactly this) because a node-local
+/// replay has to skip precisely this many entries too — the same prefix,
+/// computed the same way, so the two never disagree about where a node's
+/// own history begins versus what was already true of `root_layout` before
+/// this search began.
+auto history_for(Deal const& root_layout) -> PlayTraceBin;
+
 /// Builds the root node over `source`: scans from index 0 and takes every
 /// layout consistent with `root_layout` (see below), each getting `p_i = 1`,
 /// up to `options.sample_size` if one is supplied and up to

@@ -20,6 +20,7 @@ cc_test(
         "position_test.cpp",
         "rank_map_test.cpp",
         "renumber_test.cpp",
+        "replenishment_scan_test.cpp",
         "reproduction_test.cpp",
         "restricted_choice_test.cpp",
         "sampling_test.cpp",
