@@ -213,6 +213,24 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
     // multiplication by further probabilities <= 1), so scaling by the
     // layout count rather than by Sigma_i p_i is a safe, if slightly
     // looser, bound.
+    //
+    // Re-derived, not assumed, now that node.kappa may have come from a
+    // replenishment's rescale (kappa *= E / E') rather than only from
+    // make_root's 1/N or a plain copy: that division introduces its own
+    // rounding, but it does not add an uncounted error term to *this*
+    // check. node.kappa and every child's kappa are the same double value
+    // (copy-assigned, never recomputed in expand_defender_node), so
+    // whatever rounding the rescale baked into it multiplies both sides of
+    // the comparison identically and cancels to that one value's own
+    // relative precision (order 1e-16), utterly below
+    // ProbabilitySumTolerance (1e-6). What is left is exactly the
+    // pre-existing per-layout term above, now summed over however many
+    // layouts node.layouts.size() currently reports -- replenished layouts
+    // included, each subject to the identical ProbabilitySumTolerance bound
+    // on its own delta query this ply, no differently from a drawn layout.
+    // The count already reflects any replenishment automatically, which is
+    // the "safe direction" a larger node.layouts.size() pushes the bound;
+    // the division pushes it nowhere, being common to both sides.
     {
         double const mass_conservation_tolerance =
             ProbabilitySumTolerance * static_cast<double>(node.layouts.size());

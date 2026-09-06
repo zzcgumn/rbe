@@ -27,7 +27,8 @@ namespace dds::belief_evaluation
 ///   not a failure of anything;
 /// - **a `delta` contract violation encountered during replay**: `layout`
 ///   is `std::nullopt`, `error` is the specific `ValidationError`, `seat`
-///   is which defender was asked. Reported exactly the way
+///   is which defender was asked, `offending_layout` is the candidate as
+///   replayed up to that ply. Reported exactly the way
 ///   `expand_defender_node` reports one, through the same vocabulary --
 ///   see that function's own doxygen;
 /// - **success**: `layout` holds the candidate played forward to the
@@ -39,6 +40,7 @@ struct ReplayResult
     Probability p_j = 0.0;                          ///< meaningful only when layout has a value
     ValidationError error = ValidationError::None;  ///< a delta contract violation; None otherwise
     int seat = -1;                                   ///< meaningful only when error is not None
+    Deal offending_layout{};                        ///< meaningful only when error is not None
 };
 
 /// Plays a root-space `candidate` forward along `node_state`'s own played
@@ -102,14 +104,16 @@ struct ScanCandidate
 /// them. No `RootFailure`-shaped failure exists here: a scan that finds
 /// nothing is an ordinary outcome, not an error -- the node simply keeps
 /// the layouts it already had. `candidates` and `outcome` are meaningful
-/// only when `error` is `ValidationError::None`; `seat` only when it is
-/// not, mirroring `ReplayResult`'s own shape for the same reason.
+/// only when `error` is `ValidationError::None`; `seat` and
+/// `offending_layout` only when it is not, mirroring `ReplayResult`'s own
+/// shape for the same reason.
 struct ScanResult
 {
     std::vector<ScanCandidate> candidates;
     ScanOutcome outcome = ScanOutcome::SourceExhausted;
     ValidationError error = ValidationError::None;
     int seat = -1;
+    Deal offending_layout{};
 };
 
 /// Scans `source` from index 0 for layouts consistent with `root_layout`

@@ -21,6 +21,7 @@ cc_test(
         "rank_map_test.cpp",
         "renumber_test.cpp",
         "replenishment_scan_test.cpp",
+        "replenishment_test.cpp",
         "reproduction_test.cpp",
         "restricted_choice_test.cpp",
         "sampling_test.cpp",

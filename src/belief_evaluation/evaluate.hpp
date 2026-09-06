@@ -81,12 +81,13 @@ using LayoutBound = std::function<int(Deal const&)>;
 /// retained tree — a belief set kept at every node — is affordable only
 /// when asked for; see EvaluationValue::retained_root.
 ///
-/// Six fields now, and growing as later capabilities add their own — this
-/// stays a flat struct of independently-defaulted options rather than
-/// acquiring internal structure of its own. `sample_size` and
-/// `scan_budget` are the first pair that are not independent of each
-/// other (a budget with no sample size just caps a scan that would have
-/// stopped at the source's own end anyway) — noted here rather than
+/// Seven fields now, and growing as later capabilities add their own —
+/// this stays a flat struct of independently-defaulted options rather than
+/// acquiring internal structure of its own. `sample_size`, `scan_budget`
+/// and `replenish_below` are a trio that are not independent of each other
+/// (a budget with no sample size just caps a scan that would have stopped
+/// at the source's own end anyway; a replenishment threshold with no
+/// sample size has no target to top up to) — noted here rather than
 /// treated as a reason to restructure, since each field's own doxygen
 /// already states the coupling and the struct still reads clearly. If a
 /// future field stops that being true, that is worth revisiting then, not
@@ -158,6 +159,34 @@ struct EvaluateOptions
     /// `RootFailure::ScanBudgetExhausted` for the one case that still is
     /// (nothing survived before the budget ran out).
     std::optional<std::uint64_t> scan_budget;
+
+    /// Replenish a node whose `layouts.size()` is below this, topping it
+    /// back up towards `sample_size` from `source` before any cut is
+    /// evaluated at it and before any `BeliefView` is built there. Absent
+    /// by default -- which is what keeps every existing behaviour
+    /// byte-for-byte unchanged: with no threshold, the recursion never
+    /// scans past the root and never touches a node's `kappa`.
+    ///
+    /// The trigger reads **only** `node.layouts.size()` — nothing about
+    /// `is_sample`, how many layouts are already made or dead, or any
+    /// other property of the node. algorithm.md is explicit that the rule
+    /// to trigger replenishment must depend only on sample size or total
+    /// probability mass, since anything else biases the result; `is_sample`
+    /// specifically is both redundant (an exhaustive node's count is what
+    /// it is, so a caller who sets this with no `sample_size` simply gets a
+    /// scan that finds nothing new) and one more thing that would need to
+    /// stay correct as a node's own scan can flip it mid-search.
+    ///
+    /// **Coupled with `sample_size`, not independent of it**: there is no
+    /// separate top-up target — a node is topped back up towards
+    /// `sample_size` itself, since a caller who already said how large a
+    /// sample they want should not have to say it twice. If `sample_size`
+    /// is absent, this field is treated as absent too: a replenishment
+    /// threshold with no target to top up to has nothing to do, and the
+    /// scan never runs. Reuses `scan_budget` as each individual
+    /// replenishment scan's own cap (see that field) rather than adding a
+    /// third coupled field for it.
+    std::optional<std::uint64_t> replenish_below;
 };
 
 /// Per-depth aggregate of `node.layouts.size()` across every node reached
@@ -344,11 +373,16 @@ auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool;
 /// `make_root` builds from `source`: every layout consistent with
 /// `root_layout` by default, or — if `options.sample_size` is supplied — a
 /// bounded prefix of them (see `EvaluateOptions::sample_size` and
-/// `make_root`'s own doxygen). No replenishment: a sampled root's layout
-/// count only ever shrinks as defenders play. Early cuts (already_made(),
-/// is_dead(), tier2_dead() above) skip subtrees that are guaranteed to
-/// contribute exactly zero to the result — none of them change any answer;
-/// see `specs/replenished-belief-evaluation.md` for what makes each sound.
+/// `make_root`'s own doxygen). If `options.replenish_below` is also set, a
+/// node whose own layout count falls below it is topped back up from
+/// `source` before it is evaluated further — see that field's own doxygen
+/// for the trigger and `EvaluationCounters`' future replenishment fields
+/// for what a run reports about it. Absent, a sampled root's layout count
+/// only ever shrinks as defenders play, exactly as before. Early cuts
+/// (already_made(), is_dead(), tier2_dead() above) skip subtrees that are
+/// guaranteed to contribute exactly zero to the result — none of them
+/// change any answer; see `specs/replenished-belief-evaluation.md` for what
+/// makes each sound.
 ///
 /// `state_key` is never called: there is no cache yet.
 auto evaluate(

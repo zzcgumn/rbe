@@ -4,6 +4,7 @@
 
 #include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/kahan.hpp>
+#include <belief_evaluation/replenishment.hpp>
 #include <belief_evaluation/trick.hpp>
 #include <utility/constants.h>
 
@@ -167,6 +168,100 @@ namespace
         LayoutSource const& source;
     };
 
+    /// Tops `node` back up towards `ctx.options.sample_size` from
+    /// `ctx.source` when `node.layouts.size()` is below
+    /// `ctx.options.replenish_below`, rescaling `kappa` so the node's mass
+    /// is unchanged. Returns `std::nullopt` when nothing changes -- no
+    /// threshold set, the trigger not met, no `sample_size` to top up to
+    /// (see `EvaluateOptions::replenish_below`'s own doxygen for why that
+    /// case is treated as "nothing to do" rather than an error), or a scan
+    /// that found nothing new -- in every one of those cases the caller
+    /// must fall back to using `node` itself unchanged, not a copy of it.
+    ///
+    /// The trigger is `node.layouts.size() < *ctx.options.replenish_below`
+    /// and **nothing else** -- not gated on `node.is_sample`, not on how
+    /// many layouts are already made or dead. See
+    /// `EvaluateOptions::replenish_below`'s own doxygen for why: the rule
+    /// algorithm.md states is that the trigger may depend only on sample
+    /// size or total probability mass, and anything else is a bias smuggled
+    /// into what should be a purely mechanical top-up.
+    ///
+    /// The rescale is algebraically exact: with `E = Sigma p_i` before and
+    /// `E' = Sigma p_i` after (both accumulated the same way `node_mass`
+    /// accumulates, via `KahanAccumulator`), `kappa' = kappa * E / E'`
+    /// gives `kappa' * E' = kappa * E` -- the node's mass is unchanged to
+    /// floating-point tolerance, not merely close. Skipped entirely when
+    /// the scan finds nothing (`E' == E` exactly, so the division would
+    /// otherwise compute 1.0 and multiply by it -- correct in principle,
+    /// but "usually 1.0" is not the same guarantee as "untouched", and this
+    /// is the one case where the difference is worth the branch).
+    ///
+    /// On a `delta` contract violation encountered during the scan,
+    /// `error` is set (through the same `EvaluationError` shape
+    /// `expand_defender_node`'s own errors use, since it is the same
+    /// callback breaking the same contract) and `std::nullopt` is
+    /// returned; the caller must check `error` before falling back to
+    /// `node`, exactly as every other error-reporting call in this
+    /// recursion requires.
+    auto replenish_node(
+        BeliefNode const& node,
+        SearchContext const& ctx,
+        std::optional<EvaluationError>& error) -> std::optional<BeliefNode>
+    {
+        if (! ctx.options.replenish_below.has_value())
+        {
+            return std::nullopt;
+        }
+        if (! ctx.options.sample_size.has_value())
+        {
+            return std::nullopt;  // no target to top up to -- see this field's own doxygen
+        }
+        if (node.layouts.size() >= *ctx.options.replenish_below)
+        {
+            return std::nullopt;  // trigger not met
+        }
+
+        std::uint64_t const target = *ctx.options.sample_size;
+        std::uint64_t const current = static_cast<std::uint64_t>(node.layouts.size());
+        std::uint64_t const wanted = (target > current) ? (target - current) : 0;
+
+        ScanResult const scan =
+            scan_for_replenishment(node, ctx.root_layout, ctx.source, ctx.delta, wanted, ctx.options.scan_budget);
+        if (scan.error != ValidationError::None)
+        {
+            error =
+                EvaluationError{scan.error, EvaluationCallback::DefenderStrategy, scan.seat, scan.offending_layout};
+            return std::nullopt;
+        }
+        if (scan.candidates.empty())
+        {
+            return std::nullopt;  // the ordinary "nothing more available" outcome; node is unchanged
+        }
+
+        BeliefNode replenished = node;
+        KahanAccumulator mass_before;
+        for (Probability const p_i : replenished.p)
+        {
+            mass_before.add(p_i);
+        }
+
+        for (ScanCandidate const& candidate : scan.candidates)
+        {
+            replenished.layouts.push_back(candidate.layout);
+            replenished.p.push_back(candidate.p_j);
+            replenished.root_keys.push_back(candidate.root_key);
+        }
+
+        KahanAccumulator mass_after;
+        for (Probability const p_i : replenished.p)
+        {
+            mass_after.add(p_i);
+        }
+
+        replenished.kappa *= mass_before.value() / mass_after.value();
+        return replenished;
+    }
+
     /// The recursion: P_make(node) = terminal_value(node), or the sum (for
     /// a defender node) / the single value (for a declarer node) over its
     /// children. Once `error` is set, every further call is a no-op
@@ -200,25 +295,42 @@ namespace
             return 0.0;
         }
         count_node(ctx.counters);
-        record_sample_size(ctx.counters, node, depth);
-        if (already_made(node.state))
+
+        // Replenishment fires here: at node entry, before every cut below
+        // and before is_terminal()/expansion -- in particular before any
+        // BeliefView could be built (expand_declarer_node is the only place
+        // one is, and it has not been reached yet). See replenish_node's
+        // own doxygen for why this ordering is a stated constraint the rest
+        // of the module leans on, not an incidental choice. Absent
+        // options.replenish_below, replenish_node returns nullopt having
+        // touched nothing, so this costs one function call and nothing
+        // else on the path every existing test still takes.
+        std::optional<BeliefNode> const replenished = replenish_node(node, ctx, error);
+        if (error.has_value())
+        {
+            return 0.0;
+        }
+        BeliefNode const& n = replenished.has_value() ? *replenished : node;
+
+        record_sample_size(ctx.counters, n, depth);
+        if (already_made(n.state))
         {
             count_tier1_made_cut(ctx.counters);
-            return node_mass(node);
+            return node_mass(n);
         }
-        if (is_dead(node.state))
+        if (is_dead(n.state))
         {
             count_tier1_dead_cut(ctx.counters);
-            return 0.0;  // node_mass(node) discarded here, not conserved -- the contract fails in
+            return 0.0;  // node_mass(n) discarded here, not conserved -- the contract fails in
                           // every layout this node holds, whatever happens next
         }
-        if (tier2_dead(node, ctx.options))
+        if (tier2_dead(n, ctx.options))
         {
             count_tier2_cut(ctx.counters);
             return 0.0;  // same non-conservation as tier 1's dead cut above -- see its own comment
         }
-        // is_terminal(node) is never true here, not just its "made" branch: a
-        // terminal node has tricks_remaining(node.state) == 0, and at that
+        // is_terminal(n) is never true here, not just its "made" branch: a
+        // terminal node has tricks_remaining(n.state) == 0, and at that
         // point already_made() and is_dead() are exact logical complements
         // (tricks_won >= needed vs. tricks_won + 0 < needed), so one of the
         // two tier-1 checks above has already returned before this line could
@@ -230,26 +342,26 @@ namespace
         // used elsewhere (direct construction in terminal_test.cpp, per their
         // own doxygen); this is only about the two call sites inside the
         // recursion.
-        if (is_terminal(node))
+        if (is_terminal(n))
         {
-            return terminal_value(node);
+            return terminal_value(n);
         }
 
-        int const seat = seat_on_play(node.state.known_holdings);
+        int const seat = seat_on_play(n.state.known_holdings);
 
-        if (is_declarer_side(node.state, seat))
+        if (is_declarer_side(n.state, seat))
         {
-            ExpandResult const result = expand_declarer_node(node, ctx.pi);
+            ExpandResult const result = expand_declarer_node(n, ctx.pi);
             if (! result.child.has_value())
             {
                 error = EvaluationError{
-                    result.error, EvaluationCallback::DeclarerPlay, seat, node.state.known_holdings};
+                    result.error, EvaluationCallback::DeclarerPlay, seat, n.state.known_holdings};
                 return 0.0;
             }
             return p_make(*result.child, ctx, depth + 1, error);
         }
 
-        ExpandDefenderResult const result = expand_defender_node(node, ctx.delta);
+        ExpandDefenderResult const result = expand_defender_node(n, ctx.delta);
         if (! result.children.has_value())
         {
             error = EvaluationError{

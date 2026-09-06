@@ -80,26 +80,26 @@ auto replay_candidate(
         {
             if (! held)
             {
-                return ReplayResult{std::nullopt, 0.0, ValidationError::None, -1};
+                return ReplayResult{std::nullopt, 0.0, ValidationError::None, -1, Deal{}};
             }
 
             DefenderQuery const query{working, seat, state};
             std::vector<WeightedCard> const distribution = delta(query);
             if (distribution.empty())
             {
-                return ReplayResult{std::nullopt, 0.0, ValidationError::DistributionEmpty, seat};
+                return ReplayResult{std::nullopt, 0.0, ValidationError::DistributionEmpty, seat, working};
             }
             ValidationError const contract_error =
                 validate_defender_distribution(working, seat, distribution);
             if (contract_error != ValidationError::None)
             {
-                return ReplayResult{std::nullopt, 0.0, contract_error, seat};
+                return ReplayResult{std::nullopt, 0.0, contract_error, seat, working};
             }
 
             Probability const probability = probability_of(distribution, card);
             if (probability <= 0.0)
             {
-                return ReplayResult{std::nullopt, 0.0, ValidationError::None, -1};
+                return ReplayResult{std::nullopt, 0.0, ValidationError::None, -1, Deal{}};
             }
             p_j *= probability;
         }
@@ -107,7 +107,7 @@ auto replay_candidate(
         working = play(working, card);
         state = advance_state(state, card);
     }
-    return ReplayResult{working, p_j, ValidationError::None, -1};
+    return ReplayResult{working, p_j, ValidationError::None, -1, Deal{}};
 }
 
 auto scan_for_replenishment(
@@ -162,7 +162,7 @@ auto scan_for_replenishment(
         ReplayResult const replay = replay_candidate(candidate, root_layout, node.state, delta);
         if (replay.error != ValidationError::None)
         {
-            return ScanResult{{}, ScanOutcome::SourceExhausted, replay.error, replay.seat};
+            return ScanResult{{}, ScanOutcome::SourceExhausted, replay.error, replay.seat, replay.offending_layout};
         }
         if (! replay.layout.has_value())
         {

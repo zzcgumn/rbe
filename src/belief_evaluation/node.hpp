@@ -25,7 +25,17 @@ namespace dds::belief_evaluation
 struct BeliefNode
 {
     ObservationState state;
-    std::vector<Deal> layouts;   ///< never grows after construction; stable while any BeliefView over it is live
+
+    /// Can grow after construction — a replenishment appends to it — but
+    /// only in one specific window: at node entry in `p_make()`, before any
+    /// cut is evaluated and before any `BeliefView` is built over it. A
+    /// `BeliefEntry` (`belief_view.hpp`) holds `Deal const&` into this
+    /// vector, so growing it while a view is live would dangle every
+    /// reference that view holds; the window above is what keeps that from
+    /// happening, not a coincidence of how views happen to be used today.
+    /// Outside that window — in particular, for the whole lifetime of any
+    /// view built over a node — this is exactly as stable as it always was.
+    std::vector<Deal> layouts;
     std::vector<Probability> p;  ///< parallel to layouts
 
     /// `layout_key(root-space candidate, (declarer + 1) % DDS_HANDS)` for
