@@ -186,6 +186,19 @@ struct EvaluateOptions
     /// scan never runs. Reuses `scan_budget` as each individual
     /// replenishment scan's own cap (see that field) rather than adding a
     /// third coupled field for it.
+    ///
+    /// A value **above** `sample_size` is accepted, not rejected, but is
+    /// degenerate: a node's own count can never exceed `sample_size` (that
+    /// is what tops it up to), so the trigger then fires at every node,
+    /// every time, wanting zero more layouts (`sample_size` minus a count
+    /// already at or above it). The scan still runs -- `wanted == 0`
+    /// satisfies `scan_for_replenishment`'s own "found enough" check
+    /// immediately, at zero `source.at()` calls and zero layouts found --
+    /// so this costs nothing and changes no answer, but it does still
+    /// count as an attempted replenishment in
+    /// `EvaluationCounters::replenishment_by_depth`, which a reader of
+    /// that counter should not mistake for a genuine, source-scanning
+    /// attempt.
     std::optional<std::uint64_t> replenish_below;
 };
 
@@ -416,8 +429,9 @@ auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool;
 /// `make_root`'s own doxygen). If `options.replenish_below` is also set, a
 /// node whose own layout count falls below it is topped back up from
 /// `source` before it is evaluated further — see that field's own doxygen
-/// for the trigger and `EvaluationCounters`' future replenishment fields
-/// for what a run reports about it. Absent, a sampled root's layout count
+/// for the trigger and `EvaluationCounters`' replenishment fields
+/// (`replenishment_by_depth`) for what a run reports about it. Absent, a
+/// sampled root's layout count
 /// only ever shrinks as defenders play, exactly as before. Early cuts
 /// (already_made(), is_dead(), tier2_dead() above) skip subtrees that are
 /// guaranteed to contribute exactly zero to the result — none of them

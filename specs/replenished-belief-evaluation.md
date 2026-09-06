@@ -511,8 +511,12 @@ rename or include-ordering trick anywhere in the module.
   below.
 - `library/src/belief_evaluation/belief_view.hpp` — `make_belief_view()`.
 - `library/src/belief_evaluation/expand.hpp` — `expand_declarer_node()`,
-  `make_declarer_children()`, `expand_defender_node()`, and their result
-  types.
+  `make_declarer_children()`, `expand_defender_node()`, their result
+  types, and `advance_state()` — the state-advancement step both
+  expansion paths already used internally, exposed so a node-local
+  replenishment replay (`replay_candidate()`, above) can rebuild the same
+  intermediate states from the root rather than a second copy of the
+  logic.
 - `library/src/belief_evaluation/evaluate.hpp` — `evaluate()`, the public
   entry point, plus `EvaluationResult`, `EvaluationValue`,
   `EvaluationError`, `RootChildValue`, `EvaluateOptions`,
