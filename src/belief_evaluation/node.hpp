@@ -113,9 +113,15 @@ struct RootOptions
     /// cheap: `at()` is the expensive operation (virtual, user-implemented,
     /// in production likely to build a `Deal`), and it is what a future
     /// scan-to-hit measurement counts too, so counting anything else here
-    /// would make the two incommensurable. Meaningless on its own without
-    /// `sample_size` — a budget with no sample size caps a scan that would
-    /// have stopped at the source's own end anyway.
+    /// would make the two incommensurable. Applied whether or not
+    /// `sample_size` is set: `make_root` checks it at every step regardless,
+    /// so a `scan_budget` narrower than `source.size()` binds on its own and
+    /// degrades the root even with no `sample_size` — see
+    /// `RootFailure::ScanBudgetExhausted` for the case where it binds before
+    /// any layout survives. It only fails to matter when it is wide enough
+    /// that the source would exhaust first regardless of what `sample_size`
+    /// is, which is the same "wide enough not to bind" case `sample_size`
+    /// itself has.
     std::optional<std::uint64_t> scan_budget;
 };
 
