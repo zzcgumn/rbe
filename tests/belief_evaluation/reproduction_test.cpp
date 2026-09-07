@@ -564,9 +564,9 @@ TEST_F(ReproductionTest, ScanToHitAndDeltaCallsPerReplenishmentAreReportedOnTheS
     }
     ASSERT_GT(total_layouts_added, 0u);
     double const scan_to_hit = static_cast<double>(total_at_calls) / static_cast<double>(total_layouts_added);
-    EXPECT_DOUBLE_EQ(total_at_calls, 16.0);
-    EXPECT_DOUBLE_EQ(total_layouts_added, 2.0);
-    EXPECT_DOUBLE_EQ(scan_to_hit, 8.0);
+    EXPECT_EQ(total_at_calls, 16u);
+    EXPECT_EQ(total_layouts_added, 2u);
+    EXPECT_DOUBLE_EQ(scan_to_hit, 8.0);  // the one genuinely derived (divided) quantity here
 
     // Delta calls, hand-derived from the fixture's own shape. Four
     // defender plies exist in this two-trick ending -- East's spade lead
