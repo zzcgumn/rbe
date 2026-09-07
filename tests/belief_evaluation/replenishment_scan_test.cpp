@@ -12,6 +12,7 @@
 
 namespace be = dds::belief_evaluation;
 using be::BeliefNode;
+using be::CountingLayoutSource;
 using be::DeclarerStrategy;
 using be::ExpandDefenderResult;
 using be::ExpandResult;
@@ -473,6 +474,32 @@ TEST_F(ScanForReplenishmentTest, ABudgetOfOneStopsAfterASingleAtCallAndReportsBu
 
     EXPECT_TRUE(result.candidates.empty());
     EXPECT_EQ(result.outcome, be::ScanOutcome::BudgetExhausted);
+}
+
+// --- wanted == 0 returns before even querying source.size() --------------
+
+TEST_F(ScanForReplenishmentTest, WantedZeroReturnsSampleFilledWithoutQueryingSourceAtAll)
+{
+    // The loop's own first check (candidates.size() >= wanted) would reach
+    // the same outcome on its own -- 0 >= 0 is immediately true -- but not
+    // before source.size() and the exclusion-set build (from node_.root_keys)
+    // both already ran. This is the case EvaluateOptions::replenish_below
+    // set above sample_size reaches at every node on every call (see that
+    // field's own doxygen), so the two calls this proves never happen here
+    // are exactly the avoidable per-node cost a wide-open threshold would
+    // otherwise pay for nothing.
+    VectorLayoutSource const scan_source({candidate_a_, candidate_b_});
+    CountingLayoutSource const counting_source(scan_source);
+
+    ScanResult const result =
+        scan_for_replenishment(node_, root_layout_, counting_source, defender_->as_strategy(), /*wanted=*/0, std::nullopt);
+
+    EXPECT_EQ(result.error, be::ValidationError::None);
+    EXPECT_TRUE(result.candidates.empty());
+    EXPECT_EQ(result.outcome, be::ScanOutcome::SampleFilled);
+    EXPECT_EQ(result.at_calls, 0u);
+    EXPECT_EQ(counting_source.at_calls(), 0u);
+    EXPECT_EQ(counting_source.size_calls(), 0u);  // the early return itself
 }
 
 // --- criterion 6: the source runs out and nothing was accepted -----------

@@ -118,6 +118,22 @@ auto scan_for_replenishment(
     std::uint64_t wanted,
     std::optional<std::uint64_t> budget) -> ScanResult
 {
+    if (wanted == 0)
+    {
+        // The loop below would break on its own first iteration without
+        // ever calling source.at() -- but source.size() and building
+        // already_present from node.root_keys both happen before the loop
+        // starts, so without this early return they would be paid on every
+        // node this function is called for, for no observable difference.
+        // The only caller that reaches wanted == 0 is EvaluateOptions::
+        // replenish_below set above sample_size (see that field's own
+        // doxygen), where the trigger condition is true at every node --
+        // exactly the hot path this exists to keep cheap. Same result the
+        // loop would have produced: SampleFilled, zero at() calls, nothing
+        // found.
+        return ScanResult{{}, ScanOutcome::SampleFilled, ValidationError::None, -1, Deal{}, 0};
+    }
+
     std::optional<std::uint64_t> const size = source.size();
     // Guaranteed: this node could not exist at all unless some earlier
     // make_root call already required source.size() to be present -- a

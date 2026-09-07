@@ -164,6 +164,15 @@ struct ScanResult
 /// the node holds. `source.size()` is assumed to have already been
 /// validated: `node` could not exist at all unless some earlier
 /// `make_root` call already required `source.size()` to be present.
+///
+/// `wanted == 0` returns immediately -- `SampleFilled`, `at_calls == 0`,
+/// no candidates -- without calling `source.size()` or building the
+/// exclusion set from `node.root_keys` at all. The loop below would reach
+/// the identical outcome on its own first iteration regardless, but not
+/// before paying for both; skipping them matters because `wanted == 0` is
+/// not a rare input here. It is the case `EvaluateOptions::replenish_below`
+/// set above `sample_size` reaches at every node on every call (see that
+/// field's own doxygen).
 auto scan_for_replenishment(
     BeliefNode const& node,
     Deal const& root_layout,

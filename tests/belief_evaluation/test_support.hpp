@@ -61,6 +61,11 @@ private:
 /// exactly this unit (see RootOptions::scan_budget's own doxygen). at() is
 /// const on the LayoutSource interface, so the counter is mutable; nothing
 /// about counting an at() call needs to observe or change what it returns.
+///
+/// size() is counted too, separately from at() — proving a caller never
+/// queried size() at all (as opposed to querying it and then making zero
+/// at() calls) needs its own counter; scan_for_replenishment's wanted == 0
+/// early return is exactly the case that distinction exists for.
 class CountingLayoutSource : public LayoutSource
 {
 public:
@@ -70,6 +75,7 @@ public:
 
     auto size() const -> std::optional<std::uint64_t> override
     {
+        ++size_calls_;
         return wrapped_.size();
     }
 
@@ -84,9 +90,15 @@ public:
         return at_calls_;
     }
 
+    auto size_calls() const -> std::uint64_t
+    {
+        return size_calls_;
+    }
+
 private:
     LayoutSource const& wrapped_;
     mutable std::uint64_t at_calls_ = 0;
+    mutable std::uint64_t size_calls_ = 0;
 };
 
 /// A LayoutSource that cannot report its size — exhaustive evaluation has no

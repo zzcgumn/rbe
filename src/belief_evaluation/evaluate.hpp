@@ -204,10 +204,12 @@ struct EvaluateOptions
     ///   split has first dropped a node's count below it). `replenish_node`
     ///   computes `wanted` and calls `scan_for_replenishment` regardless of
     ///   its value -- unlike the `no_more_available` case above, there is no
-    ///   short-circuit for `wanted == 0` -- so the scan runs and returns
-    ///   immediately on its own first check, at zero `source.at()` calls,
-    ///   but *is* recorded as an attempt (`at_calls == 0`, `succeeded ==
-    ///   false`).
+    ///   short-circuit for `wanted == 0` in `replenish_node` itself. But
+    ///   `scan_for_replenishment` has its own early return for exactly this
+    ///   input (see that function's own doxygen), so no `source.size()`
+    ///   call and no exclusion-set build happen either -- the scan returns
+    ///   immediately at zero `source.at()` calls, and *is* recorded as an
+    ///   attempt (`at_calls == 0`, `succeeded == false`).
     /// - **`wanted > 0`**: a real, possibly expensive, node-local scan runs
     ///   and is recorded as an attempt. This includes the case where the
     ///   scan ends in `SourceExhausted` having found nothing -- that scan
