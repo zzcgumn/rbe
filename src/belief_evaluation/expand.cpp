@@ -102,6 +102,14 @@ auto make_declarer_children(BeliefNode const& parent, std::vector<Card> const& c
 
 auto expand_declarer_node(BeliefNode const& node, DeclarerStrategy const& pi) -> ExpandResult
 {
+    // layouts/p/root_keys same length: node.hpp's own doxygen says this is
+    // "relied on wherever the node is read" -- cheap insurance that a
+    // hand-built fixture violating it (root_keys left default-empty, say)
+    // fails loudly here rather than through an unchecked operator[] further
+    // down, the same style is_terminal()'s own assert already uses.
+    assert(node.p.size() == node.layouts.size());
+    assert(node.root_keys.size() == node.layouts.size());
+
     int const seat = seat_on_play(node.state.known_holdings);
 
     std::vector<BeliefEntry> scratch;
@@ -121,6 +129,13 @@ auto expand_declarer_node(BeliefNode const& node, DeclarerStrategy const& pi) ->
 auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
     -> ExpandDefenderResult
 {
+    // Same invariant, same reason as expand_declarer_node's own assert above
+    // -- this function additionally indexes node.root_keys[i] directly
+    // (below), so a mismatch here is exactly the unchecked-operator[]
+    // out-of-bounds this pair of asserts exists to catch before it happens.
+    assert(node.p.size() == node.layouts.size());
+    assert(node.root_keys.size() == node.layouts.size());
+
     int const seat = seat_on_play(node.state.known_holdings);
 
     // Grouped by card (keyed via card_key): the card itself, the surviving

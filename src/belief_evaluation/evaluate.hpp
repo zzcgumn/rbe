@@ -188,17 +188,24 @@ struct EvaluateOptions
     /// third coupled field for it.
     ///
     /// A value **above** `sample_size` is accepted, not rejected, but is
-    /// degenerate: a node's own count can never exceed `sample_size` (that
-    /// is what tops it up to), so the trigger then fires at every node,
-    /// every time, wanting zero more layouts (`sample_size` minus a count
-    /// already at or above it). The scan still runs -- `wanted == 0`
-    /// satisfies `scan_for_replenishment`'s own "found enough" check
-    /// immediately, at zero `source.at()` calls and zero layouts found --
-    /// so this costs nothing and changes no answer, but it does still
-    /// count as an attempted replenishment in
-    /// `EvaluationCounters::replenishment_by_depth`, which a reader of
-    /// that counter should not mistake for a genuine, source-scanning
-    /// attempt.
+    /// degenerate: a node's own count can never *exceed* `sample_size`
+    /// (that is what tops it up to), so the threshold is met at every node
+    /// on entry and the trigger fires every time -- but "fires" is not
+    /// "does nothing". `wanted = sample_size - current` is only zero at a
+    /// node whose count still equals `sample_size` unchanged, which holds
+    /// through any number of declarer plies but stops holding the moment a
+    /// defender split has first dropped a node's count below it. Below
+    /// that point `wanted > 0` and a real, possibly expensive, node-local
+    /// scan runs -- it costs nothing only in the further degenerate case
+    /// where the source has nothing left to give (`SourceExhausted` before
+    /// `wanted` is met). So this setting does not make replenishment free;
+    /// it makes replenishment fire unconditionally at every node, with real
+    /// cost wherever a split has already happened and the source still has
+    /// candidates to offer. Every such firing still counts as an attempted
+    /// replenishment in `EvaluationCounters::replenishment_by_depth`,
+    /// including the genuinely free ones -- a reader of that counter should
+    /// not read `attempted` alone as "a scan actually ran"; `at_calls` is
+    /// what distinguishes the two.
     std::optional<std::uint64_t> replenish_below;
 };
 
@@ -431,8 +438,8 @@ auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool;
 /// `source` before it is evaluated further — see that field's own doxygen
 /// for the trigger and `EvaluationCounters`' replenishment fields
 /// (`replenishment_by_depth`) for what a run reports about it. Absent, a
-/// sampled root's layout count
-/// only ever shrinks as defenders play, exactly as before. Early cuts
+/// sampled root's layout count only ever shrinks as defenders play, exactly
+/// as before. Early cuts
 /// (already_made(), is_dead(), tier2_dead() above) skip subtrees that are
 /// guaranteed to contribute exactly zero to the result — none of them
 /// change any answer; see `specs/replenished-belief-evaluation.md` for what

@@ -136,6 +136,17 @@ struct ScanResult
 /// A candidate already present in `node.root_keys` costs no `delta` call
 /// either, for the same reason.
 ///
+/// The exclusion set is built once, from `node.root_keys`, before the scan
+/// starts, and is not grown as candidates are accepted during it. `source`
+/// is free to return the same root-space layout at two indices within the
+/// scan's own range (see `BeliefNode::root_keys`'s own doxygen), and if it
+/// does, both copies are accepted as separate entries. This is not new: it
+/// is precisely `make_root`'s own behaviour today, which dedupes candidates
+/// against nothing while scanning. A future de-duplication *within* one
+/// scan, should a `LayoutSource` ever motivate it, is a `make_root` change
+/// first and a `scan_for_replenishment` change to match, not the other way
+/// around.
+///
 /// `budget` counts `source.at()` calls specifically, matching
 /// `RootOptions::scan_budget`'s own definition exactly, so a node-local
 /// scan-to-hit measurement is commensurable with the root's.

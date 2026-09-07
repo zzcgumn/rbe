@@ -392,6 +392,13 @@ TEST_F(DoubleDummyDefenderTest, ASolverFailureThroughExpandDefenderNodeSurfacesA
     node.state.known_holdings = deal;
     node.layouts = {deal};
     node.p = {1.0};
+    node.root_keys = {be::layout_key(deal, West)};  // matches make_root's
+                                                      // (declarer + 1) % DDS_HANDS;
+                                                      // its value plays no role here
+                                                      // since the assertions below
+                                                      // fire before expand_defender_node
+                                                      // ever reads root_keys -- see
+                                                      // the test above this one.
     node.kappa = 1.0;
 
     SolverContext ctx;
