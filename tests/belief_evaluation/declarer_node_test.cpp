@@ -18,6 +18,7 @@ namespace
     constexpr int Ace = 14;
 
     constexpr int North = 0;  // declarer
+    constexpr int East = 1;   // a defender: (declarer + 1) % DDS_HANDS
     constexpr int South = 2;  // dummy
     constexpr int West = 3;   // a defender
 
@@ -40,7 +41,10 @@ namespace
         node.state.known_holdings = layout;
         node.layouts = {layout};
         node.p = {1.0};
-        node.root_keys = {be::layout_key(layout, West)};
+        node.root_keys = {be::layout_key(layout, East)};  // (declarer + 1) % DDS_HANDS,
+                                                            // matching make_root's own
+                                                            // fixed-seat convention -- see
+                                                            // node.hpp's own doxygen.
         node.kappa = 1.0;
         return node;
     }

@@ -201,11 +201,13 @@ struct EvaluateOptions
     /// - **`wanted = sample_size - current` is zero** (a node whose count
     ///   still equals `sample_size` unchanged, which holds through any
     ///   number of declarer plies but stops holding the moment a defender
-    ///   split has first dropped a node's count below it). The scan still
-    ///   runs and returns immediately -- zero `source.at()` calls -- but
-    ///   *is* recorded as an attempt (with `at_calls == 0`, `succeeded ==
-    ///   false`), since `replenish_node` calls `scan_for_replenishment`
-    ///   before knowing this.
+    ///   split has first dropped a node's count below it). `replenish_node`
+    ///   computes `wanted` and calls `scan_for_replenishment` regardless of
+    ///   its value -- unlike the `no_more_available` case above, there is no
+    ///   short-circuit for `wanted == 0` -- so the scan runs and returns
+    ///   immediately on its own first check, at zero `source.at()` calls,
+    ///   but *is* recorded as an attempt (`at_calls == 0`, `succeeded ==
+    ///   false`).
     /// - **`wanted > 0`**: a real, possibly expensive, node-local scan runs
     ///   and is recorded as an attempt. This includes the case where the
     ///   scan ends in `SourceExhausted` having found nothing -- that scan

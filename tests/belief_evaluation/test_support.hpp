@@ -56,7 +56,7 @@ private:
 };
 
 /// A LayoutSource wrapping another one, counting every at() call made
-/// through it — the double a scan-to-hit or "no wasted scan" test needs,
+/// through it — the count a scan-to-hit or "no wasted scan" test needs,
 /// since scan_budget and the node-local scan's own cost are both defined in
 /// exactly this unit (see RootOptions::scan_budget's own doxygen). at() is
 /// const on the LayoutSource interface, so the counter is mutable; nothing
