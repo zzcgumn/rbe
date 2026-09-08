@@ -74,7 +74,14 @@ namespace
 
 auto binomial_coefficient(int n, int k) -> std::uint64_t
 {
-    if (k < 0 || k > n)
+    // n outside [0, MaxOutstandingCards] is a caller error -- the domain
+    // this function is documented for -- and, unlike k outside [0, n]
+    // (a legitimate, well-defined "zero" case), indexing PascalsTriangle
+    // with it would read straight past the end of the table. Asserted for
+    // a build where that is caught loudly; the range check below is what
+    // stops it becoming an out-of-bounds read in a build where it is not.
+    assert(n >= 0 && n <= MaxOutstandingCards);
+    if (n < 0 || n > MaxOutstandingCards || k < 0 || k > n)
     {
         return 0;
     }

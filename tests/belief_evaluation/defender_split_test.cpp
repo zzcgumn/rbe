@@ -248,6 +248,18 @@ TEST(BinomialCoefficientTest, KOutOfRangeIsZeroNotAnError)
     EXPECT_EQ(binomial_coefficient(5, 6), 0u);
 }
 
+TEST(BinomialCoefficientTest, NOutOfRangeIsAnAssertedCallerErrorNotAnOutOfBoundsRead)
+{
+    // n is only ever meant to reach 26 (thirteen tricks, so at most 26
+    // cards outstanding between two defenders) -- the Pascal's triangle
+    // table backing this function is sized to exactly that, so n outside
+    // [0, 26] is not merely "a bigger answer", it is an index straight
+    // past the end of the table. EXPECT_DEBUG_DEATH, not EXPECT_DEATH --
+    // see UnconstrainedLayoutSourceTest's own sibling assertion for why.
+    EXPECT_DEBUG_DEATH({ binomial_coefficient(27, 0); }, "");
+    EXPECT_DEBUG_DEATH({ binomial_coefficient(-1, 0); }, "");
+}
+
 // --- unrank_combination: criterion 2, exhaustive bijection ----------------
 
 namespace

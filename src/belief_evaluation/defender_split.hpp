@@ -74,6 +74,13 @@ auto defender_pool_decomposition(Deal const& root, int declarer) -> DefenderPool
 /// than being treated as an error -- `unrank_combination`'s own loop relies
 /// on this at its search boundary.
 ///
+/// `n` outside `[0, 26]`, by contrast, is a caller error, not a
+/// well-defined zero case: the backing table is sized to exactly that
+/// range, and indexing it with a larger `n` would read past the end
+/// rather than compute a merely-too-large answer. Asserted; a build where
+/// that assert is compiled away returns 0 rather than performing the
+/// out-of-bounds read.
+///
 /// Backed by a `constexpr` Pascal's triangle computed once, not a
 /// recurrence evaluated per call: `unrank_combination` calls this `O(n)`
 /// times per index and is on a `LayoutSource::at()`'s hot path once one is
