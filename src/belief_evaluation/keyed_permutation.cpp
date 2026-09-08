@@ -58,12 +58,25 @@ namespace
 
 auto keyed_permutation(std::uint64_t index, std::uint64_t n, std::uint64_t seed) -> std::uint64_t
 {
+    if (n == 0)
+    {
+        // n == 0 is always a contract violation -- an empty domain has no
+        // valid index -- but it must be handled as a hard, deterministic
+        // case rather than only an asserted one: n - 1 below would
+        // underflow to UINT64_MAX, and the cycle-walking loop's own exit
+        // condition (x < n) can then never be satisfied, hanging forever
+        // rather than merely computing a wrong answer. A release build
+        // compiles the assert below away, so that failure mode would
+        // survive exactly where it matters least to hit it. No return
+        // value is meaningful for an empty domain; 0 is returned only
+        // because *some* value must be, promptly and repeatably.
+        return 0;
+    }
     assert(index < n);
     // Smallest b with 2^b >= n: std::bit_width(n - 1) is the number of bits
     // needed to represent n - 1, so 2^that value is the smallest power of
-    // two strictly greater than n - 1, i.e. >= n. n >= 1 always holds here
-    // (a LayoutSource is never built over an empty space), so n - 1 never
-    // underflows.
+    // two strictly greater than n - 1, i.e. >= n. n >= 1 from here on (the
+    // n == 0 case returned above), so n - 1 never underflows.
     int const b = std::bit_width(n - 1);
 
     std::uint64_t x = index;

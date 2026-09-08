@@ -74,6 +74,14 @@ namespace dds::belief_evaluation
 ///
 /// `index >= n` is a caller error (asserted); the domain this is built
 /// over is always `[0, n)`.
+///
+/// `n == 0` is likewise always a contract violation -- an empty domain has
+/// no valid index -- but is handled as a hard, deterministic case (returns
+/// `0`) rather than only an asserted one: computing `n - 1` would
+/// underflow, and cycle-walking's own exit condition could then never be
+/// satisfied, hanging forever in exactly the release build where the
+/// assert above has been compiled away. No return value is meaningful for
+/// an empty domain; only that one is returned promptly and repeatably.
 auto keyed_permutation(std::uint64_t index, std::uint64_t n, std::uint64_t seed) -> std::uint64_t;
 
 }  // namespace dds::belief_evaluation

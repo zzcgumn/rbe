@@ -504,3 +504,45 @@ TEST(ApplyDefenderSplitTest, UntouchedFieldsAreByteIdenticalToRootEvenWhenTheSpl
         EXPECT_EQ(result.remainCards[South][suit], root.remainCards[South][suit]);
     }
 }
+
+TEST(ApplyDefenderSplitTest, HandlesTheLargestPoolTheDomainEverAllows)
+{
+    // 26 pooled cards -- a full Diamonds suit to East, a full Clubs suit
+    // to West -- the largest pool this domain ever produces (thirteen
+    // tricks, so at most 26 cards are ever outstanding between two
+    // defenders). This is the exact boundary a fixed-size, rather than
+    // heap-allocated, internal buffer has to hold without overrunning.
+    Deal root{};
+    root.trump = DDS_NOTRUMP;
+    root.first = North;
+    root.remainCards[North][Spades] = holding({14});
+    root.remainCards[South][Hearts] = holding({14});
+    unsigned full_suit = 0;
+    for (int rank = 2; rank <= 14; ++rank)
+    {
+        full_suit |= holding({rank});
+    }
+    root.remainCards[East][Diamonds] = full_suit;
+    root.remainCards[West][Clubs] = full_suit;
+
+    DefenderPool const pool = defender_pool_decomposition(root, North);
+    ASSERT_EQ(pool.cards.size(), 26u);
+    ASSERT_EQ(pool.fixed_seat_count, 13);
+
+    // Canonical order is suits ascending: with no Spades/Hearts pool
+    // cards, Diamonds fills indices 0..12 and Clubs 13..25 -- so East's
+    // own split (all of Diamonds) is exactly indices 0..12.
+    std::vector<int> east_indices;
+    for (int i = 0; i < 13; ++i)
+    {
+        east_indices.push_back(i);
+    }
+
+    Deal const result = apply_defender_split(root, North, pool, east_indices);
+    EXPECT_TRUE(is_consistent(result, root, North, South));
+    for (int suit = 0; suit < DDS_SUITS; ++suit)
+    {
+        EXPECT_EQ(result.remainCards[East][suit], root.remainCards[East][suit]) << "suit " << suit;
+        EXPECT_EQ(result.remainCards[West][suit], root.remainCards[West][suit]) << "suit " << suit;
+    }
+}

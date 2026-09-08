@@ -186,3 +186,18 @@ TEST(KeyedPermutationTest, TerminatesForAnNThatDoesNotDivideAPowerOfTwoAtAll)
     // (2^0 = 1) with nothing else in it to walk to.
     EXPECT_EQ(keyed_permutation(0u, 1u, 123u), 0u);
 }
+
+// --- n == 0: an empty domain has no valid index, but must not hang -------
+
+TEST(KeyedPermutationTest, AnEmptyDomainReturnsDeterministicallyRatherThanUnderflowingOrLooping)
+{
+    // n == 0 is always a contract violation (there is no valid index into
+    // an empty domain), but naively computing n - 1 would underflow to
+    // UINT64_MAX and the cycle-walking loop's own exit condition
+    // (x < n) can then never be satisfied, hanging forever rather than
+    // merely computing a wrong answer -- a release build compiles away
+    // an assert, so this must be a hard, deterministic case, not only an
+    // asserted one. No particular return value is meaningful for an
+    // empty domain; only that this returns promptly and repeatably.
+    EXPECT_EQ(keyed_permutation(0u, 0u, 1u), keyed_permutation(0u, 0u, 1u));
+}
