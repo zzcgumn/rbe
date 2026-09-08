@@ -74,6 +74,23 @@ namespace
         root.remainCards[West][Spades] = holding({3});
         return root;
     }
+
+    /// Neither defender holds anything -- an empty pool, C(0, 0) = 1: the
+    /// degenerate space of exactly one member, the root itself. Every
+    /// underlying piece (defender_pool_decomposition, unrank_combination,
+    /// keyed_permutation) already has its own test for this shape in
+    /// isolation; this is the composed-source-level version of the same
+    /// claim.
+    auto make_empty_pool_root() -> Deal
+    {
+        Deal root{};
+        root.trump = DDS_NOTRUMP;
+        root.first = North;
+        root.remainCards[North][Spades] = holding({14, 13});
+        root.remainCards[South][Hearts] = holding({14, 13});
+        // East and West hold nothing: the pool is empty.
+        return root;
+    }
 }  // namespace
 
 // --- acceptance 1: size() matches hand-derived counts, several shapes -----
@@ -97,6 +114,22 @@ TEST(ConsistentLayoutSourceTest, SizeMatchesTheHandDerivedCountOnATwoCardEnding)
     // One spade each -- C(2, 1) = 2.
     ConsistentLayoutSource const source(make_small_single_suit_root(), North, /*seed=*/1u);
     EXPECT_EQ(source.size(), 2u);
+}
+
+TEST(ConsistentLayoutSourceTest, AnEmptyDefenderPoolGivesTheDegenerateSizeOneSpace)
+{
+    // C(0, 0) = 1: the composed source's own version of the size() == 1
+    // degenerate case -- each underlying piece already covers it in
+    // isolation (defender_pool_decomposition, unrank_combination,
+    // keyed_permutation each have their own empty/k==n test), and this
+    // closes the gap at the level a caller actually meets.
+    Deal const root = make_empty_pool_root();
+    ConsistentLayoutSource const source(root, North, /*seed=*/1u);
+    ASSERT_EQ(source.size(), 1u);
+    EXPECT_TRUE(is_consistent(source.at(0), root, North, South));
+    // The one member of a size-one space is the root's own split -- East
+    // and West both hold nothing either way.
+    EXPECT_EQ(layout_key(source.at(0), East), layout_key(root, East));
 }
 
 // --- acceptance 3: at(i) is a bijection over the whole space --------------

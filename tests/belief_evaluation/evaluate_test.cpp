@@ -10,6 +10,19 @@
 
 namespace be = dds::belief_evaluation;
 
+// This file otherwise qualifies every belief_evaluation symbol with `be::`
+// throughout (its own established convention, predating this list, and
+// left as-is here rather than retrofitted -- see the zero-deletion
+// criterion this plan holds itself to). This short list covers only the
+// symbols the two SamplingOptions tests below use, so those two tests
+// follow the per-file `using be::X;` convention the task rules call for
+// without rewriting a single pre-existing line.
+using be::EvaluateOptions;
+using be::EvaluationResult;
+using be::VectorLayoutSource;
+using be::evaluate;
+using be::single_card_defender;
+
 namespace
 {
     constexpr int Two = 2;
@@ -316,23 +329,23 @@ TEST_F(EvaluateTest, TheResultIsIndexedByTheCallersOwnStrategyId)
 TEST_F(EvaluateTest, SampleSizeScanBudgetAndReplenishBelowLiveOnANestedSamplingType)
 {
     Deal const root_layout = make_one_trick_certain_win();
-    be::VectorLayoutSource source({root_layout});
+    VectorLayoutSource source({root_layout});
 
-    be::EvaluateOptions const options{
+    EvaluateOptions const options{
         .sampling = {.sample_size = 1u, .scan_budget = 5u, .replenish_below = 1u}};
     EXPECT_EQ(options.sampling.sample_size, 1u);
     EXPECT_EQ(options.sampling.scan_budget, 5u);
     EXPECT_EQ(options.sampling.replenish_below, 1u);
 
-    be::EvaluationResult const result = be::evaluate(
-        root_layout, North, /*tricks_needed=*/1, source, strategy(1), be::single_card_defender, options);
+    EvaluationResult const result = evaluate(
+        root_layout, North, /*tricks_needed=*/1, source, strategy(1), single_card_defender, options);
     ASSERT_FALSE(result.error.has_value());
     EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);
 }
 
 TEST_F(EvaluateTest, ADefaultConstructedSamplingOptionsMeansExactlyWhatAbsentFieldsMeantBefore)
 {
-    be::EvaluateOptions const options{};
+    EvaluateOptions const options{};
     EXPECT_FALSE(options.sampling.sample_size.has_value());
     EXPECT_FALSE(options.sampling.scan_budget.has_value());
     EXPECT_FALSE(options.sampling.replenish_below.has_value());
