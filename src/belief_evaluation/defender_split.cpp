@@ -103,4 +103,34 @@ auto unrank_combination(std::uint64_t index, int n, int k) -> std::vector<int>
     return result;
 }
 
+auto apply_defender_split(
+    Deal const& root, int declarer, DefenderPool const& pool, std::vector<int> const& fixed_seat_cards) -> Deal
+{
+    int const fixed_seat = (declarer + 1) % DDS_HANDS;
+    int const other_seat = (declarer + 3) % DDS_HANDS;
+
+    Deal result = root;  // copy-and-overwrite: everything but the two defenders' holdings is root's own
+    for (int suit = 0; suit < DDS_SUITS; ++suit)
+    {
+        result.remainCards[fixed_seat][suit] = 0;
+        result.remainCards[other_seat][suit] = 0;
+    }
+
+    // The complement is derived from pool itself (every card not named
+    // goes to other_seat), never from root's own other-defender holding --
+    // see this function's own doxygen for why.
+    std::vector<bool> is_fixed_seat_card(pool.cards.size(), false);
+    for (int index : fixed_seat_cards)
+    {
+        is_fixed_seat_card[static_cast<std::size_t>(index)] = true;
+    }
+    for (std::size_t i = 0; i < pool.cards.size(); ++i)
+    {
+        Card const& card = pool.cards[i];
+        int const seat = is_fixed_seat_card[i] ? fixed_seat : other_seat;
+        result.remainCards[seat][card.suit] |= (1u << card.rank);
+    }
+    return result;
+}
+
 }  // namespace dds::belief_evaluation

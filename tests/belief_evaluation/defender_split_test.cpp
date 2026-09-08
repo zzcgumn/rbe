@@ -10,16 +10,19 @@
 #include <utility/constants.h>
 
 #include <belief_evaluation/defender_split.hpp>
+#include <belief_evaluation/node.hpp>
 #include <belief_evaluation/types.hpp>
 
 #include "test_support.hpp"
 
 namespace be = dds::belief_evaluation;
 
+using be::apply_defender_split;
 using be::binomial_coefficient;
 using be::DefenderPool;
 using be::defender_pool_decomposition;
 using be::holding;
+using be::is_consistent;
 using be::unrank_combination;
 
 namespace
@@ -344,4 +347,160 @@ TEST(UnrankCombinationTest, IsAPureFunctionSameIndexSameSubsetEveryTime)
     std::vector<int> const first = unrank_combination(17, 9, 4);
     std::vector<int> const second = unrank_combination(17, 9, 4);
     EXPECT_EQ(first, second);
+}
+
+// --- apply_defender_split ---------------------------------------------------
+
+namespace
+{
+    /// Every field Deal carries, compared directly -- the byte-identity
+    /// criterion 4 asks for, not just the two defenders' remainCards.
+    auto deals_are_field_identical(Deal const& a, Deal const& b) -> bool
+    {
+        if (a.trump != b.trump || a.first != b.first)
+        {
+            return false;
+        }
+        for (int i = 0; i < 3; ++i)
+        {
+            if (a.currentTrickSuit[i] != b.currentTrickSuit[i] || a.currentTrickRank[i] != b.currentTrickRank[i])
+            {
+                return false;
+            }
+        }
+        for (int hand = 0; hand < DDS_HANDS; ++hand)
+        {
+            for (int suit = 0; suit < DDS_SUITS; ++suit)
+            {
+                if (a.remainCards[hand][suit] != b.remainCards[hand][suit])
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /// The indices into pool.cards that root's own defender split already
+    /// picks out for the fixed seat -- criterion 6's round-trip subset,
+    /// found directly from root rather than by any part of the production
+    /// code under test.
+    auto own_split_indices(Deal const& root, int declarer, DefenderPool const& pool) -> std::vector<int>
+    {
+        int const fixed_seat = (declarer + 1) % DDS_HANDS;
+        std::vector<int> indices;
+        for (int i = 0; i < static_cast<int>(pool.cards.size()); ++i)
+        {
+            be::Card const& card = pool.cards[static_cast<std::size_t>(i)];
+            if ((root.remainCards[fixed_seat][card.suit] & (1u << card.rank)) != 0)
+            {
+                indices.push_back(i);
+            }
+        }
+        return indices;
+    }
+
+    /// A five-card pool (diamonds and clubs), small enough to enumerate
+    /// C(5, 2) = 10 splits exhaustively, with trump/first/current-trick
+    /// fields set to values distinguishable from their defaults so
+    /// byte-identity checks are not passing by coincidence.
+    auto make_two_suit_pool_root() -> Deal
+    {
+        Deal root{};
+        root.trump = Hearts;
+        root.first = West;
+        root.currentTrickSuit[0] = Spades;
+        root.currentTrickRank[0] = 9;
+        root.remainCards[North][Spades] = holding({14, 13});  // declarer
+        root.remainCards[South][Hearts] = holding({14, 13});  // dummy
+        root.remainCards[East][Diamonds] = holding({3});
+        root.remainCards[East][Clubs] = holding({4});
+        root.remainCards[West][Diamonds] = holding({5});
+        root.remainCards[West][Clubs] = holding({6, 7});
+        return root;
+    }
+}  // namespace
+
+TEST(ApplyDefenderSplitTest, TheRootsOwnSplitRoundTripsToTheRootLayoutFieldForField)
+{
+    Deal const root = make_two_suit_pool_root();
+    DefenderPool const pool = defender_pool_decomposition(root, North);
+
+    std::vector<int> const own_split = own_split_indices(root, North, pool);
+    ASSERT_EQ(own_split.size(), static_cast<std::size_t>(pool.fixed_seat_count));
+
+    Deal const round_tripped = apply_defender_split(root, North, pool, own_split);
+    EXPECT_TRUE(deals_are_field_identical(round_tripped, root));
+}
+
+TEST(ApplyDefenderSplitTest, EveryResultOverTheWholeSpaceIsConsistentWithTheRoot)
+{
+    Deal const root = make_two_suit_pool_root();
+    int const dummy = South;
+    DefenderPool const pool = defender_pool_decomposition(root, North);
+    int const n = static_cast<int>(pool.cards.size());
+    int const k = pool.fixed_seat_count;
+    std::uint64_t const total = binomial_coefficient(n, k);
+    ASSERT_EQ(total, 10u);  // C(5, 2)
+
+    for (std::uint64_t index = 0; index < total; ++index)
+    {
+        std::vector<int> const subset = unrank_combination(index, n, k);
+        Deal const result = apply_defender_split(root, North, pool, subset);
+        EXPECT_TRUE(is_consistent(result, root, North, dummy)) << "index=" << index;
+    }
+}
+
+TEST(ApplyDefenderSplitTest, EveryResultOverTheWholeSpaceIsALegalPosition)
+{
+    // Separate from the is_consistent check above on purpose: is_consistent
+    // never compares hand sizes (see DefenderPool's own doxygen), so this
+    // is the independent half of the correctness claim -- exact counts and
+    // disjointness, checked directly against what task 02's own
+    // decomposition read from the root.
+    Deal const root = make_two_suit_pool_root();
+    DefenderPool const pool = defender_pool_decomposition(root, North);
+    int const n = static_cast<int>(pool.cards.size());
+    int const k = pool.fixed_seat_count;
+    std::uint64_t const total = binomial_coefficient(n, k);
+
+    for (std::uint64_t index = 0; index < total; ++index)
+    {
+        std::vector<int> const subset = unrank_combination(index, n, k);
+        Deal const result = apply_defender_split(root, North, pool, subset);
+
+        int fixed_seat_count = 0;
+        int other_seat_count = 0;
+        for (int suit = 0; suit < DDS_SUITS; ++suit)
+        {
+            fixed_seat_count += std::popcount(result.remainCards[East][suit]);
+            other_seat_count += std::popcount(result.remainCards[West][suit]);
+            // Disjoint: no bit set in both defenders' holdings for this suit.
+            EXPECT_EQ(result.remainCards[East][suit] & result.remainCards[West][suit], 0u) << "index=" << index;
+        }
+        EXPECT_EQ(fixed_seat_count, pool.fixed_seat_count) << "index=" << index;
+        EXPECT_EQ(fixed_seat_count + other_seat_count, static_cast<int>(pool.cards.size())) << "index=" << index;
+    }
+}
+
+TEST(ApplyDefenderSplitTest, UntouchedFieldsAreByteIdenticalToRootEvenWhenTheSplitDiffersFromRoots)
+{
+    Deal const root = make_two_suit_pool_root();
+    DefenderPool const pool = defender_pool_decomposition(root, North);
+
+    // A split different from root's own: all of the pool to West instead.
+    Deal const result = apply_defender_split(root, North, pool, /*fixed_seat_cards=*/{});
+
+    EXPECT_EQ(result.trump, root.trump);
+    EXPECT_EQ(result.first, root.first);
+    for (int i = 0; i < 3; ++i)
+    {
+        EXPECT_EQ(result.currentTrickSuit[i], root.currentTrickSuit[i]);
+        EXPECT_EQ(result.currentTrickRank[i], root.currentTrickRank[i]);
+    }
+    for (int suit = 0; suit < DDS_SUITS; ++suit)
+    {
+        EXPECT_EQ(result.remainCards[North][suit], root.remainCards[North][suit]);
+        EXPECT_EQ(result.remainCards[South][suit], root.remainCards[South][suit]);
+    }
 }

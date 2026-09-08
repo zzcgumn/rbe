@@ -100,4 +100,34 @@ auto binomial_coefficient(int n, int k) -> std::uint64_t;
 /// `{0, ..., n-1}`, again the only valid index.
 auto unrank_combination(std::uint64_t index, int n, int k) -> std::vector<int>;
 
+// --- applying a split back onto a Deal -------------------------------------
+
+/// Applies `fixed_seat_cards` -- indices into `pool.cards`, naming which
+/// pooled cards the fixed seat (`(declarer + 1) % DDS_HANDS`) holds -- to
+/// `root` as a defender split, returning the resulting `Deal`. Every pooled
+/// card *not* named is the complement, and goes to the other defender; the
+/// complement is derived from `pool` itself, not from `root`'s own
+/// other-defender holding, so a bug in the pool this was built from shows
+/// up here as a disjointness or count failure rather than being masked by
+/// reusing `root`'s already-correct answer.
+///
+/// Built by copy-and-overwrite: `result` starts as `root`, and only the two
+/// defenders' `remainCards` are replaced. Trump, `first`, both
+/// `currentTrick*` arrays, and declarer's and dummy's holdings are
+/// therefore guaranteed byte-identical to `root`'s own -- including against
+/// a future field `Deal` gains, which copy-and-overwrite carries forward
+/// automatically and field-by-field reconstruction would not.
+///
+/// This function trusts its caller for legality: it does not check that
+/// `fixed_seat_cards.size()` equals what `pool.fixed_seat_count` recorded
+/// at `root`, or that every index is in range. A caller enumerating splits
+/// is expected to have called `unrank_combination` with
+/// `k = pool.fixed_seat_count`, which by construction can only ever name a
+/// `fixed_seat_cards` of the right size; see this module's own tests for
+/// the two claims that matter -- `is_consistent` against `root`, and legal
+/// hand sizes, which `is_consistent` itself does not check (see
+/// `DefenderPool`'s own doxygen and `node.cpp`'s `is_consistent`).
+auto apply_defender_split(
+    Deal const& root, int declarer, DefenderPool const& pool, std::vector<int> const& fixed_seat_cards) -> Deal;
+
 }  // namespace dds::belief_evaluation
