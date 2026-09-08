@@ -170,9 +170,9 @@ struct ScanResult
 /// exclusion set from `node.root_keys` at all. The loop below would reach
 /// the identical outcome on its own first iteration regardless, but not
 /// before paying for both; skipping them matters because `wanted == 0` is
-/// not a rare input here. It is the case `EvaluateOptions::replenish_below`
-/// set above `sample_size` reaches at every node on every call (see that
-/// field's own doxygen).
+/// not a rare input here. It is the case
+/// `EvaluateOptions::sampling.replenish_below` set above `sample_size`
+/// reaches at every node on every call (see that field's own doxygen).
 auto scan_for_replenishment(
     BeliefNode const& node,
     Deal const& root_layout,

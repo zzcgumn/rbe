@@ -27,7 +27,7 @@ public:
     /// what makes sampling reproducible.
     ///
     /// **A caller obligation this type cannot check or enforce**: sampling
-    /// (`make_root`, `EvaluateOptions::sample_size`) takes a *prefix* of
+    /// (`make_root`, `EvaluateOptions::sampling.sample_size`) takes a *prefix* of
     /// this order rather than drawing from it at random, on the premise
     /// that the order itself is already effectively random with respect to
     /// which layouts are consistent with any given root — "a randomised

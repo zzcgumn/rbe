@@ -586,11 +586,12 @@ rename or include-ordering trick anywhere in the module.
   `evaluate.cpp`-private) for the same reason `is_terminal()` /
   `terminal_value()` are: so a test can construct an `ObservationState` /
   `BeliefNode` directly and check a cut condition in isolation, without
-  going through the whole recursion. `EvaluateOptions` holds five
+  going through the whole recursion. `EvaluateOptions` holds four
   independently-defaulted fields (`retain_root`, `collect_counters`,
   `bound`, `delta_is_double_dummy_optimal`) plus one nested `sampling`
-  field of type `SamplingOptions`, grouping `sample_size`, `scan_budget`
-  and `replenish_below` — a spelling change with no behaviour change; a
+  field of type `SamplingOptions` (five fields total), grouping
+  `sample_size`, `scan_budget` and `replenish_below` — a spelling change
+  with no behaviour change; a
   default-constructed `SamplingOptions` means exactly what all three being
   absent from a flat `EvaluateOptions` used to mean.
 - `library/src/belief_evaluation/spread.hpp` — `SpreadPolicy`, `spread()`.

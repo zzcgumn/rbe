@@ -464,9 +464,10 @@ auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool;
 
 /// Evaluates `P_make` for `pi` against `delta` over the root belief space
 /// `make_root` builds from `source`: every layout consistent with
-/// `root_layout` by default, or — if `options.sample_size` is supplied — a
-/// bounded prefix of them (see `EvaluateOptions::sample_size` and
-/// `make_root`'s own doxygen). If `options.replenish_below` is also set, a
+/// `root_layout` by default, or — if `options.sampling.sample_size` is
+/// supplied — a bounded prefix of them (see
+/// `EvaluateOptions::sampling.sample_size` and `make_root`'s own doxygen).
+/// If `options.sampling.replenish_below` is also set, a
 /// node whose own layout count falls below it is topped back up from
 /// `source` before it is evaluated further — see that field's own doxygen
 /// for the trigger and `EvaluationCounters`' replenishment fields
