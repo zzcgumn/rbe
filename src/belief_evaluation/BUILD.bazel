@@ -5,6 +5,7 @@ cc_library(
     name = "belief_evaluation",
     srcs = [
         "belief_view.cpp",
+        "consistent_layout_source.cpp",
         "defender_split.cpp",
         "evaluate.cpp",
         "expand.cpp",
@@ -21,6 +22,7 @@ cc_library(
     ],
     hdrs = [
         "belief_view.hpp",
+        "consistent_layout_source.hpp",
         "declarer_strategy.hpp",
         "defender_split.hpp",
         "defender_strategy.hpp",

@@ -8,6 +8,7 @@ cc_test(
         "aggr_invariance_test.cpp",
         "belief_view_test.cpp",
         "counters_test.cpp",
+        "consistent_layout_source_test.cpp",
         "cuts_test.cpp",
         "declarer_node_test.cpp",
         "defender_node_test.cpp",
