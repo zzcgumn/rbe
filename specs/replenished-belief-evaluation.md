@@ -207,14 +207,20 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   progress, declarer's and dummy's exact holdings, and a defender split of
   the same outstanding pool — not the source's raw size, which may include
   layouts the root position rules out.
-- **A shipped `LayoutSource` now exists** — `ConsistentLayoutSource`
-  (`library/src/belief_evaluation/consistent_layout_source.hpp`) — and for
+- **A shipped `LayoutSource` now exists** — `UnconstrainedLayoutSource`
+  (`library/src/belief_evaluation/unconstrained_layout_source.hpp`) — and for
   a caller using it, "the belief space" is exactly what the paragraph above
   has always meant by "consistent with the root position": every defender
   split of the outstanding pool, with trump, the trick in progress, and
   declarer's and dummy's exact holdings held fixed. Nothing else varies —
   this is the same belief space this capability's model has described
-  throughout, not a new or narrower one. `size()` is exact
+  throughout, not a new or narrower one. Named for what it does *not* do,
+  not for consistency with the root — every `LayoutSource` is already
+  required to be consistent (`make_root` validates it on entry, per the
+  first bullet of this section); what is specific to this type is that it
+  applies no further narrowing, unlike a caller-supplied source reflecting
+  something the evaluator itself has no way to know, such as what the
+  bidding ruled out. `size()` is exact
   (`C(n, k)` — the pooled card count choose the fixed defender's own count
   at the root) and never unknown; the enumeration order is randomised by
   construction, from a seed fixed at construction, discharging the
@@ -234,7 +240,7 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   four cards and the other two, where the root position has three each,
   passes `is_consistent()` and would enter the belief space through
   `make_root()` without complaint, even though it is not a legal bridge
-  position. `ConsistentLayoutSource` never produces such a candidate — it
+  position. `UnconstrainedLayoutSource` never produces such a candidate — it
   enforces the fixed defender's own hand size directly rather than relying
   on `is_consistent()` to reject what it cannot detect — but a hand-built
   fixture or a future generator that relies on `is_consistent()` alone as
@@ -448,7 +454,7 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   evaluator: nothing here can distinguish a well-shuffled source from a
   badly-ordered one, since both simply return layouts in whatever order
   `at()` presents them. This obligation is not closed by
-  `ConsistentLayoutSource` shipping — it still binds any caller supplying
+  `UnconstrainedLayoutSource` shipping — it still binds any caller supplying
   their own `LayoutSource` — but there is now a correct implementation to
   point at rather than only a description of the property a source must
   have. A future caller-supplied contract this evaluator
@@ -524,16 +530,16 @@ rename or include-ordering trick anywhere in the module.
 - `library/src/belief_evaluation/defender_split.hpp` — `DefenderPool`,
   `defender_pool_decomposition()`, `binomial_coefficient()`,
   `unrank_combination()`, `apply_defender_split()` — the pure combinatorics
-  `ConsistentLayoutSource` (below) is built from: a root's pooled defender
+  `UnconstrainedLayoutSource` (below) is built from: a root's pooled defender
   cards and each defender's own count, the k-subset enumeration over them,
   and applying a chosen subset back onto a root layout as a split.
 - `library/src/belief_evaluation/keyed_permutation.hpp` —
   `keyed_permutation()`, a seeded bijection on `[0, N)` storing nothing —
   general-purpose, not specific to this capability's own types, and the
-  mechanism `ConsistentLayoutSource` uses to randomise its enumeration
+  mechanism `UnconstrainedLayoutSource` uses to randomise its enumeration
   order.
-- `library/src/belief_evaluation/consistent_layout_source.hpp` —
-  `ConsistentLayoutSource`, the shipped `LayoutSource` — see "Behaviour &
+- `library/src/belief_evaluation/unconstrained_layout_source.hpp` —
+  `UnconstrainedLayoutSource`, the shipped `LayoutSource` — see "Behaviour &
   invariants" above for what it enumerates.
 - `library/src/belief_evaluation/renumber.hpp` — `renumber()`.
 - `library/src/belief_evaluation/rank_map.hpp` — `make_rank_map()`.
@@ -613,7 +619,7 @@ rename or include-ordering trick anywhere in the module.
 
 - `is_consistent()` does not compare defender hand sizes, so it accepts a
   strictly larger set of candidates than the set of legal bridge positions
-  consistent with the root. `ConsistentLayoutSource` does not rely on it
+  consistent with the root. `UnconstrainedLayoutSource` does not rely on it
   for this and enforces sizes itself; a hand-built fixture or a future
   generator that relies on `is_consistent()` alone would not be protected
   the same way. Deliberately not closed — see "Behaviour & invariants"

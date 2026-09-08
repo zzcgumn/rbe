@@ -5,7 +5,6 @@ cc_library(
     name = "belief_evaluation",
     srcs = [
         "belief_view.cpp",
-        "consistent_layout_source.cpp",
         "defender_split.cpp",
         "evaluate.cpp",
         "expand.cpp",
@@ -18,11 +17,11 @@ cc_library(
         "replenishment.cpp",
         "spread.cpp",
         "trick.cpp",
+        "unconstrained_layout_source.cpp",
         "validation.cpp",
     ],
     hdrs = [
         "belief_view.hpp",
-        "consistent_layout_source.hpp",
         "declarer_strategy.hpp",
         "defender_split.hpp",
         "defender_strategy.hpp",
@@ -39,6 +38,7 @@ cc_library(
         "spread.hpp",
         "trick.hpp",
         "types.hpp",
+        "unconstrained_layout_source.hpp",
         "validation.hpp",
     ],
     visibility = ["//visibility:public"],

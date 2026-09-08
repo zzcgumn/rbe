@@ -8,8 +8,6 @@ cc_test(
         "aggr_invariance_test.cpp",
         "belief_view_test.cpp",
         "counters_test.cpp",
-        "consistent_layout_source_integration_test.cpp",
-        "consistent_layout_source_test.cpp",
         "cuts_test.cpp",
         "declarer_node_test.cpp",
         "defender_node_test.cpp",
@@ -35,6 +33,8 @@ cc_test(
         "terminal_test.cpp",
         "test_support.hpp",
         "trick_test.cpp",
+        "unconstrained_layout_source_integration_test.cpp",
+        "unconstrained_layout_source_test.cpp",
         "validation_test.cpp",
     ],
     deps = [

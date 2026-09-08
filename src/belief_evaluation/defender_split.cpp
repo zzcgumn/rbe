@@ -120,7 +120,7 @@ auto apply_defender_split(
     // The complement is derived from pool itself (every card not named
     // goes to other_seat), never from root's own other-defender holding --
     // see this function's own doxygen for why. A fixed-size array, not
-    // std::vector<bool>: this is on ConsistentLayoutSource::at()'s hot
+    // std::vector<bool>: this is on UnconstrainedLayoutSource::at()'s hot
     // path, the pool is bounded by MaxOutstandingCards regardless of the
     // root (thirteen tricks, so at most 26 cards are ever outstanding
     // between two defenders -- see binomial_coefficient's own doxygen),

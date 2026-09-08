@@ -7,14 +7,14 @@
 #include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/consistent_layout_source.hpp>
+#include <belief_evaluation/unconstrained_layout_source.hpp>
 #include <belief_evaluation/node.hpp>
 
 #include "test_support.hpp"
 
 namespace be = dds::belief_evaluation;
 
-using be::ConsistentLayoutSource;
+using be::UnconstrainedLayoutSource;
 using be::holding;
 using be::is_consistent;
 using be::layout_key;
@@ -95,28 +95,28 @@ namespace
 
 // --- acceptance 1: size() matches hand-derived counts, several shapes -----
 
-TEST(ConsistentLayoutSourceTest, SizeMatchesTheHandDerivedCountOnATenCardPool)
+TEST(UnconstrainedLayoutSourceTest, SizeMatchesTheHandDerivedCountOnATenCardPool)
 {
-    ConsistentLayoutSource const source(make_ten_card_pool_root(), North, /*seed=*/1u);
+    UnconstrainedLayoutSource const source(make_ten_card_pool_root(), North, /*seed=*/1u);
     EXPECT_EQ(source.size(), 252u);  // C(10, 5)
 }
 
-TEST(ConsistentLayoutSourceTest, SizeMatchesTheHandDerivedCountOnAMidTrickEnding)
+TEST(UnconstrainedLayoutSourceTest, SizeMatchesTheHandDerivedCountOnAMidTrickEnding)
 {
     // Pool is 5 diamonds (East 2, West 3, since East already played the
     // ace to the current trick) -- C(5, 2) = 10.
-    ConsistentLayoutSource const source(make_mid_trick_root(), North, /*seed=*/1u);
+    UnconstrainedLayoutSource const source(make_mid_trick_root(), North, /*seed=*/1u);
     EXPECT_EQ(source.size(), 10u);
 }
 
-TEST(ConsistentLayoutSourceTest, SizeMatchesTheHandDerivedCountOnATwoCardEnding)
+TEST(UnconstrainedLayoutSourceTest, SizeMatchesTheHandDerivedCountOnATwoCardEnding)
 {
     // One spade each -- C(2, 1) = 2.
-    ConsistentLayoutSource const source(make_small_single_suit_root(), North, /*seed=*/1u);
+    UnconstrainedLayoutSource const source(make_small_single_suit_root(), North, /*seed=*/1u);
     EXPECT_EQ(source.size(), 2u);
 }
 
-TEST(ConsistentLayoutSourceTest, AnEmptyDefenderPoolGivesTheDegenerateSizeOneSpace)
+TEST(UnconstrainedLayoutSourceTest, AnEmptyDefenderPoolGivesTheDegenerateSizeOneSpace)
 {
     // C(0, 0) = 1: the composed source's own version of the size() == 1
     // degenerate case -- each underlying piece already covers it in
@@ -124,7 +124,7 @@ TEST(ConsistentLayoutSourceTest, AnEmptyDefenderPoolGivesTheDegenerateSizeOneSpa
     // keyed_permutation each have their own empty/k==n test), and this
     // closes the gap at the level a caller actually meets.
     Deal const root = make_empty_pool_root();
-    ConsistentLayoutSource const source(root, North, /*seed=*/1u);
+    UnconstrainedLayoutSource const source(root, North, /*seed=*/1u);
     ASSERT_EQ(source.size(), 1u);
     EXPECT_TRUE(is_consistent(source.at(0), root, North, South));
     // The one member of a size-one space is the root's own split -- East
@@ -134,10 +134,10 @@ TEST(ConsistentLayoutSourceTest, AnEmptyDefenderPoolGivesTheDegenerateSizeOneSpa
 
 // --- acceptance 3: at(i) is a bijection over the whole space --------------
 
-TEST(ConsistentLayoutSourceTest, AtIsABijectionOverTheWholeSpaceOnTheTenCardPool)
+TEST(UnconstrainedLayoutSourceTest, AtIsABijectionOverTheWholeSpaceOnTheTenCardPool)
 {
     Deal const root = make_ten_card_pool_root();
-    ConsistentLayoutSource const source(root, North, /*seed=*/1u);
+    UnconstrainedLayoutSource const source(root, North, /*seed=*/1u);
     std::uint64_t const total = *source.size();
     ASSERT_EQ(total, 252u);
 
@@ -156,10 +156,10 @@ TEST(ConsistentLayoutSourceTest, AtIsABijectionOverTheWholeSpaceOnTheTenCardPool
 
 // --- acceptance 2: every layout is a legal position, whole space ----------
 
-TEST(ConsistentLayoutSourceTest, EveryLayoutOverTheWholeSpaceIsALegalPosition)
+TEST(UnconstrainedLayoutSourceTest, EveryLayoutOverTheWholeSpaceIsALegalPosition)
 {
     Deal const root = make_ten_card_pool_root();
-    ConsistentLayoutSource const source(root, North, /*seed=*/1u);
+    UnconstrainedLayoutSource const source(root, North, /*seed=*/1u);
     std::uint64_t const total = *source.size();
 
     int const east_root_count = be::card_count(root, East);
@@ -180,9 +180,9 @@ TEST(ConsistentLayoutSourceTest, EveryLayoutOverTheWholeSpaceIsALegalPosition)
 
 // --- acceptance 4: deterministic ---------------------------------------------
 
-TEST(ConsistentLayoutSourceTest, AtIsDeterministicAcrossRepeatedCallsOnOneSource)
+TEST(UnconstrainedLayoutSourceTest, AtIsDeterministicAcrossRepeatedCallsOnOneSource)
 {
-    ConsistentLayoutSource const source(make_ten_card_pool_root(), North, /*seed=*/7u);
+    UnconstrainedLayoutSource const source(make_ten_card_pool_root(), North, /*seed=*/7u);
     for (std::uint64_t index = 0; index < 20; ++index)
     {
         Deal const first = source.at(index);
@@ -191,11 +191,11 @@ TEST(ConsistentLayoutSourceTest, AtIsDeterministicAcrossRepeatedCallsOnOneSource
     }
 }
 
-TEST(ConsistentLayoutSourceTest, AtIsDeterministicAcrossTwoSeparatelyConstructedSourcesWithTheSameSeed)
+TEST(UnconstrainedLayoutSourceTest, AtIsDeterministicAcrossTwoSeparatelyConstructedSourcesWithTheSameSeed)
 {
     Deal const root = make_ten_card_pool_root();
-    ConsistentLayoutSource const a(root, North, /*seed=*/7u);
-    ConsistentLayoutSource const b(root, North, /*seed=*/7u);
+    UnconstrainedLayoutSource const a(root, North, /*seed=*/7u);
+    UnconstrainedLayoutSource const b(root, North, /*seed=*/7u);
     for (std::uint64_t index = 0; index < 20; ++index)
     {
         EXPECT_EQ(layout_key(a.at(index), East), layout_key(b.at(index), East)) << "index=" << index;
@@ -204,11 +204,11 @@ TEST(ConsistentLayoutSourceTest, AtIsDeterministicAcrossTwoSeparatelyConstructed
 
 // --- acceptance 5: different seeds give different orders, same set -------
 
-TEST(ConsistentLayoutSourceTest, TwoSeedsGiveDifferentOrdersOfTheSameSetOfLayouts)
+TEST(UnconstrainedLayoutSourceTest, TwoSeedsGiveDifferentOrdersOfTheSameSetOfLayouts)
 {
     Deal const root = make_ten_card_pool_root();
-    ConsistentLayoutSource const a(root, North, /*seed=*/1u);
-    ConsistentLayoutSource const b(root, North, /*seed=*/2u);
+    UnconstrainedLayoutSource const a(root, North, /*seed=*/1u);
+    UnconstrainedLayoutSource const b(root, North, /*seed=*/2u);
     std::uint64_t const total = *a.size();
     ASSERT_EQ(total, *b.size());
 
@@ -228,9 +228,9 @@ TEST(ConsistentLayoutSourceTest, TwoSeedsGiveDifferentOrdersOfTheSameSetOfLayout
 
 // --- acceptance 6: out-of-range behaviour, stated and pinned --------------
 
-TEST(ConsistentLayoutSourceTest, OutOfRangeIndexIsAnAssertedCallerError)
+TEST(UnconstrainedLayoutSourceTest, OutOfRangeIndexIsAnAssertedCallerError)
 {
-    ConsistentLayoutSource const source(make_small_single_suit_root(), North, /*seed=*/1u);
+    UnconstrainedLayoutSource const source(make_small_single_suit_root(), North, /*seed=*/1u);
     ASSERT_EQ(source.size(), 2u);
     EXPECT_DEATH({ source.at(2); }, "");
 }

@@ -20,6 +20,16 @@ namespace dds::belief_evaluation
 /// first `LayoutSource` this module ships -- every other one in existence is
 /// a hand-built `std::vector<Deal>` test double.
 ///
+/// **"Unconstrained", not "consistent": every `LayoutSource` a caller
+/// supplies is required to be consistent with the root already (see
+/// `make_root`'s own doxygen) -- that is a baseline obligation on every
+/// source, not something distinguishing about this one. What is specific to
+/// this type is that it applies *no further* narrowing: a caller who has
+/// additional information -- what the bidding ruled out, say -- and wants a
+/// source reflecting that supplies their own, tighter `LayoutSource`
+/// instead. This type is the plain combinatorial space and nothing more,
+/// which is what its name says.
+///
 /// **`size()` is exact and never `nullopt`**: `C(n, k)` where `n` is the
 /// pooled card count and `k` is the fixed seat's own count at the root, both
 /// read once at construction (`defender_pool_decomposition`). `at(index)`
@@ -52,14 +62,14 @@ namespace dds::belief_evaluation
 /// well-shuffled source from a badly-ordered one. A reader meeting both
 /// facts later should read the second as this decision continued, not
 /// overturned.
-class ConsistentLayoutSource final : public LayoutSource
+class UnconstrainedLayoutSource final : public LayoutSource
 {
 public:
     /// `root` and `declarer` fix the space (via `defender_pool_decomposition`,
     /// computed once here and cached for the life of this source); `seed`
     /// fixes the enumeration order within it. `root` is copied, not
     /// referenced -- this source outlives no caller-owned `Deal`.
-    ConsistentLayoutSource(Deal const& root, int declarer, std::uint64_t seed);
+    UnconstrainedLayoutSource(Deal const& root, int declarer, std::uint64_t seed);
 
     /// `C(n, k)`: the pooled card count choose the fixed seat's own count at
     /// `root`. Exact, and never `nullopt` -- this space is always fully
