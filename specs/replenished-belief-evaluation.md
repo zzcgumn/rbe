@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-09-06
+last-updated: 2026-09-08
 ---
 
 # Replenished Belief Evaluation
@@ -207,6 +207,43 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   progress, declarer's and dummy's exact holdings, and a defender split of
   the same outstanding pool — not the source's raw size, which may include
   layouts the root position rules out.
+- **A shipped `LayoutSource` now exists** — `ConsistentLayoutSource`
+  (`library/src/belief_evaluation/consistent_layout_source.hpp`) — and for
+  a caller using it, "the belief space" is exactly what the paragraph above
+  has always meant by "consistent with the root position": every defender
+  split of the outstanding pool, with trump, the trick in progress, and
+  declarer's and dummy's exact holdings held fixed. Nothing else varies —
+  this is the same belief space this capability's model has described
+  throughout, not a new or narrower one. `size()` is exact
+  (`C(n, k)` — the pooled card count choose the fixed defender's own count
+  at the root) and never unknown; the enumeration order is randomised by
+  construction, from a seed fixed at construction, discharging the
+  randomised-order obligation below for any caller using this type. The
+  same seed and root reproduce a run; two different seeds enumerate the
+  identical space in a different order, which is the intended way to
+  assess sampling error against a single fixed `sample_size` — not a
+  reason to raise `sample_size` instead, which answers a different
+  question. Before this, every `LayoutSource` in existence was a
+  hand-built, in-memory test double; this is the first this capability
+  ships as library surface.
+- **`is_consistent()` under-constrains: it does not compare hand sizes,
+  and closing that gap is deliberately out of scope here.** It compares
+  trump, the seat on lead, the trick in progress, declarer's and dummy's
+  holdings per suit, and the defender *pool* per suit — never how many
+  cards each defender individually holds. A candidate handing one defender
+  four cards and the other two, where the root position has three each,
+  passes `is_consistent()` and would enter the belief space through
+  `make_root()` without complaint, even though it is not a legal bridge
+  position. `ConsistentLayoutSource` never produces such a candidate — it
+  enforces the fixed defender's own hand size directly rather than relying
+  on `is_consistent()` to reject what it cannot detect — but a hand-built
+  fixture or a future generator that relies on `is_consistent()` alone as
+  its legality filter will not be protected the same way. This is not
+  closed here because `is_consistent()` runs on every candidate in every
+  scan this capability makes, including node-local replenishment scans at
+  depth, so tightening it would change which layouts enter the belief
+  space on every existing fixture — a behaviour change with its own
+  reproduction argument to make, not a side effect of shipping a source.
 - **Sampling narrows the same root-construction scan to a bounded prefix,
   not a different mechanism.** With a sample size `M` supplied, `make_root`
   scans a `LayoutSource` from index 0, exactly as the exhaustive case does,
@@ -230,8 +267,12 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   paragraphs on replenishment and on the sampling gate below).
 - **A sampling evaluator's collapse is bounded by replenishment, to the
   extent the source can still supply matching layouts; with
-  `EvaluateOptions::replenish_below` absent (the default), nothing about a
-  sampled run differs from what this bullet has always described.** A
+  `EvaluateOptions::sampling.replenish_below` absent (the default), nothing
+  about a sampled run differs from what this bullet has always described.**
+  (`sample_size`, `scan_budget` and `replenish_below` are grouped under
+  `EvaluateOptions::sampling`, a nested `SamplingOptions` — a spelling
+  change with no behaviour change; see each field's own doxygen for the
+  coupling between them.) A
   sample can end up containing only one layout consistent with the play so
   far, and reporting a value from that layout hands a declarer strategy a
   false certainty about a position that is genuinely still open — the
@@ -240,7 +281,8 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   and `BeliefView::space_size` (below) both exist to make a collapsed
   sample visible to a strategy that looks. With `replenish_below` set, a
   node whose own layout count falls below it is topped back up towards
-  `sample_size` before the node is evaluated further — see the
+  `sample_size` (both now `EvaluateOptions::sampling` fields) before the
+  node is evaluated further — see the
   replenishment paragraph below — so the collapse this bullet describes is
   bounded rather than unchecked. It is bounded only by what the source can
   still supply: a node whose own scan has already exhausted the source
@@ -405,7 +447,11 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   systematically biased sample with no diagnostic anywhere in this
   evaluator: nothing here can distinguish a well-shuffled source from a
   badly-ordered one, since both simply return layouts in whatever order
-  `at()` presents them. A future caller-supplied contract this evaluator
+  `at()` presents them. This obligation is not closed by
+  `ConsistentLayoutSource` shipping — it still binds any caller supplying
+  their own `LayoutSource` — but there is now a correct implementation to
+  point at rather than only a description of the property a source must
+  have. A future caller-supplied contract this evaluator
   cannot verify belongs in this same register, not treated as a new kind of
   risk each time.
 - **Instrumentation is reported in the result, behind an opt-in, and cannot
@@ -431,8 +477,9 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   would in fact disable two cuts that were never unsound on a sample in
   the first place.
 - **This capability has a replenishment floor
-  (`EvaluateOptions::replenish_below`) and declines to refine tier 2's
-  gate to it — a decision, recorded here as one, not an oversight.**
+  (`EvaluateOptions::sampling.replenish_below`) and declines to refine
+  tier 2's gate to it — a decision, recorded here as one, not an
+  oversight.**
   `docs/replenished_belief_evaluation/algorithm.md` permits early cuts
   once a node reaches such a floor; re-enabling tier 2 there would buy a
   cut of unproven value — an injected-bound call costs several times a
@@ -474,6 +521,20 @@ rename or include-ordering trick anywhere in the module.
 - `library/src/belief_evaluation/defender_strategy.hpp` — `WeightedCard`,
   `DefenderQuery`, `DefenderStrategy`.
 - `library/src/belief_evaluation/layout_source.hpp` — `LayoutSource`.
+- `library/src/belief_evaluation/defender_split.hpp` — `DefenderPool`,
+  `defender_pool_decomposition()`, `binomial_coefficient()`,
+  `unrank_combination()`, `apply_defender_split()` — the pure combinatorics
+  `ConsistentLayoutSource` (below) is built from: a root's pooled defender
+  cards and each defender's own count, the k-subset enumeration over them,
+  and applying a chosen subset back onto a root layout as a split.
+- `library/src/belief_evaluation/keyed_permutation.hpp` —
+  `keyed_permutation()`, a seeded bijection on `[0, N)` storing nothing —
+  general-purpose, not specific to this capability's own types, and the
+  mechanism `ConsistentLayoutSource` uses to randomise its enumeration
+  order.
+- `library/src/belief_evaluation/consistent_layout_source.hpp` —
+  `ConsistentLayoutSource`, the shipped `LayoutSource` — see "Behaviour &
+  invariants" above for what it enumerates.
 - `library/src/belief_evaluation/renumber.hpp` — `renumber()`.
 - `library/src/belief_evaluation/rank_map.hpp` — `make_rank_map()`.
 - `library/src/belief_evaluation/layout_key.hpp` — `layout_key()`.
@@ -525,7 +586,13 @@ rename or include-ordering trick anywhere in the module.
   `evaluate.cpp`-private) for the same reason `is_terminal()` /
   `terminal_value()` are: so a test can construct an `ObservationState` /
   `BeliefNode` directly and check a cut condition in isolation, without
-  going through the whole recursion.
+  going through the whole recursion. `EvaluateOptions` holds five
+  independently-defaulted fields (`retain_root`, `collect_counters`,
+  `bound`, `delta_is_double_dummy_optimal`) plus one nested `sampling`
+  field of type `SamplingOptions`, grouping `sample_size`, `scan_budget`
+  and `replenish_below` — a spelling change with no behaviour change; a
+  default-constructed `SamplingOptions` means exactly what all three being
+  absent from a flat `EvaluateOptions` used to mean.
 - `library/src/belief_evaluation/spread.hpp` — `SpreadPolicy`, `spread()`.
   Part of the core library: solver-free, taking an already-solved
   `FutureTricks`.
@@ -543,6 +610,14 @@ rename or include-ordering trick anywhere in the module.
 
 ## Known gaps / non-goals
 
+- `is_consistent()` does not compare defender hand sizes, so it accepts a
+  strictly larger set of candidates than the set of legal bridge positions
+  consistent with the root. `ConsistentLayoutSource` does not rely on it
+  for this and enforces sizes itself; a hand-built fixture or a future
+  generator that relies on `is_consistent()` alone would not be protected
+  the same way. Deliberately not closed — see "Behaviour & invariants"
+  above for the mechanism and why tightening it is a separate, later
+  change.
 - Replenishment resamples from the front of the source rather than
   enumerating the part of the belief space not already sampled, which
   would also let it use the whole remaining space when that part is
