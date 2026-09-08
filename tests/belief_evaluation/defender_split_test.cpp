@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <bit>
+#include <cstdint>
+#include <set>
 #include <vector>
 
 #include <api/dds_data_types.hpp>
@@ -13,9 +16,11 @@
 
 namespace be = dds::belief_evaluation;
 
+using be::binomial_coefficient;
 using be::DefenderPool;
 using be::defender_pool_decomposition;
 using be::holding;
+using be::unrank_combination;
 
 namespace
 {
@@ -195,4 +200,148 @@ TEST(DefenderSplitTest, AFixedSeatCountOfZeroOrTheWholePoolIsLegal)
 
     EXPECT_EQ(pool.cards.size(), 3u);
     EXPECT_EQ(pool.fixed_seat_count, 0);
+}
+
+// --- binomial_coefficient: criterion 1, against an independent triangle ---
+
+TEST(BinomialCoefficientTest, MatchesAHandWrittenPascalsTriangleForEveryNAndK)
+{
+    // Built independently of binomial_coefficient's own implementation --
+    // the addition rule applied directly in the test, not a call into the
+    // production function under test.
+    constexpr int MaxN = 26;
+    std::array<std::array<std::uint64_t, MaxN + 1>, MaxN + 1> triangle{};
+    for (int n = 0; n <= MaxN; ++n)
+    {
+        triangle[n][0] = 1;
+        for (int k = 1; k <= n; ++k)
+        {
+            triangle[n][k] = triangle[n - 1][k - 1] + (k <= n - 1 ? triangle[n - 1][k] : 0);
+        }
+    }
+
+    for (int n = 0; n <= MaxN; ++n)
+    {
+        for (int k = 0; k <= n; ++k)
+        {
+            EXPECT_EQ(binomial_coefficient(n, k), triangle[n][k]) << "n=" << n << " k=" << k;
+        }
+    }
+}
+
+TEST(BinomialCoefficientTest, HandDerivedValuesIncludingTheBridgeSizedBound)
+{
+    EXPECT_EQ(binomial_coefficient(0, 0), 1u);
+    EXPECT_EQ(binomial_coefficient(5, 0), 1u);
+    EXPECT_EQ(binomial_coefficient(5, 5), 1u);
+    EXPECT_EQ(binomial_coefficient(5, 2), 10u);
+    EXPECT_EQ(binomial_coefficient(10, 5), 252u);
+    EXPECT_EQ(binomial_coefficient(26, 13), 10400600u);
+}
+
+TEST(BinomialCoefficientTest, KOutOfRangeIsZeroNotAnError)
+{
+    EXPECT_EQ(binomial_coefficient(5, -1), 0u);
+    EXPECT_EQ(binomial_coefficient(5, 6), 0u);
+}
+
+// --- unrank_combination: criterion 2, exhaustive bijection ----------------
+
+namespace
+{
+    /// Every k-subset of {0, ..., n-1} `unrank_combination` produces over
+    /// the whole of [0, C(n, k)), as a set of sets -- the shape criterion 2
+    /// asks the exhaustive check to prove coverage over, not merely that
+    /// consecutive indices look different.
+    auto all_unranked_subsets(int n, int k) -> std::set<std::set<int>>
+    {
+        std::set<std::set<int>> subsets;
+        std::uint64_t const total = binomial_coefficient(n, k);
+        for (std::uint64_t index = 0; index < total; ++index)
+        {
+            std::vector<int> const subset = unrank_combination(index, n, k);
+            subsets.insert(std::set<int>(subset.begin(), subset.end()));
+        }
+        return subsets;
+    }
+}  // namespace
+
+TEST(UnrankCombinationTest, IsABijectionOntoTheKSubsetsOfATenElementDomain)
+{
+    // C(10, 5) = 252 -- the size task 03's own background names as the
+    // right scale for exhaustive verification here.
+    int const n = 10;
+    int const k = 5;
+    std::uint64_t const total = binomial_coefficient(n, k);
+    ASSERT_EQ(total, 252u);
+
+    std::set<std::set<int>> const subsets = all_unranked_subsets(n, k);
+    EXPECT_EQ(subsets.size(), total);  // every index produced a distinct subset
+}
+
+TEST(UnrankCombinationTest, IsABijectionOnAnAsymmetricPair)
+{
+    int const n = 9;
+    int const k = 2;
+    std::uint64_t const total = binomial_coefficient(n, k);
+    ASSERT_EQ(total, 36u);
+
+    std::set<std::set<int>> const subsets = all_unranked_subsets(n, k);
+    EXPECT_EQ(subsets.size(), total);
+}
+
+TEST(UnrankCombinationTest, EveryReturnedSubsetHasExactlyKDistinctInRangeElements)
+{
+    int const n = 7;
+    int const k = 3;
+    std::uint64_t const total = binomial_coefficient(n, k);
+    for (std::uint64_t index = 0; index < total; ++index)
+    {
+        std::vector<int> const subset = unrank_combination(index, n, k);
+        ASSERT_EQ(subset.size(), static_cast<std::size_t>(k)) << "index=" << index;
+        std::set<int> const distinct(subset.begin(), subset.end());
+        EXPECT_EQ(distinct.size(), subset.size()) << "index=" << index;  // no repeats
+        for (int element : subset)
+        {
+            EXPECT_GE(element, 0) << "index=" << index;
+            EXPECT_LT(element, n) << "index=" << index;
+        }
+    }
+}
+
+// --- unrank_combination: hand-derived indices (a mutation test's target) --
+
+TEST(UnrankCombinationTest, HandDerivedIndicesOnTheFiveChooseTwoDomain)
+{
+    // Worked out by hand in colex order (see the header's own doxygen for
+    // the construction): index 0 is the lexicographically-first pair by
+    // the colex rule, index C(n,k)-1 is the last, and index 3 is an
+    // interior value -- verified in the by-hand derivation above the
+    // header's binomial_coefficient... see BinomialCoefficientTest above,
+    // colex enumerates {0,1},{0,2},{1,2},{0,3},{1,3},{2,3},{0,4},{1,4},
+    // {2,4},{3,4} for indices 0..9 of C(5,2).
+    EXPECT_EQ(unrank_combination(0, 5, 2), (std::vector<int>{0, 1}));
+    EXPECT_EQ(unrank_combination(9, 5, 2), (std::vector<int>{3, 4}));  // last index, C(5,2) - 1
+    EXPECT_EQ(unrank_combination(3, 5, 2), (std::vector<int>{0, 3}));  // an interior index
+}
+
+// --- edge cases -------------------------------------------------------------
+
+TEST(UnrankCombinationTest, KEqualsZeroGivesTheEmptySubsetForTheOnlyValidIndex)
+{
+    EXPECT_TRUE(unrank_combination(0, 5, 0).empty());
+    EXPECT_EQ(binomial_coefficient(5, 0), 1u);
+}
+
+TEST(UnrankCombinationTest, KEqualsNGivesTheWholeDomainForTheOnlyValidIndex)
+{
+    EXPECT_EQ(unrank_combination(0, 4, 4), (std::vector<int>{0, 1, 2, 3}));
+    EXPECT_EQ(binomial_coefficient(4, 4), 1u);
+}
+
+TEST(UnrankCombinationTest, IsAPureFunctionSameIndexSameSubsetEveryTime)
+{
+    std::vector<int> const first = unrank_combination(17, 9, 4);
+    std::vector<int> const second = unrank_combination(17, 9, 4);
+    EXPECT_EQ(first, second);
 }

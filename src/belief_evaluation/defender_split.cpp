@@ -1,5 +1,7 @@
 #include <belief_evaluation/defender_split.hpp>
 
+#include <algorithm>
+#include <array>
 #include <bit>
 
 #include <utility/constants.h>
@@ -40,6 +42,65 @@ auto defender_pool_decomposition(Deal const& root, int declarer) -> DefenderPool
         }
     }
     return pool;
+}
+
+namespace
+{
+    // Thirteen tricks, so at most 26 cards are ever outstanding between two
+    // defenders -- see binomial_coefficient's own doxygen.
+    constexpr int MaxOutstandingCards = 26;
+
+    constexpr auto make_pascals_triangle()
+    {
+        std::array<std::array<std::uint64_t, MaxOutstandingCards + 1>, MaxOutstandingCards + 1> table{};
+        for (int n = 0; n <= MaxOutstandingCards; ++n)
+        {
+            table[n][0] = 1;
+            for (int k = 1; k <= n; ++k)
+            {
+                // table[n - 1][k] is 0 by the zero-initialisation above
+                // when k == n (row n - 1 only ever had entries up to
+                // column n - 1 written to it) -- exactly C(n - 1, n) == 0,
+                // so no separate bounds check is needed here.
+                table[n][k] = table[n - 1][k - 1] + table[n - 1][k];
+            }
+        }
+        return table;
+    }
+
+    constexpr auto PascalsTriangle = make_pascals_triangle();
+}  // namespace
+
+auto binomial_coefficient(int n, int k) -> std::uint64_t
+{
+    if (k < 0 || k > n)
+    {
+        return 0;
+    }
+    return PascalsTriangle[static_cast<std::size_t>(n)][static_cast<std::size_t>(k)];
+}
+
+auto unrank_combination(std::uint64_t index, int n, int k) -> std::vector<int>
+{
+    // Combinatorial-number-system unranking in colex order: for each
+    // position from k down to 1, find the largest remaining candidate v
+    // with C(v, i) <= index, take it, and subtract that many combinations
+    // before moving on. Builds descending, reversed to ascending below.
+    std::vector<int> result;
+    result.reserve(static_cast<std::size_t>(k));
+    int v = n - 1;
+    for (int i = k; i >= 1; --i)
+    {
+        while (binomial_coefficient(v, i) > index)
+        {
+            --v;
+        }
+        result.push_back(v);
+        index -= binomial_coefficient(v, i);
+        --v;
+    }
+    std::reverse(result.begin(), result.end());
+    return result;
 }
 
 }  // namespace dds::belief_evaluation
