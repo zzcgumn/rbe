@@ -120,13 +120,20 @@ auto unrank_combination(std::uint64_t index, int n, int k) -> std::vector<int>;
 ///
 /// This function trusts its caller for legality: it does not check that
 /// `fixed_seat_cards.size()` equals what `pool.fixed_seat_count` recorded
-/// at `root`, or that every index is in range. A caller enumerating splits
-/// is expected to have called `unrank_combination` with
-/// `k = pool.fixed_seat_count`, which by construction can only ever name a
-/// `fixed_seat_cards` of the right size; see this module's own tests for
-/// the two claims that matter -- `is_consistent` against `root`, and legal
-/// hand sizes, which `is_consistent` itself does not check (see
-/// `DefenderPool`'s own doxygen and `node.cpp`'s `is_consistent`).
+/// at `root`. A caller enumerating splits is expected to have called
+/// `unrank_combination` with `k = pool.fixed_seat_count`, which by
+/// construction can only ever name a `fixed_seat_cards` of the right size;
+/// see this module's own tests for the two claims that matter --
+/// `is_consistent` against `root`, and legal hand sizes, which
+/// `is_consistent` itself does not check (see `DefenderPool`'s own doxygen
+/// and `node.cpp`'s `is_consistent`).
+///
+/// Each individual index in `fixed_seat_cards` is asserted to be in
+/// `[0, pool.cards.size())` -- a bad one is still a caller error, but is
+/// never an out-of-bounds write: this function's own internal bookkeeping
+/// is a fixed-size buffer, and an index outside that range is ignored
+/// rather than trusted, in a build where the assert has been compiled
+/// away.
 auto apply_defender_split(
     Deal const& root, int declarer, DefenderPool const& pool, std::vector<int> const& fixed_seat_cards) -> Deal;
 

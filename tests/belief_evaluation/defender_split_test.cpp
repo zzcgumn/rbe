@@ -433,6 +433,22 @@ TEST(ApplyDefenderSplitTest, TheRootsOwnSplitRoundTripsToTheRootLayoutFieldForFi
     EXPECT_TRUE(deals_are_field_identical(round_tripped, root));
 }
 
+TEST(ApplyDefenderSplitTest, AnOutOfRangeIndexIsAnAssertedCallerErrorNotAnOutOfBoundsWrite)
+{
+    // fixed_seat_cards is caller-supplied and this function trusts it for
+    // legality (see its own doxygen) -- but "trusts" must not mean "writes
+    // wherever a bad index points". Both a negative and a too-large index
+    // are asserted in a build where assert is active (EXPECT_DEBUG_DEATH,
+    // not EXPECT_DEATH -- see UnconstrainedLayoutSourceTest's own sibling
+    // assertion for why); the guard the assert pins is what stops the
+    // out-of-bounds write in a build where it is not.
+    Deal const root = make_two_suit_pool_root();
+    DefenderPool const pool = defender_pool_decomposition(root, North);
+    EXPECT_DEBUG_DEATH({ apply_defender_split(root, North, pool, {-1}); }, "");
+    EXPECT_DEBUG_DEATH(
+        { apply_defender_split(root, North, pool, {static_cast<int>(pool.cards.size())}); }, "");
+}
+
 TEST(ApplyDefenderSplitTest, EveryResultOverTheWholeSpaceIsConsistentWithTheRoot)
 {
     Deal const root = make_two_suit_pool_root();

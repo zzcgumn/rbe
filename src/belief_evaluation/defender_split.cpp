@@ -130,6 +130,18 @@ auto apply_defender_split(
     std::array<bool, MaxOutstandingCards> is_fixed_seat_card{};
     for (int index : fixed_seat_cards)
     {
+        // A bad index here is a caller error (this function trusts
+        // fixed_seat_cards for legality -- see its own doxygen), asserted
+        // for a build where that catches it loudly; the range check below
+        // is what stops it becoming an out-of-bounds write into
+        // is_fixed_seat_card in a build where the assert has been compiled
+        // away, rather than silently corrupting memory the size check
+        // above alone does not guard against.
+        assert(index >= 0 && static_cast<std::size_t>(index) < pool.cards.size());
+        if (index < 0 || static_cast<std::size_t>(index) >= pool.cards.size())
+        {
+            continue;
+        }
         is_fixed_seat_card[static_cast<std::size_t>(index)] = true;
     }
     for (std::size_t i = 0; i < pool.cards.size(); ++i)

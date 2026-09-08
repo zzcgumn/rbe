@@ -230,7 +230,13 @@ TEST(UnconstrainedLayoutSourceTest, TwoSeedsGiveDifferentOrdersOfTheSameSetOfLay
 
 TEST(UnconstrainedLayoutSourceTest, OutOfRangeIndexIsAnAssertedCallerError)
 {
+    // EXPECT_DEBUG_DEATH, not EXPECT_DEATH: the assert this pins is compiled
+    // away under NDEBUG, so a death expectation that does not know about
+    // that build mode would fail there for the wrong reason -- the program
+    // no longer dies, not because the check stopped working. EXPECT_DEBUG_DEATH
+    // checks for death only in a build where assert is actually active, and
+    // is a no-op verification (just runs the statement) otherwise.
     UnconstrainedLayoutSource const source(make_small_single_suit_root(), North, /*seed=*/1u);
     ASSERT_EQ(source.size(), 2u);
-    EXPECT_DEATH({ source.at(2); }, "");
+    EXPECT_DEBUG_DEATH({ source.at(2); }, "");
 }
