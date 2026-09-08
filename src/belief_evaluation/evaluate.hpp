@@ -76,22 +76,116 @@ struct RootChildValue
 /// applied to a different obligation already in this module.
 using LayoutBound = std::function<int(Deal const&)>;
 
+/// The three sampling-related fields, grouped because they are coupled and
+/// not because they compose freely — see each field's own doxygen for what
+/// still binds independently of the others. Default-constructed means
+/// exactly what all three being absent from a flat `EvaluateOptions` used
+/// to mean: exhaustive enumeration, an unbounded scan, no replenishment.
+///
+/// **Grouping is not composing.** `scan_budget` applies whether or not
+/// `sample_size` is set — it binds a scan's own cost regardless of what the
+/// scan is for — and `replenish_below` does nothing at all unless
+/// `sample_size` is also present, since there is no separate top-up target
+/// (see that field's own doxygen for the exact degenerate cases). Reading
+/// the three as "a sampling mode, configured by three knobs" is the wrong
+/// mental model; reading them as "three related but individually-scoped
+/// settings" is the right one.
+struct SamplingOptions
+{
+    /// Cap the number of layouts drawn for the root, absent for exhaustive
+    /// enumeration (every consistent layout, unchanged behaviour). When
+    /// present, threaded straight through to `make_root` as
+    /// `RootOptions::sample_size` — see that field, and `make_root`'s own
+    /// doxygen, for the exact scanning and `is_sample` semantics. No seed
+    /// anywhere: the source's own ordering is where any randomness has to
+    /// live (see `LayoutSource::at`'s doxygen), not here.
+    std::optional<std::uint64_t> sample_size;
+
+    /// Cap the number of `source.at()` calls a single scan may make — the
+    /// root's own, via `RootOptions::scan_budget` (see that field for what
+    /// it counts), and, identically, any node-local replenishment scan:
+    /// this is a **per-scan** cap, not a per-run total, so a node-local
+    /// scan starts a fresh budget of its own rather than sharing what the
+    /// root already spent. Applies whether or not `sample_size` is set: a
+    /// `scan_budget` narrower than the source binds and degrades the root
+    /// on its own. A budget that binds is not an error — see
+    /// `RootFailure::ScanBudgetExhausted` for the one case that still is
+    /// (nothing survived before the budget ran out).
+    std::optional<std::uint64_t> scan_budget;
+
+    /// Replenish a node whose `layouts.size()` is below this, topping it
+    /// back up towards `sample_size` from `source` before any cut is
+    /// evaluated at it and before any `BeliefView` is built there. Absent
+    /// by default -- which is what keeps every existing behaviour
+    /// byte-for-byte unchanged: with no threshold, the recursion never
+    /// scans past the root and never touches a node's `kappa`.
+    ///
+    /// The trigger reads **only** `node.layouts.size()` — nothing about
+    /// `is_sample`, how many layouts are already made or dead, or any
+    /// other property of the node. algorithm.md is explicit that the rule
+    /// to trigger replenishment must depend only on sample size or total
+    /// probability mass, since anything else biases the result; `is_sample`
+    /// specifically is both redundant (an exhaustive node's count is what
+    /// it is, so a caller who sets this with no `sample_size` simply gets a
+    /// scan that finds nothing new) and one more thing that would need to
+    /// stay correct as a node's own scan can flip it mid-search.
+    ///
+    /// **Coupled with `sample_size`: there is no separate top-up target.**
+    /// A node is topped back up towards `sample_size` itself, since a
+    /// caller who already said how large a sample they want should not
+    /// have to say it twice — now visible in the shape, both fields living
+    /// on the same type. If `sample_size` is absent, this field is treated
+    /// as absent too: a replenishment threshold with no target to top up
+    /// to has nothing to do, and the scan never runs. Reuses `scan_budget`
+    /// as each individual replenishment scan's own cap (see that field)
+    /// rather than adding a fourth coupled field for it.
+    ///
+    /// A value **above** `sample_size` is accepted, not rejected, but is
+    /// degenerate: a node's own count can never *exceed* `sample_size`
+    /// (that is what tops it up to), so the threshold is met at every node
+    /// on entry and the trigger condition holds every time -- but that is
+    /// not "fires for free every time". Three cases, and only one of them
+    /// is genuinely free:
+    ///
+    /// - **`node.no_more_available` is already set.** Checked before the
+    ///   scan and short-circuits it entirely -- zero `source.at()` calls,
+    ///   and *not* recorded in `EvaluationCounters::replenishment_by_depth`
+    ///   at all, not even as an attempt. See that field's own doxygen.
+    /// - **`wanted = sample_size - current` is zero** (a node whose count
+    ///   still equals `sample_size` unchanged, which holds through any
+    ///   number of declarer plies but stops holding the moment a defender
+    ///   split has first dropped a node's count below it). `replenish_node`
+    ///   computes `wanted` and calls `scan_for_replenishment` regardless of
+    ///   its value -- unlike the `no_more_available` case above, there is no
+    ///   short-circuit for `wanted == 0` in `replenish_node` itself. But
+    ///   `scan_for_replenishment` has its own early return for exactly this
+    ///   input (see that function's own doxygen), so no `source.size()`
+    ///   call and no exclusion-set build happen either -- the scan returns
+    ///   immediately at zero `source.at()` calls, and *is* recorded as an
+    ///   attempt (`at_calls == 0`, `succeeded == false`).
+    /// - **`wanted > 0`**: a real, possibly expensive, node-local scan runs
+    ///   and is recorded as an attempt. This includes the case where the
+    ///   scan ends in `SourceExhausted` having found nothing -- that scan
+    ///   still spent real `at()` calls reaching the end of `source`; it is
+    ///   not a fourth free case.
+    ///
+    /// So this setting does not make replenishment free in general: it
+    /// makes the trigger condition true at every node, with real cost
+    /// wherever a split has already happened, the source still has
+    /// candidates to offer, and `no_more_available` has not already ruled
+    /// the path out. A reader of `EvaluationCounters::replenishment_by_depth`
+    /// should not read `attempted` as "the trigger condition held": a
+    /// `no_more_available` short-circuit holds the condition but is not
+    /// counted; `attempted` counts only firings that actually called
+    /// `scan_for_replenishment`, and even among those `at_calls` is what
+    /// distinguishes a free `wanted == 0` return from a real scan.
+    std::optional<std::uint64_t> replenish_below;
+};
+
 /// Opt-in behaviour for `evaluate()`. Off by default: nodes are built on
 /// the recursion stack and released as each subtree completes, so a
 /// retained tree — a belief set kept at every node — is affordable only
 /// when asked for; see EvaluationValue::retained_root.
-///
-/// Seven fields now, and growing as later capabilities add their own —
-/// this stays a flat struct of independently-defaulted options rather than
-/// acquiring internal structure of its own. `sample_size`, `scan_budget`
-/// and `replenish_below` are a trio that are not independent of each other
-/// (a budget with no sample size just caps a scan that would have stopped
-/// at the source's own end anyway; a replenishment threshold with no
-/// sample size has no target to top up to) — noted here rather than
-/// treated as a reason to restructure, since each field's own doxygen
-/// already states the coupling and the struct still reads clearly. If a
-/// future field stops that being true, that is worth revisiting then, not
-/// pre-empting here.
 struct EvaluateOptions
 {
     bool retain_root = false;
@@ -139,94 +233,13 @@ struct EvaluateOptions
     /// here checks that δ delivers double-dummy play.
     bool delta_is_double_dummy_optimal = false;
 
-    /// Cap the number of layouts drawn for the root, absent for exhaustive
-    /// enumeration (every consistent layout, unchanged behaviour). When
-    /// present, threaded straight through to `make_root` as
-    /// `RootOptions::sample_size` — see that field, and `make_root`'s own
-    /// doxygen, for the exact scanning and `is_sample` semantics. No seed
-    /// anywhere: the source's own ordering is where any randomness has to
-    /// live (see `LayoutSource::at`'s doxygen), not here.
-    std::optional<std::uint64_t> sample_size;
-
-    /// Cap the number of `source.at()` calls a single scan may make — the
-    /// root's own, via `RootOptions::scan_budget` (see that field for what
-    /// it counts), and, identically, any node-local replenishment scan:
-    /// this is a **per-scan** cap, not a per-run total, so a node-local
-    /// scan starts a fresh budget of its own rather than sharing what the
-    /// root already spent. Applies whether or not `sample_size` is set: a
-    /// `scan_budget` narrower than the source binds and degrades the root
-    /// on its own. A budget that binds is not an error — see
-    /// `RootFailure::ScanBudgetExhausted` for the one case that still is
-    /// (nothing survived before the budget ran out).
-    std::optional<std::uint64_t> scan_budget;
-
-    /// Replenish a node whose `layouts.size()` is below this, topping it
-    /// back up towards `sample_size` from `source` before any cut is
-    /// evaluated at it and before any `BeliefView` is built there. Absent
-    /// by default -- which is what keeps every existing behaviour
-    /// byte-for-byte unchanged: with no threshold, the recursion never
-    /// scans past the root and never touches a node's `kappa`.
-    ///
-    /// The trigger reads **only** `node.layouts.size()` — nothing about
-    /// `is_sample`, how many layouts are already made or dead, or any
-    /// other property of the node. algorithm.md is explicit that the rule
-    /// to trigger replenishment must depend only on sample size or total
-    /// probability mass, since anything else biases the result; `is_sample`
-    /// specifically is both redundant (an exhaustive node's count is what
-    /// it is, so a caller who sets this with no `sample_size` simply gets a
-    /// scan that finds nothing new) and one more thing that would need to
-    /// stay correct as a node's own scan can flip it mid-search.
-    ///
-    /// **Coupled with `sample_size`, not independent of it**: there is no
-    /// separate top-up target — a node is topped back up towards
-    /// `sample_size` itself, since a caller who already said how large a
-    /// sample they want should not have to say it twice. If `sample_size`
-    /// is absent, this field is treated as absent too: a replenishment
-    /// threshold with no target to top up to has nothing to do, and the
-    /// scan never runs. Reuses `scan_budget` as each individual
-    /// replenishment scan's own cap (see that field) rather than adding a
-    /// third coupled field for it.
-    ///
-    /// A value **above** `sample_size` is accepted, not rejected, but is
-    /// degenerate: a node's own count can never *exceed* `sample_size`
-    /// (that is what tops it up to), so the threshold is met at every node
-    /// on entry and the trigger condition holds every time -- but that is
-    /// not "fires for free every time". Three cases, and only one of them
-    /// is genuinely free:
-    ///
-    /// - **`node.no_more_available` is already set.** Checked before the
-    ///   scan and short-circuits it entirely -- zero `source.at()` calls,
-    ///   and *not* recorded in `EvaluationCounters::replenishment_by_depth`
-    ///   at all, not even as an attempt. See that field's own doxygen.
-    /// - **`wanted = sample_size - current` is zero** (a node whose count
-    ///   still equals `sample_size` unchanged, which holds through any
-    ///   number of declarer plies but stops holding the moment a defender
-    ///   split has first dropped a node's count below it). `replenish_node`
-    ///   computes `wanted` and calls `scan_for_replenishment` regardless of
-    ///   its value -- unlike the `no_more_available` case above, there is no
-    ///   short-circuit for `wanted == 0` in `replenish_node` itself. But
-    ///   `scan_for_replenishment` has its own early return for exactly this
-    ///   input (see that function's own doxygen), so no `source.size()`
-    ///   call and no exclusion-set build happen either -- the scan returns
-    ///   immediately at zero `source.at()` calls, and *is* recorded as an
-    ///   attempt (`at_calls == 0`, `succeeded == false`).
-    /// - **`wanted > 0`**: a real, possibly expensive, node-local scan runs
-    ///   and is recorded as an attempt. This includes the case where the
-    ///   scan ends in `SourceExhausted` having found nothing -- that scan
-    ///   still spent real `at()` calls reaching the end of `source`; it is
-    ///   not a fourth free case.
-    ///
-    /// So this setting does not make replenishment free in general: it
-    /// makes the trigger condition true at every node, with real cost
-    /// wherever a split has already happened, the source still has
-    /// candidates to offer, and `no_more_available` has not already ruled
-    /// the path out. A reader of `EvaluationCounters::replenishment_by_depth`
-    /// should not read `attempted` as "the trigger condition held": a
-    /// `no_more_available` short-circuit holds the condition but is not
-    /// counted; `attempted` counts only firings that actually called
-    /// `scan_for_replenishment`, and even among those `at_calls` is what
-    /// distinguishes a free `wanted == 0` return from a real scan.
-    std::optional<std::uint64_t> replenish_below;
+    /// `sample_size`, `scan_budget` and `replenish_below`, grouped — see
+    /// `SamplingOptions`' own doxygen for what the grouping does and does
+    /// not imply. Default-constructed, so a caller wanting none of it
+    /// writes nothing and every existing default-constructed
+    /// `EvaluateOptions` still means exactly what it meant before this type
+    /// existed: exhaustive enumeration, no scan budget, no replenishment.
+    SamplingOptions sampling;
 };
 
 /// Per-depth aggregate of `node.layouts.size()` across every node reached

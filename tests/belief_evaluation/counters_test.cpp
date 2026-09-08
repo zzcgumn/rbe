@@ -299,7 +299,7 @@ TEST_F(CountersTest, SampleSizeByDepthShowsTheCollapseFromASampledRootAcrossAPly
         source,
         strategy(1),
         single_card_defender,
-        EvaluateOptions{.collect_counters = true, .sample_size = 2u});
+        EvaluateOptions{.collect_counters = true, .sampling = {.sample_size = 2u}});
 
     ASSERT_FALSE(result.error.has_value());
     EvaluationValue const& value = result.by_strategy.at(1u);
@@ -364,9 +364,9 @@ TEST_F(CountersTest, CollectingCountersDoesNotChangeTheAnswerEitherDirectionWith
     std::vector<Deal> const layouts{
         make_split_layout(Three, Two), make_split_layout(Jack, Two), make_split_layout(Three, Three)};
     VectorLayoutSource source(layouts);
-    EvaluateOptions const without_counters_options{.sample_size = 2u, .replenish_below = 2u};
+    EvaluateOptions const without_counters_options{.sampling = {.sample_size = 2u, .replenish_below = 2u}};
     EvaluateOptions const with_counters_options{
-        .collect_counters = true, .sample_size = 2u, .replenish_below = 2u};
+        .collect_counters = true, .sampling = {.sample_size = 2u, .replenish_below = 2u}};
 
     EvaluationResult const without_counters = evaluate(
         layouts.front(),
@@ -422,7 +422,7 @@ TEST_F(CountersTest, ReplenishmentByDepthMatchesTheHandDerivedVector)
         source,
         strategy(1),
         single_card_defender,
-        EvaluateOptions{.collect_counters = true, .sample_size = 2u, .replenish_below = 2u});
+        EvaluateOptions{.collect_counters = true, .sampling = {.sample_size = 2u, .replenish_below = 2u}});
 
     ASSERT_FALSE(result.error.has_value());
     EvaluationValue const& value = result.by_strategy.at(1u);

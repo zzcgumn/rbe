@@ -164,7 +164,7 @@ TEST_F(SamplingTest, MEqualToNLeavesIsSampleFalseAndMatchesExhaustiveBitwise)
         source,
         strategy(1),
         single_card_defender,
-        EvaluateOptions{.sample_size = 3u});
+        EvaluateOptions{.sampling = {.sample_size = 3u}});
 
     ASSERT_FALSE(exhaustive.error.has_value());
     ASSERT_FALSE(sampled.error.has_value());
@@ -207,7 +207,7 @@ TEST_F(SamplingTest, MGreaterThanNLeavesIsSampleFalseAndMatchesExhaustiveBitwise
         source,
         strategy(1),
         single_card_defender,
-        EvaluateOptions{.sample_size = 1000u});
+        EvaluateOptions{.sampling = {.sample_size = 1000u}});
 
     ASSERT_FALSE(exhaustive.error.has_value());
     ASSERT_FALSE(sampled.error.has_value());
@@ -290,7 +290,7 @@ TEST_F(SamplingTest, TierTwoNeverFiresOnceTheRootIsAGenuineSample)
             .collect_counters = true,
             .bound = claims_every_layout_dead,
             .delta_is_double_dummy_optimal = true,
-            .sample_size = 2u});
+            .sampling = {.sample_size = 2u}});
     ASSERT_FALSE(sampled.error.has_value());
     ASSERT_TRUE(sampled.by_strategy.at(1u).counters.has_value());
     EXPECT_EQ(sampled.by_strategy.at(1u).counters->tier2_cuts, 0u);
@@ -418,7 +418,7 @@ TEST_F(SamplingTest, ABudgetLargeEnoughNotToBindMatchesExhaustiveBehaviourBitwis
         source,
         strategy(1),
         single_card_defender,
-        EvaluateOptions{.sample_size = 1000u, .scan_budget = 1000u});
+        EvaluateOptions{.sampling = {.sample_size = 1000u, .scan_budget = 1000u}});
 
     ASSERT_FALSE(exhaustive.error.has_value());
     ASSERT_FALSE(generously_budgeted.error.has_value());
@@ -457,7 +457,7 @@ TEST_F(SamplingTest, ALargeSampleWithMGreaterThanNIsStillBitIdenticalToExhaustiv
         source,
         strategy(1),
         single_card_defender,
-        EvaluateOptions{.sample_size = 1000u});
+        EvaluateOptions{.sampling = {.sample_size = 1000u}});
 
     ASSERT_FALSE(exhaustive.error.has_value());
     ASSERT_FALSE(sampled.error.has_value());

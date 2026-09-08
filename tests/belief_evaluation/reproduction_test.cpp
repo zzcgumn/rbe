@@ -241,7 +241,7 @@ TEST_F(ReproductionTest, ConvergesTowardTheExhaustiveAnswerAsMRises)
         source,
         pi,
         single_card_defender,
-        EvaluateOptions{.sample_size = 6u});
+        EvaluateOptions{.sampling = {.sample_size = 6u}});
     ASSERT_FALSE(m6.error.has_value());
     EXPECT_DOUBLE_EQ(m6.by_strategy.at(1u).p_make, 1.0);
 
@@ -256,7 +256,7 @@ TEST_F(ReproductionTest, ConvergesTowardTheExhaustiveAnswerAsMRises)
         source,
         pi,
         single_card_defender,
-        EvaluateOptions{.sample_size = 7u});
+        EvaluateOptions{.sampling = {.sample_size = 7u}});
     ASSERT_FALSE(m7.error.has_value());
     EXPECT_NEAR(m7.by_strategy.at(1u).p_make, true_p_make, 1e-9);
 
@@ -310,7 +310,7 @@ TEST_F(ReproductionTest, MGreaterThanOrEqualToNReproducesExhaustiveBitwiseWithRe
         source,
         pi,
         single_card_defender,
-        EvaluateOptions{.sample_size = 14u, .replenish_below = 100u});
+        EvaluateOptions{.sampling = {.sample_size = 14u, .replenish_below = 100u}});
     ASSERT_FALSE(with_replenishment.error.has_value());
     EXPECT_EQ(exhaustive.by_strategy.at(1u).p_make, with_replenishment.by_strategy.at(1u).p_make);
 }
@@ -347,7 +347,7 @@ TEST_F(ReproductionTest, ReplenishmentCannotRecoverThisFixturesOwnMEqualsSixBeca
         source,
         pi,
         single_card_defender,
-        EvaluateOptions{.sample_size = 6u, .replenish_below = 100u});
+        EvaluateOptions{.sampling = {.sample_size = 6u, .replenish_below = 100u}});
     ASSERT_FALSE(result.error.has_value());
     EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);  // unchanged from the no-replenishment M = 6 case
 }
@@ -431,7 +431,7 @@ TEST_F(ReproductionTest, ConvergesViaReplenishmentOnASplitThenFinesseVariantOfTh
         source,
         pi,
         single_card_defender,
-        EvaluateOptions{.sample_size = 6u});
+        EvaluateOptions{.sampling = {.sample_size = 6u}});
     ASSERT_FALSE(m6_no_replenishment.error.has_value());
     EXPECT_DOUBLE_EQ(m6_no_replenishment.by_strategy.at(1u).p_make, 1.0);
 
@@ -442,7 +442,7 @@ TEST_F(ReproductionTest, ConvergesViaReplenishmentOnASplitThenFinesseVariantOfTh
         source,
         pi,
         single_card_defender,
-        EvaluateOptions{.sample_size = 6u, .replenish_below = 6u});
+        EvaluateOptions{.sampling = {.sample_size = 6u, .replenish_below = 6u}});
     ASSERT_FALSE(m6_with_replenishment.error.has_value());
     // Side by side: 1.0 without replenishment, 0.75 with it -- exactly the
     // exhaustive answer, not merely closer to it.
@@ -483,7 +483,7 @@ TEST_F(ReproductionTest, MassIsConservedAcrossRepeatedReplenishmentOnTheSplitThe
         source,
         pi,
         single_card_defender,
-        EvaluateOptions{.collect_counters = true, .sample_size = 6u, .replenish_below = 6u});
+        EvaluateOptions{.collect_counters = true, .sampling = {.sample_size = 6u, .replenish_below = 6u}});
     ASSERT_FALSE(result.error.has_value());
     ASSERT_TRUE(result.by_strategy.at(1u).counters.has_value());
 
@@ -540,7 +540,7 @@ TEST_F(ReproductionTest, ScanToHitAndDeltaCallsPerReplenishmentAreReportedOnTheS
         source,
         pi,
         counting_delta,
-        EvaluateOptions{.collect_counters = true, .sample_size = 6u, .replenish_below = 6u});
+        EvaluateOptions{.collect_counters = true, .sampling = {.sample_size = 6u, .replenish_below = 6u}});
     ASSERT_FALSE(result.error.has_value());
     ASSERT_TRUE(result.by_strategy.at(1u).counters.has_value());
 

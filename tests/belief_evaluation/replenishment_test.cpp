@@ -139,7 +139,7 @@ TEST_F(ReplenishmentTest, PMakeMovesFromFalseCertaintyToTheHandDerivedTrueValue)
         source,
         pi,
         single_card_defender,
-        EvaluateOptions{.sample_size = 6u});
+        EvaluateOptions{.sampling = {.sample_size = 6u}});
     ASSERT_FALSE(no_replenish.error.has_value());
     EXPECT_DOUBLE_EQ(no_replenish.by_strategy.at(1u).p_make, 1.0);
 
@@ -155,7 +155,7 @@ TEST_F(ReplenishmentTest, PMakeMovesFromFalseCertaintyToTheHandDerivedTrueValue)
         source,
         pi,
         single_card_defender,
-        EvaluateOptions{.sample_size = 6u, .replenish_below = 6u});
+        EvaluateOptions{.sampling = {.sample_size = 6u, .replenish_below = 6u}});
     ASSERT_FALSE(replenished.error.has_value());
     EXPECT_NEAR(replenished.by_strategy.at(1u).p_make, 0.75, 1e-9);
 }
@@ -281,7 +281,7 @@ TEST_F(ReplenishmentTest, AbsentReplenishBelowLeavesTheFixtureBitIdenticalToASam
         source,
         pi,
         single_card_defender,
-        EvaluateOptions{.sample_size = 6u});
+        EvaluateOptions{.sampling = {.sample_size = 6u}});
     EvaluationResult const second = evaluate(
         layouts.front(),
         North,
@@ -289,7 +289,7 @@ TEST_F(ReplenishmentTest, AbsentReplenishBelowLeavesTheFixtureBitIdenticalToASam
         source,
         pi,
         single_card_defender,
-        EvaluateOptions{.sample_size = 6u});  // replenish_below left absent, same as first
+        EvaluateOptions{.sampling = {.sample_size = 6u}});  // replenish_below left absent, same as first
 
     ASSERT_FALSE(first.error.has_value());
     ASSERT_FALSE(second.error.has_value());
@@ -480,7 +480,7 @@ TEST_F(ReplenishmentTest, ADescendantOfANodeThatCannotBeToppedUpMakesNoFurtherAt
         source,
         pi,
         single_card_defender,
-        EvaluateOptions{.sample_size = 2u, .replenish_below = 2u});
+        EvaluateOptions{.sampling = {.sample_size = 2u, .replenish_below = 2u}});
     ASSERT_FALSE(result.error.has_value());
 
     // criterion 4: the answer is exactly what it must be regardless of how

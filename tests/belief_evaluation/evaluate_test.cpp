@@ -310,3 +310,30 @@ TEST_F(EvaluateTest, TheResultIsIndexedByTheCallersOwnStrategyId)
     ASSERT_EQ(result.by_strategy.count(be::StrategyId{9999}), 1u);
     EXPECT_DOUBLE_EQ(result.by_strategy.at(be::StrategyId{9999}).p_make, 1.0);
 }
+
+// --- the sampling trio is a nested type -----------------------------------
+
+TEST_F(EvaluateTest, SampleSizeScanBudgetAndReplenishBelowLiveOnANestedSamplingType)
+{
+    Deal const root_layout = make_one_trick_certain_win();
+    be::VectorLayoutSource source({root_layout});
+
+    be::EvaluateOptions const options{
+        .sampling = {.sample_size = 1u, .scan_budget = 5u, .replenish_below = 1u}};
+    EXPECT_EQ(options.sampling.sample_size, 1u);
+    EXPECT_EQ(options.sampling.scan_budget, 5u);
+    EXPECT_EQ(options.sampling.replenish_below, 1u);
+
+    be::EvaluationResult const result = be::evaluate(
+        root_layout, North, /*tricks_needed=*/1, source, strategy(1), be::single_card_defender, options);
+    ASSERT_FALSE(result.error.has_value());
+    EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);
+}
+
+TEST_F(EvaluateTest, ADefaultConstructedSamplingOptionsMeansExactlyWhatAbsentFieldsMeantBefore)
+{
+    be::EvaluateOptions const options{};
+    EXPECT_FALSE(options.sampling.sample_size.has_value());
+    EXPECT_FALSE(options.sampling.scan_budget.has_value());
+    EXPECT_FALSE(options.sampling.replenish_below.has_value());
+}

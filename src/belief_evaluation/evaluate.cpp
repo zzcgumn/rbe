@@ -202,25 +202,25 @@ namespace
         LayoutSource const& source;
     };
 
-    /// Tops `node` back up towards `ctx.options.sample_size` from
+    /// Tops `node` back up towards `ctx.options.sampling.sample_size` from
     /// `ctx.source` when `node.layouts.size()` is below
-    /// `ctx.options.replenish_below`, rescaling `kappa` so the node's mass
-    /// is unchanged, and setting `is_sample = false` when the scan reaches
-    /// `ScanOutcome::SourceExhausted` -- the node then genuinely holds the
-    /// whole of its own remaining belief space, whether or not that scan
-    /// added anything (see `ScanOutcome`'s own doxygen). Returns
-    /// `std::nullopt` when nothing changes at all -- no threshold set, the
-    /// trigger not met, no `sample_size` to top up to (see
-    /// `EvaluateOptions::replenish_below`'s own doxygen for why that case
+    /// `ctx.options.sampling.replenish_below`, rescaling `kappa` so the
+    /// node's mass is unchanged, and setting `is_sample = false` when the
+    /// scan reaches `ScanOutcome::SourceExhausted` -- the node then
+    /// genuinely holds the whole of its own remaining belief space, whether
+    /// or not that scan added anything (see `ScanOutcome`'s own doxygen).
+    /// Returns `std::nullopt` when nothing changes at all -- no threshold
+    /// set, the trigger not met, no `sample_size` to top up to (see
+    /// `SamplingOptions::replenish_below`'s own doxygen for why that case
     /// is treated as "nothing to do" rather than an error), or a scan that
     /// found nothing new *and* did not exhaust the source (bound by the
     /// budget instead) -- in every one of those cases the caller must fall
     /// back to using `node` itself unchanged, not a copy of it.
     ///
-    /// The trigger is `node.layouts.size() < *ctx.options.replenish_below`
+    /// The trigger is `node.layouts.size() < *ctx.options.sampling.replenish_below`
     /// and **nothing else** -- not gated on `node.is_sample`, not on how
     /// many layouts are already made or dead. See
-    /// `EvaluateOptions::replenish_below`'s own doxygen for why: the rule
+    /// `SamplingOptions::replenish_below`'s own doxygen for why: the rule
     /// algorithm.md states is that the trigger may depend only on sample
     /// size or total probability mass, and anything else is a bias smuggled
     /// into what should be a purely mechanical top-up.
@@ -248,15 +248,15 @@ namespace
         int depth,
         std::optional<EvaluationError>& error) -> std::optional<BeliefNode>
     {
-        if (! ctx.options.replenish_below.has_value())
+        if (! ctx.options.sampling.replenish_below.has_value())
         {
             return std::nullopt;
         }
-        if (! ctx.options.sample_size.has_value())
+        if (! ctx.options.sampling.sample_size.has_value())
         {
             return std::nullopt;  // no target to top up to -- see this field's own doxygen
         }
-        if (node.layouts.size() >= *ctx.options.replenish_below)
+        if (node.layouts.size() >= *ctx.options.sampling.replenish_below)
         {
             return std::nullopt;  // trigger not met
         }
@@ -271,12 +271,12 @@ namespace
             return std::nullopt;
         }
 
-        std::uint64_t const target = *ctx.options.sample_size;
+        std::uint64_t const target = *ctx.options.sampling.sample_size;
         std::uint64_t const current = static_cast<std::uint64_t>(node.layouts.size());
         std::uint64_t const wanted = (target > current) ? (target - current) : 0;
 
-        ScanResult const scan =
-            scan_for_replenishment(node, ctx.root_layout, ctx.source, ctx.delta, wanted, ctx.options.scan_budget);
+        ScanResult const scan = scan_for_replenishment(
+            node, ctx.root_layout, ctx.source, ctx.delta, wanted, ctx.options.sampling.scan_budget);
         record_replenishment_attempt(
             ctx.counters, depth, ! scan.candidates.empty(), scan.candidates.size(), scan.at_calls);
         if (scan.error != ValidationError::None)
@@ -379,9 +379,9 @@ namespace
         // one is, and it has not been reached yet). See replenish_node's
         // own doxygen for why this ordering is a stated constraint the rest
         // of the module leans on, not an incidental choice. Absent
-        // options.replenish_below, replenish_node returns nullopt having
-        // touched nothing, so this costs one function call and nothing
-        // else on the path every existing test still takes.
+        // options.sampling.replenish_below, replenish_node returns nullopt
+        // having touched nothing, so this costs one function call and
+        // nothing else on the path every existing test still takes.
         std::optional<BeliefNode> const replenished = replenish_node(node, ctx, depth, error);
         if (error.has_value())
         {
@@ -521,7 +521,7 @@ auto evaluate(
         declarer,
         tricks_needed,
         source,
-        RootOptions{.sample_size = options.sample_size, .scan_budget = options.scan_budget});
+        RootOptions{.sample_size = options.sampling.sample_size, .scan_budget = options.sampling.scan_budget});
     if (! root_result.node.has_value())
     {
         EvaluationError const error{

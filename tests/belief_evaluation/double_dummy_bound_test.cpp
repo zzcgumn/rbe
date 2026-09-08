@@ -385,7 +385,7 @@ TEST_F(DoubleDummyBoundTest, TierTwoCutRateUnderSamplingIsExactlyZeroBecauseOfTh
             .collect_counters = true,
             .bound = provider.as_bound(),
             .delta_is_double_dummy_optimal = true,
-            .sample_size = 2u});
+            .sampling = {.sample_size = 2u}});
     ASSERT_FALSE(sampled.error.has_value());
     ASSERT_TRUE(sampled.by_strategy.at(1u).counters.has_value());
     EXPECT_EQ(sampled.by_strategy.at(1u).counters->tier2_cuts, 0u);
