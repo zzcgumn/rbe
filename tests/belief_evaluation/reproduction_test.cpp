@@ -453,6 +453,48 @@ TEST_F(ReproductionTest, ConvergesViaReplenishmentOnASplitThenFinesseVariantOfTh
     EXPECT_LT(std::abs(p_make_with - 0.75), std::abs(p_make_without - 0.75));
 }
 
+// This one is deliberately EXPECT_EQ on a double, not EXPECT_NEAR or
+// EXPECT_DOUBLE_EQ (which itself tolerates a 4-ULP difference): a sampled,
+// replenishing fixture -- exercising the kappa rescale, the node-local
+// scan and the replenishment trigger, not just straight-line arithmetic --
+// where the true answer happens to be exactly representable (6 winning of
+// 8 layouts, 0.75, no rounding in the ratio itself). That makes bitwise
+// equality the right bar rather than an unreasonably tight one: this is
+// the fixture proving the default build and -c opt agree exactly, not
+// merely to within tolerance, on a path where NDEBUG-only divergence (a
+// discarded assert argument computing something with a side effect, an
+// -DNDEBUG-conditional code path) would actually have somewhere to show
+// up. If this ever starts failing under -c opt while the default build
+// still passes, that is exactly the class of bug this test exists to
+// catch -- do not loosen it to EXPECT_NEAR.
+TEST_F(ReproductionTest, PMakeOnASampledReplenishingFixtureIsExactlyThreeQuarters)
+{
+    std::vector<Deal> const layouts{
+        make_split_then_finesse_layout(Jack, Two),
+        make_split_then_finesse_layout(Queen, Three),
+        make_split_then_finesse_layout(Jack, Four),
+        make_split_then_finesse_layout(Queen, Five),
+        make_split_then_finesse_layout(Jack, Six),
+        make_split_then_finesse_layout(Queen, Seven),
+        make_split_then_finesse_layout(Jack, Ten),
+        make_split_then_finesse_layout(Queen, Ten),
+    };
+    be::assert_pool_matches(layouts);
+    VectorLayoutSource const source(layouts);
+    DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
+
+    EvaluationResult const result = evaluate(
+        layouts.front(),
+        North,
+        /*tricks_needed=*/2,
+        source,
+        pi,
+        single_card_defender,
+        EvaluateOptions{.sampling = {.sample_size = 6u, .replenish_below = 6u}});
+    ASSERT_FALSE(result.error.has_value());
+    EXPECT_EQ(result.by_strategy.at(1u).p_make, 0.75);
+}
+
 // Criterion 4: mass conserved across a fixture that replenishes
 // repeatedly -- both spade branches above replenish once each, so the
 // same fixture already exercises this; checked here against the total

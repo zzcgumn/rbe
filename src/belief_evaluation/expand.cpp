@@ -23,6 +23,67 @@ namespace
     {
         return card.suit * 100 + card.rank;
     }
+
+    /// Mass conservation (algorithm.md's Sigma_c w_i^(...,b,c) = w_i^(...,b)):
+    /// summing every child's mass must reproduce the parent's. Every
+    /// distribution delta returned was already validated per-layout by its
+    /// caller, each within ProbabilitySumTolerance of summing to one, so a
+    /// violation here is not user input — it is a genuine internal
+    /// invariant failure (a bug in the grouping/reweighting that built
+    /// children, not a contract violation delta committed), and this is
+    /// called only inside an assert() rather than reported through
+    /// ExpandDefenderResult.
+    ///
+    /// The tolerance is ProbabilitySumTolerance scaled by node.layouts.size(),
+    /// not used verbatim: this check sums a quantity derived from every
+    /// layout's distribution, and each layout independently contributes up
+    /// to ProbabilitySumTolerance of error (kappa * p_i * that layout's own
+    /// sum-of-probabilities deviation), so the worst case (every layout's
+    /// error the same sign) scales with how many layouts there are, not
+    /// with a single distribution's own tolerance. p_i <= 1 for every
+    /// layout at every node (it only ever shrinks from the root's 1 via
+    /// multiplication by further probabilities <= 1), so scaling by the
+    /// layout count rather than by Sigma_i p_i is a safe, if slightly
+    /// looser, bound.
+    ///
+    /// Re-derived, not assumed, now that node.kappa may have come from a
+    /// replenishment's rescale (kappa *= E / E') rather than only from
+    /// make_root's 1/N or a plain copy: that division introduces its own
+    /// rounding, but it does not add an uncounted error term to *this*
+    /// check. node.kappa and every child's kappa are the same double value
+    /// (copy-assigned, never recomputed in expand_defender_node), so
+    /// whatever rounding the rescale baked into it multiplies both sides of
+    /// the comparison identically and cancels to that one value's own
+    /// relative precision (order 1e-16), utterly below
+    /// ProbabilitySumTolerance (1e-6). What is left is exactly the
+    /// pre-existing per-layout term above, now summed over however many
+    /// layouts node.layouts.size() currently reports -- replenished layouts
+    /// included, each subject to the identical ProbabilitySumTolerance bound
+    /// on its own delta query this ply, no differently from a drawn layout.
+    /// The count already reflects any replenishment automatically, which is
+    /// the "safe direction" a larger node.layouts.size() pushes the bound;
+    /// the division pushes it nowhere, being common to both sides.
+    ///
+    /// Called only inside assert(): under NDEBUG the whole check --
+    /// tolerance, accumulator and loop alike -- disappears with it, rather
+    /// than computing and discarding a value nothing then reads. [[maybe_unused]]
+    /// is correct here, unlike on the tolerance it replaces: nothing about
+    /// this function runs when it isn't called, so there is no discarded
+    /// work left behind for the attribute to paper over -- only the
+    /// definition itself goes unused, in exactly the build where that is
+    /// the point.
+    [[maybe_unused]] auto defender_children_conserve_mass(
+        BeliefNode const& node, std::vector<BeliefNode> const& children) -> bool
+    {
+        double const mass_conservation_tolerance =
+            ProbabilitySumTolerance * static_cast<double>(node.layouts.size());
+        KahanAccumulator total_child_mass;
+        for (BeliefNode const& child : children)
+        {
+            total_child_mass.add(node_mass(child));
+        }
+        return std::abs(total_child_mass.value() - node_mass(node)) <= mass_conservation_tolerance;
+    }
 }
 
 auto advance_state(ObservationState const& state, Card const& card) -> ObservationState
@@ -211,54 +272,9 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
     }
 
     // Mass conservation (algorithm.md's Sigma_c w_i^(...,b,c) = w_i^(...,b)):
-    // summing every child's mass must reproduce the parent's. Every
-    // distribution delta returned was already validated per-layout above,
-    // each within ProbabilitySumTolerance of summing to one, so a
-    // violation here is not user input — it is a genuine internal
-    // invariant failure (a bug in the grouping/reweighting above, not a
-    // contract violation delta committed), and asserts rather than being
-    // reported through ExpandDefenderResult.
-    //
-    // The tolerance is ProbabilitySumTolerance scaled by node.layouts.size(),
-    // not used verbatim: this check sums a quantity derived from every
-    // layout's distribution, and each layout independently contributes up
-    // to ProbabilitySumTolerance of error (kappa * p_i * that layout's own
-    // sum-of-probabilities deviation), so the worst case (every layout's
-    // error the same sign) scales with how many layouts there are, not
-    // with a single distribution's own tolerance. p_i <= 1 for every
-    // layout at every node (it only ever shrinks from the root's 1 via
-    // multiplication by further probabilities <= 1), so scaling by the
-    // layout count rather than by Sigma_i p_i is a safe, if slightly
-    // looser, bound.
-    //
-    // Re-derived, not assumed, now that node.kappa may have come from a
-    // replenishment's rescale (kappa *= E / E') rather than only from
-    // make_root's 1/N or a plain copy: that division introduces its own
-    // rounding, but it does not add an uncounted error term to *this*
-    // check. node.kappa and every child's kappa are the same double value
-    // (copy-assigned, never recomputed in expand_defender_node), so
-    // whatever rounding the rescale baked into it multiplies both sides of
-    // the comparison identically and cancels to that one value's own
-    // relative precision (order 1e-16), utterly below
-    // ProbabilitySumTolerance (1e-6). What is left is exactly the
-    // pre-existing per-layout term above, now summed over however many
-    // layouts node.layouts.size() currently reports -- replenished layouts
-    // included, each subject to the identical ProbabilitySumTolerance bound
-    // on its own delta query this ply, no differently from a drawn layout.
-    // The count already reflects any replenishment automatically, which is
-    // the "safe direction" a larger node.layouts.size() pushes the bound;
-    // the division pushes it nowhere, being common to both sides.
-    {
-        double const mass_conservation_tolerance =
-            ProbabilitySumTolerance * static_cast<double>(node.layouts.size());
-        KahanAccumulator total_child_mass;
-        for (BeliefNode const& child : children)
-        {
-            total_child_mass.add(node_mass(child));
-        }
-        assert(
-            std::abs(total_child_mass.value() - node_mass(node)) <= mass_conservation_tolerance);
-    }
+    // see defender_children_conserve_mass's own doxygen for the tolerance
+    // derivation and why this is only ever called inside assert().
+    assert(defender_children_conserve_mass(node, children));
 
     return ExpandDefenderResult{std::move(children), ValidationError::None};
 }
