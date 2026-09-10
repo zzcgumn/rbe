@@ -49,15 +49,15 @@ namespace
     }
 }  // namespace
 
-// --- criterion 5: hand-derived, asserted in full, three different shapes -
+// --- hand-derived pool decomposition, asserted in full, three different shapes -
 
 TEST(DefenderSplitTest, TwoSuitEndingDecomposesToTheHandDerivedPoolInCanonicalOrder)
 {
     // East holds one diamond and one club (2 cards); West holds one diamond
     // and two clubs (3 cards) -- not mid-trick, just an ordinary shape with
-    // a two-suit pool, to pin the suit-then-rank ordering criterion 5 asks
-    // for. The mid-trick test below is the one with a count asymmetry that
-    // a naive "half the pool" derivation would get wrong.
+    // a two-suit pool, to pin the suit-then-rank ordering this decomposition
+    // is meant to produce. The mid-trick test below is the one with a count
+    // asymmetry that a naive "half the pool" derivation would get wrong.
     Deal root{};
     root.trump = DDS_NOTRUMP;
     root.first = North;
@@ -122,7 +122,7 @@ TEST(DefenderSplitTest, ThreeSuitEndingWithADifferentShapeStillMatchesHandDeriva
     EXPECT_EQ(pool.fixed_seat_count, 4);  // East holds S2, H3, C4, C5
 }
 
-// --- criterion 3: matches node.cpp's own per-suit pool, cross-checked -----
+// --- matches node.cpp's own per-suit pool, cross-checked -------------------
 
 TEST(DefenderSplitTest, PerSuitPoolMatchesTheUnionOfBothDefendersRemainCardsDirectly)
 {
@@ -157,7 +157,7 @@ TEST(DefenderSplitTest, PerSuitPoolMatchesTheUnionOfBothDefendersRemainCardsDire
     }
 }
 
-// --- criterion 4: mid-trick handled, count read from the root not halved --
+// --- mid-trick handled, count read from the root not halved ----------------
 
 TEST(DefenderSplitTest, FixedSeatCountIsReadFromRootPopcountNotHalfThePoolSize)
 {
@@ -205,7 +205,7 @@ TEST(DefenderSplitTest, AFixedSeatCountOfZeroOrTheWholePoolIsLegal)
     EXPECT_EQ(pool.fixed_seat_count, 0);
 }
 
-// --- binomial_coefficient: criterion 1, against an independent triangle ---
+// --- binomial_coefficient, against an independently hand-built triangle ---
 
 TEST(BinomialCoefficientTest, MatchesAHandWrittenPascalsTriangleForEveryNAndK)
 {
@@ -260,14 +260,14 @@ TEST(BinomialCoefficientTest, NOutOfRangeIsAnAssertedCallerErrorNotAnOutOfBounds
     EXPECT_DEBUG_DEATH({ binomial_coefficient(-1, 0); }, "");
 }
 
-// --- unrank_combination: criterion 2, exhaustive bijection ----------------
+// --- unrank_combination, exhaustive bijection -------------------------------
 
 namespace
 {
     /// Every k-subset of {0, ..., n-1} `unrank_combination` produces over
-    /// the whole of [0, C(n, k)), as a set of sets -- the shape criterion 2
-    /// asks the exhaustive check to prove coverage over, not merely that
-    /// consecutive indices look different.
+    /// the whole of [0, C(n, k)), as a set of sets -- the shape needed to
+    /// prove coverage over the whole range, not merely that consecutive
+    /// indices look different.
     auto all_unranked_subsets(int n, int k) -> std::set<std::set<int>>
     {
         std::set<std::set<int>> subsets;
@@ -365,8 +365,8 @@ TEST(UnrankCombinationTest, IsAPureFunctionSameIndexSameSubsetEveryTime)
 
 namespace
 {
-    /// Every field Deal carries, compared directly -- the byte-identity
-    /// criterion 4 asks for, not just the two defenders' remainCards.
+    /// Every field Deal carries, compared directly -- field-for-field
+    /// identity, not just the two defenders' remainCards.
     auto deals_are_field_identical(Deal const& a, Deal const& b) -> bool
     {
         if (a.trump != b.trump || a.first != b.first)
@@ -394,9 +394,9 @@ namespace
     }
 
     /// The indices into pool.cards that root's own defender split already
-    /// picks out for the fixed seat -- criterion 6's round-trip subset,
-    /// found directly from root rather than by any part of the production
-    /// code under test.
+    /// picks out for the fixed seat -- the round-trip subset the test below
+    /// feeds back into apply_defender_split, found directly from root
+    /// rather than by any part of the production code under test.
     auto own_split_indices(Deal const& root, int declarer, DefenderPool const& pool) -> std::vector<int>
     {
         int const fixed_seat = (declarer + 1) % DDS_HANDS;

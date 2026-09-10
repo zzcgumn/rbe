@@ -442,7 +442,7 @@ TEST_F(CountersTest, ReplenishmentByDepthMatchesTheHandDerivedVector)
     EXPECT_EQ(by_depth[2].layouts_added, 1u);
     EXPECT_EQ(by_depth[2].at_calls, 6u);
 
-    // criterion 5: sample_size_by_depth reflects the post-replenishment
+    // sample_size_by_depth reflects the post-replenishment
     // count at depth 2 -- the "three" branch grew to 2, the "five" branch
     // stayed at 1, so layout_min (the smaller of the two) is 1, but
     // layout_sum (3) already shows the top-up: 1 + 1 pre-replenishment

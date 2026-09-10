@@ -275,7 +275,7 @@ TEST_F(ReproductionTest, ConvergesTowardTheExhaustiveAnswerAsMRises)
 // Replenishment: reproduction, convergence, and the measurements.
 // ===========================================================================
 
-// Criterion 2: M >= N still reproduces the exhaustive run bitwise, with
+// M >= N still reproduces the exhaustive run bitwise, with
 // replenishment enabled. If a scan at depth accepts even one layout here,
 // either the exclusion set is missing a duplicate or the replay is
 // producing a layout that differs from the one already present -- both
@@ -315,7 +315,7 @@ TEST_F(ReproductionTest, MGreaterThanOrEqualToNReproducesExhaustiveBitwiseWithRe
     EXPECT_EQ(exhaustive.by_strategy.at(1u).p_make, with_replenishment.by_strategy.at(1u).p_make);
 }
 
-// Criterion 3: convergence, on the fixture above -- and an honest
+// Convergence, on the fixture above -- and an honest
 // finding about it. Node-local replenishment can only ever add a
 // candidate to a node whose own layout count has already dropped below
 // `sample_size`, which requires a defender split to have already
@@ -495,7 +495,7 @@ TEST_F(ReproductionTest, PMakeOnASampledReplenishingFixtureIsExactlyThreeQuarter
     EXPECT_EQ(result.by_strategy.at(1u).p_make, 0.75);
 }
 
-// Criterion 4: mass conserved across a fixture that replenishes
+// Mass conserved across a fixture that replenishes
 // repeatedly -- both spade branches above replenish once each, so the
 // same fixture already exercises this; checked here against the total
 // mass directly (kappa * layout count is not observable from outside,
@@ -552,7 +552,7 @@ TEST_F(ReproductionTest, MassIsConservedAcrossRepeatedReplenishmentOnTheSplitThe
     EXPECT_NEAR(result.by_strategy.at(1u).p_make, 0.75, 1e-9);
 }
 
-// Criterion 5: scan-to-hit by depth, and delta calls per replenishment.
+// Scan-to-hit by depth, and delta calls per replenishment.
 TEST_F(ReproductionTest, ScanToHitAndDeltaCallsPerReplenishmentAreReportedOnTheSplitThenFinesseFixture)
 {
     std::vector<Deal> const layouts{

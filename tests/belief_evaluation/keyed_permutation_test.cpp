@@ -14,7 +14,7 @@ using be::keyed_permutation;
 namespace
 {
     /// Every output keyed_permutation produces over the whole of [0, n) --
-    /// the shape criterion 2's exhaustive bijection check needs.
+    /// the shape the exhaustive bijection check below needs.
     auto all_outputs(std::uint64_t n, std::uint64_t seed) -> std::vector<std::uint64_t>
     {
         std::vector<std::uint64_t> outputs;
@@ -45,7 +45,7 @@ namespace
     }
 }  // namespace
 
-// --- criterion 2: exhaustive bijection, several N shapes -------------------
+// --- exhaustive bijection, several N shapes ---------------------------------
 
 TEST(KeyedPermutationTest, IsABijectionOnAnOddN)
 {
@@ -84,7 +84,7 @@ TEST(KeyedPermutationTest, IsABijectionOnALargerSpaceCloseToTheBridgeSizedBound)
     EXPECT_TRUE(is_bijection(100000u, 123456789u));
 }
 
-// --- criterion 3: deterministic ---------------------------------------------
+// --- deterministic -----------------------------------------------------------
 
 TEST(KeyedPermutationTest, SameIndexNSeedGivesTheSameOutputAcrossSeparateCalls)
 {
@@ -94,7 +94,7 @@ TEST(KeyedPermutationTest, SameIndexNSeedGivesTheSameOutputAcrossSeparateCalls)
     }
 }
 
-// --- criterion 4: different seeds differ; no seed gives the identity -------
+// --- different seeds differ; no seed gives the identity ---------------------
 
 TEST(KeyedPermutationTest, TwoDifferentSeedsGiveDifferentPermutations)
 {
@@ -117,7 +117,7 @@ TEST(KeyedPermutationTest, NoSeedTestedGivesTheIdentityPermutation)
     }
 }
 
-// --- criterion 5: not order-preserving, no obviously structured map --------
+// --- not order-preserving, no obviously structured map ----------------------
 
 TEST(KeyedPermutationTest, OutputIsNotMonotoneIncreasing)
 {
@@ -164,7 +164,7 @@ TEST(KeyedPermutationTest, NoWholeHalfOfTheBitsPassesThroughUnchanged)
     EXPECT_LT(unchanged, static_cast<int>(n) / 2);
 }
 
-// --- criterion 6: terminates; cycle-walking cost stays low ------------------
+// --- terminates; cycle-walking cost stays low --------------------------------
 
 TEST(KeyedPermutationTest, TerminatesWithFewCycleWalkSteps)
 {

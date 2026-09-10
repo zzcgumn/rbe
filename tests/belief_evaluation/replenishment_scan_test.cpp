@@ -205,7 +205,7 @@ protected:
         ASSERT_EQ(root_.state.history.number, 0);  // no pre-existing trick -- the skip is 0 here
 
         // East plays the king 0.6, the two 0.4 -- a genuine choice, not a
-        // certainty, so criterion 3's bitwise check cannot pass "for free".
+        // certainty, so the bitwise check below cannot pass "for free".
         be::ScriptedDefender::Key const east_key{be::layout_key(root_layout_, East), ""};
         east_defender_.emplace(be::ScriptedDefender::stochastic(
             {{east_key,
@@ -283,8 +283,8 @@ protected:
     std::optional<be::ScriptedDefender> west_defender_;
 };
 
-// --- criterion 3: p_j across two defender plies matches the drawn p ------
-// --- criterion 4: the hand-derived value, from the SetUp comment above ---
+// --- p_j across two defender plies matches the drawn p, the hand-derived ---
+// --- value from the SetUp comment above -------------------------------------
 
 TEST_F(ThreePlyReplayTest, PjAccumulatesAcrossTwoDefenderPliesAndMatchesTheHandDerivedValue)
 {
@@ -296,7 +296,7 @@ TEST_F(ThreePlyReplayTest, PjAccumulatesAcrossTwoDefenderPliesAndMatchesTheHandD
     EXPECT_EQ(result.p_j, jack_child_.p[0]);      // bitwise agreement with the drawn layout's own p
 }
 
-// --- criterion 2: a candidate delta assigns zero probability is rejected -
+// --- a candidate delta assigns zero probability to is rejected, not asserted
 
 TEST_F(ThreePlyReplayTest, ACandidateDeltaAssignsZeroProbabilityToIsRejectedNotAsserted)
 {
@@ -316,7 +316,7 @@ TEST_F(ThreePlyReplayTest, ACandidateDeltaAssignsZeroProbabilityToIsRejectedNotA
     EXPECT_EQ(result.error, be::ValidationError::None);  // rejection, not a contract violation
 }
 
-// --- criterion 5: delta's own contract violations are reported, not asserted
+// --- delta's own contract violations are reported, not asserted -------------
 
 TEST_F(ThreePlyReplayTest, ADeltaContractViolationDuringReplayIsReportedNotAsserted)
 {
@@ -402,7 +402,7 @@ protected:
     std::optional<be::ScriptedDefender> defender_;
 };
 
-// --- criterion 1: a scan finds a new candidate, with its p_j and outcome -
+// --- a scan finds a new candidate, with its p_j and outcome ------------------
 
 TEST_F(ScanForReplenishmentTest, FindsTheOneNewConsistentCandidateAndReportsSampleFilled)
 {
@@ -422,7 +422,7 @@ TEST_F(ScanForReplenishmentTest, FindsTheOneNewConsistentCandidateAndReportsSamp
     EXPECT_EQ(result.outcome, be::ScanOutcome::SampleFilled);
 }
 
-// --- criterion 4: an already-present candidate costs no delta call -------
+// --- an already-present candidate costs no delta call ------------------------
 
 TEST_F(ScanForReplenishmentTest, AnAlreadyPresentCandidateIsSkippedWithoutCallingDelta)
 {
@@ -461,7 +461,7 @@ TEST_F(ScanForReplenishmentTest, AnInconsistentLayoutIsSkippedBeforeAnyReplayOrD
     EXPECT_EQ(delta_calls, 1);
 }
 
-// --- criterion 5: the budget counts source.at() calls ---------------------
+// --- the budget counts source.at() calls -------------------------------------
 
 TEST_F(ScanForReplenishmentTest, ABudgetOfOneStopsAfterASingleAtCallAndReportsBudgetExhausted)
 {
@@ -502,7 +502,7 @@ TEST_F(ScanForReplenishmentTest, WantedZeroReturnsSampleFilledWithoutQueryingSou
     EXPECT_EQ(counting_source.size_calls(), 0u);  // the early return itself
 }
 
-// --- criterion 6: the source runs out and nothing was accepted -----------
+// --- the source runs out and nothing was accepted ----------------------------
 
 TEST_F(ScanForReplenishmentTest, ExhaustingTheSourceWithNothingAcceptedIsStillSourceExhausted)
 {

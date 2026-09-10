@@ -43,7 +43,7 @@ class AlreadyMadeCutTest : public ::testing::Test
 {
 };
 
-// --- criteria 1 & 2: the cut computes the right, non-trivial value --------
+// --- the cut computes the right, non-trivial value --------------------------
 
 namespace
 {
@@ -297,7 +297,7 @@ TEST_F(AlreadyMadeCutTest, PiIsNotCalledWhenTheContractIsAlreadyMadeAtTheRoot)
     // RecordingDeclarerStrategy::as_strategy() fixes id = 0.
     // Single root layout, p = 1, kappa = 1 -- node_mass is trivially 1.0
     // here, which is fine: this test is about the call count, not the
-    // value (criteria 1 & 2's dedicated test above covers the value).
+    // value (the dedicated test above covers the value).
     EXPECT_EQ(result.by_strategy.at(0u).p_make, 1.0);
     EXPECT_TRUE(result.by_strategy.at(0u).root_children.empty());
 }

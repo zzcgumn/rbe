@@ -67,7 +67,7 @@ class DefenderNodeTest : public ::testing::Test
 {
 };
 
-// --- criterion 1: delta is called once per layout ------------------------
+// --- delta is called once per layout -----------------------------------------
 
 TEST_F(DefenderNodeTest, DeltaIsCalledOncePerLayoutWithThatLayoutAndSeat)
 {
@@ -90,7 +90,7 @@ TEST_F(DefenderNodeTest, DeltaIsCalledOncePerLayoutWithThatLayoutAndSeat)
     EXPECT_EQ(defender.queries()[1].layout, be::layout_key(layout1, East));
 }
 
-// --- criteria 2 and 3: grouping by card, absent rather than p = 0 --------
+// --- grouping by card, absent rather than p = 0 ------------------------------
 
 TEST_F(DefenderNodeTest, TwoLayoutsScriptedToDifferentCardsProduceTwoSingleLayoutChildren)
 {
@@ -114,7 +114,7 @@ TEST_F(DefenderNodeTest, TwoLayoutsScriptedToDifferentCardsProduceTwoSingleLayou
     }
 }
 
-// --- criterion 7: hand-computed per-child values for a stochastic defence
+// --- hand-computed per-child values for a stochastic defence -----------------
 
 TEST_F(DefenderNodeTest, HandComputedPerChildValuesForAStochasticDefence)
 {
@@ -164,11 +164,11 @@ TEST_F(DefenderNodeTest, HandComputedPerChildValuesForAStochasticDefence)
     ASSERT_EQ(two_child.p.size(), 1u);
     EXPECT_DOUBLE_EQ(two_child.p[0], 0.3);
 
-    // criterion 4: kappa is untouched in every child.
+    // kappa is untouched in every child.
     EXPECT_DOUBLE_EQ(king_child.kappa, node.kappa);
     EXPECT_DOUBLE_EQ(two_child.kappa, node.kappa);
 
-    // criterion 5: mass conservation, to the same tolerance
+    // mass conservation, to the same tolerance
     // validate_defender_distribution itself uses (1e-6) for a probability
     // distribution summing to 1 — the two checks guard the same kind of
     // floating-point drift, so reusing it keeps this test no stricter than
@@ -393,7 +393,7 @@ TEST_F(DefenderNodeTest, RootKeysArePartitionedExactlyLikePInTheSameLoop)
     EXPECT_EQ(two_child.root_keys[0], node.root_keys[1]);
 }
 
-// --- criterion 6: a bad distribution is rejected, not asserted -----------
+// --- a bad distribution is rejected, not asserted ----------------------------
 
 TEST_F(DefenderNodeTest, RejectsACardNotHeldBySeat)
 {

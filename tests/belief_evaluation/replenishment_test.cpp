@@ -98,7 +98,7 @@ class ReplenishmentTest : public ::testing::Test
 
 // ===========================================================================
 // End to end: p_make moves from a false-certainty 1.0 (no replenishment) to
-// the true 3/4 (with it) on the fixture above -- criterion 7's headline.
+// the true 3/4 (with it) on the fixture above.
 // ===========================================================================
 
 TEST_F(ReplenishmentTest, PMakeMovesFromFalseCertaintyToTheHandDerivedTrueValue)
@@ -239,7 +239,7 @@ TEST_F(ReplenishmentTest, ReplenishingByHandGrowsTheNodeAndConservesMassToADeriv
     }
     replenished.kappa = node.kappa * mass_before_sum.value() / mass_after_sum.value();
 
-    EXPECT_EQ(replenished.layouts.size(), 4u);   // grew: criterion 7's first assertion
+    EXPECT_EQ(replenished.layouts.size(), 4u);   // grew, from the pre-replenishment 3
     EXPECT_EQ(replenished.root_keys.size(), 4u);
     EXPECT_DOUBLE_EQ(replenished.kappa, (1.0 / 6.0) * (3.0 / 4.0));  // 1/8, hand-derived
 
@@ -254,7 +254,7 @@ TEST_F(ReplenishmentTest, ReplenishingByHandGrowsTheNodeAndConservesMassToADeriv
 }
 
 // ===========================================================================
-// Criterion 2: with replenish_below absent, nothing about this fixture's
+// With replenish_below absent, nothing about this fixture's
 // own evaluation changes -- verified directly, not only inferred from the
 // rest of the suite staying green.
 // ===========================================================================
@@ -404,10 +404,10 @@ TEST_F(ReplenishmentTest, ExhaustedNodeIsNoLongerASampleAndItsSiblingStays)
     EXPECT_EQ(five_branch.layouts.size(), 2u);
     EXPECT_FALSE(five_branch.is_sample);
 
-    // criterion 6: the root itself is untouched by either child's own scan.
+    // The root itself is untouched by either child's own scan.
     EXPECT_TRUE(root_result.node->is_sample);
 
-    // criteria 3 and 4: the same injected (dead) bound, the same
+    // The same injected (dead) bound, the same
     // declaration, one node fires and the other does not, and the only
     // difference between them is is_sample.
     auto const always_dead = [](Deal const&) -> int { return 0; };
@@ -416,7 +416,7 @@ TEST_F(ReplenishmentTest, ExhaustedNodeIsNoLongerASampleAndItsSiblingStays)
     EXPECT_TRUE(tier2_dead(five_branch, options));    // exhausted: the gate fires
     EXPECT_FALSE(tier2_dead(three_branch, options));  // still a sample: the gate stays off
 
-    // space_size, criterion 5 -- make_belief_view needs no change at all,
+    // space_size -- make_belief_view needs no change at all,
     // and this is worth pinning directly: the exhausted node reports its
     // true size, the sampled sibling reports 0.
     std::vector<be::BeliefEntry> scratch_five;
@@ -483,12 +483,12 @@ TEST_F(ReplenishmentTest, ADescendantOfANodeThatCannotBeToppedUpMakesNoFurtherAt
         EvaluateOptions{.sampling = {.sample_size = 2u, .replenish_below = 2u}});
     ASSERT_FALSE(result.error.has_value());
 
-    // criterion 4: the answer is exactly what it must be regardless of how
+    // The answer is exactly what it must be regardless of how
     // many (redundant) scans ran -- North's ace is forced and unbeatable,
     // so the contract always makes.
     EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);
 
-    // criterion 3, hand-derived: root's own scan stops after 2 of the 3
+    // Hand-derived: root's own scan stops after 2 of the 3
     // entries (2 at() calls). At depth 2, the "three" branch's own scan
     // examines all 3 entries once (3 at() calls) to find its one new
     // "three" layout, exhausting in the process; the "five" branch's own

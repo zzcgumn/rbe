@@ -157,7 +157,7 @@ class RestrictedChoiceTest : public ::testing::Test
 {
 };
 
-// --- criterion 1: the shift under a genuinely stochastic delta -----------
+// --- the shift under a genuinely stochastic delta ---------------------------
 
 TEST_F(RestrictedChoiceTest, TheShiftAfterAnHonourAppearsFromADoubletonHonourHolding)
 {
@@ -225,7 +225,7 @@ TEST_F(RestrictedChoiceTest, TheShiftAfterAnHonourAppearsFromADoubletonHonourHol
     ASSERT_FALSE(result.error.has_value());
 }
 
-// --- criterion 2: no shift under a deterministic delta --------------------
+// --- no shift under a deterministic delta ------------------------------------
 
 TEST_F(RestrictedChoiceTest, ADeterministicDefenceShowsNoShiftOnTheSameFixture)
 {
