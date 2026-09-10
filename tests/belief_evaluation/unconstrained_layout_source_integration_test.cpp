@@ -168,9 +168,11 @@ TEST(UnconstrainedLayoutSourceIntegrationTest, SampleSizeAtLeastSizeReproducesEx
 
     ASSERT_FALSE(exhaustive.error.has_value());
     ASSERT_FALSE(capped.error.has_value());
-    // Bitwise, not EXPECT_DOUBLE_EQ -- the criterion is byte-for-byte
-    // reproduction, mirroring plan 5's own reproduction criterion, re-run
-    // here for the first time over a real, non-hand-built source.
+    // Bitwise, not EXPECT_DOUBLE_EQ: sample_size >= size() reproducing the
+    // exhaustive answer exactly, not merely to within tolerance, is an
+    // established property (checked elsewhere against small, hand-built
+    // sources) re-verified here at a larger size over a real,
+    // non-hand-built source.
     EXPECT_EQ(exhaustive.by_strategy.at(1u).p_make, capped.by_strategy.at(1u).p_make);
 }
 
@@ -225,8 +227,8 @@ TEST(UnconstrainedLayoutSourceIntegrationTest, TwoSeedsGiveDifferentSampledAnswe
 
 TEST(UnconstrainedLayoutSourceIntegrationTest, ASampledReplenishingRunAddsAtLeastOneLayout)
 {
-    // Not a measurement -- plan 8's job -- only a proof that replenishment
-    // fires and succeeds over a real source. East holds two of the seven
+    // Not a measurement -- this asserts the mechanism runs, and
+    // deliberately reports no timing. East holds two of the seven
     // pool cards (C(7, 2) = 21 splits); a sample of 10 leaves depth-1
     // nodes (grouped by East's own lead, its lower held card) thin enough
     // that at least one falls below replenish_below and finds more.

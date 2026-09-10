@@ -283,8 +283,8 @@ namespace
 
 TEST(UnrankCombinationTest, IsABijectionOntoTheKSubsetsOfATenElementDomain)
 {
-    // C(10, 5) = 252 -- the size task 03's own background names as the
-    // right scale for exhaustive verification here.
+    // C(10, 5) = 252: large enough to actually exercise the enumeration,
+    // small enough to check exhaustively rather than by sampling.
     int const n = 10;
     int const k = 5;
     std::uint64_t const total = binomial_coefficient(n, k);
@@ -484,8 +484,10 @@ TEST(ApplyDefenderSplitTest, EveryResultOverTheWholeSpaceIsALegalPosition)
     // Separate from the is_consistent check above on purpose: is_consistent
     // never compares hand sizes (see DefenderPool's own doxygen), so this
     // is the independent half of the correctness claim -- exact counts and
-    // disjointness, checked directly against what task 02's own
-    // decomposition read from the root.
+    // disjointness, checked directly against what defender_pool_decomposition
+    // itself read from the root, rather than against the root re-read, so a
+    // bug in the decomposition surfaces here instead of being masked by
+    // reusing its own already-correct answer.
     Deal const root = make_two_suit_pool_root();
     DefenderPool const pool = defender_pool_decomposition(root, North);
     int const n = static_cast<int>(pool.cards.size());

@@ -145,9 +145,11 @@ TEST(UnconstrainedLayoutSourceTest, AtIsABijectionOverTheWholeSpaceOnTheTenCardP
     for (std::uint64_t index = 0; index < total; ++index)
     {
         Deal const layout = source.at(index);
-        // Every layout is consistent with the root (decision 1's central
-        // claim, re-checked here on the assembled type -- see task 06's
-        // own background on why the composition is tested again).
+        // Every layout is consistent with the root: the underlying pieces
+        // (defender_pool_decomposition, unrank_combination,
+        // keyed_permutation, apply_defender_split) are each separately
+        // verified in their own tests, but wiring is what goes wrong, so
+        // this re-checks the claim on the assembled, composed type too.
         EXPECT_TRUE(is_consistent(layout, root, North, South)) << "index=" << index;
         keys.insert(layout_key(layout, East));
     }
