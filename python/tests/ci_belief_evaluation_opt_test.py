@@ -38,12 +38,32 @@ def _repo_root(start: Path | None = None) -> Path:
 # a Linux-only guard would leave macOS, the untested one, uncovered.
 _GUARDED_WORKFLOWS = ("ci_linux.yml", "ci_macos.yml")
 
-_OPT_BUILD = re.compile(
-    r"bazelisk\s+build\b[^\n]*--config=opt\b[^\n]*//library/src/belief_evaluation\b"
-)
-_OPT_TEST = re.compile(
-    r"bazelisk\s+test\b[^\n]*--config=opt\b[^\n]*//library/tests/belief_evaluation/\.\.\."
-)
+_OPT_BUILD_TARGET = "//library/src/belief_evaluation"
+_OPT_TEST_TARGET = "//library/tests/belief_evaluation/..."
+
+
+def _line_covers_module_under_opt(line: str, subcommand: str, target: str) -> bool:
+    """True if `line` invokes `bazelisk <subcommand>` with both --config=opt
+    and `target` present, in either order -- flag order is not significant to
+    Bazel, so neither is it here, matching ci_windows_cppopts_test.py's own
+    _bazelisk_invocation_has_config_opt convention. Full-line and trailing
+    comments are stripped first so a commented-out invocation cannot satisfy
+    the guard.
+    """
+    code = line.split("#", 1)[0]
+    if not code.strip():
+        return False
+    if not re.search(rf"bazelisk\s+{re.escape(subcommand)}\b", code):
+        return False
+    if not re.search(r"(?<![\w-])--config=opt\b", code):
+        return False
+    if not re.search(rf"(?<![\w/]){re.escape(target)}(?!\S)", code):
+        return False
+    return True
+
+
+def _workflow_covers_module_under_opt(text: str, subcommand: str, target: str) -> bool:
+    return any(_line_covers_module_under_opt(line, subcommand, target) for line in text.splitlines())
 
 
 class TestOptBuildCoversBeliefEvaluation(unittest.TestCase):
@@ -51,15 +71,13 @@ class TestOptBuildCoversBeliefEvaluation(unittest.TestCase):
         for name in _GUARDED_WORKFLOWS:
             with self.subTest(workflow=name):
                 text = (_repo_root() / ".github" / "workflows" / name).read_text(encoding="utf-8")
-                self.assertRegex(
-                    text,
-                    _OPT_BUILD,
-                    f"expected {name} to build //library/src/belief_evaluation under --config=opt",
+                self.assertTrue(
+                    _workflow_covers_module_under_opt(text, "build", _OPT_BUILD_TARGET),
+                    f"expected {name} to build {_OPT_BUILD_TARGET} under --config=opt",
                 )
-                self.assertRegex(
-                    text,
-                    _OPT_TEST,
-                    f"expected {name} to test //library/tests/belief_evaluation/... under --config=opt",
+                self.assertTrue(
+                    _workflow_covers_module_under_opt(text, "test", _OPT_TEST_TARGET),
+                    f"expected {name} to test {_OPT_TEST_TARGET} under --config=opt",
                 )
 
 
@@ -71,25 +89,74 @@ class TestOptRegexRejectsNarrowedOrRemovedCoverage(unittest.TestCase):
     """
 
     def test_rejects_a_build_missing_config_opt(self) -> None:
-        self.assertIsNone(
-            _OPT_BUILD.search("bazelisk build --verbose_failures //library/src/belief_evaluation")
+        self.assertFalse(
+            _line_covers_module_under_opt(
+                "bazelisk build --verbose_failures //library/src/belief_evaluation",
+                "build",
+                _OPT_BUILD_TARGET,
+            )
         )
 
     def test_rejects_a_test_target_pattern_narrowed_away_from_the_module(self) -> None:
-        self.assertIsNone(
-            _OPT_TEST.search("bazelisk test --config=opt //library/tests/some_other_module/...")
+        self.assertFalse(
+            _line_covers_module_under_opt(
+                "bazelisk test --config=opt //library/tests/some_other_module/...",
+                "test",
+                _OPT_TEST_TARGET,
+            )
+        )
+
+    def test_rejects_a_commented_out_invocation(self) -> None:
+        self.assertFalse(
+            _line_covers_module_under_opt(
+                "# bazelisk build --config=opt //library/src/belief_evaluation",
+                "build",
+                _OPT_BUILD_TARGET,
+            )
+        )
+
+    def test_rejects_the_wrong_subcommand(self) -> None:
+        self.assertFalse(
+            _line_covers_module_under_opt(
+                "bazelisk fetch --config=opt //library/src/belief_evaluation",
+                "build",
+                _OPT_BUILD_TARGET,
+            )
         )
 
     def test_accepts_the_committed_invocation_shape(self) -> None:
-        self.assertIsNotNone(
-            _OPT_BUILD.search(
-                "bazelisk build --config=opt --verbose_failures //library/src/belief_evaluation"
+        self.assertTrue(
+            _line_covers_module_under_opt(
+                "bazelisk build --config=opt --verbose_failures //library/src/belief_evaluation",
+                "build",
+                _OPT_BUILD_TARGET,
             )
         )
-        self.assertIsNotNone(
-            _OPT_TEST.search(
+        self.assertTrue(
+            _line_covers_module_under_opt(
                 "bazelisk test --config=opt --verbose_failures --test_output=errors "
-                "//library/tests/belief_evaluation/..."
+                "//library/tests/belief_evaluation/...",
+                "test",
+                _OPT_TEST_TARGET,
+            )
+        )
+
+    def test_accepts_config_opt_and_the_target_in_either_order(self) -> None:
+        """--config=opt need not precede the target pattern: a harmless flag
+        reordering in the workflow YAML must not false-fail this guard.
+        """
+        self.assertTrue(
+            _line_covers_module_under_opt(
+                "bazelisk build //library/src/belief_evaluation --config=opt --verbose_failures",
+                "build",
+                _OPT_BUILD_TARGET,
+            )
+        )
+        self.assertTrue(
+            _line_covers_module_under_opt(
+                "bazelisk test //library/tests/belief_evaluation/... --verbose_failures --config=opt",
+                "test",
+                _OPT_TEST_TARGET,
             )
         )
 

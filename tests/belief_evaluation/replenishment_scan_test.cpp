@@ -296,7 +296,8 @@ TEST_F(ThreePlyReplayTest, PjAccumulatesAcrossTwoDefenderPliesAndMatchesTheHandD
     EXPECT_EQ(result.p_j, jack_child_.p[0]);      // bitwise agreement with the drawn layout's own p
 }
 
-// --- a candidate delta assigns zero probability to is rejected, not asserted
+// --- a candidate whose delta assigns the drawn card zero probability is ----
+// --- rejected, not asserted -------------------------------------------------
 
 TEST_F(ThreePlyReplayTest, ACandidateDeltaAssignsZeroProbabilityToIsRejectedNotAsserted)
 {
