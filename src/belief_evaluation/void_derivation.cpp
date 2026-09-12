@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 
 #include <belief_evaluation/position.hpp>
 #include <belief_evaluation/trick.hpp>
@@ -9,14 +10,32 @@
 namespace dds::belief_evaluation
 {
 
+namespace
+{
+    // The only range PlayTraceBin::suit/rank's 52-element arrays actually
+    // hold -- see derive_voids' own doxygen for why this is asserted, not
+    // merely assumed, and clamped to rather than left unchecked.
+    constexpr int MaxHistoryLength = 52;
+}
+
 auto derive_voids(PlayTraceBin const& history, int opening_leader, int trump) -> VoidsBySeat
 {
     VoidsBySeat voids{};
 
-    int leader = opening_leader;
-    for (int start = 0; start < history.number; start += 4)
+    // Caller error, both -- asserted for a build where that is caught
+    // loudly; the clamp/normalise below is what stops it becoming an
+    // out-of-bounds read (a malformed history.number) or an out-of-range
+    // seat (a malformed opening_leader) in a build where it is not. This
+    // is what keeps the function total per its own doxygen, on every
+    // input, not only the ones verify_history happened to check first.
+    assert(history.number >= 0 && history.number <= MaxHistoryLength);
+    assert(opening_leader >= 0 && opening_leader < DDS_HANDS);
+    int const history_length = std::clamp(history.number, 0, MaxHistoryLength);
+    int leader = ((opening_leader % DDS_HANDS) + DDS_HANDS) % DDS_HANDS;
+
+    for (int start = 0; start < history_length; start += 4)
     {
-        int const cards_in_trick = std::min(4, history.number - start);
+        int const cards_in_trick = std::min(4, history_length - start);
         int const led_suit = history.suit[start];
 
         std::array<int, 4> suit_played{};

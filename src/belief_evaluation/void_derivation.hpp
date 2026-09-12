@@ -37,6 +37,16 @@ using VoidsBySeat = std::array<std::array<bool, DDS_SUITS>, DDS_HANDS>;
 /// that root -- catching that is a different, and separate, concern (see
 /// history_verification.hpp).
 ///
+/// "Total" includes a malformed `history.number` (outside `[0, 52]`, the
+/// only range `PlayTraceBin::suit`/`rank`'s 52-element arrays actually
+/// hold) or an `opening_leader` outside `[0, DDS_HANDS)`: asserted, for a
+/// build where a caller error this basic is caught loudly, and clamped to
+/// that same domain otherwise -- the same posture `binomial_coefficient`
+/// (defender_split.hpp) already takes for its own out-of-domain `n`, and
+/// for the same reason: this is a public function `verify_history` does
+/// not stand between every caller and, so its own safety cannot depend on
+/// callers routing through that check first.
+///
 /// Declarer's and dummy's entries are derived exactly like the defenders',
 /// even though only the defenders' voids ever narrow an enumeration: it is a
 /// fact about the play, not about what any one caller needs, and a cheap

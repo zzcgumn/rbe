@@ -293,8 +293,10 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   capability now accepts.
 - **A history that does not fit the root it is supplied with is rejected,
   not silently used, and the rejection is distinguishable from an
-  ordinarily empty root.** `verify_history` checks, in order: the card
-  partition (every played card together with every card the root's four
+  ordinarily empty root.** `verify_history` checks, in order: the shape of
+  the input itself (`history.number` in `[0, 52]`, `opening_leader` in
+  `[0, DDS_HANDS)` — checked, and reported, before either is ever used to
+  index anything the checks below read); the card partition (every played card together with every card the root's four
   hands still hold must be exactly the 52 distinct cards of a deck — a
   duplicate, a card both played and held, or a card accounted for by
   neither is each its own cause); the trailing trick (the root's own

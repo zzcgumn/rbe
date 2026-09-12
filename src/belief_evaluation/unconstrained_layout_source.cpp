@@ -12,39 +12,68 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    /// Builds the `Deal` for one layout: `root` with the fixed and other
-    /// seats' `remainCards` replaced by exactly `fixed_seat_cards` and
-    /// `other_seat_cards`. The constrained-decomposition sibling of
-    /// `apply_defender_split` (defender_split.hpp) -- that one takes
-    /// indices into a `DefenderPool`'s own whole-pool order, which is
-    /// exactly right for the unconstrained case's `unrank_combination`
-    /// result but does not fit here: a constrained `at()` already knows the
-    /// forced cards outright and only unranks a subset of the *free* cards,
-    /// so this takes the resulting card lists directly rather than
-    /// reintroducing a pool-relative index space for them. Copy-and-
-    /// overwrite, exactly as `apply_defender_split` is built: trump,
-    /// `first`, both `currentTrick*` arrays, and declarer's and dummy's
-    /// holdings are therefore guaranteed byte-identical to `root`'s own.
+    // Thirteen tricks, so at most 26 cards are ever outstanding between two
+    // defenders -- see defender_split.cpp's own binomial_coefficient
+    // doxygen, which states the same bound for the same reason. Duplicated
+    // here rather than exported: defender_split.cpp keeps its own copy as
+    // a private implementation bound, not part of DefenderPool's public
+    // contract, matching history_verification.cpp's own duplicated
+    // played_count() for the identical reason.
+    constexpr int MaxOutstandingCards = 26;
+
+    /// Builds the `Deal` for one layout at index `index`: `root` with the
+    /// fixed and other seats' `remainCards` replaced by exactly
+    /// `decomposition`'s forced cards, plus a free-card split chosen by
+    /// `free_subset` (indices into `decomposition.free_cards` naming which
+    /// go to the fixed seat -- the rest go to the other). Copy-and-
+    /// overwrite, exactly as `apply_defender_split` (defender_split.hpp) is
+    /// built: trump, `first`, both `currentTrick*` arrays, and declarer's
+    /// and dummy's holdings are therefore guaranteed byte-identical to
+    /// `root`'s own.
+    ///
+    /// Writes directly from `decomposition`'s own stored vectors and a
+    /// fixed-size `is_chosen` array, rather than concatenating forced and
+    /// chosen-free cards into two freshly heap-allocated `std::vector<Card>`
+    /// first: this is on `at()`'s hot path, `decomposition.free_cards.size()`
+    /// is bounded by `MaxOutstandingCards` regardless of the root, and a
+    /// `std::vector<bool>` or a copied `Card` vector on every single `at()`
+    /// call is exactly the allocation `apply_defender_split`'s own doxygen
+    /// already argues a large enumeration cannot afford to pay -- the same
+    /// argument, now for the constrained path too, since an empty history
+    /// (decision 1's own no-history case) also runs through this function.
     auto build_layout(
         Deal const& root,
         int fixed_seat,
         int other_seat,
-        std::vector<Card> const& fixed_seat_cards,
-        std::vector<Card> const& other_seat_cards) -> Deal
+        ConstrainedDecomposition const& decomposition,
+        std::vector<int> const& free_subset) -> Deal
     {
+        assert(decomposition.free_cards.size() <= MaxOutstandingCards);
+        std::array<bool, MaxOutstandingCards> is_chosen{};
+        for (int i : free_subset)
+        {
+            is_chosen[static_cast<std::size_t>(i)] = true;
+        }
+
         Deal result = root;
         for (int suit = 0; suit < DDS_SUITS; ++suit)
         {
             result.remainCards[fixed_seat][suit] = 0;
             result.remainCards[other_seat][suit] = 0;
         }
-        for (Card const& card : fixed_seat_cards)
+        for (Card const& card : decomposition.forced_to_fixed_seat)
         {
             result.remainCards[fixed_seat][card.suit] |= (1u << card.rank);
         }
-        for (Card const& card : other_seat_cards)
+        for (Card const& card : decomposition.forced_to_other_seat)
         {
             result.remainCards[other_seat][card.suit] |= (1u << card.rank);
+        }
+        for (std::size_t i = 0; i < decomposition.free_cards.size(); ++i)
+        {
+            Card const& card = decomposition.free_cards[i];
+            int const seat = is_chosen[i] ? fixed_seat : other_seat;
+            result.remainCards[seat][card.suit] |= (1u << card.rank);
         }
         return result;
     }
@@ -111,27 +140,7 @@ auto UnconstrainedLayoutSource::at(std::uint64_t index) const -> Deal
     std::vector<int> const free_subset = unrank_combination(
         permuted_index, static_cast<int>(decomposition_.free_cards.size()), decomposition_.fixed_seat_needed);
 
-    std::vector<bool> is_chosen(decomposition_.free_cards.size(), false);
-    for (int i : free_subset)
-    {
-        is_chosen[static_cast<std::size_t>(i)] = true;
-    }
-
-    std::vector<Card> fixed_seat_cards = decomposition_.forced_to_fixed_seat;
-    std::vector<Card> other_seat_cards = decomposition_.forced_to_other_seat;
-    for (std::size_t i = 0; i < decomposition_.free_cards.size(); ++i)
-    {
-        if (is_chosen[i])
-        {
-            fixed_seat_cards.push_back(decomposition_.free_cards[i]);
-        }
-        else
-        {
-            other_seat_cards.push_back(decomposition_.free_cards[i]);
-        }
-    }
-
-    return build_layout(root_, fixed_seat_, other_seat_, fixed_seat_cards, other_seat_cards);
+    return build_layout(root_, fixed_seat_, other_seat_, decomposition_, free_subset);
 }
 
 auto UnconstrainedLayoutSource::history_verdict() const -> HistoryVerdict

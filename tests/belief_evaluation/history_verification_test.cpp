@@ -140,6 +140,42 @@ TEST_F(HistoryVerificationTest, ARootWithNothingPlayedYetIsAccepted)
     EXPECT_EQ(verify_history(root, North, history, North), HistoryVerdict::Consistent);
 }
 
+// --- the shape of the input itself --------------------------------------------
+
+TEST_F(HistoryVerificationTest, AnOutOfRangeHistoryLengthIsRejected)
+{
+    auto [root, history] = build_deal(
+        {{Diamonds, 14}, {Diamonds, 2}, {Diamonds, 3}, {Diamonds, 12}}, everything_to_west);
+    root.trump = DDS_NOTRUMP;
+    root.first = North;
+    history.number = 53;  // one past PlayTraceBin::suit/rank's own 52-element bound
+
+    EXPECT_EQ(verify_history(root, North, history, North), HistoryVerdict::InvalidInput);
+}
+
+TEST_F(HistoryVerificationTest, ANegativeHistoryLengthIsRejected)
+{
+    auto [root, history] = build_deal({}, everything_to_west);
+    root.trump = DDS_NOTRUMP;
+    root.first = North;
+    history.number = -1;
+
+    EXPECT_EQ(verify_history(root, North, history, North), HistoryVerdict::InvalidInput);
+}
+
+TEST_F(HistoryVerificationTest, AnOutOfRangeOpeningLeaderIsRejected)
+{
+    auto [root, history] = build_deal(
+        {{Diamonds, 14}, {Diamonds, 2}, {Diamonds, 3}, {Diamonds, 12}}, everything_to_west);
+    root.trump = DDS_NOTRUMP;
+    root.first = North;
+
+    EXPECT_EQ(
+        verify_history(root, North, history, /*opening_leader=*/DDS_HANDS), HistoryVerdict::InvalidInput);
+    EXPECT_EQ(
+        verify_history(root, North, history, /*opening_leader=*/-1), HistoryVerdict::InvalidInput);
+}
+
 // --- the card partition ------------------------------------------------------
 
 TEST_F(HistoryVerificationTest, ADuplicatedCardInTheHistoryIsRejected)

@@ -141,6 +141,29 @@ TEST_F(VoidDerivationTest, ASingleCardTrailingTrickStillEstablishesAVoid)
     expect_voids(voids, {});
 }
 
+// --- malformed input is asserted, and safe (not undefined) either way -----
+
+TEST_F(VoidDerivationTest, AnOutOfRangeHistoryLengthIsAnAssertedCallerError)
+{
+    // EXPECT_DEBUG_DEATH, not EXPECT_DEATH: the assert this pins is compiled
+    // away under NDEBUG, so a death expectation that does not know about
+    // that build mode would fail there for the wrong reason -- the program
+    // no longer dies, not because the check stopped working. EXPECT_DEBUG_DEATH
+    // checks for death only in a build where assert is actually active, and
+    // is a no-op verification (just runs the statement, exercising the
+    // clamp this test cannot otherwise observe) otherwise.
+    PlayTraceBin history = trace({{Diamonds, King}, {Diamonds, Two}, {Diamonds, Three}, {Diamonds, Queen}});
+    history.number = 53;  // one past PlayTraceBin::suit/rank's own 52-element bound
+    EXPECT_DEBUG_DEATH({ derive_voids(history, North, DDS_NOTRUMP); }, "");
+}
+
+TEST_F(VoidDerivationTest, AnOutOfRangeOpeningLeaderIsAnAssertedCallerError)
+{
+    PlayTraceBin const history = trace({{Diamonds, King}, {Diamonds, Two}, {Diamonds, Three}, {Diamonds, Queen}});
+    EXPECT_DEBUG_DEATH({ derive_voids(history, /*opening_leader=*/DDS_HANDS, DDS_NOTRUMP); }, "");
+    EXPECT_DEBUG_DEATH({ derive_voids(history, /*opening_leader=*/-1, DDS_NOTRUMP); }, "");
+}
+
 TEST_F(VoidDerivationTest, MultipleTricksAccumulateVoidsAcrossLeaderChanges)
 {
     // Trick one (no-trump, spades): North K, East 2 (follows), South ruffs

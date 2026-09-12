@@ -13,6 +13,16 @@ enum class HistoryVerdict
 {
     Consistent,
 
+    /// `history.number` is outside `[0, 52]` (`PlayTraceBin::suit`/`rank`'s
+    /// own 52-element bound) or `opening_leader` is outside
+    /// `[0, DDS_HANDS)`. Checked first, and before either array is ever
+    /// indexed by it: `history` is caller input like any other value this
+    /// function checks, and a malformed shape is reported the same way a
+    /// malformed *content* is, not left to `derive_voids`'s own asserted
+    /// fallback (see that function's own doxygen) to catch on this
+    /// function's behalf.
+    InvalidInput,
+
     /// The same (suit, rank) appears twice among `history`'s played cards.
     DuplicatedCard,
 
@@ -67,6 +77,10 @@ enum class HistoryVerdict
 /// The checks run in this order, the first failure reported and the rest
 /// left unevaluated:
 ///
+/// 0. **The shape of the input itself.** `history.number` must be in
+///    `[0, 52]` and `opening_leader` in `[0, DDS_HANDS)` (`InvalidInput` if
+///    not) -- checked before either is used to index anything, since every
+///    check below does exactly that.
 /// 1. **The card partition.** Every played card and every card `root` still
 ///    shows held must together be exactly the 52 distinct cards of a deck --
 ///    no duplicate among the played cards (`DuplicatedCard`), no card both
