@@ -36,6 +36,7 @@ cc_test(
         "unconstrained_layout_source_integration_test.cpp",
         "unconstrained_layout_source_test.cpp",
         "validation_test.cpp",
+        "void_derivation_test.cpp",
     ],
     deps = [
         "//library/src/belief_evaluation",

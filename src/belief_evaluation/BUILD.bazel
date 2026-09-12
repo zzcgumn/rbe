@@ -19,6 +19,7 @@ cc_library(
         "trick.cpp",
         "unconstrained_layout_source.cpp",
         "validation.cpp",
+        "void_derivation.cpp",
     ],
     hdrs = [
         "belief_view.hpp",
@@ -40,6 +41,7 @@ cc_library(
         "types.hpp",
         "unconstrained_layout_source.hpp",
         "validation.hpp",
+        "void_derivation.hpp",
     ],
     visibility = ["//visibility:public"],
     deps = [
