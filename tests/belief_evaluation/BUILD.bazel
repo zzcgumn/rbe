@@ -7,6 +7,7 @@ cc_test(
     srcs = [
         "aggr_invariance_test.cpp",
         "belief_view_test.cpp",
+        "constrained_decomposition_test.cpp",
         "counters_test.cpp",
         "cuts_test.cpp",
         "declarer_node_test.cpp",
