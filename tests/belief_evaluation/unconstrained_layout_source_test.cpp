@@ -1,12 +1,16 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <functional>
 #include <set>
+#include <utility>
 #include <vector>
 
 #include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
+#include <belief_evaluation/constrained_decomposition.hpp>
+#include <belief_evaluation/history_verification.hpp>
 #include <belief_evaluation/unconstrained_layout_source.hpp>
 #include <belief_evaluation/node.hpp>
 
@@ -14,6 +18,8 @@
 
 namespace be = dds::belief_evaluation;
 
+using be::ConstrainedSpaceStatus;
+using be::HistoryVerdict;
 using be::UnconstrainedLayoutSource;
 using be::holding;
 using be::is_consistent;
@@ -90,6 +96,95 @@ namespace
         root.remainCards[South][Hearts] = holding({14, 13});
         // East and West hold nothing: the pool is empty.
         return root;
+    }
+
+    using CardPair = std::pair<int, int>;  // (suit, rank)
+
+    auto all_52_cards() -> std::vector<CardPair>
+    {
+        std::vector<CardPair> cards;
+        for (int suit = 0; suit < DDS_SUITS; ++suit)
+        {
+            for (int rank = 2; rank <= 14; ++rank)
+            {
+                cards.emplace_back(suit, rank);
+            }
+        }
+        return cards;
+    }
+
+    /// Builds a root + history pair that together account for exactly the
+    /// 52-card deck -- see history_verification_test.cpp's own copy of this
+    /// helper for the full rationale. `played` (in order) becomes the
+    /// history; every other card goes to `hand_for(suit, rank)`.
+    auto build_deal(
+        std::vector<CardPair> const& played, std::function<int(int, int)> const& hand_for)
+        -> std::pair<Deal, PlayTraceBin>
+    {
+        std::set<CardPair> const played_set(played.begin(), played.end());
+
+        Deal root{};
+        for (auto const& [suit, rank] : all_52_cards())
+        {
+            if (played_set.count({suit, rank}) != 0)
+            {
+                continue;
+            }
+            root.remainCards[hand_for(suit, rank)][suit] |= (1u << rank);
+        }
+
+        PlayTraceBin history{};
+        history.number = static_cast<int>(played.size());
+        for (std::size_t i = 0; i < played.size(); ++i)
+        {
+            history.suit[i] = played[i].first;
+            history.rank[i] = played[i].second;
+        }
+
+        return {root, history};
+    }
+
+    /// A root and history where East (the fixed seat: `(declarer + 1) %
+    /// DDS_HANDS`) has shown void in diamonds, and diamonds remain in the
+    /// defender pool -- small enough to enumerate exhaustively (size 3), and
+    /// with the voided suit actually live in the pool so the void
+    /// constraint has something to bite on.
+    ///
+    /// Trick one (no-trump, diamonds led): North (declarer) leads the ace,
+    /// East discards a spade -- void in diamonds -- South (dummy) follows
+    /// the king, West follows the queen. North's ace is highest, so North
+    /// wins and leads next; no trick is in progress at this root.
+    ///
+    /// After the trick: East holds one club (C4); West holds three
+    /// diamonds (D5, D7, D9) and two more clubs (C6, C9). Every other card
+    /// in the deck -- the bulk of it -- is dumped on North, which nothing
+    /// here depends on the realism of (declarer's exact holding is not
+    /// part of what varies across a node, so an unrealistically large one
+    /// is harmless).
+    ///
+    /// Pool (suits ascending, ranks ascending): D5, D7, D9, C4, C6, C9 (6
+    /// cards); East's own count is 1 (C4). East void in diamonds forces
+    /// D5/D7/D9 to West; the three clubs are free; East still needs 1 of
+    /// them: C(3, 1) = 3.
+    auto make_void_ending() -> std::pair<Deal, PlayTraceBin>
+    {
+        auto const hand_for = [](int suit, int rank) -> int
+        {
+            if (suit == Diamonds && (rank == 5 || rank == 7 || rank == 9))
+            {
+                return West;
+            }
+            if (suit == Clubs && (rank == 4 || rank == 6 || rank == 9))
+            {
+                return rank == 4 ? East : West;
+            }
+            return North;
+        };
+        auto [root, history] =
+            build_deal({{Diamonds, 14}, {Spades, 2}, {Diamonds, 13}, {Diamonds, 12}}, hand_for);
+        root.trump = DDS_NOTRUMP;
+        root.first = North;
+        return {root, history};
     }
 }  // namespace
 
@@ -241,4 +336,122 @@ TEST(UnconstrainedLayoutSourceTest, OutOfRangeIndexIsAnAssertedCallerError)
     UnconstrainedLayoutSource const source(make_small_single_suit_root(), North, /*seed=*/1u);
     ASSERT_EQ(source.size(), 2u);
     EXPECT_DEBUG_DEATH({ source.at(2); }, "");
+}
+
+// --- an empty history is bit-identical to the pre-history constructor -----
+
+TEST(UnconstrainedLayoutSourceTest, AnEmptyHistoryIsBitIdenticalOverTheWholeSpace)
+{
+    // Prove it, not assume it: construct the same root two ways -- the
+    // original three-argument call every existing call site still makes,
+    // and the new five-argument form with an explicit empty history -- and
+    // compare size() and every single at(i), not a sample of them.
+    Deal const root = make_ten_card_pool_root();
+    UnconstrainedLayoutSource const original(root, North, /*seed=*/1u);
+    UnconstrainedLayoutSource const explicit_empty_history(
+        root, North, /*seed=*/1u, PlayTraceBin{}, /*opening_leader=*/North);
+
+    ASSERT_EQ(original.size(), explicit_empty_history.size());
+    ASSERT_EQ(original.size(), 252u);  // C(10, 5), same as SizeMatchesTheHandDerivedCountOnATenCardPool
+    EXPECT_EQ(original.history_verdict(), HistoryVerdict::Consistent);
+    EXPECT_EQ(original.constrained_space_status(), ConstrainedSpaceStatus::Ok);
+
+    for (std::uint64_t index = 0; index < *original.size(); ++index)
+    {
+        EXPECT_EQ(layout_key(original.at(index), East), layout_key(explicit_empty_history.at(index), East))
+            << "index=" << index;
+    }
+}
+
+// --- a supplied history narrows the space, whole space verified -----------
+
+TEST(UnconstrainedLayoutSourceTest, AHistoryShrinksSizeToTheConstrainedCountAndNoLayoutLeaksTheVoidedSuit)
+{
+    auto const [root, history] = make_void_ending();
+    UnconstrainedLayoutSource const source(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
+
+    ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent);
+    ASSERT_EQ(source.constrained_space_status(), ConstrainedSpaceStatus::Ok);
+    ASSERT_EQ(source.size(), 3u);  // C(3, 1) -- see make_void_ending()'s own doxygen
+
+    std::set<std::uint64_t> keys;
+    for (std::uint64_t index = 0; index < *source.size(); ++index)
+    {
+        Deal const layout = source.at(index);
+        EXPECT_TRUE(is_consistent(layout, root, North, South)) << "index=" << index;
+        // East showed void in diamonds -- no generated layout may give East
+        // a diamond, over the whole space, not a sample of it.
+        EXPECT_EQ(layout.remainCards[East][Diamonds], 0u) << "index=" << index;
+        // And West must hold exactly the three diamonds the void forced --
+        // nothing free ever moves them.
+        EXPECT_EQ(layout.remainCards[West][Diamonds], holding({5, 7, 9})) << "index=" << index;
+        keys.insert(layout_key(layout, East));
+    }
+    EXPECT_EQ(keys.size(), 3u);  // at() is a bijection over the constrained space
+}
+
+// --- determinism holds with a history too ----------------------------------
+
+TEST(UnconstrainedLayoutSourceTest, AtIsDeterministicWithAHistoryAcrossTwoSeparatelyConstructedSources)
+{
+    auto const [root, history] = make_void_ending();
+    UnconstrainedLayoutSource const a(root, North, /*seed=*/7u, history, /*opening_leader=*/North);
+    UnconstrainedLayoutSource const b(root, North, /*seed=*/7u, history, /*opening_leader=*/North);
+    ASSERT_EQ(a.size(), b.size());
+    for (std::uint64_t index = 0; index < *a.size(); ++index)
+    {
+        EXPECT_EQ(layout_key(a.at(index), East), layout_key(b.at(index), East)) << "index=" << index;
+    }
+}
+
+// --- a rejected history and an empty constrained space are distinguishable,
+// and neither reads as "the source had nothing consistent in it" -----------
+
+TEST(UnconstrainedLayoutSourceTest, ARejectedHistoryIsReportedAndTheSpaceIsEmptyButDistinguishable)
+{
+    auto [root, history] = make_void_ending();
+    // Duplicate a played card -- the same shape history_verification_test.cpp
+    // uses to pin DuplicatedCard -- so verify_history rejects this history
+    // outright.
+    history.suit[3] = history.suit[0];
+    history.rank[3] = history.rank[0];
+
+    UnconstrainedLayoutSource const source(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
+
+    EXPECT_EQ(source.history_verdict(), HistoryVerdict::DuplicatedCard);
+    // Not meaningful -- the decomposition was never attempted -- but still
+    // the harmless default, not some other value a caller might mistake for
+    // a real diagnosis.
+    EXPECT_EQ(source.constrained_space_status(), ConstrainedSpaceStatus::Ok);
+    EXPECT_EQ(source.size(), 0u);
+}
+
+TEST(UnconstrainedLayoutSourceTest, AContradictoryHistoryIsAcceptedButLeavesAnEmptySpaceWithItsOwnCause)
+{
+    // North leads a diamond, East discards a spade (void), South follows
+    // suit, West discards a club (void too) -- both defenders void in
+    // diamonds, and a diamond (D11) is left outstanding in West's own
+    // post-trick holding below, so the contradiction is not vacuous.
+    // verify_history has nothing to reject here -- the 52-card partition,
+    // the trailing trick and the declarer/dummy cross-check all pass -- so
+    // this is the constrained decomposition's own empty cause, not a
+    // rejected history.
+    auto const hand_for = [](int suit, int rank) -> int
+    {
+        if (suit == Diamonds && rank == 11)
+        {
+            return West;  // still in the pool, in the suit both defenders denied
+        }
+        return North;
+    };
+    auto [root, history] = build_deal(
+        {{Diamonds, 14}, {Spades, 2}, {Diamonds, 13}, {Clubs, 3}}, hand_for);
+    root.trump = DDS_NOTRUMP;
+    root.first = North;  // North's ace was highest; neither discard could win
+
+    UnconstrainedLayoutSource const source(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
+
+    ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent);
+    EXPECT_EQ(source.constrained_space_status(), ConstrainedSpaceStatus::ContradictoryVoid);
+    EXPECT_EQ(source.size(), 0u);
 }
