@@ -14,6 +14,7 @@ cc_test(
         "defender_split_test.cpp",
         "evaluate_test.cpp",
         "fixture_validation_test.cpp",
+        "history_verification_test.cpp",
         "kahan_test.cpp",
         "keyed_permutation_test.cpp",
         "layout_key_test.cpp",
