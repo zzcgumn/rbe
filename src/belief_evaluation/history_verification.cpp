@@ -37,7 +37,7 @@ namespace
 auto verify_history(Deal const& root, int declarer, PlayTraceBin const& history, int opening_leader)
     -> HistoryVerdict
 {
-    // Step 1+2: the card partition. `seen[card_index(suit, rank)]` becomes
+    // Check 1: the card partition. `seen[card_index(suit, rank)]` becomes
     // true the first time that card is found on either side -- history's
     // played cards first, then every hand's remainCards in root. Cards of
     // the trick in progress are already removed from root.remainCards by
@@ -45,6 +45,8 @@ auto verify_history(Deal const& root, int declarer, PlayTraceBin const& history,
     // remainCards on every call, whether or not it resolves the trick), so
     // they belong to history's side of the partition and never root's;
     // confirmed against play()'s own behaviour, not assumed.
+    //
+    // Part one: history's own duplicates.
     std::array<bool, DeckSize> seen{};
 
     for (int i = 0; i < history.number; ++i)
@@ -57,6 +59,7 @@ auto verify_history(Deal const& root, int declarer, PlayTraceBin const& history,
         seen[index] = true;
     }
 
+    // Part two: cards root still holds, checked against the same seen set.
     for (int hand = 0; hand < DDS_HANDS; ++hand)
     {
         for (int suit = 0; suit < DDS_SUITS; ++suit)
@@ -78,7 +81,7 @@ auto verify_history(Deal const& root, int declarer, PlayTraceBin const& history,
         }
     }
 
-    // Step 3: nothing left unaccounted for on either side.
+    // Part three: nothing left unaccounted for on either side.
     for (bool const card_seen : seen)
     {
         if (! card_seen)
@@ -87,7 +90,7 @@ auto verify_history(Deal const& root, int declarer, PlayTraceBin const& history,
         }
     }
 
-    // Step 4: the trailing trick, count first, then the cards themselves.
+    // Check 2: the trailing trick, count first, then the cards themselves.
     int const trailing = played_count(root);
     if (history.number % 4 != trailing)
     {
@@ -103,7 +106,7 @@ auto verify_history(Deal const& root, int declarer, PlayTraceBin const& history,
         }
     }
 
-    // Step 5: the free cross-check. Only declarer and dummy: root gives
+    // Check 3: the free cross-check. Only declarer and dummy: root gives
     // their holdings exactly, but a defender's own split in root is not
     // itself binding -- only the two defenders' pooled union is (see
     // DefenderPool's own doxygen) -- so a defender void derived here says
