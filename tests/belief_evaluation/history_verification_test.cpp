@@ -19,6 +19,7 @@ namespace
 {
     constexpr int Spades = 0;
     constexpr int Diamonds = 2;
+    constexpr int Clubs = 3;
 
     constexpr int North = 0;
     constexpr int East = 1;
@@ -220,6 +221,71 @@ TEST_F(HistoryVerificationTest, ATrailingTrickWithTheWrongCardsIsRejected)
     root.currentTrickRank[1] = 3;  // history actually played the deuce here
 
     EXPECT_EQ(verify_history(root, North, history, North), HistoryVerdict::TrailingTrickMismatch);
+}
+
+// --- the leader ---------------------------------------------------------------
+
+TEST_F(HistoryVerificationTest, AWrongOpeningLeaderIsRejectedEvenWhenTheCardsAndOrderAreRight)
+{
+    // North leads the ace of diamonds, East discards a club -- void in
+    // diamonds -- South follows low, West follows the queen. North's ace
+    // is highest, so root.first is genuinely North. The history itself is
+    // exactly right: the same 52 cards, in the same order, and the
+    // trailing trick (empty, since this trick is fully resolved) matches
+    // too -- neither the card partition nor the trailing-trick check
+    // depends on which seat played which card, only on which cards, in
+    // what order. Supplying South as the opening leader instead of North
+    // shifts every seat attribution by the same two-seat rotation: East's
+    // real void would misattribute to West, and North's own play would
+    // misattribute to South -- neither declarer (North) nor dummy (South,
+    // since dummy = declarer + 2), so the free cross-check does not catch
+    // it either. Only checking the replayed leader against root.first
+    // does.
+    auto [root, history] =
+        build_deal({{Diamonds, 14}, {Clubs, 2}, {Diamonds, 3}, {Diamonds, 12}}, [](int, int)
+                    { return North; });
+    root.trump = DDS_NOTRUMP;
+    root.first = North;
+
+    EXPECT_EQ(verify_history(root, North, history, South), HistoryVerdict::LeaderMismatch);
+}
+
+TEST_F(HistoryVerificationTest, AWrongOpeningLeaderMidTrickIsAlsoRejected)
+{
+    // The same trap, but the trailing trick is a genuine (non-empty) one
+    // rather than a just-resolved one, and the wrong leader is off by a
+    // single seat rather than two -- checking the fix does not accidentally
+    // depend on either particular's shape. Trick one (spades) is fully
+    // resolved with North's ace highest, so North leads trick two: a
+    // diamond, with East -- void -- discarding a club next.
+    //
+    // Off by one seats this way misattributes the void to South (dummy,
+    // not a defender) rather than to a defender as the previous test's
+    // off-by-two does -- but South, in this fixture, holds none of the
+    // suit anyway (every card not explicitly placed is dumped on North
+    // above), so the free cross-check's own contradiction condition
+    // ("dummy void in a suit dummy still holds") is never triggered either.
+    // A dummy hand empty in the relevant suit is an entirely ordinary
+    // position, not a contrived one.
+    auto [root, history] = build_deal(
+        {{Spades, 14},
+         {Spades, 2},
+         {Spades, 3},
+         {Spades, 12},
+         {Diamonds, 9},
+         {Clubs, 5}},
+        [](int, int) { return North; });
+    root.trump = DDS_NOTRUMP;
+    root.first = North;
+    root.currentTrickSuit[0] = Diamonds;
+    root.currentTrickRank[0] = 9;
+    root.currentTrickSuit[1] = Clubs;
+    root.currentTrickRank[1] = 5;
+
+    // The true opening leader is North throughout (it won trick one, so it
+    // also leads trick two); East, off by one seat, is what a caller could
+    // plausibly mistype here.
+    EXPECT_EQ(verify_history(root, North, history, East), HistoryVerdict::LeaderMismatch);
 }
 
 // --- the free declarer/dummy cross-check --------------------------------------

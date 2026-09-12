@@ -33,6 +33,23 @@ enum class HistoryVerdict
     /// the cards themselves -- or their order -- do not.
     TrailingTrickMismatch,
 
+    /// `opening_leader` is wrong. Replaying every complete trick in
+    /// `history` from `opening_leader` (the same trick arithmetic
+    /// `derive_voids` uses internally) gives a seat for the trick
+    /// containing the trailing cards that disagrees with `root.first`.
+    /// Since every seat `derive_voids` ever attributes a card to is that
+    /// same replay offset by a fixed rotation from `opening_leader`, this
+    /// single check is equivalent to checking `opening_leader` itself:
+    /// a wrong one rotates every attribution by the same non-zero amount,
+    /// so it can never coincidentally land back on the right seat here.
+    /// Neither the card partition nor the trailing cards' own identity
+    /// depends on which seat played which card, so this is the one check
+    /// that catches a history whose cards and order are both right but
+    /// whose seats are not -- exactly the class of error that would
+    /// otherwise reach `derive_voids` and silently force a suit onto the
+    /// wrong defender.
+    LeaderMismatch,
+
     /// `history` derives declarer or dummy void in a suit `root` shows that
     /// seat still holding. Declarer's and dummy's holdings are exact in
     /// `root`, so this is a hard contradiction rather than a matter of
@@ -67,12 +84,21 @@ enum class HistoryVerdict
 ///    order do not). This catches what the partition check above cannot: the
 ///    same 52 cards, played in a sequence that disagrees with `root` about
 ///    what is currently in progress.
-/// 3. **The free cross-check.** `derive_voids(history, opening_leader,
+/// 3. **The leader.** Replaying `history`'s complete tricks from
+///    `opening_leader` must land on `root.first` as the seat leading the
+///    trick the trailing cards belong to (`LeaderMismatch` if not). Neither
+///    of the two checks above depends on *which seat* played which card --
+///    only on which cards, in what order -- so a history with the right 52
+///    cards in the right sequence but attributed to the wrong seats throughout
+///    (every card shifted by the same fixed rotation, since that is the only
+///    way a wrong `opening_leader` can go wrong) passes both of them. This is
+///    the one check that catches it.
+/// 4. **The free cross-check.** `derive_voids(history, opening_leader,
 ///    root.trump)` must not put declarer or dummy void in a suit `root`
 ///    shows them holding. This costs nothing beyond what step 1 already
-///    computed and catches an order error that happens to preserve the card
-///    partition -- exactly the case steps 1 and 2 between them might let
-///    through.
+///    computed and catches a *non-uniform* seat error -- cards reattributed
+///    among seats in a way that is not a single fixed rotation, so step 3
+///    above does not catch it either.
 auto verify_history(Deal const& root, int declarer, PlayTraceBin const& history, int opening_leader)
     -> HistoryVerdict;
 

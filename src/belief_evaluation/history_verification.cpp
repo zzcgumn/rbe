@@ -2,6 +2,8 @@
 
 #include <array>
 
+#include <belief_evaluation/position.hpp>
+#include <belief_evaluation/trick.hpp>
 #include <belief_evaluation/void_derivation.hpp>
 #include <utility/constants.h>
 
@@ -31,6 +33,33 @@ namespace
             ++count;
         }
         return count;
+    }
+
+    /// The seat leading the trick `history`'s own trailing cards belong to:
+    /// replays every *complete* trick in `history` (blocks of four, stopping
+    /// short of a trailing partial one) from `opening_leader`, advancing by
+    /// `trick_winner()` exactly as `derive_voids` does internally, but
+    /// without needing to build a `VoidsBySeat` to get there. Every seat
+    /// `trick_winner` ever attributes a play to is `(leader + offset) %
+    /// DDS_HANDS`, where `offset` depends only on the cards played, never on
+    /// `leader` itself -- so this replay is a single fixed rotation of
+    /// `opening_leader`, and comparing its result to `root.first` is exactly
+    /// equivalent to checking `opening_leader` was right in the first place.
+    auto leader_of_trailing_trick(PlayTraceBin const& history, int opening_leader, int trump) -> int
+    {
+        int leader = opening_leader;
+        for (int start = 0; start + 4 <= history.number; start += 4)
+        {
+            std::array<int, 4> suit_played{};
+            std::array<int, 4> bit_played{};
+            for (int i = 0; i < 4; ++i)
+            {
+                suit_played[i] = history.suit[start + i];
+                bit_played[i] = rank_to_bit_position(history.rank[start + i]);
+            }
+            leader = trick_winner(trump, leader, suit_played, bit_played);
+        }
+        return leader;
     }
 }
 
@@ -106,7 +135,21 @@ auto verify_history(Deal const& root, int declarer, PlayTraceBin const& history,
         }
     }
 
-    // Check 3: the free cross-check. Only declarer and dummy: root gives
+    // Check 3: the leader. Neither of the two checks above depends on which
+    // seat played which card, only on which cards in what order, so a
+    // history whose every card is attributed to the wrong seat -- shifted
+    // by the same fixed rotation from opening_leader, the only way a wrong
+    // opening_leader can go wrong (see leader_of_trailing_trick's own
+    // doxygen) -- passes both of them. This is the one check that catches
+    // it, and it must run before check 4 below: derive_voids trusts
+    // opening_leader completely, so its own output means nothing once this
+    // has failed.
+    if (leader_of_trailing_trick(history, opening_leader, root.trump) != root.first)
+    {
+        return HistoryVerdict::LeaderMismatch;
+    }
+
+    // Check 4: the free cross-check. Only declarer and dummy: root gives
     // their holdings exactly, but a defender's own split in root is not
     // itself binding -- only the two defenders' pooled union is (see
     // DefenderPool's own doxygen) -- so a defender void derived here says

@@ -299,11 +299,21 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   duplicate, a card both played and held, or a card accounted for by
   neither is each its own cause); the trailing trick (the root's own
   `currentTrickSuit`/`currentTrickRank` must equal the history's trailing
-  cards, in order — count first, then identity, each its own cause); and,
-  free once the first two pass, the declarer/dummy cross-check derived
+  cards, in order — count first, then identity, each its own cause); the
+  leader (replaying every complete trick in `history` from `opening_leader`
+  must land on `root.first` as the seat leading the trick the trailing
+  cards belong to) — **load-bearing, not redundant with the two checks
+  above**: neither depends on *which seat* played which card, only on which
+  cards in what order, so a history whose cards and order are both right but
+  whose seats are all shifted by the same fixed rotation from
+  `opening_leader` passes both of them undetected, and would otherwise reach
+  `derive_voids` and force a suit onto the wrong defender silently; and,
+  free once the first three pass, the declarer/dummy cross-check derived
   voids give for nothing (a history deriving declarer or dummy void in a
   suit the root shows them holding is a contradiction, since both are
-  exact in the root). A history that fits the root but leaves no legal
+  exact in the root) — this one catches a *non-uniform* seat error the
+  leader check cannot, cards reattributed among seats in a way that is not
+  a single fixed rotation. A history that fits the root but leaves no legal
   split is a separate, further-distinguished case: both defenders void in a
   suit the pool still contains; more forced to the fixed defender than it
   holds; or the fixed defender unable to reach its own hand size from what
