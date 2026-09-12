@@ -35,6 +35,7 @@ cc_test(
         "terminal_test.cpp",
         "test_support.hpp",
         "trick_test.cpp",
+        "two_way_experiment_test.cpp",
         "unconstrained_layout_source_integration_test.cpp",
         "unconstrained_layout_source_test.cpp",
         "validation_test.cpp",
