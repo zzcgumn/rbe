@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-09-08
+last-updated: 2026-09-12
 ---
 
 # Replenished Belief Evaluation
@@ -212,26 +212,112 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   a caller using it, "the belief space" is exactly what the paragraph above
   has always meant by "consistent with the root position": every defender
   split of the outstanding pool, with trump, the trick in progress, and
-  declarer's and dummy's exact holdings held fixed. Nothing else varies —
-  this is the same belief space this capability's model has described
-  throughout, not a new or narrower one. Named for what it does *not* do,
-  not for consistency with the root — every `LayoutSource` is already
-  required to be consistent (`make_root` validates it on entry, per the
-  first bullet of this section); what is specific to this type is that it
-  applies no further narrowing, unlike a caller-supplied source reflecting
-  something the evaluator itself has no way to know, such as what the
-  bidding ruled out. `size()` is exact
-  (`C(n, k)` — the pooled card count choose the fixed defender's own count
-  at the root) and never unknown; the enumeration order is randomised by
-  construction, from a seed fixed at construction, discharging the
-  randomised-order obligation below for any caller using this type. The
-  same seed and root reproduce a run; two different seeds enumerate the
-  identical space in a different order, which is the intended way to
-  assess sampling error against a single fixed `sample_size` — not a
-  reason to raise `sample_size` instead, which answers a different
-  question. Before this, every `LayoutSource` in existence was a
+  declarer's and dummy's exact holdings held fixed — and, when a play
+  history is supplied (below), further restricted to the splits consistent
+  with the voids that history establishes. With no history this is the same
+  belief space this capability's model has described throughout, not a new
+  or narrower one. Named for what it does *not* do, not for consistency with
+  the root — every `LayoutSource` is already required to be consistent
+  (`make_root` validates it on entry, per the first bullet of this section);
+  what is specific to this type is that it applies exactly the narrowing the
+  play establishes as fact, and nothing more. A caller with *inferred*
+  information the evaluator has no way to know — what the bidding ruled out,
+  say — still supplies their own narrower source reflecting it; the line is
+  between fact and inference, not between "this source narrows" and "this
+  source does not", and a caller needs to know which side of it their own
+  information falls on. `size()` is exact — `C(n, k)`, the pooled card count
+  choose the fixed defender's own count at the root, with no history; the
+  same computation restricted to the free cards a void does not force one
+  way or the other, otherwise (below) — and never unknown; the enumeration
+  order is randomised by construction, from a seed fixed at construction,
+  discharging the randomised-order obligation below for any caller using
+  this type. The same seed, root and history reproduce a run; two different
+  seeds enumerate the identical space in a different order, which is the
+  intended way to assess sampling error against a single fixed
+  `sample_size` — not a reason to raise `sample_size` instead, which answers
+  a different question. A supplied history changes the *space itself* (it
+  is smaller), so the same seed and root give a different order once a
+  history is supplied than without one — correct, not a sign the seed
+  stopped working. Before this, every `LayoutSource` in existence was a
   hand-built, in-memory test double; this is the first this capability
   ships as library surface.
+- **A supplied play history narrows the enumeration to the splits its voids
+  leave possible, and voids are the complete residual constraint — nothing
+  else about the history is used.** The input is a `PlayTraceBin` (the same
+  type `ObservationState::history` and `analyse_play` already use) plus the
+  opening leader, from which every seat's voids follow by trick arithmetic
+  alone: a seat that plays off the suit led — a discard or a ruff, treated
+  identically — is void in it from that point, including from the trailing,
+  possibly-incomplete final trick. Voids are the *only* fact the play
+  establishes that is not already captured elsewhere in the root: cards
+  already played are gone from a hand's holding; a hand's current size is
+  already in the position; which suits it is void in is not, and is what
+  this closes. Nothing else about a history is read — which specific card a
+  seat followed suit with, in particular, is not: this capability's model
+  does not track what following suit with one card rather than another
+  might imply, only whether suit was followed at all. Only a defender's own
+  voids ever narrow anything, since declarer's and dummy's holdings are
+  already exact in the root; declarer's and dummy's voids are derived
+  anyway, since declarer or dummy void in a suit the root shows them
+  holding is one of the checks below.
+  `is_consistent()` is untouched by this — the void constraint is applied by
+  the source, for the same reason `UnconstrainedLayoutSource`'s own defender
+  split already was: `is_consistent()` runs on every candidate in every
+  scan this capability makes, so changing it would change which layouts
+  enter the belief space on every existing fixture, not only the ones this
+  capability's own callers build.
+- **The correctness argument, not just the feature: enforcing voids is what
+  makes vacant-spaces reasoning come out right at all, not a hygiene fix
+  layered on top of an already-correct enumeration.** With a pool of `n`
+  cards and one defender holding `k`, uniform enumeration over no other
+  constraint gives that defender a specific card with probability `k/n` —
+  the vacant-spaces answer, and correct, exactly when nothing further is
+  known. If that defender has shown out of a suit and `h` cards of it
+  remain in the pool, those `h` cards must all be the other defender's, so
+  the first defender's `k` cards come only from the remaining `n - h`, and
+  the probability of holding any one of them becomes `k / (n - h)`.
+  Enumerating without the void constraint computes `k / n` regardless —
+  wrong for *every* card in the pool, not only for the suit shown out,
+  because the denominator itself is wrong. A mid-play root is therefore
+  sound only by coincidence unless every defender void the play has already
+  established is applied; most real declarer problems are mid-play.
+- **The limitation this does not close: a caller with no play history at a
+  mid-play root still gets the unconstrained enumeration, and it is still
+  wrong.** The history parameter is optional in the sense that its type
+  accepts absence, never in the sense that it is not needed — a caller who
+  omits it because a play record is genuinely unavailable gets the same
+  answer this capability always gave at a mid-play root, and that answer
+  was never correct once play was underway. There is nothing further to
+  implement that would help such a caller; supplying the history the
+  position actually has is the only fix, and it is exactly what this
+  capability now accepts.
+- **A history that does not fit the root it is supplied with is rejected,
+  not silently used, and the rejection is distinguishable from an
+  ordinarily empty root.** `verify_history` checks, in order: the card
+  partition (every played card together with every card the root's four
+  hands still hold must be exactly the 52 distinct cards of a deck — a
+  duplicate, a card both played and held, or a card accounted for by
+  neither is each its own cause); the trailing trick (the root's own
+  `currentTrickSuit`/`currentTrickRank` must equal the history's trailing
+  cards, in order — count first, then identity, each its own cause); and,
+  free once the first two pass, the declarer/dummy cross-check derived
+  voids give for nothing (a history deriving declarer or dummy void in a
+  suit the root shows them holding is a contradiction, since both are
+  exact in the root). A history that fits the root but leaves no legal
+  split is a separate, further-distinguished case: both defenders void in a
+  suit the pool still contains; more forced to the fixed defender than it
+  holds; or the fixed defender unable to reach its own hand size from what
+  free cards remain. `UnconstrainedLayoutSource` surfaces which of these
+  applies (`history_verdict()`, `constrained_space_status()`) rather than
+  letting `size() == 0` alone stand for all of them — that would read
+  identically to a root with nothing consistent in it, and `make_root`
+  would report `RootFailure::NoLayoutSurvived`, which tells a caller to fix
+  their *source* when the right advice is to fix their *history* or the
+  root it was built against. A rejected history is never silently treated
+  as no history: falling back to the unconstrained enumeration would
+  reintroduce the exact defect this capability now closes, in precisely the
+  case where the caller tried to supply what the position actually
+  established.
 - **`is_consistent()` under-constrains: it does not compare hand sizes,
   and closing that gap is deliberately out of scope here.** It compares
   trump, the seat on lead, the trick in progress, declarer's and dummy's
@@ -538,9 +624,26 @@ rename or include-ordering trick anywhere in the module.
   general-purpose, not specific to this capability's own types, and the
   mechanism `UnconstrainedLayoutSource` uses to randomise its enumeration
   order.
+- `library/src/belief_evaluation/void_derivation.hpp` — `VoidsBySeat`,
+  `derive_voids()` — a play history alone to every seat's voids, pure trick
+  arithmetic with no `Deal` or holdings involved.
+- `library/src/belief_evaluation/history_verification.hpp` —
+  `HistoryVerdict`, `verify_history()` — whether a supplied history actually
+  belongs to a supplied root, and which of its distinct causes rejects it
+  when it does not.
+- `library/src/belief_evaluation/constrained_decomposition.hpp` —
+  `ConstrainedSpaceStatus`, `ConstrainedDecomposition`,
+  `decompose_constrained()`, `constrained_space_size()` — applies a pair of
+  per-suit void sets to a `DefenderPool` (above), partitioning it into cards
+  a void forces to the fixed defender, cards a void forces away, and the
+  free cards actually enumerated; with no voids this is a strict
+  generalisation of `defender_pool_decomposition`'s own unconstrained count,
+  reached by the same `binomial_coefficient()` call rather than a parallel
+  one.
 - `library/src/belief_evaluation/unconstrained_layout_source.hpp` —
   `UnconstrainedLayoutSource`, the shipped `LayoutSource` — see "Behaviour &
-  invariants" above for what it enumerates.
+  invariants" above for what it enumerates, with and without a supplied
+  play history.
 - `library/src/belief_evaluation/renumber.hpp` — `renumber()`.
 - `library/src/belief_evaluation/rank_map.hpp` — `make_rank_map()`.
 - `library/src/belief_evaluation/layout_key.hpp` — `layout_key()`.
