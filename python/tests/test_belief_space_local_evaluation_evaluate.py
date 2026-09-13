@@ -3,7 +3,7 @@ import unittest
 from belief_space_local_evaluation import Card
 from belief_space_local_evaluation import evaluate
 from belief_space_local_evaluation import ExhaustiveLayoutSource
-from belief_space_local_evaluation import RootFailure
+from belief_space_local_evaluation import NoLayoutSurvivedError
 from belief_space_local_evaluation import SampleSizeZeroError
 
 Spades, Hearts, Diamonds, Clubs = 0, 1, 2, 3
@@ -193,10 +193,8 @@ class TestSampleSizeZeroRaises(unittest.TestCase):
                 return deal
 
         root = make_one_card_finesse_root()
-        result = evaluate(root, North, 1, EmptySource(), declarer_play, defender_play)
-
-        self.assertIn("error", result)
-        self.assertEqual(result["error"]["root_failure"], RootFailure.NoLayoutSurvived)
+        with self.assertRaises(NoLayoutSurvivedError):
+            evaluate(root, North, 1, EmptySource(), declarer_play, defender_play)
 
 
 if __name__ == "__main__":

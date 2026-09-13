@@ -8,12 +8,17 @@ import dds3  # noqa: F401
 
 try:
     from ._belief_space_local_evaluation import BeliefEntry
+    from ._belief_space_local_evaluation import BeliefSpaceLocalEvaluationError
     from ._belief_space_local_evaluation import BeliefView
+    from ._belief_space_local_evaluation import CallbackContractError
     from ._belief_space_local_evaluation import Card
+    from ._belief_space_local_evaluation import CardIllegalForTrickError
+    from ._belief_space_local_evaluation import CardNotHeldError
     from ._belief_space_local_evaluation import CardPlayedAndHeldError
     from ._belief_space_local_evaluation import ConstrainedSpaceEmptyError
     from ._belief_space_local_evaluation import ConstrainedSpaceStatus
     from ._belief_space_local_evaluation import ContradictoryVoidError
+    from ._belief_space_local_evaluation import DistributionEmptyError
     from ._belief_space_local_evaluation import DuplicatedCardError
     from ._belief_space_local_evaluation import evaluate
     from ._belief_space_local_evaluation import EvaluationCallback
@@ -28,9 +33,15 @@ try:
     from ._belief_space_local_evaluation import LeaderMismatchError
     from ._belief_space_local_evaluation import MissingCardError
     from ._belief_space_local_evaluation import module_name
+    from ._belief_space_local_evaluation import NoLayoutSurvivedError
     from ._belief_space_local_evaluation import ObservationState
+    from ._belief_space_local_evaluation import ProbabilitiesDoNotSumToOneError
+    from ._belief_space_local_evaluation import ProbabilityNonPositiveError
     from ._belief_space_local_evaluation import RootFailure
+    from ._belief_space_local_evaluation import RootFailureError
     from ._belief_space_local_evaluation import SampleSizeZeroError
+    from ._belief_space_local_evaluation import ScanBudgetExhaustedError
+    from ._belief_space_local_evaluation import SourceNotEnumerableError
     from ._belief_space_local_evaluation import TrailingTrickMismatchError
     from ._belief_space_local_evaluation import TrickLengthMismatchError
     from ._belief_space_local_evaluation import ValidationError
@@ -39,12 +50,17 @@ except ImportError:
     # Fallback for environments where _belief_space_local_evaluation is
     # available as a top-level module.
     from _belief_space_local_evaluation import BeliefEntry
+    from _belief_space_local_evaluation import BeliefSpaceLocalEvaluationError
     from _belief_space_local_evaluation import BeliefView
+    from _belief_space_local_evaluation import CallbackContractError
     from _belief_space_local_evaluation import Card
+    from _belief_space_local_evaluation import CardIllegalForTrickError
+    from _belief_space_local_evaluation import CardNotHeldError
     from _belief_space_local_evaluation import CardPlayedAndHeldError
     from _belief_space_local_evaluation import ConstrainedSpaceEmptyError
     from _belief_space_local_evaluation import ConstrainedSpaceStatus
     from _belief_space_local_evaluation import ContradictoryVoidError
+    from _belief_space_local_evaluation import DistributionEmptyError
     from _belief_space_local_evaluation import DuplicatedCardError
     from _belief_space_local_evaluation import evaluate
     from _belief_space_local_evaluation import EvaluationCallback
@@ -59,9 +75,15 @@ except ImportError:
     from _belief_space_local_evaluation import LeaderMismatchError
     from _belief_space_local_evaluation import MissingCardError
     from _belief_space_local_evaluation import module_name
+    from _belief_space_local_evaluation import NoLayoutSurvivedError
     from _belief_space_local_evaluation import ObservationState
+    from _belief_space_local_evaluation import ProbabilitiesDoNotSumToOneError
+    from _belief_space_local_evaluation import ProbabilityNonPositiveError
     from _belief_space_local_evaluation import RootFailure
+    from _belief_space_local_evaluation import RootFailureError
     from _belief_space_local_evaluation import SampleSizeZeroError
+    from _belief_space_local_evaluation import ScanBudgetExhaustedError
+    from _belief_space_local_evaluation import SourceNotEnumerableError
     from _belief_space_local_evaluation import TrailingTrickMismatchError
     from _belief_space_local_evaluation import TrickLengthMismatchError
     from _belief_space_local_evaluation import ValidationError
@@ -69,12 +91,17 @@ except ImportError:
 
 __all__ = [
     "BeliefEntry",
+    "BeliefSpaceLocalEvaluationError",
     "BeliefView",
+    "CallbackContractError",
     "Card",
+    "CardIllegalForTrickError",
+    "CardNotHeldError",
     "CardPlayedAndHeldError",
     "ConstrainedSpaceEmptyError",
     "ConstrainedSpaceStatus",
     "ContradictoryVoidError",
+    "DistributionEmptyError",
     "DuplicatedCardError",
     "evaluate",
     "EvaluationCallback",
@@ -89,9 +116,15 @@ __all__ = [
     "LeaderMismatchError",
     "MissingCardError",
     "module_name",
+    "NoLayoutSurvivedError",
     "ObservationState",
+    "ProbabilitiesDoNotSumToOneError",
+    "ProbabilityNonPositiveError",
     "RootFailure",
+    "RootFailureError",
     "SampleSizeZeroError",
+    "ScanBudgetExhaustedError",
+    "SourceNotEnumerableError",
     "TrailingTrickMismatchError",
     "TrickLengthMismatchError",
     "ValidationError",

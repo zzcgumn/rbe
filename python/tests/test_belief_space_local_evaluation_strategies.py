@@ -1,9 +1,10 @@
 import unittest
 
 from belief_space_local_evaluation import Card
+from belief_space_local_evaluation import CardNotHeldError
 from belief_space_local_evaluation import evaluate
 from belief_space_local_evaluation import ExhaustiveLayoutSource
-from belief_space_local_evaluation import ValidationError
+from belief_space_local_evaluation import ProbabilitiesDoNotSumToOneError
 
 Spades, Hearts, Diamonds, Clubs = 0, 1, 2, 3
 North, East, South, West = 0, 1, 2, 3
@@ -138,6 +139,10 @@ class TestCppStrategiesUnaffected(unittest.TestCase):
 
 
 class TestMalformedDefenderDistribution(unittest.TestCase):
+    # See test_belief_space_local_evaluation_errors.py for the full
+    # exception hierarchy this raises through -- these two just pin that
+    # a malformed distribution is reported (as a clean exception, not a
+    # crash) rather than silently accepted.
     def test_probabilities_not_summing_to_one_is_reported_not_crashed(self) -> None:
         def bad_defender(layout, seat, state):
             del state
@@ -146,10 +151,8 @@ class TestMalformedDefenderDistribution(unittest.TestCase):
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 5)
 
-        result = evaluate(root, North, 1, source, declarer_play, bad_defender)
-
-        self.assertIn("error", result)
-        self.assertEqual(result["error"]["validation"], ValidationError.ProbabilitiesDoNotSumToOne)
+        with self.assertRaises(ProbabilitiesDoNotSumToOneError):
+            evaluate(root, North, 1, source, declarer_play, bad_defender)
 
     def test_a_card_not_held_is_reported_not_crashed(self) -> None:
         def bad_defender(layout, seat, state):
@@ -160,10 +163,8 @@ class TestMalformedDefenderDistribution(unittest.TestCase):
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 5)
 
-        result = evaluate(root, North, 1, source, declarer_play, bad_defender)
-
-        self.assertIn("error", result)
-        self.assertEqual(result["error"]["validation"], ValidationError.CardNotHeld)
+        with self.assertRaises(CardNotHeldError):
+            evaluate(root, North, 1, source, declarer_play, bad_defender)
 
 
 if __name__ == "__main__":

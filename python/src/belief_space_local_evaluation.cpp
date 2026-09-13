@@ -31,6 +31,45 @@ namespace be = dds::belief_evaluation;
 namespace
 {
 
+// The one root every exception this module raises intentionally derives
+// from -- a rejected history, a root construction failure, a callback
+// contract violation. `except BeliefSpaceLocalEvaluationError` catches
+// any of those without also catching a Python exception merely
+// *propagating through* evaluate() from inside a callback: that keeps
+// its own original type entirely (see evaluate()'s own comment on the
+// two mechanisms), never becomes one of this hierarchy's members, and is
+// not something this module's own exception design touches at all.
+//
+// Settled here, in one sitting, for all three of the mechanisms that
+// converge on this module's error surface -- a history/constrained-space
+// rejection (from a source's constructor), a RootFailure (from
+// evaluate()'s own root construction), and a ValidationError (from
+// evaluate() validating a callback's return) -- rather than accreting
+// one exception at a time across unrelated tasks, which is how a
+// hierarchy ends up with cousins that should have been siblings.
+py::object belief_space_local_evaluation_error;
+
+// Python's own `type(name, bases, namespace)` metaclass call.
+// py::exception<> only supports a single base; two causes in this
+// hierarchy need a second one (ValueError) alongside their own family's
+// base, so existing `except ValueError` code keeps working alongside
+// `except <the specific cause>`. The result is diamond-shaped (both
+// bases eventually reach Exception), which Python's own C3
+// linearisation resolves exactly as it would for a `class Foo(A, B):`
+// statement written by hand.
+auto make_exception_with_bases(py::module_& module, char const* name, py::tuple const& bases) -> py::object
+{
+    py::object const type_builtin = py::module_::import("builtins").attr("type");
+    py::object const cls = type_builtin(name, bases, py::dict());
+    module.attr(name) = cls;
+    return cls;
+}
+
+auto register_root_exception_bindings(py::module_& module) -> void
+{
+    belief_space_local_evaluation_error = py::exception<void>(module, "BeliefSpaceLocalEvaluationError");
+}
+
 // The history representation used both ways: ObservationState::history comes
 // out through history_to_list, and a caller-supplied history
 // (ExhaustiveLayoutSource's constructor) goes in through list_to_history.
@@ -424,11 +463,6 @@ auto make_defender_strategy(py::function const& delta) -> be::DefenderStrategy
     };
 }
 
-// Bound here, ahead of the full RootFailure/ValidationError exception
-// hierarchy a later task designs as a whole, so evaluate() below can
-// report which cause fired -- inspectable values on its still-minimal
-// error dict, not yet exceptions (except SampleSizeZero, which this
-// task's own scope requires -- see raise_sample_size_zero below).
 auto register_strategy_error_bindings(py::module_& module) -> void
 {
     py::enum_<be::ValidationError>(module, "ValidationError")
@@ -471,29 +505,126 @@ auto make_layout_bound(py::object const& bound) -> be::LayoutBound
     };
 }
 
-py::object sample_size_zero_error;
+std::map<be::RootFailure, py::object> root_failure_exceptions;
 
 auto register_root_failure_error_bindings(py::module_& module) -> void
 {
-    sample_size_zero_error = py::exception<void>(module, "SampleSizeZeroError");
+    py::exception<void> root_failure_base(
+        module, "RootFailureError", belief_space_local_evaluation_error);
+
+    root_failure_exceptions.emplace(
+        be::RootFailure::SourceNotEnumerable,
+        py::exception<void>(module, "SourceNotEnumerableError", root_failure_base));
+    // NoLayoutSurvived vs ScanBudgetExhausted: the first means the whole
+    // source was checked and rejected everything (fix your source); the
+    // second means the budget ran out before a single consistent layout
+    // was found, with the source not yet exhausted (raise the budget
+    // instead). RootFailure's own doxygen says collapsing them "would
+    // send them to debug the wrong thing" -- kept as two exception types
+    // here for the same reason.
+    root_failure_exceptions.emplace(
+        be::RootFailure::NoLayoutSurvived,
+        py::exception<void>(module, "NoLayoutSurvivedError", root_failure_base));
+    root_failure_exceptions.emplace(
+        be::RootFailure::ScanBudgetExhausted,
+        py::exception<void>(module, "ScanBudgetExhaustedError", root_failure_base));
+
+    // sample_size=0 is a directly out-of-range argument value -- the same
+    // class of thing bindings.cpp's own "trump has invalid value 5"
+    // raises as -- unlike the two above, which are about the *source's
+    // content*, not a malformed literal, so this is the one RootFailure
+    // that also derives from ValueError. Distinct from NoLayoutSurvived
+    // on purpose (see RootFailure::SampleSizeZero's own doxygen): a
+    // request for a sample of nothing is rejected before a single at()
+    // call, regardless of what the source holds.
+    py::object const sample_size_zero_error = make_exception_with_bases(
+        module, "SampleSizeZeroError",
+        py::make_tuple(root_failure_base, py::reinterpret_borrow<py::object>(PyExc_ValueError)));
+    root_failure_exceptions.emplace(be::RootFailure::SampleSizeZero, sample_size_zero_error);
 }
 
-// sample_size=0 already has a dedicated RootFailure whose whole purpose
-// is to distinguish a degenerate *request* ("a sample of nothing") from
-// NoLayoutSurvived's "the source had nothing consistent in it" -- see
-// that value's own doxygen. Surfaced as an exception, like a rejected
-// history is, rather than folded into the still-data-shaped error dict
-// every other RootFailure/ValidationError cause still uses: the full
-// hierarchy that would cover those too is a later task's to design as a
-// whole; this is the one place this task's own scope requires a raise,
-// and evaluate() below routes C++'s own already-computed verdict here
-// rather than re-deriving "sample_size == 0" independently.
-[[noreturn]] auto raise_sample_size_zero() -> void
+auto root_failure_message(be::RootFailure failure) -> std::string
 {
-    py::set_error(
-        sample_size_zero_error,
-        "sample_size=0 requests a sample of nothing -- rejected before source "
-        "is ever scanned, distinct from an ordinary empty source");
+    switch (failure) {
+    case be::RootFailure::SourceNotEnumerable:
+        return "source.size() returned None -- every LayoutSource must report a size";
+    case be::RootFailure::NoLayoutSurvived:
+        return "the whole source was scanned, but no candidate was consistent with root";
+    case be::RootFailure::ScanBudgetExhausted:
+        return "scan_budget ran out before a single consistent layout was found, "
+               "with the source not yet exhausted -- raise scan_budget";
+    case be::RootFailure::SampleSizeZero:
+        return "sample_size=0 requests a sample of nothing, rejected before "
+               "source is ever scanned";
+    case be::RootFailure::None:
+        break;
+    }
+    return "root construction failed";
+}
+
+[[noreturn]] auto raise_root_failure(be::RootFailure failure) -> void
+{
+    py::set_error(root_failure_exceptions.at(failure), root_failure_message(failure).c_str());
+    throw py::error_already_set();
+}
+
+std::map<be::ValidationError, py::object> validation_error_exceptions;
+
+auto register_validation_error_bindings(py::module_& module) -> void
+{
+    py::exception<void> callback_contract_error(
+        module, "CallbackContractError", belief_space_local_evaluation_error);
+
+    auto const add = [&](be::ValidationError cause, char const* name) {
+        validation_error_exceptions.emplace(
+            cause, py::exception<void>(module, name, callback_contract_error));
+    };
+    add(be::ValidationError::CardNotHeld, "CardNotHeldError");
+    add(be::ValidationError::CardIllegalForTrick, "CardIllegalForTrickError");
+    add(be::ValidationError::ProbabilityNonPositive, "ProbabilityNonPositiveError");
+    add(be::ValidationError::ProbabilitiesDoNotSumToOne, "ProbabilitiesDoNotSumToOneError");
+    add(be::ValidationError::DistributionEmpty, "DistributionEmptyError");
+}
+
+auto validation_error_message(be::ValidationError cause) -> std::string
+{
+    switch (cause) {
+    case be::ValidationError::CardNotHeld:
+        return "the card is not in the seat's remaining holding";
+    case be::ValidationError::CardIllegalForTrick:
+        return "the seat holds the led suit but the card is of another suit";
+    case be::ValidationError::ProbabilityNonPositive:
+        return "a returned probability is <= 0, NaN, or +-infinite";
+    case be::ValidationError::ProbabilitiesDoNotSumToOne:
+        return "the distribution's probabilities do not sum to 1 within tolerance";
+    case be::ValidationError::DistributionEmpty:
+        return "the distribution is empty -- a card the strategy will never "
+               "play must be omitted, not given zero probability, but at "
+               "least one card must remain";
+    case be::ValidationError::None:
+        break;
+    }
+    return "callback contract violated";
+}
+
+// Carries which callback, which seat, and the layout -- the context
+// EvaluationError already holds -- as instance attributes rather than
+// through a custom __init__: the exception type is called with just the
+// message (inheriting Exception's own __init__, so args/str() work
+// exactly as any other exception's do), then the three extra fields are
+// set directly on that one instance before it is raised. The cause
+// itself is not repeated as an attribute -- the exception's own type
+// already names it, the same choice the history/root-failure families
+// make.
+[[noreturn]] auto raise_validation_error(
+    be::EvaluationCallback callback, int seat, Deal const& layout, be::ValidationError cause) -> void
+{
+    py::object const exception_type = validation_error_exceptions.at(cause);
+    py::object const instance = exception_type(validation_error_message(cause));
+    instance.attr("callback") = py::cast(callback);
+    instance.attr("seat") = seat;
+    instance.attr("layout") = dds3_python::deal_to_dict(layout);
+    py::set_error(exception_type, instance);
     throw py::error_already_set();
 }
 
@@ -576,13 +707,22 @@ auto evaluate(
         result = be::evaluate(root_deal, declarer, tricks_needed, source, strategy, delta_fn, options);
     }
 
-    // Every other cause (a different RootFailure, or any ValidationError)
-    // stays data-shaped for now, on the returned dict's own "error" key --
-    // a later task's own scope, not this one's. The evaluator itself never
-    // throws across a callback boundary; this mirrors that posture until
-    // the exception hierarchy exists to do better.
-    if (result.error.has_value() && result.error->root_failure == be::RootFailure::SampleSizeZero) {
-        raise_sample_size_zero();
+    // The evaluator itself never throws across a callback boundary -- a
+    // callback's contract violation, or an unusable source, is *reported*
+    // in EvaluationResult::error, precisely because a callback is user
+    // input rather than an internal. Constructed into an exception here,
+    // at this boundary, rather than propagated: an EvaluationError is
+    // data this binding turns into a raise, never a C++ exception someone
+    // threw. That is the opposite direction from a Python exception a
+    // callback itself raises (see the trampolines above), which crosses
+    // this same call unchanged -- own type, own message, own traceback --
+    // and never becomes one of this module's own exception types.
+    if (result.error.has_value()) {
+        be::EvaluationError const& error = *result.error;
+        if (error.callback == be::EvaluationCallback::RootConstruction) {
+            raise_root_failure(error.root_failure);
+        }
+        raise_validation_error(error.callback, error.seat, error.layout, error.validation);
     }
 
     return dds3_python::evaluation_result_to_dict(result);
@@ -602,8 +742,8 @@ auto evaluate(
 // ordering: the first non-Consistent verdict is the only one ever raised
 // for a given
 // construction, never both).
-std::map<be::HistoryVerdict, py::exception<void>> history_rejected_exceptions;
-std::map<be::ConstrainedSpaceStatus, py::exception<void>> constrained_space_exceptions;
+std::map<be::HistoryVerdict, py::object> history_rejected_exceptions;
+std::map<be::ConstrainedSpaceStatus, py::object> constrained_space_exceptions;
 
 auto history_verdict_message(be::HistoryVerdict verdict) -> std::string
 {
@@ -655,11 +795,27 @@ auto constrained_space_status_message(be::ConstrainedSpaceStatus status) -> std:
 
 auto register_history_error_bindings(py::module_& module) -> void
 {
-    py::exception<void> history_base(module, "HistoryRejectedError");
+    py::exception<void> history_base(module, "HistoryRejectedError", belief_space_local_evaluation_error);
+
+    // InvalidInput alone is input-shaped -- a malformed PlayTraceBin (an
+    // out-of-range declarer/opening_leader, or a malformed card), checkable
+    // independent of which root it is checked against -- so it derives
+    // from ValueError too, the same class of thing bindings.cpp's own
+    // "trump has invalid value 5" already raises as. The other seven
+    // causes are a *well-formed* history that simply does not fit this
+    // particular root: a different kind of wrong, deliberately not
+    // ValueError-derived, and a caller writing `except` around
+    // construction must still be able to tell a rejected history apart
+    // from NoLayoutSurvived (register_root_failure_error_bindings) -- both
+    // derive from the one common root and neither from the other.
+    py::object const invalid_history_input_error = make_exception_with_bases(
+        module, "InvalidHistoryInputError",
+        py::make_tuple(history_base, py::reinterpret_borrow<py::object>(PyExc_ValueError)));
+    history_rejected_exceptions.emplace(be::HistoryVerdict::InvalidInput, invalid_history_input_error);
+
     auto const add_history = [&](be::HistoryVerdict verdict, char const* name) {
         history_rejected_exceptions.emplace(verdict, py::exception<void>(module, name, history_base));
     };
-    add_history(be::HistoryVerdict::InvalidInput, "InvalidHistoryInputError");
     add_history(be::HistoryVerdict::DuplicatedCard, "DuplicatedCardError");
     add_history(be::HistoryVerdict::CardPlayedAndHeld, "CardPlayedAndHeldError");
     add_history(be::HistoryVerdict::MissingCard, "MissingCardError");
@@ -668,7 +824,7 @@ auto register_history_error_bindings(py::module_& module) -> void
     add_history(be::HistoryVerdict::LeaderMismatch, "LeaderMismatchError");
     add_history(be::HistoryVerdict::VoidContradiction, "VoidContradictionError");
 
-    py::exception<void> space_base(module, "ConstrainedSpaceEmptyError");
+    py::exception<void> space_base(module, "ConstrainedSpaceEmptyError", belief_space_local_evaluation_error);
     auto const add_space = [&](be::ConstrainedSpaceStatus status, char const* name) {
         constrained_space_exceptions.emplace(status, py::exception<void>(module, name, space_base));
     };
@@ -915,11 +1071,16 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
 {
     module.doc() = "belief_space_local_evaluation Python extension";
 
+    // The exception hierarchy's one root first: everything else below
+    // that raises derives from it.
+    register_root_exception_bindings(module);
+
     register_card_bindings(module);
     register_observation_state_bindings(module);
     register_belief_view_bindings(module);
     register_strategy_error_bindings(module);
     register_root_failure_error_bindings(module);
+    register_validation_error_bindings(module);
     register_history_error_bindings(module);
     register_layout_source_bindings(module);
     register_converter_probes(module);
