@@ -47,6 +47,17 @@ using VoidsBySeat = std::array<std::array<bool, DDS_SUITS>, DDS_HANDS>;
 /// not stand between every caller and, so its own safety cannot depend on
 /// callers routing through that check first.
 ///
+/// It also includes a malformed card within an otherwise well-formed
+/// `history`: a suit outside `[0, DDS_SUITS)` or a rank outside `[2, 14]`
+/// is silently substituted with a safe value (0, 2 respectively) before
+/// ever being used to index anything -- garbage in, garbage out, but never
+/// undefined behaviour, matching `RankMap::to_relative`'s own precedent
+/// for an out-of-range suit or rank. Not asserted, unlike `history.number`
+/// and `opening_leader` above: those are checked once per call, while a
+/// card's own fields are read up to 52 times per call, and `RankMap`'s own
+/// precedent is silent substitution, not an assert, for exactly this
+/// per-element shape of check.
+///
 /// Declarer's and dummy's entries are derived exactly like the defenders',
 /// even though only the defenders' voids ever narrow an enumeration: it is a
 /// fact about the play, not about what any one caller needs, and a cheap

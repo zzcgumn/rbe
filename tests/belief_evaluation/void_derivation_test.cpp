@@ -164,6 +164,44 @@ TEST_F(VoidDerivationTest, AnOutOfRangeOpeningLeaderIsAnAssertedCallerError)
     EXPECT_DEBUG_DEATH({ derive_voids(history, /*opening_leader=*/-1, DDS_NOTRUMP); }, "");
 }
 
+TEST_F(VoidDerivationTest, AMalformedSuitIsClampedRatherThanIndexingOutOfBounds)
+{
+    // A led suit outside [0, DDS_SUITS) would index voids[seat][led_suit]
+    // out of bounds if used directly. Clamped to Spades (0) instead --
+    // confirmed by comparing the malformed call's own result against an
+    // otherwise-identical history where the led suit is explicitly Spades,
+    // not merely by observing that the malformed call does not crash.
+    PlayTraceBin malformed = trace({{Spades, King}, {Diamonds, Two}, {Spades, Three}, {Spades, Queen}});
+    malformed.suit[0] = 99;  // out of [0, DDS_SUITS) -- the malformed led suit
+    VoidsBySeat const malformed_voids = derive_voids(malformed, North, DDS_NOTRUMP);
+
+    PlayTraceBin const clamped_equivalent =
+        trace({{Spades, King}, {Diamonds, Two}, {Spades, Three}, {Spades, Queen}});
+    VoidsBySeat const clamped_voids = derive_voids(clamped_equivalent, North, DDS_NOTRUMP);
+
+    expect_voids(malformed_voids, {{East, Spades}});
+    EXPECT_EQ(malformed_voids, clamped_voids);
+}
+
+TEST_F(VoidDerivationTest, AMalformedRankIsClampedRatherThanLeftUnbounded)
+{
+    // A malformed rank cannot index anything out of bounds on its own (it
+    // only ever reaches a magnitude comparison inside trick_winner), but an
+    // extreme value is still clamped -- confirmed the same way, against an
+    // explicit low-rank equivalent, rather than merely trusting the clamp
+    // exists.
+    PlayTraceBin malformed = trace({{Spades, King}, {Spades, Two}, {Spades, Three}, {Spades, Queen}});
+    malformed.rank[1] = -1000000;  // far below [2, 14] -- the malformed rank
+    VoidsBySeat const malformed_voids = derive_voids(malformed, North, DDS_NOTRUMP);
+
+    PlayTraceBin const clamped_equivalent =
+        trace({{Spades, King}, {Spades, Two}, {Spades, Three}, {Spades, Queen}});
+    VoidsBySeat const clamped_voids = derive_voids(clamped_equivalent, North, DDS_NOTRUMP);
+
+    expect_voids(malformed_voids, {});  // no suit is off led-suit here, malformed rank or not
+    EXPECT_EQ(malformed_voids, clamped_voids);
+}
+
 TEST_F(VoidDerivationTest, MultipleTricksAccumulateVoidsAcrossLeaderChanges)
 {
     // Trick one (no-trump, spades): North K, East 2 (follows), South ruffs

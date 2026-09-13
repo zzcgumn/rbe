@@ -14,11 +14,13 @@ enum class HistoryVerdict
     Consistent,
 
     /// `history.number` is outside `[0, 52]` (`PlayTraceBin::suit`/`rank`'s
-    /// own 52-element bound) or `opening_leader` is outside
-    /// `[0, DDS_HANDS)`. Checked first, and before either array is ever
-    /// indexed by it: `history` is caller input like any other value this
-    /// function checks, and a malformed shape is reported the same way a
-    /// malformed *content* is, not left to `derive_voids`'s own asserted
+    /// own 52-element bound), `opening_leader` is outside
+    /// `[0, DDS_HANDS)`, or some played card's own suit is outside
+    /// `[0, DDS_SUITS)` or rank outside `[2, 14]`. Checked first, and
+    /// before any of it is ever used to index anything: `history` is
+    /// caller input like any other value this function checks, and a
+    /// malformed shape is reported the same way a malformed *fit against
+    /// the root* is, not left to `derive_voids`'s own asserted-or-clamped
     /// fallback (see that function's own doxygen) to catch on this
     /// function's behalf.
     InvalidInput,
@@ -78,8 +80,10 @@ enum class HistoryVerdict
 /// left unevaluated:
 ///
 /// 0. **The shape of the input itself.** `history.number` must be in
-///    `[0, 52]` and `opening_leader` in `[0, DDS_HANDS)` (`InvalidInput` if
-///    not) -- checked before either is used to index anything, since every
+///    `[0, 52]`, `opening_leader` in `[0, DDS_HANDS)`, and every one of
+///    `history`'s `history.number` cards must have a suit in
+///    `[0, DDS_SUITS)` and a rank in `[2, 14]` (`InvalidInput` if not) --
+///    checked before any of it is used to index anything, since every
 ///    check below does exactly that.
 /// 1. **The card partition.** Every played card and every card `root` still
 ///    shows held must together be exactly the 52 distinct cards of a deck --

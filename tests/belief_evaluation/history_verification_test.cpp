@@ -176,6 +176,32 @@ TEST_F(HistoryVerificationTest, AnOutOfRangeOpeningLeaderIsRejected)
         verify_history(root, North, history, /*opening_leader=*/-1), HistoryVerdict::InvalidInput);
 }
 
+TEST_F(HistoryVerificationTest, AMalformedCardSuitIsRejected)
+{
+    // card_index(suit, rank) indexes the 52-entry "seen" set directly in
+    // the very next check (the card partition) -- an out-of-range suit
+    // here would index it out of bounds if this check did not catch it
+    // first.
+    auto [root, history] = build_deal(
+        {{Diamonds, 14}, {Diamonds, 2}, {Diamonds, 3}, {Diamonds, 12}}, everything_to_west);
+    root.trump = DDS_NOTRUMP;
+    root.first = North;
+    history.suit[1] = 99;  // out of [0, DDS_SUITS)
+
+    EXPECT_EQ(verify_history(root, North, history, North), HistoryVerdict::InvalidInput);
+}
+
+TEST_F(HistoryVerificationTest, AMalformedCardRankIsRejected)
+{
+    auto [root, history] = build_deal(
+        {{Diamonds, 14}, {Diamonds, 2}, {Diamonds, 3}, {Diamonds, 12}}, everything_to_west);
+    root.trump = DDS_NOTRUMP;
+    root.first = North;
+    history.rank[2] = 1;  // out of [2, 14]
+
+    EXPECT_EQ(verify_history(root, North, history, North), HistoryVerdict::InvalidInput);
+}
+
 // --- the card partition ------------------------------------------------------
 
 TEST_F(HistoryVerificationTest, ADuplicatedCardInTheHistoryIsRejected)

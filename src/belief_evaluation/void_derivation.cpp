@@ -16,6 +16,28 @@ namespace
     // hold -- see derive_voids' own doxygen for why this is asserted, not
     // merely assumed, and clamped to rather than left unchecked.
     constexpr int MaxHistoryLength = 52;
+
+    // A card's own suit/rank fields, unlike history.number and
+    // opening_leader above, are read up to 52 times per call rather than
+    // once -- silently clamped to a safe value on each read, not asserted
+    // per card, matching RankMap::to_relative's own established precedent
+    // for exactly this shape of check (a public, directly-callable
+    // function reading a caller-supplied per-element field that indexes
+    // something). 0 (Spades) and 2 (the lowest rank) are safe substitutes
+    // in the sense RankMap's own doxygen means it: out-of-range input
+    // cannot be a real card, so what comes out for it is garbage-in,
+    // garbage-out, but never undefined behaviour -- never an out-of-bounds
+    // `voids[seat][led_suit]`, and never the signed-overflow
+    // `rank_to_bit_position` could otherwise see from an extreme rank.
+    auto safe_suit(int suit) -> int
+    {
+        return (suit >= 0 && suit < DDS_SUITS) ? suit : 0;
+    }
+
+    auto safe_rank(int rank) -> int
+    {
+        return (rank >= 2 && rank <= 14) ? rank : 2;
+    }
 }
 
 auto derive_voids(PlayTraceBin const& history, int opening_leader, int trump) -> VoidsBySeat
@@ -36,7 +58,7 @@ auto derive_voids(PlayTraceBin const& history, int opening_leader, int trump) ->
     for (int start = 0; start < history_length; start += 4)
     {
         int const cards_in_trick = std::min(4, history_length - start);
-        int const led_suit = history.suit[start];
+        int const led_suit = safe_suit(history.suit[start]);
 
         std::array<int, 4> suit_played{};
         std::array<int, 4> bit_played{};
@@ -44,7 +66,7 @@ auto derive_voids(PlayTraceBin const& history, int opening_leader, int trump) ->
         for (int i = 0; i < cards_in_trick; ++i)
         {
             int const seat = (leader + i) % DDS_HANDS;
-            int const suit = history.suit[start + i];
+            int const suit = safe_suit(history.suit[start + i]);
 
             // The void follows from the suit played, full stop -- never
             // from whether this card goes on to win the trick. A ruff and
@@ -55,7 +77,7 @@ auto derive_voids(PlayTraceBin const& history, int opening_leader, int trump) ->
             }
 
             suit_played[i] = suit;
-            bit_played[i] = rank_to_bit_position(history.rank[start + i]);
+            bit_played[i] = rank_to_bit_position(safe_rank(history.rank[start + i]));
         }
 
         // A trailing partial trick (history ends mid-trick, as

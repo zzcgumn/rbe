@@ -66,15 +66,27 @@ namespace
 auto verify_history(Deal const& root, int declarer, PlayTraceBin const& history, int opening_leader)
     -> HistoryVerdict
 {
-    // Check 0: the shape of the input itself, before either value is ever
-    // used to index anything below (card_index() indirectly via history.number,
-    // and leader_of_trailing_trick()/derive_voids() via opening_leader).
+    // Check 0: the shape of the input itself, before any of it is ever used
+    // to index anything below -- history.number and opening_leader here;
+    // every played card's own suit/rank next, since card_index(suit, rank)
+    // (check 1, directly below) indexes seen with them just as directly.
     // history is caller input like any other value this function checks --
-    // reported here, not left for derive_voids's own asserted fallback to
-    // catch on this function's behalf (see that function's own doxygen).
+    // reported here, not left for derive_voids's own asserted-or-clamped
+    // fallback to catch on this function's behalf (see that function's own
+    // doxygen): derive_voids's fallback exists for its *own* direct
+    // callers, not as a safety net this function may skip its own checking
+    // in favour of.
     if (history.number < 0 || history.number > DeckSize || opening_leader < 0 || opening_leader >= DDS_HANDS)
     {
         return HistoryVerdict::InvalidInput;
+    }
+    for (int i = 0; i < history.number; ++i)
+    {
+        if (history.suit[i] < 0 || history.suit[i] >= DDS_SUITS || history.rank[i] < 2
+            || history.rank[i] > 14)
+        {
+            return HistoryVerdict::InvalidInput;
+        }
     }
 
     // Check 1: the card partition. `seen[card_index(suit, rank)]` becomes
