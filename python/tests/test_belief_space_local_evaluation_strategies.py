@@ -1,11 +1,9 @@
 import unittest
 
 from belief_space_local_evaluation import Card
+from belief_space_local_evaluation import evaluate
 from belief_space_local_evaluation import ExhaustiveLayoutSource
 from belief_space_local_evaluation import ValidationError
-from belief_space_local_evaluation._belief_space_local_evaluation import (
-    _evaluate_probe,
-)
 
 Spades, Hearts, Diamonds, Clubs = 0, 1, 2, 3
 North, East, South, West = 0, 1, 2, 3
@@ -76,7 +74,7 @@ class TestDeclarerAndDefenderCallables(unittest.TestCase):
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 5)
 
-        result = _evaluate_probe(root, North, 1, source, declarer_play, defender_play)
+        result = evaluate(root, North, 1, source, declarer_play, defender_play)
 
         self.assertNotIn("error", result)
         # Hand-derived, same as the C++ fixture this mirrors: East holds
@@ -89,7 +87,7 @@ class TestDeclarerAndDefenderCallables(unittest.TestCase):
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 5)
 
-        result = _evaluate_probe(root, North, 1, source, declarer_play, defender_play)
+        result = evaluate(root, North, 1, source, declarer_play, defender_play)
         children = result["by_strategy"][1]["root_children"]
         self.assertGreaterEqual(len(children), 1)
         for card, value in children:
@@ -106,7 +104,7 @@ class TestStateKey(unittest.TestCase):
     def test_none_disables_reuse_and_still_works(self) -> None:
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 5)
-        result = _evaluate_probe(root, North, 1, source, declarer_play, defender_play, state_key=None)
+        result = evaluate(root, North, 1, source, declarer_play, defender_play, state_key=None)
         self.assertNotIn("error", result)
         self.assertAlmostEqual(result["by_strategy"][1]["p_make"], 6.0 / 7.0, places=9)
 
@@ -119,8 +117,8 @@ class TestStateKey(unittest.TestCase):
         source_without = ExhaustiveLayoutSource(root, North, 5)
         source_with = ExhaustiveLayoutSource(root, North, 5)
 
-        without = _evaluate_probe(root, North, 1, source_without, declarer_play, defender_play)
-        with_key = _evaluate_probe(
+        without = evaluate(root, North, 1, source_without, declarer_play, defender_play)
+        with_key = evaluate(
             root, North, 1, source_with, declarer_play, defender_play, state_key=state_key)
 
         self.assertEqual(without["by_strategy"][1]["p_make"], with_key["by_strategy"][1]["p_make"])
@@ -135,7 +133,7 @@ class TestCppStrategiesUnaffected(unittest.TestCase):
         # same hand-derived number that test pins, so both surfaces agree.
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 5)
-        result = _evaluate_probe(root, North, 1, source, declarer_play, defender_play)
+        result = evaluate(root, North, 1, source, declarer_play, defender_play)
         self.assertAlmostEqual(result["by_strategy"][1]["p_make"], 6.0 / 7.0, places=9)
 
 
@@ -148,7 +146,7 @@ class TestMalformedDefenderDistribution(unittest.TestCase):
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 5)
 
-        result = _evaluate_probe(root, North, 1, source, declarer_play, bad_defender)
+        result = evaluate(root, North, 1, source, declarer_play, bad_defender)
 
         self.assertIn("error", result)
         self.assertEqual(result["error"]["validation"], ValidationError.ProbabilitiesDoNotSumToOne)
@@ -162,7 +160,7 @@ class TestMalformedDefenderDistribution(unittest.TestCase):
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 5)
 
-        result = _evaluate_probe(root, North, 1, source, declarer_play, bad_defender)
+        result = evaluate(root, North, 1, source, declarer_play, bad_defender)
 
         self.assertIn("error", result)
         self.assertEqual(result["error"]["validation"], ValidationError.CardNotHeld)

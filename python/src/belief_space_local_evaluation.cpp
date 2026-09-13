@@ -3,6 +3,7 @@
 // belief space, a layout source, replenishment) and a caller solving a
 // board has no reason to import belief evaluation to do it.
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 #include <map>
 #include <memory>
@@ -423,12 +424,13 @@ auto make_defender_strategy(py::function const& delta) -> be::DefenderStrategy
     };
 }
 
+// Bound here, ahead of the full RootFailure/ValidationError exception
+// hierarchy a later task designs as a whole, so evaluate() below can
+// report which cause fired -- inspectable values on its still-minimal
+// error dict, not yet exceptions (except SampleSizeZero, which this
+// task's own scope requires -- see raise_sample_size_zero below).
 auto register_strategy_error_bindings(py::module_& module) -> void
 {
-    // Bound here, ahead of the full RootFailure/ValidationError exception
-    // hierarchy a later task designs as a whole, purely so the probe below
-    // can report which cause a malformed callback triggered -- inspectable
-    // values on the still-minimal probe result, not yet exceptions.
     py::enum_<be::ValidationError>(module, "ValidationError")
         .value("None_", be::ValidationError::None)
         .value("CardNotHeld", be::ValidationError::CardNotHeld)
@@ -441,55 +443,157 @@ auto register_strategy_error_bindings(py::module_& module) -> void
         .value("RootConstruction", be::EvaluationCallback::RootConstruction)
         .value("DeclarerPlay", be::EvaluationCallback::DeclarerPlay)
         .value("DefenderStrategy", be::EvaluationCallback::DefenderStrategy);
+
+    py::enum_<be::RootFailure>(module, "RootFailure")
+        .value("None_", be::RootFailure::None)
+        .value("SourceNotEnumerable", be::RootFailure::SourceNotEnumerable)
+        .value("NoLayoutSurvived", be::RootFailure::NoLayoutSurvived)
+        .value("ScanBudgetExhausted", be::RootFailure::ScanBudgetExhausted)
+        .value("SampleSizeZero", be::RootFailure::SampleSizeZero);
 }
 
-// Internal: the real evaluate() binding is a later task's, with the full
-// flattened-keyword surface a documented decision calls for and the
-// exception hierarchy a later task designs. This probe exists only so
-// this task's own GIL and callback-conversion work can be exercised
-// against the real
-// recursion now, releasing the GIL around the call exactly as the real
-// binding will: `dds::belief_evaluation::evaluate` itself, no sampling,
-// declarer/defender strategies built from the two factories above.
-// Testing support only.
-auto probe_evaluate(
+// bound (EvaluateOptions::bound) is a Python callable taking a deal dict
+// and returning a trick count, called under the same GIL discipline as
+// every other callback. Carries an obligation nothing here can validate:
+// a bound too high makes tier2_dead() fire when it should not and
+// silently reports zero for a contract that makes. Absent by default,
+// which leaves the cut disabled -- an empty std::function, matching
+// LayoutBound's own doxygen.
+auto make_layout_bound(py::object const& bound) -> be::LayoutBound
+{
+    if (bound.is_none()) {
+        return {};
+    }
+    py::function const bound_fn = py::cast<py::function>(bound);
+    return [bound_fn](Deal const& layout) -> int {
+        py::gil_scoped_acquire gil;
+        return py::cast<int>(bound_fn(dds3_python::deal_to_dict(layout)));
+    };
+}
+
+py::object sample_size_zero_error;
+
+auto register_root_failure_error_bindings(py::module_& module) -> void
+{
+    sample_size_zero_error = py::exception<void>(module, "SampleSizeZeroError");
+}
+
+// sample_size=0 already has a dedicated RootFailure whose whole purpose
+// is to distinguish a degenerate *request* ("a sample of nothing") from
+// NoLayoutSurvived's "the source had nothing consistent in it" -- see
+// that value's own doxygen. Surfaced as an exception, like a rejected
+// history is, rather than folded into the still-data-shaped error dict
+// every other RootFailure/ValidationError cause still uses: the full
+// hierarchy that would cover those too is a later task's to design as a
+// whole; this is the one place this task's own scope requires a raise,
+// and evaluate() below routes C++'s own already-computed verdict here
+// rather than re-deriving "sample_size == 0" independently.
+[[noreturn]] auto raise_sample_size_zero() -> void
+{
+    py::set_error(
+        sample_size_zero_error,
+        "sample_size=0 requests a sample of nothing -- rejected before source "
+        "is ever scanned, distinct from an ordinary empty source");
+    throw py::error_already_set();
+}
+
+// The entry point: the first place a Python caller can evaluate anything.
+// The six positional arguments are the call's actual subject, always
+// supplied; every EvaluateOptions field crosses as a keyword-only
+// argument (py::kw_only()) with its C++ default, so a caller cannot
+// accidentally pass sample_size into bound's position, and the signature
+// can grow later without breaking anyone. EvaluateOptions itself is not
+// bound -- binding both shapes would give a caller two ways to say the
+// same thing and guarantee they diverge.
+//
+// state_key is not an EvaluateOptions field (it belongs to
+// DeclarerStrategy, alongside play), but pi crosses as a bare callable
+// rather than a bundled object, so it is exposed as its own keyword-only
+// argument here instead. bytes-returning and pure, like play; see
+// make_declarer_strategy's own comment for both obligations.
+//
+// **This is the one place (with replenish_below below) the Python surface
+// is deliberately stricter than the C++ one.** sample_size=0 raises
+// SampleSizeZeroError rather than returning a result whose error names
+// the same cause -- a later task designs the full exception hierarchy
+// this joins; the routing here is only the one cause this task's own
+// scope requires.
+auto evaluate(
     py::dict const& root,
     int declarer,
     int tricks_needed,
     be::LayoutSource const& source,
-    py::function const& play,
+    py::function const& pi,
     py::function const& delta,
+    bool retain_root,
+    bool collect_counters,
+    py::object const& bound,
+    bool delta_is_double_dummy_optimal,
+    std::optional<std::uint64_t> const& sample_size,
+    std::optional<std::uint64_t> const& scan_budget,
+    std::optional<std::uint64_t> const& replenish_below,
     py::object const& state_key) -> py::dict
 {
-    // pybind11 cannot convert a bare std::nullopt into a default argument
-    // value it can show Python (there is no Python object for it), so the
-    // boundary itself takes None -- the ordinary optional-argument idiom
-    // -- and translates to std::optional here, once, before it ever
-    // reaches make_declarer_strategy.
+    // replenish_below without sample_size is documented in C++ as "treated
+    // as absent too" -- a silent no-op, safe for a C++ caller who can read
+    // that on the field. A Python caller cannot, and is far more likely to
+    // have made a mistake than to have meant it -- raise rather than
+    // silently doing nothing. scan_budget without sample_size is
+    // deliberately *not* checked here: it legitimately caps a scan that
+    // would otherwise run to the source's end, on its own.
+    if (replenish_below.has_value() && ! sample_size.has_value()) {
+        throw py::value_error(
+            "replenish_below requires sample_size -- without it there is no "
+            "top-up target to replenish towards. In C++ this is documented as "
+            "a silent no-op; a Python caller has no doxygen to read that on, "
+            "so this is far more likely to be a mistake than an intention");
+    }
+
     std::optional<py::function> const state_key_fn =
         state_key.is_none() ? std::nullopt : std::make_optional(py::cast<py::function>(state_key));
 
     Deal const root_deal = dds3_python::dict_to_deal(root);
-    be::DeclarerStrategy const pi = make_declarer_strategy(1, play, state_key_fn);
+    be::DeclarerStrategy const strategy = make_declarer_strategy(1, pi, state_key_fn);
     be::DefenderStrategy const delta_fn = make_defender_strategy(delta);
+
+    be::EvaluateOptions options;
+    options.retain_root = retain_root;
+    options.collect_counters = collect_counters;
+    options.bound = make_layout_bound(bound);
+    options.delta_is_double_dummy_optimal = delta_is_double_dummy_optimal;
+    options.sampling.sample_size = sample_size;
+    options.sampling.scan_budget = scan_budget;
+    options.sampling.replenish_below = replenish_below;
 
     be::EvaluationResult result;
     {
-        // Released for the whole recursion -- every solver call inside it
-        // (none yet; the solver seam is a later task) runs without it, and
-        // every trampoline above reacquires it only for as long as it runs.
+        // Released for the whole recursion: every solver call inside it
+        // (none yet -- the solver seam is a later task) runs without it,
+        // and every trampoline above (pi's two callbacks, delta, bound,
+        // and the layout source's size()/at()) reacquires it only for as
+        // long as it runs.
         py::gil_scoped_release const release;
-        result = be::evaluate(root_deal, declarer, tricks_needed, source, pi, delta_fn);
+        result = be::evaluate(root_deal, declarer, tricks_needed, source, strategy, delta_fn, options);
+    }
+
+    if (result.error.has_value() && result.error->root_failure == be::RootFailure::SampleSizeZero) {
+        raise_sample_size_zero();
     }
 
     py::dict out;
     if (result.error.has_value()) {
+        // Every other cause (a different RootFailure, or any
+        // ValidationError) stays data-shaped for now -- a later task's own
+        // scope, not this one's. The evaluator itself never throws across
+        // a callback boundary; this mirrors that posture until the
+        // exception hierarchy exists to do better.
         be::EvaluationError const& error = *result.error;
         py::dict error_dict;
         error_dict["validation"] = error.validation;
         error_dict["callback"] = error.callback;
         error_dict["seat"] = error.seat;
         error_dict["layout"] = dds3_python::deal_to_dict(error.layout);
+        error_dict["root_failure"] = error.root_failure;
         out["error"] = error_dict;
     } else {
         py::dict by_strategy;
@@ -501,6 +605,8 @@ auto probe_evaluate(
                 children.append(py::make_tuple(child.card, child.value));
             }
             entry["root_children"] = children;
+            // retain_root / collect_counters output: results-out is a
+            // later task's own scope, not surfaced here yet.
             by_strategy[py::cast(id)] = entry;
         }
         out["by_strategy"] = by_strategy;
@@ -824,24 +930,9 @@ auto register_converter_probes(py::module_& module) -> void
         py::arg("is_sample"),
         py::arg("callback"),
         "Builds a BeliefNode from layouts/weights, calls callback(view),\n"
-        "and invalidates the view on the way out -- standing in for the\n"
-        "real caller (a later task's evaluate()) so the validity guard can\n"
-        "be tested now. Testing support only.");
-    module.def(
-        "_evaluate_probe",
-        &probe_evaluate,
-        py::arg("root"),
-        py::arg("declarer"),
-        py::arg("tricks_needed"),
-        py::arg("source"),
-        py::arg("play"),
-        py::arg("delta"),
-        py::arg("state_key") = py::none(),
-        "Calls dds::belief_evaluation::evaluate() with Python-supplied pi\n"
-        "and delta, releasing the GIL for the recursion exactly as the\n"
-        "real evaluate() binding (a later task, with the full keyword\n"
-        "surface and exception hierarchy) eventually will. No sampling.\n"
-        "Testing support only.");
+        "and invalidates the view on the way out -- standing in for\n"
+        "evaluate() so the validity guard can be tested against a fixture\n"
+        "smaller than a real recursion. Testing support only.");
 }
 
 }  // namespace
@@ -854,9 +945,34 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
     register_observation_state_bindings(module);
     register_belief_view_bindings(module);
     register_strategy_error_bindings(module);
+    register_root_failure_error_bindings(module);
     register_history_error_bindings(module);
     register_layout_source_bindings(module);
     register_converter_probes(module);
+
+    module.def(
+        "evaluate",
+        &evaluate,
+        py::arg("root"),
+        py::arg("declarer"),
+        py::arg("tricks_needed"),
+        py::arg("source"),
+        py::arg("pi"),
+        py::arg("delta"),
+        py::kw_only(),
+        py::arg("retain_root") = false,
+        py::arg("collect_counters") = false,
+        py::arg("bound") = py::none(),
+        py::arg("delta_is_double_dummy_optimal") = false,
+        py::arg("sample_size") = std::nullopt,
+        py::arg("scan_budget") = std::nullopt,
+        py::arg("replenish_below") = std::nullopt,
+        py::arg("state_key") = py::none(),
+        "Evaluates P_make for pi against delta over the belief space "
+        "source enumerates from root. See the module's own capability "
+        "document for the option coupling this binding validates that "
+        "the C++ type's own doxygen states but a Python caller cannot "
+        "read on the field.");
 
     module.def("module_name", []() {
         return "_belief_space_local_evaluation";

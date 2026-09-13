@@ -15,6 +15,7 @@ try:
     from ._belief_space_local_evaluation import ConstrainedSpaceStatus
     from ._belief_space_local_evaluation import ContradictoryVoidError
     from ._belief_space_local_evaluation import DuplicatedCardError
+    from ._belief_space_local_evaluation import evaluate
     from ._belief_space_local_evaluation import EvaluationCallback
     from ._belief_space_local_evaluation import ExhaustiveLayoutSource
     from ._belief_space_local_evaluation import ExpiredBeliefViewError
@@ -28,6 +29,8 @@ try:
     from ._belief_space_local_evaluation import MissingCardError
     from ._belief_space_local_evaluation import module_name
     from ._belief_space_local_evaluation import ObservationState
+    from ._belief_space_local_evaluation import RootFailure
+    from ._belief_space_local_evaluation import SampleSizeZeroError
     from ._belief_space_local_evaluation import TrailingTrickMismatchError
     from ._belief_space_local_evaluation import TrickLengthMismatchError
     from ._belief_space_local_evaluation import ValidationError
@@ -43,6 +46,7 @@ except ImportError:
     from _belief_space_local_evaluation import ConstrainedSpaceStatus
     from _belief_space_local_evaluation import ContradictoryVoidError
     from _belief_space_local_evaluation import DuplicatedCardError
+    from _belief_space_local_evaluation import evaluate
     from _belief_space_local_evaluation import EvaluationCallback
     from _belief_space_local_evaluation import ExhaustiveLayoutSource
     from _belief_space_local_evaluation import ExpiredBeliefViewError
@@ -56,6 +60,8 @@ except ImportError:
     from _belief_space_local_evaluation import MissingCardError
     from _belief_space_local_evaluation import module_name
     from _belief_space_local_evaluation import ObservationState
+    from _belief_space_local_evaluation import RootFailure
+    from _belief_space_local_evaluation import SampleSizeZeroError
     from _belief_space_local_evaluation import TrailingTrickMismatchError
     from _belief_space_local_evaluation import TrickLengthMismatchError
     from _belief_space_local_evaluation import ValidationError
@@ -70,6 +76,7 @@ __all__ = [
     "ConstrainedSpaceStatus",
     "ContradictoryVoidError",
     "DuplicatedCardError",
+    "evaluate",
     "EvaluationCallback",
     "ExhaustiveLayoutSource",
     "ExpiredBeliefViewError",
@@ -83,6 +90,8 @@ __all__ = [
     "MissingCardError",
     "module_name",
     "ObservationState",
+    "RootFailure",
+    "SampleSizeZeroError",
     "TrailingTrickMismatchError",
     "TrickLengthMismatchError",
     "ValidationError",
