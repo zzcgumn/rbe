@@ -576,42 +576,16 @@ auto evaluate(
         result = be::evaluate(root_deal, declarer, tricks_needed, source, strategy, delta_fn, options);
     }
 
+    // Every other cause (a different RootFailure, or any ValidationError)
+    // stays data-shaped for now, on the returned dict's own "error" key --
+    // a later task's own scope, not this one's. The evaluator itself never
+    // throws across a callback boundary; this mirrors that posture until
+    // the exception hierarchy exists to do better.
     if (result.error.has_value() && result.error->root_failure == be::RootFailure::SampleSizeZero) {
         raise_sample_size_zero();
     }
 
-    py::dict out;
-    if (result.error.has_value()) {
-        // Every other cause (a different RootFailure, or any
-        // ValidationError) stays data-shaped for now -- a later task's own
-        // scope, not this one's. The evaluator itself never throws across
-        // a callback boundary; this mirrors that posture until the
-        // exception hierarchy exists to do better.
-        be::EvaluationError const& error = *result.error;
-        py::dict error_dict;
-        error_dict["validation"] = error.validation;
-        error_dict["callback"] = error.callback;
-        error_dict["seat"] = error.seat;
-        error_dict["layout"] = dds3_python::deal_to_dict(error.layout);
-        error_dict["root_failure"] = error.root_failure;
-        out["error"] = error_dict;
-    } else {
-        py::dict by_strategy;
-        for (auto const& [id, value] : result.by_strategy) {
-            py::dict entry;
-            entry["p_make"] = value.p_make;
-            py::list children;
-            for (be::RootChildValue const& child : value.root_children) {
-                children.append(py::make_tuple(child.card, child.value));
-            }
-            entry["root_children"] = children;
-            // retain_root / collect_counters output: results-out is a
-            // later task's own scope, not surfaced here yet.
-            by_strategy[py::cast(id)] = entry;
-        }
-        out["by_strategy"] = by_strategy;
-    }
-    return out;
+    return dds3_python::evaluation_result_to_dict(result);
 }
 
 // A rejected play history raises from the constructor rather than
