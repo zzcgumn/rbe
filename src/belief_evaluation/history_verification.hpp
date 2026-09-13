@@ -14,7 +14,7 @@ enum class HistoryVerdict
     Consistent,
 
     /// `history.number` is outside `[0, 52]` (`PlayTraceBin::suit`/`rank`'s
-    /// own 52-element bound), `opening_leader` is outside
+    /// own 52-element bound), `opening_leader` or `declarer` is outside
     /// `[0, DDS_HANDS)`, or some played card's own suit is outside
     /// `[0, DDS_SUITS)` or rank outside `[2, 14]`. Checked first, and
     /// before any of it is ever used to index anything: `history` is
@@ -80,9 +80,9 @@ enum class HistoryVerdict
 /// left unevaluated:
 ///
 /// 0. **The shape of the input itself.** `history.number` must be in
-///    `[0, 52]`, `opening_leader` in `[0, DDS_HANDS)`, and every one of
-///    `history`'s `history.number` cards must have a suit in
-///    `[0, DDS_SUITS)` and a rank in `[2, 14]` (`InvalidInput` if not) --
+///    `[0, 52]`, `opening_leader` and `declarer` each in `[0, DDS_HANDS)`,
+///    and every one of `history`'s `history.number` cards must have a suit
+///    in `[0, DDS_SUITS)` and a rank in `[2, 14]` (`InvalidInput` if not) --
 ///    checked before any of it is used to index anything, since every
 ///    check below does exactly that.
 /// 1. **The card partition.** Every played card and every card `root` still

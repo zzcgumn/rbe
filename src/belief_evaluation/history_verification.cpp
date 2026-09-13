@@ -67,16 +67,21 @@ auto verify_history(Deal const& root, int declarer, PlayTraceBin const& history,
     -> HistoryVerdict
 {
     // Check 0: the shape of the input itself, before any of it is ever used
-    // to index anything below -- history.number and opening_leader here;
-    // every played card's own suit/rank next, since card_index(suit, rank)
-    // (check 1, directly below) indexes seen with them just as directly.
+    // to index anything below -- history.number, opening_leader, and
+    // declarer here; every played card's own suit/rank next, since
+    // card_index(suit, rank) (check 1, directly below) indexes seen with
+    // them just as directly. declarer belongs in this same check because
+    // check 4 below indexes voids[declarer][suit] and voids[dummy][suit]
+    // (dummy derived from declarer) directly, with no gate of its own --
+    // exactly the same shape of risk opening_leader already has here.
     // history is caller input like any other value this function checks --
     // reported here, not left for derive_voids's own asserted-or-clamped
     // fallback to catch on this function's behalf (see that function's own
     // doxygen): derive_voids's fallback exists for its *own* direct
     // callers, not as a safety net this function may skip its own checking
     // in favour of.
-    if (history.number < 0 || history.number > DeckSize || opening_leader < 0 || opening_leader >= DDS_HANDS)
+    if (history.number < 0 || history.number > DeckSize || opening_leader < 0 || opening_leader >= DDS_HANDS
+        || declarer < 0 || declarer >= DDS_HANDS)
     {
         return HistoryVerdict::InvalidInput;
     }
