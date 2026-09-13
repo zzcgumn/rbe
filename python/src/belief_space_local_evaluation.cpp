@@ -12,10 +12,14 @@
 #include <vector>
 
 #include <belief_evaluation/belief_view.hpp>
+#include <belief_evaluation/declarer_strategy.hpp>
+#include <belief_evaluation/defender_strategy.hpp>
+#include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
 #include <belief_evaluation/layout_source.hpp>
 #include <belief_evaluation/node.hpp>
 #include <belief_evaluation/types.hpp>
+#include <belief_evaluation/validation.hpp>
 #include <utility/constants.h>
 
 #include "converters.hpp"
@@ -174,6 +178,22 @@ py::object expired_belief_view_error;
     throw py::error_already_set();
 }
 
+// One place for the "valid until the callback returns" pattern, used by
+// every callback kind that hands a BeliefView to Python (the probe below,
+// and both of pi's own callbacks) -- not scattered across each one, so a
+// future callback added here cannot forget to invalidate on the way out.
+// Scope-bound rather than a success-only clear: the destructor runs
+// whether the callback returned normally or raised.
+struct BeliefViewGuard
+{
+    std::shared_ptr<bool> valid = std::make_shared<bool>(true);
+
+    ~BeliefViewGuard()
+    {
+        *valid = false;
+    }
+};
+
 class PyBeliefEntry
 {
 public:
@@ -314,17 +334,178 @@ auto probe_with_belief_view(
     std::vector<be::BeliefEntry> scratch;
     be::BeliefView const view = be::make_belief_view(node, scratch);
 
-    auto const valid = std::make_shared<bool>(true);
-    struct Invalidator
-    {
-        std::shared_ptr<bool> flag;
-        ~Invalidator()
-        {
-            *flag = false;
-        }
-    } invalidator{valid};
+    BeliefViewGuard guard;
+    return callback(py::cast(PyBeliefView(&view, guard.valid)));
+}
 
-    return callback(py::cast(PyBeliefView(&view, valid)));
+// pi and delta as Python callables, and the GIL discipline the whole
+// eventual evaluate() binding runs on: the GIL is released for the
+// duration of the C++ recursion (see probe_evaluate below) and acquired
+// in every trampoline that calls back into Python -- these two, and the
+// layout source's size()/at() (already GIL-acquiring). One
+// acquire site per callback *kind*, here, rather than one per call site
+// scattered through the recursion: a callback kind that forgets to
+// acquire is a callback kind that corrupts the interpreter the first time
+// two threads exercise it, and there must be exactly one place per kind
+// that could get this wrong.
+//
+// A Python pi/delta author can reach for `random.choice` without a second
+// thought; DeclarerStrategy::play's own doxygen is emphatic that play
+// must be a pure function of its arguments (state, view) alone, since the
+// evaluator revisits sibling subtrees and a seeded strategy's card would
+// then depend on how many decisions preceded it in traversal order rather
+// than on the node itself -- silently wrong under any cut or future
+// cache. `hash(seed, state) mod n` is the honest way to get variety
+// without breaking purity.
+auto make_declarer_strategy(
+    be::StrategyId id, py::function const& play, std::optional<py::function> const& state_key)
+    -> be::DeclarerStrategy
+{
+    be::DeclarerStrategy strategy;
+    strategy.id = id;
+    strategy.play = [play](be::ObservationState const& state, be::BeliefView const& view) -> be::Card {
+        py::gil_scoped_acquire gil;
+        BeliefViewGuard guard;
+        py::object const result =
+            play(py::cast(state, py::return_value_policy::copy), py::cast(PyBeliefView(&view, guard.valid)));
+        return py::cast<be::Card>(result);
+    };
+    if (state_key.has_value()) {
+        py::function const key_fn = *state_key;
+        strategy.state_key = [key_fn](be::ObservationState const& state, be::BeliefView const& view) -> be::StateKey {
+            py::gil_scoped_acquire gil;
+            BeliefViewGuard guard;
+            py::object const result = key_fn(
+                py::cast(state, py::return_value_policy::copy), py::cast(PyBeliefView(&view, guard.valid)));
+            return std::string(py::cast<py::bytes>(result));
+        };
+    }
+    // Unset (state_key stays its default-constructed empty std::function)
+    // when no Python callable was supplied -- DeclarerStrategy::state_key's
+    // own doxygen: "unset disables reuse for this strategy entirely".
+    return strategy;
+}
+
+// delta receives (layout: dict, seat: int, state: ObservationState) rather
+// than a single bundled object: DefenderQuery holds Deal const& and
+// ObservationState const&, references with no lifetime a Python object
+// could safely carry past this call, and there is nothing here worth a
+// dedicated bound type for -- three positional arguments, in the same
+// flattened spirit the whole of this module's options surface takes.
+//
+// Every returned card must be held by seat in layout and legal there;
+// probabilities strictly positive and summing to one within tolerance. A
+// card the strategy will never play must be **omitted**, not given zero
+// probability -- the evaluator treats "probability > 0" as the survival
+// test for a layout, so a zero-probability entry keeps a layout alive
+// with no mass, which is not the same thing as leaving it out. This is
+// the single most likely way a Python delta is subtly wrong; validated
+// server-side by validate_defender_distribution, not re-derived here.
+auto make_defender_strategy(py::function const& delta) -> be::DefenderStrategy
+{
+    return [delta](be::DefenderQuery const& query) -> std::vector<be::WeightedCard> {
+        py::gil_scoped_acquire gil;
+        py::object const result = delta(
+            dds3_python::deal_to_dict(query.layout),
+            query.seat,
+            py::cast(query.state, py::return_value_policy::copy));
+
+        std::vector<be::WeightedCard> weighted;
+        for (py::handle const item : py::cast<py::sequence>(result)) {
+            py::sequence const pair = py::cast<py::sequence>(item);
+            if (pair.size() != 2) {
+                throw py::value_error(
+                    "each defender distribution entry must be a (card, probability) pair");
+            }
+            weighted.push_back(be::WeightedCard{py::cast<be::Card>(pair[0]), py::cast<double>(pair[1])});
+        }
+        return weighted;
+    };
+}
+
+auto register_strategy_error_bindings(py::module_& module) -> void
+{
+    // Bound here, ahead of the full RootFailure/ValidationError exception
+    // hierarchy a later task designs as a whole, purely so the probe below
+    // can report which cause a malformed callback triggered -- inspectable
+    // values on the still-minimal probe result, not yet exceptions.
+    py::enum_<be::ValidationError>(module, "ValidationError")
+        .value("None_", be::ValidationError::None)
+        .value("CardNotHeld", be::ValidationError::CardNotHeld)
+        .value("CardIllegalForTrick", be::ValidationError::CardIllegalForTrick)
+        .value("ProbabilityNonPositive", be::ValidationError::ProbabilityNonPositive)
+        .value("ProbabilitiesDoNotSumToOne", be::ValidationError::ProbabilitiesDoNotSumToOne)
+        .value("DistributionEmpty", be::ValidationError::DistributionEmpty);
+
+    py::enum_<be::EvaluationCallback>(module, "EvaluationCallback")
+        .value("RootConstruction", be::EvaluationCallback::RootConstruction)
+        .value("DeclarerPlay", be::EvaluationCallback::DeclarerPlay)
+        .value("DefenderStrategy", be::EvaluationCallback::DefenderStrategy);
+}
+
+// Internal: the real evaluate() binding is a later task's, with the full
+// flattened-keyword surface a documented decision calls for and the
+// exception hierarchy a later task designs. This probe exists only so
+// this task's own GIL and callback-conversion work can be exercised
+// against the real
+// recursion now, releasing the GIL around the call exactly as the real
+// binding will: `dds::belief_evaluation::evaluate` itself, no sampling,
+// declarer/defender strategies built from the two factories above.
+// Testing support only.
+auto probe_evaluate(
+    py::dict const& root,
+    int declarer,
+    int tricks_needed,
+    be::LayoutSource const& source,
+    py::function const& play,
+    py::function const& delta,
+    py::object const& state_key) -> py::dict
+{
+    // pybind11 cannot convert a bare std::nullopt into a default argument
+    // value it can show Python (there is no Python object for it), so the
+    // boundary itself takes None -- the ordinary optional-argument idiom
+    // -- and translates to std::optional here, once, before it ever
+    // reaches make_declarer_strategy.
+    std::optional<py::function> const state_key_fn =
+        state_key.is_none() ? std::nullopt : std::make_optional(py::cast<py::function>(state_key));
+
+    Deal const root_deal = dds3_python::dict_to_deal(root);
+    be::DeclarerStrategy const pi = make_declarer_strategy(1, play, state_key_fn);
+    be::DefenderStrategy const delta_fn = make_defender_strategy(delta);
+
+    be::EvaluationResult result;
+    {
+        // Released for the whole recursion -- every solver call inside it
+        // (none yet; the solver seam is a later task) runs without it, and
+        // every trampoline above reacquires it only for as long as it runs.
+        py::gil_scoped_release const release;
+        result = be::evaluate(root_deal, declarer, tricks_needed, source, pi, delta_fn);
+    }
+
+    py::dict out;
+    if (result.error.has_value()) {
+        be::EvaluationError const& error = *result.error;
+        py::dict error_dict;
+        error_dict["validation"] = error.validation;
+        error_dict["callback"] = error.callback;
+        error_dict["seat"] = error.seat;
+        error_dict["layout"] = dds3_python::deal_to_dict(error.layout);
+        out["error"] = error_dict;
+    } else {
+        py::dict by_strategy;
+        for (auto const& [id, value] : result.by_strategy) {
+            py::dict entry;
+            entry["p_make"] = value.p_make;
+            py::list children;
+            for (be::RootChildValue const& child : value.root_children) {
+                children.append(py::make_tuple(child.card, child.value));
+            }
+            entry["root_children"] = children;
+            by_strategy[py::cast(id)] = entry;
+        }
+        out["by_strategy"] = by_strategy;
+    }
+    return out;
 }
 
 // A rejected play history raises from the constructor rather than
@@ -646,6 +827,21 @@ auto register_converter_probes(py::module_& module) -> void
         "and invalidates the view on the way out -- standing in for the\n"
         "real caller (a later task's evaluate()) so the validity guard can\n"
         "be tested now. Testing support only.");
+    module.def(
+        "_evaluate_probe",
+        &probe_evaluate,
+        py::arg("root"),
+        py::arg("declarer"),
+        py::arg("tricks_needed"),
+        py::arg("source"),
+        py::arg("play"),
+        py::arg("delta"),
+        py::arg("state_key") = py::none(),
+        "Calls dds::belief_evaluation::evaluate() with Python-supplied pi\n"
+        "and delta, releasing the GIL for the recursion exactly as the\n"
+        "real evaluate() binding (a later task, with the full keyword\n"
+        "surface and exception hierarchy) eventually will. No sampling.\n"
+        "Testing support only.");
 }
 
 }  // namespace
@@ -657,6 +853,7 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
     register_card_bindings(module);
     register_observation_state_bindings(module);
     register_belief_view_bindings(module);
+    register_strategy_error_bindings(module);
     register_history_error_bindings(module);
     register_layout_source_bindings(module);
     register_converter_probes(module);

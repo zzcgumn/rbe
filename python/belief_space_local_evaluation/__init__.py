@@ -15,6 +15,7 @@ try:
     from ._belief_space_local_evaluation import ConstrainedSpaceStatus
     from ._belief_space_local_evaluation import ContradictoryVoidError
     from ._belief_space_local_evaluation import DuplicatedCardError
+    from ._belief_space_local_evaluation import EvaluationCallback
     from ._belief_space_local_evaluation import ExhaustiveLayoutSource
     from ._belief_space_local_evaluation import ExpiredBeliefViewError
     from ._belief_space_local_evaluation import ForcedExceedsFixedSeatCountError
@@ -29,6 +30,7 @@ try:
     from ._belief_space_local_evaluation import ObservationState
     from ._belief_space_local_evaluation import TrailingTrickMismatchError
     from ._belief_space_local_evaluation import TrickLengthMismatchError
+    from ._belief_space_local_evaluation import ValidationError
     from ._belief_space_local_evaluation import VoidContradictionError
 except ImportError:
     # Fallback for environments where _belief_space_local_evaluation is
@@ -41,6 +43,7 @@ except ImportError:
     from _belief_space_local_evaluation import ConstrainedSpaceStatus
     from _belief_space_local_evaluation import ContradictoryVoidError
     from _belief_space_local_evaluation import DuplicatedCardError
+    from _belief_space_local_evaluation import EvaluationCallback
     from _belief_space_local_evaluation import ExhaustiveLayoutSource
     from _belief_space_local_evaluation import ExpiredBeliefViewError
     from _belief_space_local_evaluation import ForcedExceedsFixedSeatCountError
@@ -55,6 +58,7 @@ except ImportError:
     from _belief_space_local_evaluation import ObservationState
     from _belief_space_local_evaluation import TrailingTrickMismatchError
     from _belief_space_local_evaluation import TrickLengthMismatchError
+    from _belief_space_local_evaluation import ValidationError
     from _belief_space_local_evaluation import VoidContradictionError
 
 __all__ = [
@@ -66,6 +70,7 @@ __all__ = [
     "ConstrainedSpaceStatus",
     "ContradictoryVoidError",
     "DuplicatedCardError",
+    "EvaluationCallback",
     "ExhaustiveLayoutSource",
     "ExpiredBeliefViewError",
     "ForcedExceedsFixedSeatCountError",
@@ -80,5 +85,6 @@ __all__ = [
     "ObservationState",
     "TrailingTrickMismatchError",
     "TrickLengthMismatchError",
+    "ValidationError",
     "VoidContradictionError",
 ]
