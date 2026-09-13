@@ -7,6 +7,8 @@
 import dds3  # noqa: F401
 
 try:
+    from ._belief_space_local_evaluation import BeliefEntry
+    from ._belief_space_local_evaluation import BeliefView
     from ._belief_space_local_evaluation import Card
     from ._belief_space_local_evaluation import CardPlayedAndHeldError
     from ._belief_space_local_evaluation import ConstrainedSpaceEmptyError
@@ -14,6 +16,7 @@ try:
     from ._belief_space_local_evaluation import ContradictoryVoidError
     from ._belief_space_local_evaluation import DuplicatedCardError
     from ._belief_space_local_evaluation import ExhaustiveLayoutSource
+    from ._belief_space_local_evaluation import ExpiredBeliefViewError
     from ._belief_space_local_evaluation import ForcedExceedsFixedSeatCountError
     from ._belief_space_local_evaluation import HistoryRejectedError
     from ._belief_space_local_evaluation import HistoryVerdict
@@ -30,6 +33,8 @@ try:
 except ImportError:
     # Fallback for environments where _belief_space_local_evaluation is
     # available as a top-level module.
+    from _belief_space_local_evaluation import BeliefEntry
+    from _belief_space_local_evaluation import BeliefView
     from _belief_space_local_evaluation import Card
     from _belief_space_local_evaluation import CardPlayedAndHeldError
     from _belief_space_local_evaluation import ConstrainedSpaceEmptyError
@@ -37,6 +42,7 @@ except ImportError:
     from _belief_space_local_evaluation import ContradictoryVoidError
     from _belief_space_local_evaluation import DuplicatedCardError
     from _belief_space_local_evaluation import ExhaustiveLayoutSource
+    from _belief_space_local_evaluation import ExpiredBeliefViewError
     from _belief_space_local_evaluation import ForcedExceedsFixedSeatCountError
     from _belief_space_local_evaluation import HistoryRejectedError
     from _belief_space_local_evaluation import HistoryVerdict
@@ -52,6 +58,8 @@ except ImportError:
     from _belief_space_local_evaluation import VoidContradictionError
 
 __all__ = [
+    "BeliefEntry",
+    "BeliefView",
     "Card",
     "CardPlayedAndHeldError",
     "ConstrainedSpaceEmptyError",
@@ -59,6 +67,7 @@ __all__ = [
     "ContradictoryVoidError",
     "DuplicatedCardError",
     "ExhaustiveLayoutSource",
+    "ExpiredBeliefViewError",
     "ForcedExceedsFixedSeatCountError",
     "HistoryRejectedError",
     "HistoryVerdict",

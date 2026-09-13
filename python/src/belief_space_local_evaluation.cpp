@@ -5,12 +5,16 @@
 #include <pybind11/pybind11.h>
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
+#include <belief_evaluation/belief_view.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
 #include <belief_evaluation/layout_source.hpp>
+#include <belief_evaluation/node.hpp>
 #include <belief_evaluation/types.hpp>
 #include <utility/constants.h>
 
@@ -130,6 +134,197 @@ auto register_observation_state_bindings(py::module_& module) -> void
             "A deal dict. declarer's and dummy's entries are exact; a\n"
             "defender's entry is the **union pool** of both defenders'\n"
             "outstanding cards, not that defender's own actual holding.");
+}
+
+// BeliefView holds a std::span into caller-owned scratch and node.layouts,
+// live only for the call it was built for -- see make_belief_view's own
+// doxygen. A Python strategy is handed one at every declarer node; Python
+// users store things ("self.last_view = view" is an entirely ordinary
+// thing to write), and a naive non-owning binding would hand out an object
+// reading freed memory the moment the callback returns, silently, with
+// plausible-looking values.
+//
+// The fix is a validity flag the *binding* owns (nothing in library/src/
+// changes for this): a shared_ptr<bool>, one per call, set false when the
+// callback returns -- including when it raises, which is why invalidation
+// is scope-bound (BeliefViewInvalidator's destructor) rather than placed on
+// a success-only path. Every accessor checks it first.
+//
+// The half a naive implementation misses: invalidating the view object
+// itself does not save `layout = view.entries[0].layout` stashed past the
+// callback, if entries hand out something that itself references node
+// memory. PyBeliefEntry carries the same shared flag as its view, so
+// accessing a stashed *entry*'s properties after expiry raises too -- but
+// `layout` itself, once read, is dict_to_deal's ordinary materialised
+// copy: a Deal is small (a handful of ints and a 4x4 array), so copying it
+// per access is affordable in exactly the way copying the whole belief set
+// per node is not ("no copy of the belief set" is about that, not about a
+// single Deal), and a dict already obtained while the view was live needs
+// no flag of its own -- it is a plain value from then
+// on, not a reference to anything.
+// Set once, in register_belief_view_bindings, before anything can raise it.
+py::object expired_belief_view_error;
+
+[[noreturn]] auto raise_expired_belief_view() -> void
+{
+    py::set_error(
+        expired_belief_view_error,
+        "this BeliefView (or an entry obtained from it) has expired -- it is "
+        "valid only for the duration of the callback it was handed to");
+    throw py::error_already_set();
+}
+
+class PyBeliefEntry
+{
+public:
+    PyBeliefEntry(be::BeliefEntry const* entry, std::shared_ptr<bool> valid)
+        : entry_(entry), valid_(std::move(valid))
+    {
+    }
+
+    auto layout() const -> py::dict
+    {
+        check_valid();
+        return dds3_python::deal_to_dict(entry_->layout);
+    }
+
+    auto posterior() const -> be::Probability
+    {
+        check_valid();
+        return entry_->posterior;
+    }
+
+private:
+    auto check_valid() const -> void
+    {
+        if (! valid_ || ! *valid_) {
+            raise_expired_belief_view();
+        }
+    }
+
+    be::BeliefEntry const* entry_;
+    std::shared_ptr<bool> valid_;
+};
+
+class PyBeliefView
+{
+public:
+    PyBeliefView(be::BeliefView const* view, std::shared_ptr<bool> valid)
+        : view_(view), valid_(std::move(valid))
+    {
+    }
+
+    auto entries() const -> py::list
+    {
+        check_valid();
+        py::list result;
+        for (be::BeliefEntry const& entry : view_->entries) {
+            result.append(PyBeliefEntry(&entry, valid_));
+        }
+        return result;
+    }
+
+    auto is_sample() const -> bool
+    {
+        check_valid();
+        return view_->is_sample;
+    }
+
+    auto space_size() const -> std::size_t
+    {
+        check_valid();
+        return view_->space_size;
+    }
+
+private:
+    auto check_valid() const -> void
+    {
+        if (! valid_ || ! *valid_) {
+            raise_expired_belief_view();
+        }
+    }
+
+    be::BeliefView const* view_;
+    std::shared_ptr<bool> valid_;
+};
+
+auto register_belief_view_bindings(py::module_& module) -> void
+{
+    expired_belief_view_error = py::exception<void>(module, "ExpiredBeliefViewError");
+
+    py::class_<PyBeliefEntry>(
+        module,
+        "BeliefEntry",
+        "One layout in a belief view, paired with its normalised posterior\n"
+        "(the entries of one BeliefView sum to 1). Valid only while the\n"
+        "BeliefView it came from is: accessing either property after the\n"
+        "callback that received the view returns raises ExpiredBeliefViewError.")
+        .def_property_readonly("layout", &PyBeliefEntry::layout, "A deal dict, freshly copied on every access.")
+        .def_property_readonly("posterior", &PyBeliefEntry::posterior);
+
+    py::class_<PyBeliefView>(
+        module,
+        "BeliefView",
+        "What a declarer strategy reasons over: the belief space as\n"
+        "declarer currently knows it, handed to play() and state_key() at\n"
+        "every call. Valid only for the duration of that one call --\n"
+        "accessing any property afterwards raises ExpiredBeliefViewError,\n"
+        "and so does accessing an entry obtained from it (a *layout*\n"
+        "already read from an entry is a plain copy and remains valid\n"
+        "forever; the entry object itself is not). Storing this view, or\n"
+        "anything obtained from it apart from an already-read layout,\n"
+        "beyond the call it was handed to is always a mistake.")
+        .def_property_readonly("entries", &PyBeliefView::entries)
+        .def_property_readonly(
+            "is_sample", &PyBeliefView::is_sample,
+            "False only when this node holds the whole remaining belief\n"
+            "space rather than a sample of it.")
+        .def_property_readonly(
+            "space_size", &PyBeliefView::space_size,
+            "Layouts believed consistent, if known; 0 when is_sample is\n"
+            "true -- the true count is genuinely unknown then, and\n"
+            "reporting len(entries) instead would hand a strategy a false\n"
+            "certainty. len(entries) is always the count actually being\n"
+            "reasoned over, sampled or not.");
+}
+
+// Internal: stands in for the real caller (a later task's evaluate(),
+// which hands a BeliefView to a Python declarer strategy at every node)
+// so the guard above can be tested now. Builds a small BeliefNode from
+// the given layouts/weights, calls callback with the resulting view, and
+// invalidates it on the way out -- exactly the lifetime evaluate() will
+// eventually give a real one, just constructed by hand here instead of by
+// the search. Testing support only.
+auto probe_with_belief_view(
+    py::list const& layout_dicts, py::list const& weights, bool is_sample, py::function const& callback)
+    -> py::object
+{
+    if (layout_dicts.size() != weights.size()) {
+        throw py::value_error("layouts and weights must have the same length");
+    }
+
+    be::BeliefNode node;
+    node.is_sample = is_sample;
+    for (std::size_t i = 0; i < layout_dicts.size(); ++i) {
+        node.layouts.push_back(dds3_python::dict_to_deal(py::cast<py::dict>(layout_dicts[i])));
+        node.p.push_back(py::cast<be::Probability>(weights[i]));
+        node.root_keys.push_back(0);
+    }
+
+    std::vector<be::BeliefEntry> scratch;
+    be::BeliefView const view = be::make_belief_view(node, scratch);
+
+    auto const valid = std::make_shared<bool>(true);
+    struct Invalidator
+    {
+        std::shared_ptr<bool> flag;
+        ~Invalidator()
+        {
+            *flag = false;
+        }
+    } invalidator{valid};
+
+    return callback(py::cast(PyBeliefView(&view, valid)));
 }
 
 // A rejected play history raises from the constructor rather than
@@ -440,6 +635,17 @@ auto register_converter_probes(py::module_& module) -> void
         [](be::LayoutSource const& source, std::uint64_t index) {
             return dds3_python::deal_to_dict(source.at(index));
         });
+    module.def(
+        "_with_belief_view",
+        &probe_with_belief_view,
+        py::arg("layouts"),
+        py::arg("weights"),
+        py::arg("is_sample"),
+        py::arg("callback"),
+        "Builds a BeliefNode from layouts/weights, calls callback(view),\n"
+        "and invalidates the view on the way out -- standing in for the\n"
+        "real caller (a later task's evaluate()) so the validity guard can\n"
+        "be tested now. Testing support only.");
 }
 
 }  // namespace
@@ -450,6 +656,7 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
 
     register_card_bindings(module);
     register_observation_state_bindings(module);
+    register_belief_view_bindings(module);
     register_history_error_bindings(module);
     register_layout_source_bindings(module);
     register_converter_probes(module);
