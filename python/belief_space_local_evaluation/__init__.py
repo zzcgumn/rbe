@@ -19,6 +19,8 @@ try:
     from ._belief_space_local_evaluation import ConstrainedSpaceStatus
     from ._belief_space_local_evaluation import ContradictoryVoidError
     from ._belief_space_local_evaluation import DistributionEmptyError
+    from ._belief_space_local_evaluation import DoubleDummyBound
+    from ._belief_space_local_evaluation import DoubleDummyDefender
     from ._belief_space_local_evaluation import DuplicatedCardError
     from ._belief_space_local_evaluation import evaluate
     from ._belief_space_local_evaluation import EvaluationCallback
@@ -42,6 +44,7 @@ try:
     from ._belief_space_local_evaluation import SampleSizeZeroError
     from ._belief_space_local_evaluation import ScanBudgetExhaustedError
     from ._belief_space_local_evaluation import SourceNotEnumerableError
+    from ._belief_space_local_evaluation import SpreadPolicy
     from ._belief_space_local_evaluation import TrailingTrickMismatchError
     from ._belief_space_local_evaluation import TrickLengthMismatchError
     from ._belief_space_local_evaluation import ValidationError
@@ -61,6 +64,8 @@ except ImportError:
     from _belief_space_local_evaluation import ConstrainedSpaceStatus
     from _belief_space_local_evaluation import ContradictoryVoidError
     from _belief_space_local_evaluation import DistributionEmptyError
+    from _belief_space_local_evaluation import DoubleDummyBound
+    from _belief_space_local_evaluation import DoubleDummyDefender
     from _belief_space_local_evaluation import DuplicatedCardError
     from _belief_space_local_evaluation import evaluate
     from _belief_space_local_evaluation import EvaluationCallback
@@ -84,6 +89,7 @@ except ImportError:
     from _belief_space_local_evaluation import SampleSizeZeroError
     from _belief_space_local_evaluation import ScanBudgetExhaustedError
     from _belief_space_local_evaluation import SourceNotEnumerableError
+    from _belief_space_local_evaluation import SpreadPolicy
     from _belief_space_local_evaluation import TrailingTrickMismatchError
     from _belief_space_local_evaluation import TrickLengthMismatchError
     from _belief_space_local_evaluation import ValidationError
@@ -102,6 +108,8 @@ __all__ = [
     "ConstrainedSpaceStatus",
     "ContradictoryVoidError",
     "DistributionEmptyError",
+    "DoubleDummyBound",
+    "DoubleDummyDefender",
     "DuplicatedCardError",
     "evaluate",
     "EvaluationCallback",
@@ -125,6 +133,7 @@ __all__ = [
     "SampleSizeZeroError",
     "ScanBudgetExhaustedError",
     "SourceNotEnumerableError",
+    "SpreadPolicy",
     "TrailingTrickMismatchError",
     "TrickLengthMismatchError",
     "ValidationError",

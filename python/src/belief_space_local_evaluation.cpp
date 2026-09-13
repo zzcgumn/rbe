@@ -15,12 +15,16 @@
 #include <belief_evaluation/belief_view.hpp>
 #include <belief_evaluation/declarer_strategy.hpp>
 #include <belief_evaluation/defender_strategy.hpp>
+#include <belief_evaluation/double_dummy_bound.hpp>
+#include <belief_evaluation/double_dummy_defender.hpp>
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
 #include <belief_evaluation/layout_source.hpp>
 #include <belief_evaluation/node.hpp>
+#include <belief_evaluation/spread.hpp>
 #include <belief_evaluation/types.hpp>
 #include <belief_evaluation/validation.hpp>
+#include <solver_context/solver_context.hpp>
 #include <utility/constants.h>
 
 #include "converters.hpp"
@@ -1013,6 +1017,161 @@ auto register_layout_source_bindings(py::module_& module) -> void
             "history_verdict() is always Consistent there.");
 }
 
+// SolverContext crosses from dds3 into this module without this module
+// ever registering py::class_<SolverContext> itself. pybind11 registers
+// types per module; registering it a second time here would produce two
+// distinct Python types that look identical and cannot be passed between
+// modules -- the standard cross-module pitfall, and the first thing a
+// caller who already has a context from solving will try. The fix is the
+// standard cross-module pattern: dds3 keeps the registration (its own
+// bindings.cpp), this module only *uses* the type, accepting it as a
+// constructor argument and storing a reference exactly as the C++ types
+// below already do. pybind11 shares its type registry between extensions
+// built by the same toolchain through an interpreter-level capsule, which
+// requires the registering module (dds3) to have been imported first --
+// this package's own __init__.py does that (see its own comment) before
+// this extension is ever imported, so the registration already exists by
+// the time a constructor here is called.
+//
+// Both DoubleDummyDefender and DoubleDummyBound hold SolverContext& --
+// a reference, not owned. A Python object outliving the context it was
+// built from would dangle it: py::keep_alive<1, 2>() on both constructors
+// ties the context's Python lifetime to the object holding it (argument
+// index 1 is the object being constructed, 2 is ctx), the same way
+// pybind11 documents for any object holding a reference to another.
+class PyDoubleDummyDefender
+{
+public:
+    PyDoubleDummyDefender(SolverContext& ctx, be::SpreadPolicy policy) : defender_(ctx, policy)
+    {
+    }
+
+    // Usable directly as delta: same (layout, seat, state) shape
+    // make_defender_strategy already gives a Python-authored one. seat
+    // and state are accepted but unused -- DoubleDummyDefender's own
+    // as_strategy() only ever reads query.layout, since solve_board
+    // determines who is on play from the deal itself (its own trump/
+    // first fields), not from a separate seat argument.
+    auto call(py::dict const& layout, int seat, py::object const& state) -> py::list
+    {
+        (void)state;
+        Deal const deal = dds3_python::dict_to_deal(layout);
+        be::DefenderStrategy const strategy = defender_.as_strategy();
+
+        std::vector<be::WeightedCard> weighted;
+        {
+            // Released for the solve itself -- the one piece of this
+            // module that actually calls into the solver, so this is
+            // where a caller's SolverContext gets to use whatever
+            // internal parallelism it has. Already re-acquired by the
+            // trampoline that called this __call__ in the first place
+            // (make_defender_strategy's own gil_scoped_acquire), so this
+            // is a release nested inside that acquire, not a second
+            // independent one.
+            py::gil_scoped_release const release;
+            be::ObservationState const unused_state{};
+            weighted = strategy(be::DefenderQuery{deal, seat, unused_state});
+        }
+
+        py::list result;
+        for (be::WeightedCard const& card : weighted) {
+            result.append(py::make_tuple(card.card, card.probability));
+        }
+        return result;
+    }
+
+private:
+    be::DoubleDummyDefender defender_;
+};
+
+class PyDoubleDummyBound
+{
+public:
+    PyDoubleDummyBound(SolverContext& ctx, int declarer) : bound_(ctx, declarer)
+    {
+    }
+
+    // Usable directly as bound: same (deal dict) -> int shape
+    // make_layout_bound already gives a Python-authored one.
+    auto call(py::dict const& layout) -> int
+    {
+        Deal const deal = dds3_python::dict_to_deal(layout);
+        be::LayoutBound const bound_fn = bound_.as_bound();
+        py::gil_scoped_release const release;  // see PyDoubleDummyDefender::call
+        return bound_fn(deal);
+    }
+
+private:
+    be::DoubleDummyBound bound_;
+};
+
+auto register_solver_seam_bindings(py::module_& module) -> void
+{
+    py::enum_<be::SpreadPolicy>(
+        module,
+        "SpreadPolicy",
+        "How DoubleDummyDefender spreads probability over a solved\n"
+        "position's tied-for-best candidates. The two values differ in\n"
+        "what justifies them, not merely in behaviour -- see each one's\n"
+        "own docstring.")
+        .value(
+            "TouchingSequence", be::SpreadPolicy::TouchingSequence,
+            "Uniform over the single canonical best card's own touching-card\n"
+            "group. The cards in one touching-card group are literally\n"
+            "interchangeable given the layout, so this is the canonical\n"
+            "distribution over an equivalence class the underlying theory\n"
+            "already licenses -- restricted choice, not a modelling guess.")
+        .value(
+            "AllOptimal", be::SpreadPolicy::AllOptimal,
+            "Uniform over the union of every tied-for-best candidate's own\n"
+            "touching-card group, across suits. These cards are equally\n"
+            "*good* but not otherwise equivalent -- the resulting positions\n"
+            "are not isomorphic, and the distribution's shape depends on how\n"
+            "many suits happen to tie. Selecting this moves to the more\n"
+            "advanced justification algorithm.md describes.");
+
+    py::class_<PyDoubleDummyDefender>(
+        module,
+        "DoubleDummyDefender",
+        "A defender strategy backed by the solver: solves a layout double\n"
+        "dummy and spreads probability over the tied-for-best cards via\n"
+        "policy. Usable directly as evaluate()'s own delta argument.\n\n"
+        "**This is not best defence against a contract.** It maximises\n"
+        "tricks (target = -1), not the contract threshold, and will\n"
+        "sometimes concede the contract to hold the trick count down --\n"
+        "the gap between maximising tricks and minimising P_make this\n"
+        "whole capability exists to quantify, not a defect. It does\n"
+        "satisfy delta_is_double_dummy_optimal regardless: that\n"
+        "declaration is about trick count, which trick-maximising play\n"
+        "delivers for both sides, not about matching a contract.\n\n"
+        "ctx is not owned -- create, configure and outlive it yourself,\n"
+        "the same as any dds3.SolverContext use.")
+        .def(
+            py::init<SolverContext&, be::SpreadPolicy>(), py::arg("ctx"),
+            py::arg("policy") = be::SpreadPolicy::TouchingSequence, py::keep_alive<1, 2>())
+        .def("__call__", &PyDoubleDummyDefender::call, py::arg("layout"), py::arg("seat"), py::arg("state"));
+
+    py::class_<PyDoubleDummyBound>(
+        module,
+        "DoubleDummyBound",
+        "A LayoutBound backed by the solver: declarer's own double-dummy\n"
+        "trick count from a given layout, regardless of who is actually on\n"
+        "lead there. Usable directly as evaluate()'s own bound argument.\n\n"
+        "**declarer is fixed for this object's whole lifetime -- not\n"
+        "reusable across declarers.** Reusing one across two declarers\n"
+        "produces a wrong bound silently, which then feeds tier2_dead(),\n"
+        "whose whole soundness rests on the bound being right for the\n"
+        "declarer actually being evaluated.\n\n"
+        "The precondition this bound carries: R <= DD (the reason a cut\n"
+        "may use it at all) holds only when the paired delta is\n"
+        "double-dummy optimal for trick count -- pass\n"
+        "delta_is_double_dummy_optimal=True to evaluate() and pair this\n"
+        "with a DoubleDummyDefender, the intended sound configuration.\n\n"
+        "ctx is not owned, the same as DoubleDummyDefender's own contract.")
+        .def(py::init<SolverContext&, int>(), py::arg("ctx"), py::arg("declarer"), py::keep_alive<1, 2>())
+        .def("__call__", &PyDoubleDummyBound::call, py::arg("layout"));
+}
+
 // Internal: exercises the converters above end to end, ahead of the real
 // callers (the layout source binds the inward history conversion; evaluate()
 // constructs the ObservationState this same known_holdings/history logic
@@ -1083,6 +1242,7 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
     register_validation_error_bindings(module);
     register_history_error_bindings(module);
     register_layout_source_bindings(module);
+    register_solver_seam_bindings(module);
     register_converter_probes(module);
 
     module.def(
