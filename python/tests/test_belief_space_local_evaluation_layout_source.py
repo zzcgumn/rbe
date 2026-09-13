@@ -6,7 +6,9 @@ from belief_space_local_evaluation import ConstrainedSpaceStatus
 from belief_space_local_evaluation import ContradictoryVoidError
 from belief_space_local_evaluation import DuplicatedCardError
 from belief_space_local_evaluation import ExhaustiveLayoutSource
+from belief_space_local_evaluation import ForcedExceedsFixedSeatCountError
 from belief_space_local_evaluation import HistoryVerdict
+from belief_space_local_evaluation import InsufficientFreeCardsError
 from belief_space_local_evaluation import InvalidHistoryInputError
 from belief_space_local_evaluation import LayoutSource
 from belief_space_local_evaluation import LeaderMismatchError
@@ -267,6 +269,46 @@ class TestEveryConstrainedSpaceStatusCauseRaises(unittest.TestCase):
         played = [(Diamonds, 14), (Spades, 2), (Diamonds, 13), (Clubs, 3)]
         root, history = build_deal(played, hand_for)
         with self.assertRaises(ContradictoryVoidError):
+            ExhaustiveLayoutSource(root, North, 1, history, North)
+
+    def test_forced_exceeds_fixed_seat_count(self) -> None:
+        # West (the other seat) is void in diamonds, forcing all three
+        # outstanding diamonds onto East (the fixed seat) -- but East's own
+        # root hand size is only one card. Mirrors
+        # constrained_decomposition_test.cpp's own
+        # MoreCardsForcedToTheFixedSeatThanItHoldsIsRejected, reached here
+        # through a real root and history rather than decompose_constrained
+        # called directly.
+        def hand_for(suit: int, rank: int) -> int:
+            if suit == Diamonds and rank in (5, 7, 9):
+                return West
+            if suit == Clubs and rank == 6:
+                return East
+            return North
+
+        played = [(Diamonds, 14), (Diamonds, 13), (Diamonds, 4), (Spades, 2)]
+        root, history = build_deal(played, hand_for)
+        with self.assertRaises(ForcedExceedsFixedSeatCountError):
+            ExhaustiveLayoutSource(root, North, 1, history, North)
+
+    def test_insufficient_free_cards(self) -> None:
+        # East (the fixed seat) is void in diamonds, forcing all four
+        # outstanding diamonds onto West -- but East's own root hand size
+        # (four, held in diamonds despite the void: root bookkeeping only,
+        # not cross-checked against derived voids) leaves only one free
+        # club for East to actually reach it from. Mirrors
+        # constrained_decomposition_test.cpp's own
+        # TheFixedSeatCannotReachItsHandSizeFromWhatIsLeftIsRejected.
+        def hand_for(suit: int, rank: int) -> int:
+            if suit == Diamonds and rank in (5, 7, 9, 11):
+                return East
+            if suit == Clubs and rank == 6:
+                return West
+            return North
+
+        played = [(Diamonds, 14), (Spades, 2), (Diamonds, 13), (Diamonds, 12)]
+        root, history = build_deal(played, hand_for)
+        with self.assertRaises(InsufficientFreeCardsError):
             ExhaustiveLayoutSource(root, North, 1, history, North)
 
 
