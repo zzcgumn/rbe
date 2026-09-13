@@ -7,12 +7,18 @@
 import dds3  # noqa: F401
 
 try:
+    from ._belief_space_local_evaluation import Card
     from ._belief_space_local_evaluation import module_name
+    from ._belief_space_local_evaluation import ObservationState
 except ImportError:
     # Fallback for environments where _belief_space_local_evaluation is
     # available as a top-level module.
+    from _belief_space_local_evaluation import Card
     from _belief_space_local_evaluation import module_name
+    from _belief_space_local_evaluation import ObservationState
 
 __all__ = [
+    "Card",
     "module_name",
+    "ObservationState",
 ]
