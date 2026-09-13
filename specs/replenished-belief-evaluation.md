@@ -207,8 +207,8 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   progress, declarer's and dummy's exact holdings, and a defender split of
   the same outstanding pool — not the source's raw size, which may include
   layouts the root position rules out.
-- **A shipped `LayoutSource` now exists** — `UnconstrainedLayoutSource`
-  (`library/src/belief_evaluation/unconstrained_layout_source.hpp`) — and for
+- **A shipped `LayoutSource` now exists** — `ExhaustiveLayoutSource`
+  (`library/src/belief_evaluation/exhaustive_layout_source.hpp`) — and for
   a caller using it, "the belief space" is exactly what the paragraph above
   has always meant by "consistent with the root position": every defender
   split of the outstanding pool, with trump, the trick in progress, and
@@ -261,7 +261,7 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   anyway, since declarer or dummy void in a suit the root shows them
   holding is one of the checks below.
   `is_consistent()` is untouched by this — the void constraint is applied by
-  the source, for the same reason `UnconstrainedLayoutSource`'s own defender
+  the source, for the same reason `ExhaustiveLayoutSource`'s own defender
   split already was: `is_consistent()` runs on every candidate in every
   scan this capability makes, so changing it would change which layouts
   enter the belief space on every existing fixture, not only the ones this
@@ -321,7 +321,7 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   split is a separate, further-distinguished case: both defenders void in a
   suit the pool still contains; more forced to the fixed defender than it
   holds; or the fixed defender unable to reach its own hand size from what
-  free cards remain. `UnconstrainedLayoutSource` surfaces which of these
+  free cards remain. `ExhaustiveLayoutSource` surfaces which of these
   applies (`history_verdict()`, `constrained_space_status()`) rather than
   letting `size() == 0` alone stand for all of them — that would read
   identically to a root with nothing consistent in it, and `make_root`
@@ -340,7 +340,7 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   four cards and the other two, where the root position has three each,
   passes `is_consistent()` and would enter the belief space through
   `make_root()` without complaint, even though it is not a legal bridge
-  position. `UnconstrainedLayoutSource` never produces such a candidate — it
+  position. `ExhaustiveLayoutSource` never produces such a candidate — it
   enforces the fixed defender's own hand size directly rather than relying
   on `is_consistent()` to reject what it cannot detect — but a hand-built
   fixture or a future generator that relies on `is_consistent()` alone as
@@ -554,7 +554,7 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   evaluator: nothing here can distinguish a well-shuffled source from a
   badly-ordered one, since both simply return layouts in whatever order
   `at()` presents them. This obligation is not closed by
-  `UnconstrainedLayoutSource` shipping — it still binds any caller supplying
+  `ExhaustiveLayoutSource` shipping — it still binds any caller supplying
   their own `LayoutSource` — but there is now a correct implementation to
   point at rather than only a description of the property a source must
   have. A future caller-supplied contract this evaluator
@@ -630,13 +630,13 @@ rename or include-ordering trick anywhere in the module.
 - `library/src/belief_evaluation/defender_split.hpp` — `DefenderPool`,
   `defender_pool_decomposition()`, `binomial_coefficient()`,
   `unrank_combination()`, `apply_defender_split()` — the pure combinatorics
-  `UnconstrainedLayoutSource` (below) is built from: a root's pooled defender
+  `ExhaustiveLayoutSource` (below) is built from: a root's pooled defender
   cards and each defender's own count, the k-subset enumeration over them,
   and applying a chosen subset back onto a root layout as a split.
 - `library/src/belief_evaluation/keyed_permutation.hpp` —
   `keyed_permutation()`, a seeded bijection on `[0, N)` storing nothing —
   general-purpose, not specific to this capability's own types, and the
-  mechanism `UnconstrainedLayoutSource` uses to randomise its enumeration
+  mechanism `ExhaustiveLayoutSource` uses to randomise its enumeration
   order.
 - `library/src/belief_evaluation/void_derivation.hpp` — `VoidsBySeat`,
   `derive_voids()` — a play history alone to every seat's voids, pure trick
@@ -654,8 +654,8 @@ rename or include-ordering trick anywhere in the module.
   generalisation of `defender_pool_decomposition`'s own unconstrained count,
   reached by the same `binomial_coefficient()` call rather than a parallel
   one.
-- `library/src/belief_evaluation/unconstrained_layout_source.hpp` —
-  `UnconstrainedLayoutSource`, the shipped `LayoutSource` — see "Behaviour &
+- `library/src/belief_evaluation/exhaustive_layout_source.hpp` —
+  `ExhaustiveLayoutSource`, the shipped `LayoutSource` — see "Behaviour &
   invariants" above for what it enumerates, with and without a supplied
   play history.
 - `library/src/belief_evaluation/renumber.hpp` — `renumber()`.
@@ -736,7 +736,7 @@ rename or include-ordering trick anywhere in the module.
 
 - `is_consistent()` does not compare defender hand sizes, so it accepts a
   strictly larger set of candidates than the set of legal bridge positions
-  consistent with the root. `UnconstrainedLayoutSource` does not rely on it
+  consistent with the root. `ExhaustiveLayoutSource` does not rely on it
   for this and enforces sizes itself; a hand-built fixture or a future
   generator that relies on `is_consistent()` alone would not be protected
   the same way. Deliberately not closed — see "Behaviour & invariants"

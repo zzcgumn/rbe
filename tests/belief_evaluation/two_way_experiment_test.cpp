@@ -14,7 +14,7 @@
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/history_verification.hpp>
 #include <belief_evaluation/node.hpp>
-#include <belief_evaluation/unconstrained_layout_source.hpp>
+#include <belief_evaluation/exhaustive_layout_source.hpp>
 
 #include "test_support.hpp"
 
@@ -37,7 +37,7 @@ using be::make_belief_view;
 using be::make_root;
 using be::ObservationState;
 using be::RootConstructionResult;
-using be::UnconstrainedLayoutSource;
+using be::ExhaustiveLayoutSource;
 using be::WeightedCard;
 using be::evaluate;
 using be::holding;
@@ -164,7 +164,7 @@ TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
     inside_root.remainCards[West][Hearts] = holding({Queen, Jack});
     inside_root.remainCards[West][Spades] = holding({King, Four, Five, Six, Ten});
 
-    UnconstrainedLayoutSource const inside_source(inside_root, North, /*seed=*/1u);
+    ExhaustiveLayoutSource const inside_source(inside_root, North, /*seed=*/1u);
     ASSERT_EQ(inside_source.size(), 36u);  // C(9, 2)
 
     // A defender strategy where East's void-in-hearts discard is uniform
@@ -282,7 +282,7 @@ TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
     before_root.trump = DDS_NOTRUMP;
     before_root.first = North;
 
-    UnconstrainedLayoutSource const before_source(
+    ExhaustiveLayoutSource const before_source(
         before_root, North, /*seed=*/2u, before_history, /*opening_leader=*/North);
     ASSERT_EQ(before_source.history_verdict(), HistoryVerdict::Consistent);
     ASSERT_EQ(before_source.size(), 6u);  // C(6, 1): East's void removes the queen from its pool
@@ -314,7 +314,7 @@ TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
     EXPECT_NEAR(before_result.by_strategy.at(1u).p_make, 2.0 / 3.0, 1e-9);
 
     // --- the no-history third value: must differ -----------------------------
-    UnconstrainedLayoutSource const before_no_history_source(before_root, North, /*seed=*/2u);
+    ExhaustiveLayoutSource const before_no_history_source(before_root, North, /*seed=*/2u);
     ASSERT_EQ(before_no_history_source.size(), 7u);  // C(7, 1): the outstanding heart is still eligible
     EvaluationResult const before_no_history_result = evaluate(
         before_root, North, /*tricks_needed=*/1, before_no_history_source, before_pi, single_card_defender);
@@ -384,7 +384,7 @@ TEST_F(TwoWayExperimentTest, BothDefendersVoidInDifferentSuits)
     root.trump = DDS_NOTRUMP;
     root.first = North;
 
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/3u, history, /*opening_leader=*/North);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/3u, history, /*opening_leader=*/North);
     ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent);
     ASSERT_EQ(source.size(), 4u);  // C(4, 1): the four free spades, one needed
 
@@ -394,7 +394,7 @@ TEST_F(TwoWayExperimentTest, BothDefendersVoidInDifferentSuits)
     ASSERT_FALSE(constrained.error.has_value());
     EXPECT_NEAR(constrained.by_strategy.at(1u).p_make, 3.0 / 4.0, 1e-9);  // only the ten beats nine
 
-    UnconstrainedLayoutSource const no_history_source(root, North, /*seed=*/3u);
+    ExhaustiveLayoutSource const no_history_source(root, North, /*seed=*/3u);
     ASSERT_EQ(no_history_source.size(), 15u);  // C(6, 2): both voids ignored
     EvaluationResult const no_history =
         evaluate(root, North, /*tricks_needed=*/1, no_history_source, pi, single_card_defender);
@@ -410,7 +410,7 @@ TEST_F(TwoWayExperimentTest, BothDefendersVoidInDifferentSuits)
 // two-void fixture and asks only that a bounded sample over the
 // constrained space runs and, at sample_size >= size(), reproduces the
 // exhaustive answer exactly -- the same bitwise property
-// unconstrained_layout_source_integration_test.cpp already establishes
+// exhaustive_layout_source_integration_test.cpp already establishes
 // for the unconstrained case, re-checked here for a source built with a
 // history.
 TEST_F(TwoWayExperimentTest, SamplingComposesWithAConstrainedSpace)
@@ -456,7 +456,7 @@ TEST_F(TwoWayExperimentTest, SamplingComposesWithAConstrainedSpace)
     root.trump = DDS_NOTRUMP;
     root.first = North;
 
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/6u, history, /*opening_leader=*/North);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/6u, history, /*opening_leader=*/North);
     ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent);
     ASSERT_EQ(source.size(), 4u);
 
@@ -517,7 +517,7 @@ TEST_F(TwoWayExperimentTest, TheVoidFlipsWhichDefenderIsFavouriteForTheMissingKi
     root.trump = DDS_NOTRUMP;
     root.first = North;
 
-    auto const p_east_holds_the_king = [&root](UnconstrainedLayoutSource const& source) -> double
+    auto const p_east_holds_the_king = [&root](ExhaustiveLayoutSource const& source) -> double
     {
         RootConstructionResult const result = make_root(root, North, /*tricks_needed=*/1, source);
         if (! result.node.has_value())
@@ -538,12 +538,12 @@ TEST_F(TwoWayExperimentTest, TheVoidFlipsWhichDefenderIsFavouriteForTheMissingKi
         return mass;
     };
 
-    UnconstrainedLayoutSource const constrained_source(
+    ExhaustiveLayoutSource const constrained_source(
         root, North, /*seed=*/5u, history, /*opening_leader=*/North);
     ASSERT_EQ(constrained_source.history_verdict(), HistoryVerdict::Consistent);
     ASSERT_EQ(constrained_source.size(), 15u);  // C(6, 4): East's void removes the four hearts
 
-    UnconstrainedLayoutSource const unconstrained_source(root, North, /*seed=*/5u);
+    ExhaustiveLayoutSource const unconstrained_source(root, North, /*seed=*/5u);
     ASSERT_EQ(unconstrained_source.size(), 210u);  // C(10, 4)
 
     double const p_constrained = p_east_holds_the_king(constrained_source);
@@ -594,7 +594,7 @@ TEST_F(TwoWayExperimentTest, ATrumpContractWhereTheShowOutIsARuff)
     root.trump = Hearts;
     root.first = East;  // East's ruff won trick one
 
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/4u, history, /*opening_leader=*/North);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/4u, history, /*opening_leader=*/North);
     ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent);
     ASSERT_EQ(source.size(), 4u);  // C(4, 1): East's void removes the spade jack from its pool
 
@@ -604,7 +604,7 @@ TEST_F(TwoWayExperimentTest, ATrumpContractWhereTheShowOutIsARuff)
     ASSERT_FALSE(constrained.error.has_value());
     EXPECT_NEAR(constrained.by_strategy.at(1u).p_make, 3.0 / 4.0, 1e-9);  // only the ten beats nine
 
-    UnconstrainedLayoutSource const no_history_source(root, North, /*seed=*/4u);
+    ExhaustiveLayoutSource const no_history_source(root, North, /*seed=*/4u);
     ASSERT_EQ(no_history_source.size(), 5u);  // C(5, 1): the spade jack still eligible
     EvaluationResult const no_history =
         evaluate(root, North, /*tricks_needed=*/1, no_history_source, pi, single_card_defender);

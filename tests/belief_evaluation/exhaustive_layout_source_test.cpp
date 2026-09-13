@@ -11,7 +11,7 @@
 
 #include <belief_evaluation/constrained_decomposition.hpp>
 #include <belief_evaluation/history_verification.hpp>
-#include <belief_evaluation/unconstrained_layout_source.hpp>
+#include <belief_evaluation/exhaustive_layout_source.hpp>
 #include <belief_evaluation/node.hpp>
 
 #include "test_support.hpp"
@@ -20,7 +20,7 @@ namespace be = dds::belief_evaluation;
 
 using be::ConstrainedSpaceStatus;
 using be::HistoryVerdict;
-using be::UnconstrainedLayoutSource;
+using be::ExhaustiveLayoutSource;
 using be::holding;
 using be::is_consistent;
 using be::layout_key;
@@ -188,30 +188,30 @@ namespace
     }
 }  // namespace
 
-// --- acceptance 1: size() matches hand-derived counts, several shapes -----
+// --- size() matches hand-derived counts, several shapes -------------------
 
-TEST(UnconstrainedLayoutSourceTest, SizeMatchesTheHandDerivedCountOnATenCardPool)
+TEST(ExhaustiveLayoutSourceTest, SizeMatchesTheHandDerivedCountOnATenCardPool)
 {
-    UnconstrainedLayoutSource const source(make_ten_card_pool_root(), North, /*seed=*/1u);
+    ExhaustiveLayoutSource const source(make_ten_card_pool_root(), North, /*seed=*/1u);
     EXPECT_EQ(source.size(), 252u);  // C(10, 5)
 }
 
-TEST(UnconstrainedLayoutSourceTest, SizeMatchesTheHandDerivedCountOnAMidTrickEnding)
+TEST(ExhaustiveLayoutSourceTest, SizeMatchesTheHandDerivedCountOnAMidTrickEnding)
 {
     // Pool is 5 diamonds (East 2, West 3, since East already played the
     // ace to the current trick) -- C(5, 2) = 10.
-    UnconstrainedLayoutSource const source(make_mid_trick_root(), North, /*seed=*/1u);
+    ExhaustiveLayoutSource const source(make_mid_trick_root(), North, /*seed=*/1u);
     EXPECT_EQ(source.size(), 10u);
 }
 
-TEST(UnconstrainedLayoutSourceTest, SizeMatchesTheHandDerivedCountOnATwoCardEnding)
+TEST(ExhaustiveLayoutSourceTest, SizeMatchesTheHandDerivedCountOnATwoCardEnding)
 {
     // One spade each -- C(2, 1) = 2.
-    UnconstrainedLayoutSource const source(make_small_single_suit_root(), North, /*seed=*/1u);
+    ExhaustiveLayoutSource const source(make_small_single_suit_root(), North, /*seed=*/1u);
     EXPECT_EQ(source.size(), 2u);
 }
 
-TEST(UnconstrainedLayoutSourceTest, AnEmptyDefenderPoolGivesTheDegenerateSizeOneSpace)
+TEST(ExhaustiveLayoutSourceTest, AnEmptyDefenderPoolGivesTheDegenerateSizeOneSpace)
 {
     // C(0, 0) = 1: the composed source's own version of the size() == 1
     // degenerate case -- each underlying piece already covers it in
@@ -219,7 +219,7 @@ TEST(UnconstrainedLayoutSourceTest, AnEmptyDefenderPoolGivesTheDegenerateSizeOne
     // keyed_permutation each have their own empty/k==n test), and this
     // closes the gap at the level a caller actually meets.
     Deal const root = make_empty_pool_root();
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/1u);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u);
     ASSERT_EQ(source.size(), 1u);
     EXPECT_TRUE(is_consistent(source.at(0), root, North, South));
     // The one member of a size-one space is the root's own split -- East
@@ -227,12 +227,12 @@ TEST(UnconstrainedLayoutSourceTest, AnEmptyDefenderPoolGivesTheDegenerateSizeOne
     EXPECT_EQ(layout_key(source.at(0), East), layout_key(root, East));
 }
 
-// --- acceptance 3: at(i) is a bijection over the whole space --------------
+// --- at(i) is a bijection over the whole space -----------------------------
 
-TEST(UnconstrainedLayoutSourceTest, AtIsABijectionOverTheWholeSpaceOnTheTenCardPool)
+TEST(ExhaustiveLayoutSourceTest, AtIsABijectionOverTheWholeSpaceOnTheTenCardPool)
 {
     Deal const root = make_ten_card_pool_root();
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/1u);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u);
     std::uint64_t const total = *source.size();
     ASSERT_EQ(total, 252u);
 
@@ -251,12 +251,12 @@ TEST(UnconstrainedLayoutSourceTest, AtIsABijectionOverTheWholeSpaceOnTheTenCardP
     EXPECT_EQ(keys.size(), total);  // every index produced a distinct layout
 }
 
-// --- acceptance 2: every layout is a legal position, whole space ----------
+// --- every layout is a legal position, whole space -------------------------
 
-TEST(UnconstrainedLayoutSourceTest, EveryLayoutOverTheWholeSpaceIsALegalPosition)
+TEST(ExhaustiveLayoutSourceTest, EveryLayoutOverTheWholeSpaceIsALegalPosition)
 {
     Deal const root = make_ten_card_pool_root();
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/1u);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u);
     std::uint64_t const total = *source.size();
 
     int const east_root_count = be::card_count(root, East);
@@ -275,11 +275,11 @@ TEST(UnconstrainedLayoutSourceTest, EveryLayoutOverTheWholeSpaceIsALegalPosition
     }
 }
 
-// --- acceptance 4: deterministic ---------------------------------------------
+// --- deterministic: same seed and root give the same order every time ------
 
-TEST(UnconstrainedLayoutSourceTest, AtIsDeterministicAcrossRepeatedCallsOnOneSource)
+TEST(ExhaustiveLayoutSourceTest, AtIsDeterministicAcrossRepeatedCallsOnOneSource)
 {
-    UnconstrainedLayoutSource const source(make_ten_card_pool_root(), North, /*seed=*/7u);
+    ExhaustiveLayoutSource const source(make_ten_card_pool_root(), North, /*seed=*/7u);
     for (std::uint64_t index = 0; index < 20; ++index)
     {
         Deal const first = source.at(index);
@@ -288,24 +288,24 @@ TEST(UnconstrainedLayoutSourceTest, AtIsDeterministicAcrossRepeatedCallsOnOneSou
     }
 }
 
-TEST(UnconstrainedLayoutSourceTest, AtIsDeterministicAcrossTwoSeparatelyConstructedSourcesWithTheSameSeed)
+TEST(ExhaustiveLayoutSourceTest, AtIsDeterministicAcrossTwoSeparatelyConstructedSourcesWithTheSameSeed)
 {
     Deal const root = make_ten_card_pool_root();
-    UnconstrainedLayoutSource const a(root, North, /*seed=*/7u);
-    UnconstrainedLayoutSource const b(root, North, /*seed=*/7u);
+    ExhaustiveLayoutSource const a(root, North, /*seed=*/7u);
+    ExhaustiveLayoutSource const b(root, North, /*seed=*/7u);
     for (std::uint64_t index = 0; index < 20; ++index)
     {
         EXPECT_EQ(layout_key(a.at(index), East), layout_key(b.at(index), East)) << "index=" << index;
     }
 }
 
-// --- acceptance 5: different seeds give different orders, same set -------
+// --- different seeds give different orders, same set -----------------------
 
-TEST(UnconstrainedLayoutSourceTest, TwoSeedsGiveDifferentOrdersOfTheSameSetOfLayouts)
+TEST(ExhaustiveLayoutSourceTest, TwoSeedsGiveDifferentOrdersOfTheSameSetOfLayouts)
 {
     Deal const root = make_ten_card_pool_root();
-    UnconstrainedLayoutSource const a(root, North, /*seed=*/1u);
-    UnconstrainedLayoutSource const b(root, North, /*seed=*/2u);
+    ExhaustiveLayoutSource const a(root, North, /*seed=*/1u);
+    ExhaustiveLayoutSource const b(root, North, /*seed=*/2u);
     std::uint64_t const total = *a.size();
     ASSERT_EQ(total, *b.size());
 
@@ -323,9 +323,9 @@ TEST(UnconstrainedLayoutSourceTest, TwoSeedsGiveDifferentOrdersOfTheSameSetOfLay
     EXPECT_EQ(set_a, set_b);  // same set of layouts
 }
 
-// --- acceptance 6: out-of-range behaviour, stated and pinned --------------
+// --- out-of-range behaviour, stated and pinned ------------------------------
 
-TEST(UnconstrainedLayoutSourceTest, OutOfRangeIndexIsAnAssertedCallerError)
+TEST(ExhaustiveLayoutSourceTest, OutOfRangeIndexIsAnAssertedCallerError)
 {
     // EXPECT_DEBUG_DEATH, not EXPECT_DEATH: the assert this pins is compiled
     // away under NDEBUG, so a death expectation that does not know about
@@ -333,22 +333,22 @@ TEST(UnconstrainedLayoutSourceTest, OutOfRangeIndexIsAnAssertedCallerError)
     // no longer dies, not because the check stopped working. EXPECT_DEBUG_DEATH
     // checks for death only in a build where assert is actually active, and
     // is a no-op verification (just runs the statement) otherwise.
-    UnconstrainedLayoutSource const source(make_small_single_suit_root(), North, /*seed=*/1u);
+    ExhaustiveLayoutSource const source(make_small_single_suit_root(), North, /*seed=*/1u);
     ASSERT_EQ(source.size(), 2u);
     EXPECT_DEBUG_DEATH({ source.at(2); }, "");
 }
 
 // --- an empty history is bit-identical to the pre-history constructor -----
 
-TEST(UnconstrainedLayoutSourceTest, AnEmptyHistoryIsBitIdenticalOverTheWholeSpace)
+TEST(ExhaustiveLayoutSourceTest, AnEmptyHistoryIsBitIdenticalOverTheWholeSpace)
 {
     // Prove it, not assume it: construct the same root two ways -- the
     // original three-argument call every existing call site still makes,
     // and the new five-argument form with an explicit empty history -- and
     // compare size() and every single at(i), not a sample of them.
     Deal const root = make_ten_card_pool_root();
-    UnconstrainedLayoutSource const original(root, North, /*seed=*/1u);
-    UnconstrainedLayoutSource const explicit_empty_history(
+    ExhaustiveLayoutSource const original(root, North, /*seed=*/1u);
+    ExhaustiveLayoutSource const explicit_empty_history(
         root, North, /*seed=*/1u, PlayTraceBin{}, /*opening_leader=*/North);
 
     ASSERT_EQ(original.size(), explicit_empty_history.size());
@@ -365,10 +365,10 @@ TEST(UnconstrainedLayoutSourceTest, AnEmptyHistoryIsBitIdenticalOverTheWholeSpac
 
 // --- a supplied history narrows the space, whole space verified -----------
 
-TEST(UnconstrainedLayoutSourceTest, AHistoryShrinksSizeToTheConstrainedCountAndNoLayoutLeaksTheVoidedSuit)
+TEST(ExhaustiveLayoutSourceTest, AHistoryShrinksSizeToTheConstrainedCountAndNoLayoutLeaksTheVoidedSuit)
 {
     auto const [root, history] = make_void_ending();
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
 
     ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent);
     ASSERT_EQ(source.constrained_space_status(), ConstrainedSpaceStatus::Ok);
@@ -392,11 +392,11 @@ TEST(UnconstrainedLayoutSourceTest, AHistoryShrinksSizeToTheConstrainedCountAndN
 
 // --- determinism holds with a history too ----------------------------------
 
-TEST(UnconstrainedLayoutSourceTest, AtIsDeterministicWithAHistoryAcrossTwoSeparatelyConstructedSources)
+TEST(ExhaustiveLayoutSourceTest, AtIsDeterministicWithAHistoryAcrossTwoSeparatelyConstructedSources)
 {
     auto const [root, history] = make_void_ending();
-    UnconstrainedLayoutSource const a(root, North, /*seed=*/7u, history, /*opening_leader=*/North);
-    UnconstrainedLayoutSource const b(root, North, /*seed=*/7u, history, /*opening_leader=*/North);
+    ExhaustiveLayoutSource const a(root, North, /*seed=*/7u, history, /*opening_leader=*/North);
+    ExhaustiveLayoutSource const b(root, North, /*seed=*/7u, history, /*opening_leader=*/North);
     ASSERT_EQ(a.size(), b.size());
     for (std::uint64_t index = 0; index < *a.size(); ++index)
     {
@@ -407,7 +407,7 @@ TEST(UnconstrainedLayoutSourceTest, AtIsDeterministicWithAHistoryAcrossTwoSepara
 // --- a rejected history and an empty constrained space are distinguishable,
 // and neither reads as "the source had nothing consistent in it" -----------
 
-TEST(UnconstrainedLayoutSourceTest, ARejectedHistoryIsReportedAndTheSpaceIsEmptyButDistinguishable)
+TEST(ExhaustiveLayoutSourceTest, ARejectedHistoryIsReportedAndTheSpaceIsEmptyButDistinguishable)
 {
     auto [root, history] = make_void_ending();
     // Duplicate a played card -- the same shape history_verification_test.cpp
@@ -416,7 +416,7 @@ TEST(UnconstrainedLayoutSourceTest, ARejectedHistoryIsReportedAndTheSpaceIsEmpty
     history.suit[3] = history.suit[0];
     history.rank[3] = history.rank[0];
 
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
 
     EXPECT_EQ(source.history_verdict(), HistoryVerdict::DuplicatedCard);
     // Not meaningful -- the decomposition was never attempted -- but still
@@ -426,7 +426,7 @@ TEST(UnconstrainedLayoutSourceTest, ARejectedHistoryIsReportedAndTheSpaceIsEmpty
     EXPECT_EQ(source.size(), 0u);
 }
 
-TEST(UnconstrainedLayoutSourceTest, AContradictoryHistoryIsAcceptedButLeavesAnEmptySpaceWithItsOwnCause)
+TEST(ExhaustiveLayoutSourceTest, AContradictoryHistoryIsAcceptedButLeavesAnEmptySpaceWithItsOwnCause)
 {
     // North leads a diamond, East discards a spade (void), South follows
     // suit, West discards a club (void too) -- both defenders void in
@@ -449,7 +449,7 @@ TEST(UnconstrainedLayoutSourceTest, AContradictoryHistoryIsAcceptedButLeavesAnEm
     root.trump = DDS_NOTRUMP;
     root.first = North;  // North's ace was highest; neither discard could win
 
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
 
     ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent);
     EXPECT_EQ(source.constrained_space_status(), ConstrainedSpaceStatus::ContradictoryVoid);

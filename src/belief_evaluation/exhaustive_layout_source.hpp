@@ -24,8 +24,7 @@ namespace dds::belief_evaluation
 /// narrows the space to the splits it makes possible, and nothing beyond
 /// that: a caller with *inferred* information -- what the bidding ruled out,
 /// say -- wanting a source reflecting it still supplies their own, tighter
-/// `LayoutSource`. The distinction is between fact and inference, not
-/// between "this source narrows" and "this source does not": this one now
+/// `LayoutSource`. The distinction is between fact and inference: this one
 /// applies exactly the narrowing the play establishes as fact, and a caller
 /// needs to know which side of that line their own information falls on.
 ///
@@ -65,7 +64,7 @@ namespace dds::belief_evaluation
 ///
 /// The evaluator itself takes no seed; randomness lives entirely in a
 /// source's own ordering, fixed here at construction.
-class UnconstrainedLayoutSource final : public LayoutSource
+class ExhaustiveLayoutSource final : public LayoutSource
 {
 public:
     /// `root` and `declarer` fix the space (via `defender_pool_decomposition`,
@@ -79,7 +78,7 @@ public:
     /// making a claim `verify_history` could reject, and this is the mode
     /// every call site written before this parameter existed still runs in.
     /// A non-empty history *is* checked; see `history_verdict()`.
-    UnconstrainedLayoutSource(
+    ExhaustiveLayoutSource(
         Deal const& root,
         int declarer,
         std::uint64_t seed,

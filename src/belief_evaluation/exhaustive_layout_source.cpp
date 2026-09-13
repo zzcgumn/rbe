@@ -1,4 +1,4 @@
-#include <belief_evaluation/unconstrained_layout_source.hpp>
+#include <belief_evaluation/exhaustive_layout_source.hpp>
 
 #include <cassert>
 #include <cstddef>
@@ -79,7 +79,7 @@ namespace
     }
 }
 
-UnconstrainedLayoutSource::UnconstrainedLayoutSource(
+ExhaustiveLayoutSource::ExhaustiveLayoutSource(
     Deal const& root, int declarer, std::uint64_t seed, PlayTraceBin const& history, int opening_leader)
     : root_(root)
     , seed_(seed)
@@ -112,7 +112,7 @@ UnconstrainedLayoutSource::UnconstrainedLayoutSource(
     // verdict_ (via history_verdict()) first.
 }
 
-auto UnconstrainedLayoutSource::size() const -> std::optional<std::uint64_t>
+auto ExhaustiveLayoutSource::size() const -> std::optional<std::uint64_t>
 {
     if (verdict_ != HistoryVerdict::Consistent)
     {
@@ -126,7 +126,7 @@ auto UnconstrainedLayoutSource::size() const -> std::optional<std::uint64_t>
     return constrained_space_size(decomposition_);
 }
 
-auto UnconstrainedLayoutSource::at(std::uint64_t index) const -> Deal
+auto ExhaustiveLayoutSource::at(std::uint64_t index) const -> Deal
 {
     std::uint64_t const total = *size();
     assert(index < total);
@@ -135,7 +135,7 @@ auto UnconstrainedLayoutSource::at(std::uint64_t index) const -> Deal
     // unranking would mean permuting a subset (not a thing), and
     // permuting the output space rather than the index space would
     // require materialising it -- this ordering is what keeps the whole
-    // construction O(1) memory. See UnconstrainedLayoutSource's own doxygen.
+    // construction O(1) memory. See ExhaustiveLayoutSource's own doxygen.
     std::uint64_t const permuted_index = keyed_permutation(index, total, seed_);
     std::vector<int> const free_subset = unrank_combination(
         permuted_index, static_cast<int>(decomposition_.free_cards.size()), decomposition_.fixed_seat_needed);
@@ -143,12 +143,12 @@ auto UnconstrainedLayoutSource::at(std::uint64_t index) const -> Deal
     return build_layout(root_, fixed_seat_, other_seat_, decomposition_, free_subset);
 }
 
-auto UnconstrainedLayoutSource::history_verdict() const -> HistoryVerdict
+auto ExhaustiveLayoutSource::history_verdict() const -> HistoryVerdict
 {
     return verdict_;
 }
 
-auto UnconstrainedLayoutSource::constrained_space_status() const -> ConstrainedSpaceStatus
+auto ExhaustiveLayoutSource::constrained_space_status() const -> ConstrainedSpaceStatus
 {
     return decomposition_.status;
 }

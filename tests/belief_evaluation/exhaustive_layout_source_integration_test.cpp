@@ -5,7 +5,7 @@
 #include <api/dds_data_types.hpp>
 #include <utility/constants.h>
 
-#include <belief_evaluation/unconstrained_layout_source.hpp>
+#include <belief_evaluation/exhaustive_layout_source.hpp>
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/node.hpp>
 
@@ -13,11 +13,11 @@
 
 // This file is the integration proof: everything tasks 02-06 built in
 // isolation, put through make_root and evaluate() together for the first
-// time. See UnconstrainedLayoutSource's own doxygen and defender_split_test.cpp
-// / keyed_permutation_test.cpp / unconstrained_layout_source_test.cpp for the
+// time. See ExhaustiveLayoutSource's own doxygen and defender_split_test.cpp
+// / keyed_permutation_test.cpp / exhaustive_layout_source_test.cpp for the
 // per-piece correctness claims this does not re-litigate.
 namespace be = dds::belief_evaluation;
-using be::UnconstrainedLayoutSource;
+using be::ExhaustiveLayoutSource;
 using be::DeclarerStrategy;
 using be::EvaluateOptions;
 using be::EvaluationResult;
@@ -52,7 +52,7 @@ namespace
     /// single safely-lower card (Eight); East and West share a seven-card
     /// pool {Two..Seven, Ten}. Which of the seven pool cards East ends up
     /// holding is the only freedom -- exactly the shape
-    /// defender_pool_decomposition and UnconstrainedLayoutSource are built to
+    /// defender_pool_decomposition and ExhaustiveLayoutSource are built to
     /// enumerate, on one suit for simplicity. East on lead, forced (its
     /// only card once a split is chosen); West forced too (its own lowest,
     /// never the one card it happens to also hold). Whoever holds Ten
@@ -70,7 +70,7 @@ namespace
         root.remainCards[North][Spades] = holding({Nine});
         root.remainCards[South][Spades] = holding({Eight});
         // East holds exactly one pool card at the root -- which one does
-        // not matter to the space UnconstrainedLayoutSource enumerates (only
+        // not matter to the space ExhaustiveLayoutSource enumerates (only
         // the pool and the count do), so any single choice fixes the same
         // C(7, 1) = 7 space; West gets the rest.
         root.remainCards[East][Spades] = holding({Two});
@@ -97,12 +97,12 @@ namespace
     }
 }  // namespace
 
-// --- acceptance 1: make_root with no sample_size holds the whole space ----
+// --- make_root with no sample_size holds the whole space -------------------
 
-TEST(UnconstrainedLayoutSourceIntegrationTest, MakeRootWithNoSampleSizeHoldsTheWholeSpace)
+TEST(ExhaustiveLayoutSourceIntegrationTest, MakeRootWithNoSampleSizeHoldsTheWholeSpace)
 {
     Deal const root = make_one_card_finesse_root();
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/1u);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u);
     ASSERT_EQ(source.size(), 7u);
 
     RootConstructionResult const result = make_root(root, North, /*tricks_needed=*/1, source);
@@ -112,11 +112,11 @@ TEST(UnconstrainedLayoutSourceIntegrationTest, MakeRootWithNoSampleSizeHoldsTheW
     EXPECT_EQ(result.outcome, ScanOutcome::SourceExhausted);
 }
 
-// --- acceptance 6: make_root's consistency filter drops nothing -----------
+// --- make_root's consistency filter drops nothing ---------------------------
 
-TEST(UnconstrainedLayoutSourceIntegrationTest, MakeRootsConsistencyFilterDropsNothing)
+TEST(ExhaustiveLayoutSourceIntegrationTest, MakeRootsConsistencyFilterDropsNothing)
 {
-    // Every candidate UnconstrainedLayoutSource offers is consistent by
+    // Every candidate ExhaustiveLayoutSource offers is consistent by
     // construction (decision 1) -- so the number make_root kept must equal
     // source.size() exactly. A non-zero drop count would mean
     // apply_defender_split is producing layouts inconsistent with the
@@ -124,7 +124,7 @@ TEST(UnconstrainedLayoutSourceIntegrationTest, MakeRootsConsistencyFilterDropsNo
     // rules out for this fixture's shape; re-asserted here as the sharper,
     // end-to-end version of that same claim.
     Deal const root = make_two_card_finesse_root();
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/3u);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/3u);
     ASSERT_EQ(source.size(), 21u);  // C(7, 2)
 
     RootConstructionResult const result = make_root(root, North, /*tricks_needed=*/1, source);
@@ -132,12 +132,12 @@ TEST(UnconstrainedLayoutSourceIntegrationTest, MakeRootsConsistencyFilterDropsNo
     EXPECT_EQ(result.node->layouts.size(), 21u);
 }
 
-// --- acceptance 2: a hand-derivable p_make ---------------------------------
+// --- a hand-derivable p_make -------------------------------------------------
 
-TEST(UnconstrainedLayoutSourceIntegrationTest, ExhaustiveEvaluationMatchesTheHandDerivedAnswer)
+TEST(ExhaustiveLayoutSourceIntegrationTest, ExhaustiveEvaluationMatchesTheHandDerivedAnswer)
 {
     Deal const root = make_one_card_finesse_root();
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/5u);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/5u);
     DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
 
     EvaluationResult const result =
@@ -151,13 +151,12 @@ TEST(UnconstrainedLayoutSourceIntegrationTest, ExhaustiveEvaluationMatchesTheHan
     EXPECT_NEAR(result.by_strategy.at(1u).p_make, 6.0 / 7.0, 1e-9);
 }
 
-// --- acceptance 3: sample_size >= size() reproduces the exhaustive answer,
-// bitwise ---------------------------------------------------------------
+// --- sample_size >= size() reproduces the exhaustive answer, bitwise -------
 
-TEST(UnconstrainedLayoutSourceIntegrationTest, SampleSizeAtLeastSizeReproducesExhaustiveBitwise)
+TEST(ExhaustiveLayoutSourceIntegrationTest, SampleSizeAtLeastSizeReproducesExhaustiveBitwise)
 {
     Deal const root = make_one_card_finesse_root();
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/9u);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/9u);
     DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
 
     EvaluationResult const exhaustive =
@@ -176,15 +175,15 @@ TEST(UnconstrainedLayoutSourceIntegrationTest, SampleSizeAtLeastSizeReproducesEx
     EXPECT_EQ(exhaustive.by_strategy.at(1u).p_make, capped.by_strategy.at(1u).p_make);
 }
 
-// --- acceptance 4: seeding changes the sample, not the space --------------
+// --- seeding changes the sample, not the space ------------------------------
 
-TEST(UnconstrainedLayoutSourceIntegrationTest, TwoSeedsGiveTheSameExhaustiveAnswer)
+TEST(ExhaustiveLayoutSourceIntegrationTest, TwoSeedsGiveTheSameExhaustiveAnswer)
 {
     Deal const root = make_one_card_finesse_root();
     DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
 
-    UnconstrainedLayoutSource const source_a(root, North, /*seed=*/11u);
-    UnconstrainedLayoutSource const source_b(root, North, /*seed=*/12u);
+    ExhaustiveLayoutSource const source_a(root, North, /*seed=*/11u);
+    ExhaustiveLayoutSource const source_b(root, North, /*seed=*/12u);
     EvaluationResult const a =
         evaluate(root, North, /*tricks_needed=*/1, source_a, pi, single_card_defender);
     EvaluationResult const b =
@@ -195,7 +194,7 @@ TEST(UnconstrainedLayoutSourceIntegrationTest, TwoSeedsGiveTheSameExhaustiveAnsw
     EXPECT_EQ(a.by_strategy.at(1u).p_make, b.by_strategy.at(1u).p_make);
 }
 
-TEST(UnconstrainedLayoutSourceIntegrationTest, TwoSeedsGiveDifferentSampledAnswersAtSmallM)
+TEST(ExhaustiveLayoutSourceIntegrationTest, TwoSeedsGiveDifferentSampledAnswersAtSmallM)
 {
     // Seeds 0 and 1, hand-picked (against this exact construction) so
     // that a sample of 6 of the 7 splits excludes the one losing case
@@ -207,8 +206,8 @@ TEST(UnconstrainedLayoutSourceIntegrationTest, TwoSeedsGiveDifferentSampledAnswe
     Deal const root = make_one_card_finesse_root();
     DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
 
-    UnconstrainedLayoutSource const source_a(root, North, /*seed=*/0u);
-    UnconstrainedLayoutSource const source_b(root, North, /*seed=*/1u);
+    ExhaustiveLayoutSource const source_a(root, North, /*seed=*/0u);
+    ExhaustiveLayoutSource const source_b(root, North, /*seed=*/1u);
     EvaluationResult const a = evaluate(
         root, North, /*tricks_needed=*/1, source_a, pi, single_card_defender,
         EvaluateOptions{.sampling = {.sample_size = 6u}});
@@ -223,9 +222,9 @@ TEST(UnconstrainedLayoutSourceIntegrationTest, TwoSeedsGiveDifferentSampledAnswe
     EXPECT_NEAR(b.by_strategy.at(1u).p_make, 5.0 / 6.0, 1e-9);  // seed 1's includes it
 }
 
-// --- acceptance 5: a sampled, replenishing run works end to end -----------
+// --- a sampled, replenishing run works end to end ---------------------------
 
-TEST(UnconstrainedLayoutSourceIntegrationTest, ASampledReplenishingRunAddsAtLeastOneLayout)
+TEST(ExhaustiveLayoutSourceIntegrationTest, ASampledReplenishingRunAddsAtLeastOneLayout)
 {
     // Not a measurement -- this asserts the mechanism runs, and
     // deliberately reports no timing. East holds two of the seven
@@ -233,7 +232,7 @@ TEST(UnconstrainedLayoutSourceIntegrationTest, ASampledReplenishingRunAddsAtLeas
     // nodes (grouped by East's own lead, its lower held card) thin enough
     // that at least one falls below replenish_below and finds more.
     Deal const root = make_two_card_finesse_root();
-    UnconstrainedLayoutSource const source(root, North, /*seed=*/4u);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/4u);
     ASSERT_EQ(source.size(), 21u);
     DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
 

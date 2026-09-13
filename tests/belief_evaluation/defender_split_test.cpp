@@ -255,7 +255,7 @@ TEST(BinomialCoefficientTest, NOutOfRangeIsAnAssertedCallerErrorNotAnOutOfBounds
     // table backing this function is sized to exactly that, so n outside
     // [0, 26] is not merely "a bigger answer", it is an index straight
     // past the end of the table. EXPECT_DEBUG_DEATH, not EXPECT_DEATH --
-    // see UnconstrainedLayoutSourceTest's own sibling assertion for why.
+    // see ExhaustiveLayoutSourceTest's own sibling assertion for why.
     EXPECT_DEBUG_DEATH({ binomial_coefficient(27, 0); }, "");
     EXPECT_DEBUG_DEATH({ binomial_coefficient(-1, 0); }, "");
 }
@@ -451,7 +451,7 @@ TEST(ApplyDefenderSplitTest, AnOutOfRangeIndexIsAnAssertedCallerErrorNotAnOutOfB
     // legality (see its own doxygen) -- but "trusts" must not mean "writes
     // wherever a bad index points". Both a negative and a too-large index
     // are asserted in a build where assert is active (EXPECT_DEBUG_DEATH,
-    // not EXPECT_DEATH -- see UnconstrainedLayoutSourceTest's own sibling
+    // not EXPECT_DEATH -- see ExhaustiveLayoutSourceTest's own sibling
     // assertion for why); the guard the assert pins is what stops the
     // out-of-bounds write in a build where it is not.
     Deal const root = make_two_suit_pool_root();
