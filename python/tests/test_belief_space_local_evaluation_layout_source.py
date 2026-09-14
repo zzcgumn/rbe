@@ -116,6 +116,24 @@ class TestConstruction(unittest.TestCase):
         with self.assertRaises(InvalidHistoryInputError):
             ExhaustiveLayoutSource(make_ten_card_pool_root(), DDS_HANDS_OUT_OF_RANGE, 1)
 
+    def test_more_than_26_defender_cards_raises_value_error(self) -> None:
+        # dict_to_deal only validates each remain_cards value's own bit
+        # shape (a valid 2..14 mask), not that the two defender hands
+        # together hold at most 26 cards -- the domain
+        # binomial_coefficient (and so both constrained_space_size/size()
+        # and unrank_combination/at()) is documented for. A malformed
+        # root can put more than that in the pool (here, all 52 cards
+        # nominally on one defender) with no other check catching it
+        # first; asserted in a debug build, silently wrong (0, or a wrong
+        # layout out of at()) once built -c opt. Rejected here, at
+        # construction, before either accessor could ever reach it.
+        root = empty_root()
+        for suit in range(4):
+            root["remain_cards"][East][suit] = 0x7FFC  # every rank 2..14 in every suit
+        with self.assertRaises(ValueError) as ctx:
+            ExhaustiveLayoutSource(root, North, 1)
+        self.assertIn("26", str(ctx.exception))
+
     def test_at_one_past_the_end_raises_index_error(self) -> None:
         # ExhaustiveLayoutSource::at()'s own C++ precondition is an
         # assert(index < total) -- a last resort against undefined

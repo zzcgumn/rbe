@@ -97,6 +97,38 @@ class TestOutOfRangeDeclarerRaises(unittest.TestCase):
         self.assertIn("declarer", str(ctx.exception))
 
 
+class TestOutOfRangeTricksNeededRaises(unittest.TestCase):
+    # already_made() is `state.tricks_won_by_declarer >= state.tricks_needed`,
+    # and tricks_won_by_declarer starts at 0 -- a negative tricks_needed
+    # therefore satisfies it before either strategy is ever called,
+    # silently returning p_make=1.0 for a nonsensical request rather than
+    # raising. 0 itself is legitimate (a real, if degenerate, "already
+    # made" case -- see
+    # test_belief_space_local_evaluation_results.py's own coverage of it),
+    # so the rejected range is strictly negative, plus above the most
+    # tricks any deal can have.
+    def test_negative_tricks_needed_raises_value_error(self) -> None:
+        root = make_one_card_finesse_root()
+        source = ExhaustiveLayoutSource(root, North, 1)
+        with self.assertRaises(ValueError) as ctx:
+            evaluate(root, North, -1, source, declarer_play, defender_play)
+        self.assertIn("tricks_needed", str(ctx.exception))
+
+    def test_tricks_needed_above_thirteen_raises_value_error(self) -> None:
+        root = make_one_card_finesse_root()
+        source = ExhaustiveLayoutSource(root, North, 1)
+        with self.assertRaises(ValueError) as ctx:
+            evaluate(root, North, 14, source, declarer_play, defender_play)
+        self.assertIn("tricks_needed", str(ctx.exception))
+
+    def test_zero_tricks_needed_is_still_accepted(self) -> None:
+        root = make_one_card_finesse_root()
+        source = ExhaustiveLayoutSource(root, North, 1)
+        result = evaluate(root, North, 0, source, declarer_play, defender_play)
+        self.assertNotIn("error", result)
+        self.assertEqual(result["by_strategy"][1]["p_make"], 1.0)
+
+
 class TestBitwiseMatchAgainstTheExhaustiveAnswer(unittest.TestCase):
     def test_reproduces_the_hand_derived_value_exactly(self) -> None:
         # Not approx: sample_size=0.9999... would be a different bug than

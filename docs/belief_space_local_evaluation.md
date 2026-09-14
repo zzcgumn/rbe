@@ -59,8 +59,9 @@ plausible-looking number rather than a crash or an exception.
 2. **An injected trick-count bound.** Both languages let a caller supply
    an upper bound on declarer's double-dummy trick count from a given
    layout, to let the evaluator skip subtrees that are provably dead. A
-   bound that is too high makes that cut fire when it should not,
-   silently reporting zero for a contract that in fact makes.
+   bound that is too *low* makes that cut fire when it should not,
+   silently reporting zero for a contract that in fact makes; a bound
+   that is too high only loses pruning, never soundness.
 3. **The declaration that δ is double-dummy optimal for trick count.**
    Separate from the bound above, deliberately: a caller may want a bound
    for instrumentation while δ does not actually qualify, and collapsing
@@ -178,6 +179,11 @@ class MySource(bsle.LayoutSource):
 ```
 
 ### π and δ
+
+The shape, not a working strategy -- `Card(0, 14)`/`Card(0, 2)` here are
+schematic fixed plays, legal only at a node that happens to hold exactly
+those cards, not derived from `state`/`layout` the way a real strategy
+must be:
 
 ```python
 def pi(state, view):

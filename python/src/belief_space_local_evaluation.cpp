@@ -5,6 +5,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <bit>
 #include <map>
 #include <memory>
 #include <optional>
@@ -405,15 +406,14 @@ auto probe_with_belief_view(
 }
 
 // pi and delta as Python callables, and the GIL discipline the whole
-// eventual evaluate() binding runs on: the GIL is released for the
-// duration of the C++ recursion (see probe_evaluate below) and acquired
-// in every trampoline that calls back into Python -- these two, and the
-// layout source's size()/at() (already GIL-acquiring). One
-// acquire site per callback *kind*, here, rather than one per call site
-// scattered through the recursion: a callback kind that forgets to
-// acquire is a callback kind that corrupts the interpreter the first time
-// two threads exercise it, and there must be exactly one place per kind
-// that could get this wrong.
+// evaluate() binding (below) runs on: the GIL is released for the
+// duration of the C++ recursion and acquired in every trampoline that
+// calls back into Python -- these two, and the layout source's
+// size()/at() (already GIL-acquiring). One acquire site per callback
+// *kind*, here, rather than one per call site scattered through the
+// recursion: a callback kind that forgets to acquire is a callback kind
+// that corrupts the interpreter the first time two threads exercise it,
+// and there must be exactly one place per kind that could get this wrong.
 //
 // A Python pi/delta author can reach for `random.choice` without a second
 // thought; DeclarerStrategy::play's own doxygen is emphatic that play
@@ -515,10 +515,11 @@ auto register_strategy_error_bindings(py::module_& module) -> void
 // bound (EvaluateOptions::bound) is a Python callable taking a deal dict
 // and returning a trick count, called under the same GIL discipline as
 // every other callback. Carries an obligation nothing here can validate:
-// a bound too high makes tier2_dead() fire when it should not and
-// silently reports zero for a contract that makes. Absent by default,
-// which leaves the cut disabled -- an empty std::function, matching
-// LayoutBound's own doxygen.
+// a bound too *low* makes tier2_dead() fire when it should not and
+// silently reports zero for a contract that makes; too high only loses
+// pruning, never soundness. Absent by default, which leaves the cut
+// disabled -- an empty std::function, matching LayoutBound's own
+// doxygen.
 auto make_layout_bound(py::object const& bound) -> be::LayoutBound
 {
     if (bound.is_none()) {
@@ -705,6 +706,20 @@ auto evaluate(
             std::to_string(DDS_HANDS - 1) + ")");
     }
 
+    // already_made() is tricks_won_by_declarer >= tricks_needed, and
+    // tricks_won_by_declarer starts at 0 -- a negative tricks_needed
+    // therefore satisfies it before either strategy is ever called,
+    // silently returning p_make=1.0 for a nonsensical request instead of
+    // raising. 0 itself is legitimate (a real, if degenerate, already-made
+    // case), so only strictly negative and above-the-most-tricks-in-a-deal
+    // are rejected.
+    constexpr int MaxTricksInADeal = 13;
+    if (tricks_needed < 0 || tricks_needed > MaxTricksInADeal) {
+        throw py::value_error(
+            "tricks_needed has invalid value " + std::to_string(tricks_needed) +
+            " (expected range 0.." + std::to_string(MaxTricksInADeal) + ")");
+    }
+
     // replenish_below without sample_size is documented in C++ as "treated
     // as absent too" -- a silent no-op, safe for a C++ caller who can read
     // that on the field. A Python caller cannot, and is far more likely to
@@ -777,14 +792,15 @@ auto evaluate(
 // "a constructor cannot report" accessor pattern. One exception type per
 // cause, rather than one type with a cause attribute, so
 // `except DuplicatedCardError` reads the way `except FileNotFoundError`
-// does. The full RootFailure/ValidationError hierarchy this eventually
-// joins is designed separately, in one sitting; this is the narrower scope
-// of a rejected history specifically, and none of it derives from that
-// later hierarchy's base yet -- deliberately, since a history failure must
-// never be catchable as the same thing as an ordinary evaluate() failure
-// (see this module's own history_verdict()/constrained_space_status()
-// ordering: the first non-Consistent verdict is the only one ever raised
-// for a given
+// does. Every cause here derives from BeliefSpaceLocalEvaluationError, the
+// one root every exception this module raises intentionally shares (see
+// register_root_exception_bindings) -- but deliberately *not* from
+// RootFailureError or ValidationError (the sibling families
+// register_root_failure_error_bindings/register_validation_error_bindings
+// build below): a history failure must never be catchable as the same
+// thing as an ordinary evaluate() failure (see this module's own
+// history_verdict()/constrained_space_status() ordering: the first
+// non-Consistent verdict is the only one ever raised for a given
 // construction, never both).
 std::map<be::HistoryVerdict, py::object> history_rejected_exceptions;
 std::map<be::ConstrainedSpaceStatus, py::object> constrained_space_exceptions;
@@ -948,6 +964,27 @@ public:
     }
 };
 
+// Mirrors defender_pool_decomposition's own count exactly (that function
+// itself is not exposed to Python, and library/src/ has no public
+// accessor for a pool's size in isolation) -- the total number of
+// distinct cards either defender's remain_cards claims. dict_to_deal only
+// validates each value's own bit shape, not that the two defender hands
+// together stay within the 26-card domain binomial_coefficient (and so
+// both size() and at()) is documented for; checked here, at this
+// binding's own boundary, before ExhaustiveLayoutSource's constructor
+// ever runs.
+auto defender_pool_card_count(Deal const& root, int declarer) -> int
+{
+    int const fixed_seat = (declarer + 1) % DDS_HANDS;
+    int const other_seat = (declarer + 3) % DDS_HANDS;
+    int count = 0;
+    for (int suit = 0; suit < DDS_SUITS; ++suit) {
+        unsigned const suit_pool = root.remainCards[fixed_seat][suit] | root.remainCards[other_seat][suit];
+        count += std::popcount(suit_pool);
+    }
+    return count;
+}
+
 auto register_layout_source_bindings(py::module_& module) -> void
 {
     py::enum_<be::HistoryVerdict>(module, "HistoryVerdict")
@@ -1035,6 +1072,28 @@ auto register_layout_source_bindings(py::module_& module) -> void
                 be::ConstrainedSpaceStatus const status = source.constrained_space_status();
                 if (status != be::ConstrainedSpaceStatus::Ok) {
                     raise_constrained_space_empty(status);
+                }
+                // Only reachable, and only needed, once both checks above
+                // have already passed: constrained_space_size (size())
+                // returns 0 without calling binomial_coefficient at all
+                // when status is not Ok, and a non-Ok status has already
+                // raised above -- so free_cards (not itself exposed to
+                // Python) is only ever what size()/at() actually read
+                // from this point on. See defender_pool_card_count's own
+                // comment for why pool_count, not free_cards.size()
+                // directly, is what is checked: free_cards is always a
+                // subset of the pool, so this bound is conservative
+                // (never a false negative) even though a caller whose
+                // voids happen to shrink free_cards back under 26 despite
+                // a larger pool is rejected too -- a root that shape is
+                // already not one a real 52-card deal could produce.
+                constexpr int MaxOutstandingCards = 26;
+                int const pool_count = defender_pool_card_count(root_deal, declarer);
+                if (pool_count > MaxOutstandingCards) {
+                    throw py::value_error(
+                        "root has " + std::to_string(pool_count) +
+                        " cards between the two defender hands (maximum " +
+                        std::to_string(MaxOutstandingCards) + ")");
                 }
                 return source;
             }),
@@ -1274,12 +1333,13 @@ auto register_converter_probes(py::module_& module) -> void
     // PyLayoutSource's C++ overrides at all: Python's own method
     // resolution finds a subclass's plain Python method first, regardless
     // of what the base class binds. The trampoline is only exercised when
-    // C++ code holds a LayoutSource& and calls through it -- which nothing
-    // yet does, since evaluate()/make_root() are a later task. These two
-    // probes are that C++-side consumer, standing in for it: they call
-    // through a be::LayoutSource const& exactly as the real evaluator
-    // eventually will, so a Python subclass is genuinely "consumed by
-    // C++", not merely called from Python. Testing support only.
+    // C++ code holds a LayoutSource& and calls through it -- which
+    // evaluate() (below) now does for real, through make_root(), for
+    // whatever source a caller passes it. These two probes call through a
+    // be::LayoutSource const& the same way, as an additional, narrower
+    // direct test of the trampoline itself -- a Python subclass "consumed
+    // by C++" in isolation, independent of evaluate()'s own much larger
+    // surface. Testing support only.
     module.def(
         "_layout_source_size_from_cpp",
         [](be::LayoutSource const& source) -> py::object {
