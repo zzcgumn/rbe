@@ -55,12 +55,18 @@ def _repo_root(start: Path | None = None) -> Path:
 
 
 def _parity_reference_binary() -> Path:
-    binary = (
-        _repo_root() / "library" / "tests" / "belief_evaluation" / "parity_reference"
-    )
-    if not binary.is_file():
-        raise AssertionError(f"parity_reference data dependency not found at {binary}")
-    return binary
+    # Bazel emits a cc_binary's runfile as the bare target name on
+    # Linux/macOS but with a .exe suffix on Windows -- this package has
+    # Windows rules (ci_windows_cppopts_test.py's own guard), so a helper
+    # that only ever probes the extensionless path leaves this test unable
+    # to find its own data dependency there. Prefer the bare name (it is
+    # what every other platform has); fall back to the suffixed one only
+    # when that is what actually exists.
+    root = _repo_root() / "library" / "tests" / "belief_evaluation" / "parity_reference"
+    for candidate in (root, root.with_suffix(".exe")):
+        if candidate.is_file():
+            return candidate
+    raise AssertionError(f"parity_reference data dependency not found at {root} or {root}.exe")
 
 
 def _run_parity_reference() -> dict:

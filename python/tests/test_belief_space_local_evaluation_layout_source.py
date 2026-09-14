@@ -116,6 +116,23 @@ class TestConstruction(unittest.TestCase):
         with self.assertRaises(InvalidHistoryInputError):
             ExhaustiveLayoutSource(make_ten_card_pool_root(), DDS_HANDS_OUT_OF_RANGE, 1)
 
+    def test_at_one_past_the_end_raises_index_error(self) -> None:
+        # ExhaustiveLayoutSource::at()'s own C++ precondition is an
+        # assert(index < total) -- a last resort against undefined
+        # behaviour, not a diagnostic, and a no-op entirely once built
+        # -c opt. Translated to a real IndexError at this binding boundary
+        # rather than exposed directly, the same reasoning
+        # list_to_history's own comment gives for why a boundary check
+        # exists at all here.
+        source = ExhaustiveLayoutSource(make_ten_card_pool_root(), North, 1)
+        with self.assertRaises(IndexError):
+            source.at(source.size())
+
+    def test_at_a_very_large_index_raises_index_error(self) -> None:
+        source = ExhaustiveLayoutSource(make_ten_card_pool_root(), North, 1)
+        with self.assertRaises(IndexError):
+            source.at(2**63)
+
     def test_out_of_range_opening_leader_raises_even_with_no_history(self) -> None:
         # The C++ constructor skips verify_history entirely when history is
         # empty (its own doxygen: "not checked against root at all"), so
@@ -188,6 +205,24 @@ class TestEveryHistoryVerdictCauseRaises(unittest.TestCase):
         root, history = make_void_ending()
         with self.assertRaises(InvalidHistoryInputError):
             ExhaustiveLayoutSource(root, DDS_HANDS_OUT_OF_RANGE, 1, history, North)
+
+    def test_invalid_input_out_of_range_suit_in_a_history_card(self) -> None:
+        # A malformed card inside history itself (as opposed to a bad
+        # declarer/opening_leader, above) is caught by list_to_history's
+        # own conversion, before ExhaustiveLayoutSource's constructor ever
+        # runs -- this must raise the same InvalidHistoryInputError a
+        # verify_history-derived InvalidInput does, not a bare ValueError
+        # with no relation to this type's own exception hierarchy.
+        root, _ = make_void_ending()
+        history = [Card(4, 2)]  # suit 4 is out of range (0..3)
+        with self.assertRaises(InvalidHistoryInputError):
+            ExhaustiveLayoutSource(root, North, 1, history, North)
+
+    def test_invalid_input_out_of_range_rank_in_a_history_card(self) -> None:
+        root, _ = make_void_ending()
+        history = [Card(Spades, 15)]  # rank 15 is out of range (2..14)
+        with self.assertRaises(InvalidHistoryInputError):
+            ExhaustiveLayoutSource(root, North, 1, history, North)
 
     def test_duplicated_card(self) -> None:
         history = [Card(Spades, 14), Card(Spades, 14)]

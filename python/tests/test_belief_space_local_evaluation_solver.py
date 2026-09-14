@@ -126,6 +126,25 @@ class TestCrossModuleHandover(unittest.TestCase):
         self.assertIsNotNone(bound)
 
 
+class TestOutOfRangeDeclarerRaises(unittest.TestCase):
+    # DoubleDummyBound stores declarer at construction (it is fixed for
+    # the object's whole lifetime -- see the type's own docstring) and
+    # as_bound() later indexes remainCards[declarer_] through
+    # tricks_remaining with no range check of its own. Validated here, the
+    # same way evaluate()'s own declarer argument is.
+    def test_negative_declarer_raises_value_error(self) -> None:
+        ctx = dds3.SolverContext()
+        with self.assertRaises(ValueError) as ctx_manager:
+            DoubleDummyBound(ctx, -1)
+        self.assertIn("declarer", str(ctx_manager.exception))
+
+    def test_declarer_at_dds_hands_raises_value_error(self) -> None:
+        ctx = dds3.SolverContext()
+        with self.assertRaises(ValueError) as ctx_manager:
+            DoubleDummyBound(ctx, 4)  # DDS_HANDS itself
+        self.assertIn("declarer", str(ctx_manager.exception))
+
+
 class TestDoubleDummyDefenderUsableAsDelta(unittest.TestCase):
     def test_reaches_the_same_answer_as_the_c_plus_plus_equivalent(self) -> None:
         # Mirrors ReproductionRunBTierOneAndTwoTogetherAgainstAQualifyingDelta:

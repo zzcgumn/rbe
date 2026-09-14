@@ -89,17 +89,38 @@ auto history_to_list(PlayTraceBin const& history) -> py::list
     return result;
 }
 
+// Forward-declared: raises InvalidHistoryInputError (defined alongside
+// history_rejected_exceptions, in register_history_error_bindings, well
+// after this point in the file) with a caller-supplied detail message.
+// list_to_history needs this rather than register_history_error_bindings'
+// own generic raise_history_rejected(HistoryVerdict::InvalidInput): a
+// malformed card names which index and which field, detail
+// history_verdict_message's one fixed string for the whole verdict cannot
+// carry.
+[[noreturn]] auto raise_invalid_history_input(std::string const& detail) -> void;
+
 // Validated at this boundary rather than left to the C++ side's own
 // asserted-or-clamped defences: those exist as a last resort against
 // undefined behaviour, not as a diagnostic, and a clamped card would
 // silently change which suit or rank was played. A Python caller can build
 // a malformed sequence far more easily than a C++ one can.
+//
+// Raises InvalidHistoryInputError, not a bare ValueError: this is exactly
+// the shape of thing verify_history's own HistoryVerdict::InvalidInput
+// names ("history is malformed... or some card's own suit/rank is out of
+// range") when reached from ExhaustiveLayoutSource's constructor, and a
+// caller catching that type around construction must not have a malformed
+// *card* slip past it just because this earlier check caught it first
+// instead of verify_history. InvalidHistoryInputError is itself a
+// ValueError (see register_history_error_bindings), so this is a strict
+// widening of what a caller who only wrote `except ValueError` already
+// catches, not a narrowing.
 auto list_to_history(py::sequence const& cards) -> PlayTraceBin
 {
     constexpr std::size_t deck_size = DDS_SUITS * 13;
 
     if (cards.size() > deck_size) {
-        throw py::value_error(
+        raise_invalid_history_input(
             "history has " + std::to_string(cards.size()) +
             " cards (maximum " + std::to_string(deck_size) + ")");
     }
@@ -109,13 +130,13 @@ auto list_to_history(py::sequence const& cards) -> PlayTraceBin
     for (std::size_t i = 0; i < cards.size(); ++i) {
         auto const& card = py::cast<be::Card const&>(cards[i]);
         if (card.suit < 0 || card.suit >= DDS_SUITS) {
-            throw py::value_error(
+            raise_invalid_history_input(
                 "history[" + std::to_string(i) + "].suit has invalid value " +
                 std::to_string(card.suit) + " (expected range 0.." +
                 std::to_string(DDS_SUITS - 1) + ")");
         }
         if (card.rank < 2 || card.rank > 14) {
-            throw py::value_error(
+            raise_invalid_history_input(
                 "history[" + std::to_string(i) + "].rank has invalid value " +
                 std::to_string(card.rank) + " (expected range 2..14)");
         }
@@ -314,7 +335,8 @@ private:
 
 auto register_belief_view_bindings(py::module_& module) -> void
 {
-    expired_belief_view_error = py::exception<void>(module, "ExpiredBeliefViewError");
+    expired_belief_view_error =
+        py::exception<void>(module, "ExpiredBeliefViewError", belief_space_local_evaluation_error);
 
     py::class_<PyBeliefEntry>(
         module,
@@ -669,6 +691,20 @@ auto evaluate(
     std::optional<std::uint64_t> const& replenish_below,
     py::object const& state_key) -> py::dict
 {
+    // Checked here, unconditionally, before declarer ever reaches the C++
+    // evaluator: make_root() indexes remainCards[declarer] (and, via
+    // dummy = (declarer + 2) % DDS_HANDS, remainCards[dummy] too) with no
+    // range check of its own -- library/src/ has no RootFailure cause for
+    // this, since it is not a runtime condition on a valid root, it is a
+    // malformed argument, the same class of thing ExhaustiveLayoutSource's
+    // own constructor pre-checks declarer/opening_leader for before ever
+    // reaching derive_voids.
+    if (declarer < 0 || declarer >= DDS_HANDS) {
+        throw py::value_error(
+            "declarer has invalid value " + std::to_string(declarer) + " (expected range 0.." +
+            std::to_string(DDS_HANDS - 1) + ")");
+    }
+
     // replenish_below without sample_size is documented in C++ as "treated
     // as absent too" -- a silent no-op, safe for a C++ caller who can read
     // that on the field. A Python caller cannot, and is far more likely to
@@ -702,11 +738,15 @@ auto evaluate(
 
     be::EvaluationResult result;
     {
-        // Released for the whole recursion: every solver call inside it
-        // (none yet -- the solver seam is a later task) runs without it,
-        // and every trampoline above (pi's two callbacks, delta, bound,
-        // and the layout source's size()/at()) reacquires it only for as
-        // long as it runs.
+        // Released for the whole recursion: every trampoline above (pi's
+        // two callbacks, delta, bound, and the layout source's
+        // size()/at()) reacquires it only for as long as it runs. When
+        // delta or bound is a DoubleDummyDefender/DoubleDummyBound, its
+        // own __call__ nests a second, narrower release around just the
+        // solve inside the acquire this trampoline already holds -- not a
+        // second independent release of this one, so a solver call still
+        // runs without the GIL, which is the whole point of releasing it
+        // here in the first place.
         py::gil_scoped_release const release;
         result = be::evaluate(root_deal, declarer, tricks_needed, source, strategy, delta_fn, options);
     }
@@ -840,6 +880,18 @@ auto register_history_error_bindings(py::module_& module) -> void
 [[noreturn]] auto raise_history_rejected(be::HistoryVerdict verdict) -> void
 {
     py::set_error(history_rejected_exceptions.at(verdict), history_verdict_message(verdict).c_str());
+    throw py::error_already_set();
+}
+
+// Defined here (forward-declared at list_to_history, well above this
+// point) since it reads the same history_rejected_exceptions map
+// raise_history_rejected does -- one InvalidHistoryInputError object,
+// reached two ways: verify_history's own InvalidInput verdict, at a fixed
+// message, or a malformed card caught earlier by list_to_history itself,
+// at a message naming the specific index and field.
+[[noreturn]] auto raise_invalid_history_input(std::string const& detail) -> void
+{
+    py::set_error(history_rejected_exceptions.at(be::HistoryVerdict::InvalidInput), detail.c_str());
     throw py::error_already_set();
 }
 
@@ -1000,6 +1052,19 @@ auto register_layout_source_bindings(py::module_& module) -> void
         .def(
             "at",
             [](be::ExhaustiveLayoutSource const& self, std::uint64_t index) {
+                // ExhaustiveLayoutSource::at()'s own precondition is an
+                // assert(index < total) -- a last resort against
+                // undefined behaviour once built -c opt (where it is
+                // compiled out entirely), not a diagnostic. Checked here
+                // instead, so an out-of-range index is a Python
+                // IndexError on every build, not an aborted debug
+                // process or silent undefined behaviour in release.
+                std::optional<std::uint64_t> const total = self.size();
+                if (! total.has_value() || index >= *total) {
+                    throw py::index_error(
+                        "index " + std::to_string(index) + " is out of range for a source of size " +
+                        std::to_string(total.value_or(0)));
+                }
                 return dds3_python::deal_to_dict(self.at(index));
             })
         .def(
@@ -1168,7 +1233,22 @@ auto register_solver_seam_bindings(py::module_& module) -> void
         "delta_is_double_dummy_optimal=True to evaluate() and pair this\n"
         "with a DoubleDummyDefender, the intended sound configuration.\n\n"
         "ctx is not owned, the same as DoubleDummyDefender's own contract.")
-        .def(py::init<SolverContext&, int>(), py::arg("ctx"), py::arg("declarer"), py::keep_alive<1, 2>())
+        .def(
+            py::init([](SolverContext& ctx, int declarer) {
+                // declarer is fixed for this object's whole lifetime (see
+                // the docstring above), and as_bound() later indexes
+                // remainCards[declarer_] through tricks_remaining with no
+                // range check of its own -- checked here, once, at
+                // construction, rather than left unchecked the way
+                // storing it would otherwise leave it.
+                if (declarer < 0 || declarer >= DDS_HANDS) {
+                    throw py::value_error(
+                        "declarer has invalid value " + std::to_string(declarer) +
+                        " (expected range 0.." + std::to_string(DDS_HANDS - 1) + ")");
+                }
+                return PyDoubleDummyBound(ctx, declarer);
+            }),
+            py::arg("ctx"), py::arg("declarer"), py::keep_alive<1, 2>())
         .def("__call__", &PyDoubleDummyBound::call, py::arg("layout"));
 }
 

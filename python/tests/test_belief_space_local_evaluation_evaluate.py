@@ -73,6 +73,30 @@ class TestTheEntryPointWorks(unittest.TestCase):
         self.assertIn(1, result["by_strategy"])
 
 
+class TestOutOfRangeDeclarerRaises(unittest.TestCase):
+    # evaluate()'s own declarer is forwarded to the C++ evaluator's
+    # make_root(), which indexes remainCards[declarer] while filtering
+    # candidates with no range check of its own -- library/src/ has
+    # nothing that reports this as a cause the way a rejected history or a
+    # RootFailure does, so an out-of-range value here is undefined
+    # behaviour unless this binding boundary catches it first, the same
+    # way ExhaustiveLayoutSource's own constructor pre-checks declarer
+    # before ever reaching derive_voids.
+    def test_negative_declarer_raises_value_error(self) -> None:
+        root = make_one_card_finesse_root()
+        source = ExhaustiveLayoutSource(root, North, 1)
+        with self.assertRaises(ValueError) as ctx:
+            evaluate(root, -1, 1, source, declarer_play, defender_play)
+        self.assertIn("declarer", str(ctx.exception))
+
+    def test_declarer_at_dds_hands_raises_value_error(self) -> None:
+        root = make_one_card_finesse_root()
+        source = ExhaustiveLayoutSource(root, North, 1)
+        with self.assertRaises(ValueError) as ctx:
+            evaluate(root, 4, 1, source, declarer_play, defender_play)  # DDS_HANDS itself
+        self.assertIn("declarer", str(ctx.exception))
+
+
 class TestBitwiseMatchAgainstTheExhaustiveAnswer(unittest.TestCase):
     def test_reproduces_the_hand_derived_value_exactly(self) -> None:
         # Not approx: sample_size=0.9999... would be a different bug than

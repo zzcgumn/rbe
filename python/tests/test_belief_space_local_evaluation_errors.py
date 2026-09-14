@@ -11,6 +11,7 @@ from belief_space_local_evaluation import DuplicatedCardError
 from belief_space_local_evaluation import evaluate
 from belief_space_local_evaluation import EvaluationCallback
 from belief_space_local_evaluation import ExhaustiveLayoutSource
+from belief_space_local_evaluation import ExpiredBeliefViewError
 from belief_space_local_evaluation import HistoryRejectedError
 from belief_space_local_evaluation import InvalidHistoryInputError
 from belief_space_local_evaluation import LayoutSource
@@ -105,6 +106,7 @@ class TestTheHierarchyShape(unittest.TestCase):
             ConstrainedSpaceEmptyError,
             RootFailureError,
             CallbackContractError,
+            ExpiredBeliefViewError,
         ):
             self.assertTrue(issubclass(cls, BeliefSpaceLocalEvaluationError), cls)
 
