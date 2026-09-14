@@ -96,6 +96,94 @@ class TestDeclarerAndDefenderCallables(unittest.TestCase):
             self.assertIsInstance(value, float)
 
 
+class TestObservationStateExposesRanks(unittest.TestCase):
+    # ObservationState's own docstring claims every field a C++ strategy
+    # may condition on directly is bound -- ranks (a RankMap) is one of
+    # those fields, the precomputed absolute/relative rank mapping over
+    # the node's outstanding pool. Captured from a real pi call, not
+    # constructed by hand: nothing constructs a RankMap from Python either.
+    def test_aggr_matches_known_holdings_own_pool_at_the_same_node(self) -> None:
+        # Cross-checked against known_holdings from the very same call
+        # (both are derived from the same node Deal -- see
+        # known_holdings' own doxygen on a defender's entry already being
+        # the union pool) rather than hand-simulated from the root: pi is
+        # not the root's own first call here (first=East, a defender
+        # leads), so the pool ranks sees already has one card removed
+        # by the time pi first runs, and re-deriving that by hand would
+        # only be re-testing the recursion, not RankMap.
+        captured = {}
+
+        def pi(state, view):
+            del view
+            captured["ranks"] = state.ranks
+            captured["known_holdings"] = state.known_holdings
+            seat = (state.first + len(state.history)) % 4
+            return lowest_card_in(state.known_holdings["remain_cards"][seat])
+
+        root = make_one_card_finesse_root()
+        source = ExhaustiveLayoutSource(root, North, 5)
+        evaluate(root, North, 1, source, pi, defender_play)
+
+        ranks = captured["ranks"]
+        remain_cards = captured["known_holdings"]["remain_cards"]
+        for suit in (Spades, Hearts, Diamonds, Clubs):
+            pool_bits = 0
+            for hand in range(4):
+                pool_bits |= remain_cards[hand][suit]
+            expected_aggr = (pool_bits >> 2) & 0x1FFF
+            self.assertEqual(ranks.aggr[suit], expected_aggr, f"suit {suit}")
+        # Not vacuous: this fixture is spades-only, so a real, nonzero
+        # pool is actually being compared for at least one suit.
+        self.assertNotEqual(ranks.aggr[Spades], 0)
+
+    def test_to_relative_and_to_absolute_round_trip_the_top_card(self) -> None:
+        captured = {}
+
+        def pi(state, view):
+            del view
+            captured["ranks"] = state.ranks
+            captured["known_holdings"] = state.known_holdings
+            seat = (state.first + len(state.history)) % 4
+            return lowest_card_in(state.known_holdings["remain_cards"][seat])
+
+        root = make_one_card_finesse_root()
+        source = ExhaustiveLayoutSource(root, North, 5)
+        evaluate(root, North, 1, source, pi, defender_play)
+
+        ranks = captured["ranks"]
+        remain_cards = captured["known_holdings"]["remain_cards"]
+        pool_bits = 0
+        for hand in range(4):
+            pool_bits |= remain_cards[hand][Spades]
+        highest_outstanding = max(r for r in range(2, 15) if pool_bits & (1 << r))
+
+        self.assertEqual(ranks.to_relative(Spades, highest_outstanding), 1)
+        self.assertEqual(ranks.to_absolute(Spades, 1), highest_outstanding)
+        # The Ace is never outstanding in this small fixture, whatever
+        # node pi happens to be called at.
+        self.assertEqual(ranks.to_relative(Spades, 14), 0)
+
+    def test_out_of_range_suit_or_rank_returns_zero_not_an_error(self) -> None:
+        # RankMap's own doxygen: out-of-range input is "not outstanding",
+        # not a validation error -- matches the type's own C++ contract.
+        captured = {}
+
+        def pi(state, view):
+            del view
+            captured["ranks"] = state.ranks
+            seat = (state.first + len(state.history)) % 4
+            return lowest_card_in(state.known_holdings["remain_cards"][seat])
+
+        root = make_one_card_finesse_root()
+        source = ExhaustiveLayoutSource(root, North, 5)
+        evaluate(root, North, 1, source, pi, defender_play)
+
+        ranks = captured["ranks"]
+        self.assertEqual(ranks.to_relative(-1, 5), 0)
+        self.assertEqual(ranks.to_relative(Spades, 1), 0)
+        self.assertEqual(ranks.to_absolute(Spades, 0), 0)
+
+
 class TestStateKey(unittest.TestCase):
     # evaluate()'s own doxygen: "state_key is never called: there is no
     # cache yet." So the only thing observable from Python is that

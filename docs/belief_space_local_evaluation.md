@@ -135,12 +135,18 @@ import belief_space_local_evaluation as bsle
 - **A deal** crosses as a plain `dict`, the same shape `dds3` already
   documents: `trump`, `first`, `remain_cards` (a 4×4 array of bitmasks,
   `[hand][suit]`), `current_trick_suit`, `current_trick_rank`.
-- **`bsle.ObservationState`** — read-only, handed to π at every call:
-  `trump`, `first`, `history` (a list of `Card`, in order), `declarer`,
-  `tricks_needed`, `tricks_won_by_declarer`, `known_holdings` (a deal
-  dict; declarer's and dummy's entries are exact, a defender's entry is
-  the **union pool** of both defenders' outstanding cards, not that
-  defender's own actual holding).
+- **`bsle.ObservationState`** — read-only, handed to π's `play` at every
+  call: `trump`, `first`, `history` (a list of `Card`, in order),
+  `declarer`, `tricks_needed`, `tricks_won_by_declarer`, `known_holdings`
+  (a deal dict; declarer's and dummy's entries are exact, a defender's
+  entry is the **union pool** of both defenders' outstanding cards, not
+  that defender's own actual holding), and `ranks` (a `bsle.RankMap`:
+  `.aggr`, `.to_relative(suit, rank)`, `.to_absolute(suit, ordinal)` — the
+  precomputed rank mapping a C++ strategy conditions on directly; a Card
+  is always absolute, so a strategy reasoning in relative terms converts
+  with `to_absolute` before returning one). `play` and `state_key` share
+  this same type, but `state_key` is not itself called yet — see
+  obligation 1 above.
 - **`bsle.BeliefView`** — what π reasons over: `entries` (a sequence of
   `BeliefEntry`, each with `.layout`, a deal dict, and `.posterior`),
   `is_sample`, `space_size`. **Valid only for the duration of the call it
@@ -251,10 +257,12 @@ from `ExhaustiveLayoutSource`'s own constructor, under a **separate**
 family (`HistoryRejectedError`/`ConstrainedSpaceEmptyError`, still under
 the same root) — never catchable as the same thing as an ordinary
 `NoLayoutSurvivedError`, since the fix in each case is different (fix your
-history, versus fix your source). A Python exception raised inside π, δ,
-`state_key`, or a Python source's `size()`/`at()` propagates out of
+history, versus fix your source). A Python exception raised inside π
+(`play`), δ, or a Python source's `size()`/`at()` propagates out of
 `evaluate()` unchanged — own type, own message — rather than being
-converted into one of this module's own exceptions.
+converted into one of this module's own exceptions. `state_key` is not
+listed here: it is never called yet (there is no cache to key), so it has
+no exception to propagate — see obligation 1 above.
 
 ### The solver seam
 
@@ -283,6 +291,13 @@ class); `SpreadPolicy.AllOptimal` spreads over every tied-for-best
 candidate's own group, across suits — those cards are equally *good* but
 not otherwise equivalent, so this is a more advanced justification, not a
 drop-in alternative.
+
+**A `SolverContext` is not thread-safe** (its own C++ contract: one
+context per thread), and `DoubleDummyDefender`/`DoubleDummyBound` release
+the GIL around the actual solve — so, unlike most of this module, two
+Python threads really do run concurrently here if they share one. Build
+one `SolverContext` (and one `DoubleDummyDefender`/`DoubleDummyBound`) per
+worker; do not share either across threads.
 
 ### Where Python is deliberately stricter than C++
 

@@ -6,6 +6,7 @@ from belief_space_local_evaluation import CardIllegalForTrickError
 from belief_space_local_evaluation import CardNotHeldError
 from belief_space_local_evaluation import CallbackContractError
 from belief_space_local_evaluation import ConstrainedSpaceEmptyError
+from belief_space_local_evaluation import ContradictoryVoidError
 from belief_space_local_evaluation import DistributionEmptyError
 from belief_space_local_evaluation import DuplicatedCardError
 from belief_space_local_evaluation import evaluate
@@ -132,6 +133,21 @@ class TestTheHierarchyShape(unittest.TestCase):
         self.assertFalse(issubclass(NoLayoutSurvivedError, ValueError))
         self.assertFalse(issubclass(ScanBudgetExhaustedError, ValueError))
         self.assertFalse(issubclass(SourceNotEnumerableError, ValueError))
+
+    def test_the_two_multiple_base_exceptions_report_this_extensions_own_module(self) -> None:
+        # InvalidHistoryInputError and SampleSizeZeroError are the two
+        # exceptions built by hand (make_exception_with_bases, via
+        # builtins.type directly) rather than by py::exception<>, since
+        # pybind11's own helper supports only one base. py::exception<>
+        # sets __module__ to the extension itself automatically; the
+        # hand-rolled path must do the same explicitly, or these two
+        # report a meaningless __module__ (importlib's own bootstrap
+        # machinery, an accident of how the call reaches the type builtin,
+        # not this extension) while every other exception here reports
+        # the real one.
+        expected = ContradictoryVoidError.__module__  # a py::exception<>-built one, for comparison
+        self.assertEqual(InvalidHistoryInputError.__module__, expected)
+        self.assertEqual(SampleSizeZeroError.__module__, expected)
 
 
 class TestEveryRootFailureRaises(unittest.TestCase):

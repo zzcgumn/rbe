@@ -151,6 +151,23 @@ class TestConstruction(unittest.TestCase):
         with self.assertRaises(IndexError):
             source.at(2**63)
 
+    def test_at_an_index_beyond_uint64_raises_index_error_not_overflow_error(self) -> None:
+        # 2**64 does not fit in the C++ uint64_t at() itself takes -- if
+        # this binding cast the raw argument to uint64_t before its own
+        # range check ran, pybind11's own argument conversion would raise
+        # OverflowError here, before ever reaching that check.
+        source = ExhaustiveLayoutSource(make_ten_card_pool_root(), North, 1)
+        with self.assertRaises(IndexError):
+            source.at(2**64)
+
+    def test_at_a_negative_index_raises_index_error_not_overflow_error(self) -> None:
+        # Same failure mode as the above, the more likely way a caller
+        # actually reaches it: a negative index has no valid uint64_t
+        # representation at all.
+        source = ExhaustiveLayoutSource(make_ten_card_pool_root(), North, 1)
+        with self.assertRaises(IndexError):
+            source.at(-1)
+
     def test_out_of_range_opening_leader_raises_even_with_no_history(self) -> None:
         # The C++ constructor skips verify_history entirely when history is
         # empty (its own doxygen: "not checked against root at all"), so

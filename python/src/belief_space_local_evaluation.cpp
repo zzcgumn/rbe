@@ -65,7 +65,17 @@ py::object belief_space_local_evaluation_error;
 auto make_exception_with_bases(py::module_& module, char const* name, py::tuple const& bases) -> py::object
 {
     py::object const type_builtin = py::module_::import("builtins").attr("type");
-    py::object const cls = type_builtin(name, bases, py::dict());
+    // py::exception<> sets __module__ to the extension itself
+    // automatically; this hand-rolled path (needed at all only because
+    // py::exception<> supports a single base) must do the same
+    // explicitly, in the namespace dict passed to type() -- Python's own
+    // type() does not infer it from the caller the way a `class` statement
+    // does, and without this it defaults to whatever module the type()
+    // call itself happens to be reached through (importlib's own bootstrap
+    // machinery, observed directly), not this extension.
+    py::dict ns;
+    ns["__module__"] = module.attr("__name__");
+    py::object const cls = type_builtin(name, bases, ns);
     module.attr(name) = cls;
     return cls;
 }
@@ -171,6 +181,41 @@ auto register_card_bindings(py::module_& module) -> void
         });
 }
 
+// A value type -- aggr plus two pure functions reading only it and static
+// lookup tables, no ownership or per-call lifetime the way BeliefView has
+// -- so bound the same way Card is: read-only, freely copyable, no
+// validity flag needed. Read-only for the same reason ObservationState
+// itself is: a strategy receives one, nothing constructs one from Python.
+auto register_rank_map_bindings(py::module_& module) -> void
+{
+    py::class_<be::RankMap>(
+        module,
+        "RankMap",
+        "The outstanding-card pool and the absolute/relative rank mapping\n"
+        "over it, for one belief-evaluation node -- ObservationState.ranks.\n"
+        "Layout-invariant across the node: every layout shares the same\n"
+        "outstanding cards per suit, differing only in how the defenders'\n"
+        "cards are split.")
+        .def_property_readonly(
+            "aggr",
+            [](be::RankMap const& self) {
+                return py::make_tuple(self.aggr[0], self.aggr[1], self.aggr[2], self.aggr[3]);
+            },
+            "Outstanding pool per suit, one unsigned int each -- the\n"
+            "compacted convention (bit rank-2), not remain_cards' own\n"
+            "(bit rank). Four-element tuple, indexed by suit.")
+        .def(
+            "to_relative", &be::RankMap::to_relative, py::arg("suit"), py::arg("rank"),
+            "Absolute rank -> relative, 1 = highest, 0 if not outstanding\n"
+            "(also 0, not an error, for a suit/rank out of range).")
+        .def(
+            "to_absolute", &be::RankMap::to_absolute, py::arg("suit"), py::arg("ordinal"),
+            "Relative ordinal (1 = highest) -> absolute rank (also 0 for a\n"
+            "suit/ordinal out of range). The conversion play() needs before\n"
+            "returning a Card, if it reasoned in relative terms -- Card's\n"
+            "own rank is always absolute.");
+}
+
 auto register_observation_state_bindings(py::module_& module) -> void
 {
     // Read-only: a strategy receives one, nothing constructs one from
@@ -180,8 +225,10 @@ auto register_observation_state_bindings(py::module_& module) -> void
         module,
         "ObservationState",
         "The commonly-known part of a belief-evaluation node, handed to a\n"
-        "declarer strategy's play() and state_key() at every call: identical\n"
-        "across every layout of the current belief space.")
+        "declarer strategy's play() at every call (and, in the type's own\n"
+        "shape, to state_key() too -- but state_key() is never actually\n"
+        "called yet, there is no cache to key): identical across every\n"
+        "layout of the current belief space.")
         .def_property_readonly(
             "trump", [](be::ObservationState const& self) { return self.trump; })
         .def_property_readonly(
@@ -203,7 +250,14 @@ auto register_observation_state_bindings(py::module_& module) -> void
             [](be::ObservationState const& self) { return dds3_python::deal_to_dict(self.known_holdings); },
             "A deal dict. declarer's and dummy's entries are exact; a\n"
             "defender's entry is the **union pool** of both defenders'\n"
-            "outstanding cards, not that defender's own actual holding.");
+            "outstanding cards, not that defender's own actual holding.")
+        .def_property_readonly(
+            "ranks", [](be::ObservationState const& self) { return self.ranks; },
+            "A RankMap -- the precomputed absolute/relative rank mapping\n"
+            "over this node's outstanding pool, the same one a C++ strategy\n"
+            "conditions on directly. A fresh copy per access, like every\n"
+            "other property here; RankMap is a plain value with no\n"
+            "lifetime of its own to protect.");
 }
 
 // BeliefView holds a std::span into caller-owned scratch and node.layouts,
@@ -353,8 +407,10 @@ auto register_belief_view_bindings(py::module_& module) -> void
         module,
         "BeliefView",
         "What a declarer strategy reasons over: the belief space as\n"
-        "declarer currently knows it, handed to play() and state_key() at\n"
-        "every call. Valid only for the duration of that one call --\n"
+        "declarer currently knows it, handed to play() at every call (and,\n"
+        "in the type's own shape, to state_key() too -- but state_key() is\n"
+        "never actually called yet, there is no cache to key). Valid only\n"
+        "for the duration of that one call --\n"
         "accessing any property afterwards raises ExpiredBeliefViewError,\n"
         "and so does accessing an entry obtained from it (a *layout*\n"
         "already read from an entry is a plain copy and remains valid\n"
@@ -970,9 +1026,13 @@ public:
 // distinct cards either defender's remain_cards claims. dict_to_deal only
 // validates each value's own bit shape, not that the two defender hands
 // together stay within the 26-card domain binomial_coefficient (and so
-// both size() and at()) is documented for; checked here, at this
-// binding's own boundary, before ExhaustiveLayoutSource's constructor
-// ever runs.
+// both size() and at()) is documented for; checked at this binding's own
+// boundary, in ExhaustiveLayoutSource's py::init below -- *after*
+// constructing the C++ object and confirming both history_verdict() and
+// constrained_space_status() are the ordinary passing values, not before,
+// so a root that is also independently rejected for one of those two
+// reasons still reports that reason rather than this one (see the
+// call site's own comment for why that order matters).
 auto defender_pool_card_count(Deal const& root, int declarer) -> int
 {
     int const fixed_seat = (declarer + 1) % DDS_HANDS;
@@ -1110,7 +1170,7 @@ auto register_layout_source_bindings(py::module_& module) -> void
             })
         .def(
             "at",
-            [](be::ExhaustiveLayoutSource const& self, std::uint64_t index) {
+            [](be::ExhaustiveLayoutSource const& self, py::object const& index_obj) {
                 // ExhaustiveLayoutSource::at()'s own precondition is an
                 // assert(index < total) -- a last resort against
                 // undefined behaviour once built -c opt (where it is
@@ -1118,13 +1178,27 @@ auto register_layout_source_bindings(py::module_& module) -> void
                 // instead, so an out-of-range index is a Python
                 // IndexError on every build, not an aborted debug
                 // process or silent undefined behaviour in release.
+                //
+                // index arrives as py::object, not std::uint64_t: a
+                // negative Python int, or one too large for uint64_t, has
+                // no valid uint64_t representation at all, so binding the
+                // parameter as uint64_t directly would fail pybind11's
+                // own argument conversion (TypeError/OverflowError,
+                // depending on the value) before this function's own
+                // range check ever ran -- the same "every out-of-range
+                // index raises IndexError" contract this comment already
+                // claims, silently broken for exactly the inputs most
+                // likely to reach it by mistake. Compared as Python ints
+                // throughout, so no C++ integer ever has to represent an
+                // out-of-range value in the first place.
+                py::int_ const index_int = py::cast<py::int_>(index_obj);
                 std::optional<std::uint64_t> const total = self.size();
-                if (! total.has_value() || index >= *total) {
+                if (index_int < py::int_(0) || ! total.has_value() || index_int >= py::int_(*total)) {
                     throw py::index_error(
-                        "index " + std::to_string(index) + " is out of range for a source of size " +
-                        std::to_string(total.value_or(0)));
+                        "index " + std::string(py::repr(index_obj)) +
+                        " is out of range for a source of size " + std::to_string(total.value_or(0)));
                 }
-                return dds3_python::deal_to_dict(self.at(index));
+                return dds3_python::deal_to_dict(self.at(py::cast<std::uint64_t>(index_int)));
             })
         .def(
             "history_verdict", &be::ExhaustiveLayoutSource::history_verdict,
@@ -1268,8 +1342,13 @@ auto register_solver_seam_bindings(py::module_& module) -> void
         "satisfy delta_is_double_dummy_optimal regardless: that\n"
         "declaration is about trick count, which trick-maximising play\n"
         "delivers for both sides, not about matching a contract.\n\n"
-        "ctx is not owned -- create, configure and outlive it yourself,\n"
-        "the same as any dds3.SolverContext use.")
+        "ctx is not owned -- create, configure and outlive it yourself.\n"
+        "**ctx is not thread-safe** (SolverContext's own contract: one\n"
+        "context per thread) and __call__ releases the GIL around the\n"
+        "actual solve, so two Python threads genuinely run concurrently if\n"
+        "they share one -- construct one DoubleDummyDefender (and one\n"
+        "SolverContext) per worker rather than sharing either across\n"
+        "threads.")
         .def(
             py::init<SolverContext&, be::SpreadPolicy>(), py::arg("ctx"),
             py::arg("policy") = be::SpreadPolicy::TouchingSequence, py::keep_alive<1, 2>())
@@ -1291,7 +1370,8 @@ auto register_solver_seam_bindings(py::module_& module) -> void
         "double-dummy optimal for trick count -- pass\n"
         "delta_is_double_dummy_optimal=True to evaluate() and pair this\n"
         "with a DoubleDummyDefender, the intended sound configuration.\n\n"
-        "ctx is not owned, the same as DoubleDummyDefender's own contract.")
+        "ctx is not owned, and not thread-safe, the same as\n"
+        "DoubleDummyDefender's own contract -- see its docstring.")
         .def(
             py::init([](SolverContext& ctx, int declarer) {
                 // declarer is fixed for this object's whole lifetime (see
@@ -1375,6 +1455,7 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
     register_root_exception_bindings(module);
 
     register_card_bindings(module);
+    register_rank_map_bindings(module);
     register_observation_state_bindings(module);
     register_belief_view_bindings(module);
     register_strategy_error_bindings(module);
