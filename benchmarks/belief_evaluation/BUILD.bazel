@@ -1,0 +1,61 @@
+load("//:CPPVARIABLES.bzl", "DDS_CPPOPTS", "DDS_LINKOPTS", "DDS_LOCAL_DEFINES")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+
+# The fixture ladder every benchmark and its correctness guard under this
+# directory measures on -- see fixtures.hpp's own module doxygen. Solver-free:
+# nothing here needs solve_board, only the scripted strategies this
+# capability's own C++ test suite already uses (test_support.hpp's
+# precedent), matching //library/src/belief_evaluation's own deps below.
+cc_library(
+    name = "fixtures",
+    srcs = ["fixtures.cpp"],
+    hdrs = ["fixtures.hpp"],
+    visibility = ["//benchmarks:__subpackages__"],
+    deps = [
+        "//library/src/belief_evaluation",
+        "//library/src/api:api_definitions",
+        "//library/src/api:dds_constants",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# The size guard: a fixture whose size() drifts silently invalidates every
+# number the tasks after this one report. In the default test cycle, both
+# build modes -- unlike the benchmarks themselves, this is fast enough to
+# run every time (the bottom two rungs' own exhaustive evaluate() calls
+# included).
+cc_test(
+    name = "fixtures_test",
+    size = "small",
+    srcs = ["fixtures_test.cpp"],
+    deps = [
+        ":fixtures",
+        "//library/src/belief_evaluation",
+        "//library/src/api:api_definitions",
+        "//library/src/api:dds_constants",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# Not a test target: a plain program, invoked as a subprocess by the
+# Python-side fixture ladder test, that prints every rung to stdout as
+# Python literals -- see the source file's own header comment. Solver-free,
+# same deps as :fixtures above.
+cc_binary(
+    name = "ladder_reference",
+    srcs = ["ladder_reference.cpp"],
+    deps = [
+        ":fixtures",
+        "//library/src/belief_evaluation",
+        "//library/src/api:api_definitions",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+    visibility = ["//python:__pkg__"],
+)
