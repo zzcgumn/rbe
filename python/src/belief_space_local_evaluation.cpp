@@ -1191,7 +1191,22 @@ auto register_layout_source_bindings(py::module_& module) -> void
                 // likely to reach it by mistake. Compared as Python ints
                 // throughout, so no C++ integer ever has to represent an
                 // out-of-range value in the first place.
-                py::int_ const index_int = py::cast<py::int_>(index_obj);
+                //
+                // PyNumber_Index, not py::cast<py::int_>: that cast goes
+                // through PyNumber_Long (int()'s own conversion), which
+                // truncates a float or parses a numeric string -- at(1.5)
+                // would silently become at(1), a different, real layout,
+                // rather than the caller's mistake it actually is.
+                // PyNumber_Index is operator.index()'s own C-level
+                // implementation: accepts only an int (or an __index__
+                // implementer), rejects everything else with TypeError,
+                // matching what real Python indexing ([1, 2, 3][1.5])
+                // already does.
+                py::object const index_int =
+                    py::reinterpret_steal<py::object>(PyNumber_Index(index_obj.ptr()));
+                if (! index_int) {
+                    throw py::error_already_set();
+                }
                 std::optional<std::uint64_t> const total = self.size();
                 if (index_int < py::int_(0) || ! total.has_value() || index_int >= py::int_(*total)) {
                     throw py::index_error(

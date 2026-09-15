@@ -168,6 +168,22 @@ class TestConstruction(unittest.TestCase):
         with self.assertRaises(IndexError):
             source.at(-1)
 
+    def test_at_a_non_integral_float_raises_type_error(self) -> None:
+        # int(1.5) == 1 -- a lenient, int()-style conversion would
+        # silently truncate this to a real, in-range index (layout 1)
+        # rather than reporting the caller's mistake. Real Python
+        # indexing ([1, 2, 3][1.5]) rejects this with TypeError, the same
+        # operator.index() semantics this binding must match rather than
+        # accept anything int() would.
+        source = ExhaustiveLayoutSource(make_ten_card_pool_root(), North, 1)
+        with self.assertRaises(TypeError):
+            source.at(1.5)
+
+    def test_at_a_numeric_string_raises_type_error(self) -> None:
+        source = ExhaustiveLayoutSource(make_ten_card_pool_root(), North, 1)
+        with self.assertRaises(TypeError):
+            source.at("1")
+
     def test_out_of_range_opening_leader_raises_even_with_no_history(self) -> None:
         # The C++ constructor skips verify_history entirely when history is
         # empty (its own doxygen: "not checked against root at all"), so

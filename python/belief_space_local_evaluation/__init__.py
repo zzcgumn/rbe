@@ -39,6 +39,7 @@ try:
     from ._belief_space_local_evaluation import ObservationState
     from ._belief_space_local_evaluation import ProbabilitiesDoNotSumToOneError
     from ._belief_space_local_evaluation import ProbabilityNonPositiveError
+    from ._belief_space_local_evaluation import RankMap
     from ._belief_space_local_evaluation import RootFailure
     from ._belief_space_local_evaluation import RootFailureError
     from ._belief_space_local_evaluation import SampleSizeZeroError
@@ -84,6 +85,7 @@ except ImportError:
     from _belief_space_local_evaluation import ObservationState
     from _belief_space_local_evaluation import ProbabilitiesDoNotSumToOneError
     from _belief_space_local_evaluation import ProbabilityNonPositiveError
+    from _belief_space_local_evaluation import RankMap
     from _belief_space_local_evaluation import RootFailure
     from _belief_space_local_evaluation import RootFailureError
     from _belief_space_local_evaluation import SampleSizeZeroError
@@ -128,6 +130,7 @@ __all__ = [
     "ObservationState",
     "ProbabilitiesDoNotSumToOneError",
     "ProbabilityNonPositiveError",
+    "RankMap",
     "RootFailure",
     "RootFailureError",
     "SampleSizeZeroError",

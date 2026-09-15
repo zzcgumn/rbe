@@ -5,6 +5,7 @@ from belief_space_local_evaluation import CardNotHeldError
 from belief_space_local_evaluation import evaluate
 from belief_space_local_evaluation import ExhaustiveLayoutSource
 from belief_space_local_evaluation import ProbabilitiesDoNotSumToOneError
+from belief_space_local_evaluation import RankMap
 
 Spades, Hearts, Diamonds, Clubs = 0, 1, 2, 3
 North, East, South, West = 0, 1, 2, 3
@@ -102,6 +103,25 @@ class TestObservationStateExposesRanks(unittest.TestCase):
     # those fields, the precomputed absolute/relative rank mapping over
     # the node's outstanding pool. Captured from a real pi call, not
     # constructed by hand: nothing constructs a RankMap from Python either.
+    def test_ranks_is_the_publicly_importable_rankmap_type(self) -> None:
+        # RankMap is bound by the extension, but a package's own __init__
+        # must also re-export it for `from belief_space_local_evaluation
+        # import RankMap` (what every other bound type here supports, and
+        # what the capability document documents) to actually work.
+        captured = {}
+
+        def pi(state, view):
+            del view
+            captured["ranks"] = state.ranks
+            seat = (state.first + len(state.history)) % 4
+            return lowest_card_in(state.known_holdings["remain_cards"][seat])
+
+        root = make_one_card_finesse_root()
+        source = ExhaustiveLayoutSource(root, North, 5)
+        evaluate(root, North, 1, source, pi, defender_play)
+
+        self.assertIsInstance(captured["ranks"], RankMap)
+
     def test_aggr_matches_known_holdings_own_pool_at_the_same_node(self) -> None:
         # Cross-checked against known_holdings from the very same call
         # (both are derived from the same node Deal -- see
