@@ -72,6 +72,27 @@ auto make_realistic_rung_b() -> Rung;  // pool k=8: C(16, 8)=12,870 -> C(14,8)=3
 /// so a rung added here is picked up everywhere without a second edit.
 auto all_rungs() -> std::vector<Rung>;
 
+// --- a second, separate ladder: genuine per-layout uncertainty, not the
+// pool ladder's own combinatorial-size focus. Every pool/realistic rung
+// above makes with p_make exactly 1 in *every* layout (declarer holds an
+// entire suit outright), which is correct for what earlier tasks needed
+// from it but leaves nothing for a convergence study to converge on --
+// discovered directly, not assumed, while building the sweep this ladder
+// exists for. Close to exhaustive_layout_source_integration_test.cpp's
+// own two-card finesse (declarer Nine, dummy Eight, the fixed seat's
+// single card against a five-card pool including the Ten), replicated
+// across 1..DDS_SUITS independent suits so declarer needs every trick;
+// the pool spans C(6s, s) for s = 1..4 -- 6, 66, 816, 10,626. No history
+// form: these fixtures do not model a void, so `with_history` is not
+// offered for them -- a caller passing `--history with` to the
+// instrument for one of these gets the same (only) form back. See
+// fixtures.cpp. ---
+
+auto make_finesse_rung(int suits) -> RungFixture;  // suits in 1..DDS_SUITS
+
+/// make_finesse_rung(1..DDS_SUITS), ascending N: 6, 66, 816, 10,626.
+auto all_finesse_rungs() -> std::vector<RungFixture>;
+
 /// Where exhaustive evaluation (evaluate() over the *whole* space, no
 /// sampling) stops being affordable is a measurement, not a guess.
 /// Measured 2026-09-15, scripted single-card strategies (this file's own

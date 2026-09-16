@@ -40,6 +40,12 @@ RUNG_NAMES = [
     "realistic_b",
 ]
 
+# The four finesse rungs fixtures.hpp's all_finesse_rungs() defines --
+# genuine per-layout uncertainty, unlike RUNG_NAMES above (whose own
+# p_make is exactly 1 in every layout by construction). No history form:
+# --history is accepted for these but has no effect.
+FINESSE_RUNG_NAMES = ["finesse1", "finesse2", "finesse3", "finesse4"]
+
 HISTORY_FORMS = ["without", "with"]
 
 

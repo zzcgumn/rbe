@@ -165,3 +165,48 @@ INSTANTIATE_TEST_SUITE_P(
     BottomTwo, BottomTwoRungsAreExhaustivelyEvaluableTest,
     testing::Values(bench::make_pool4_rung(), bench::make_pool5_rung()),
     [](testing::TestParamInfo<bench::Rung> const& info) { return info.param.name; });
+
+// --- the finesse ladder: size, and genuine (non-degenerate) uncertainty --
+// unlike the pool/realistic rungs above, whose p_make is exactly 1 in
+// every layout by construction, these fixtures exist precisely because
+// their own p_make is *not* trivial -- a convergence study needs
+// something to converge on. All four are exhaustively evaluable well
+// inside a test-cycle budget too (measured: finesse4, the largest, under
+// 20ms), so the guard covers that here as well. ---------------------
+
+TEST(FinesseLadderTest, SizeMatchesExpected)
+{
+    for (bench::RungFixture const& fixture : bench::all_finesse_rungs())
+    {
+        EXPECT_EQ(size_of(fixture, /*seed=*/1u), fixture.expected_size)
+            << "suits=" << fixture.tricks_needed;
+    }
+}
+
+TEST(FinesseLadderTest, SpansAtLeastOneOrderOfMagnitude)
+{
+    std::vector<bench::RungFixture> const rungs = bench::all_finesse_rungs();
+    ASSERT_FALSE(rungs.empty());
+    std::uint64_t const smallest = rungs.front().expected_size;
+    std::uint64_t const largest = rungs.back().expected_size;
+    ASSERT_LT(smallest, largest) << "expects all_finesse_rungs() in ascending N order";
+    EXPECT_GE(largest, smallest * 10);
+}
+
+TEST(FinesseLadderTest, EveryRungExhaustivelyEvaluatesToAGenuinelyNonDegenerateProbability)
+{
+    // Not >= 0 and <= 1 (that would also accept the pool ladder's own
+    // trivial p_make == 1 everywhere) -- strictly between the two, with
+    // margin, so a future edit that accidentally makes this ladder
+    // degenerate again (declarer always wins, or always loses) fails
+    // here rather than silently producing a convergence sweep with
+    // nothing to converge on.
+    for (bench::RungFixture const& fixture : bench::all_finesse_rungs())
+    {
+        be::EvaluationResult const result = exhaustively_evaluate(fixture);
+        ASSERT_FALSE(result.error.has_value()) << "suits=" << fixture.tricks_needed;
+        double const p_make = result.by_strategy.at(1u).p_make;
+        EXPECT_GT(p_make, 0.05) << "suits=" << fixture.tricks_needed;
+        EXPECT_LT(p_make, 0.95) << "suits=" << fixture.tricks_needed;
+    }
+}

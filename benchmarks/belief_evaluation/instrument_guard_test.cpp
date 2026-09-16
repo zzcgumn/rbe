@@ -22,6 +22,7 @@
 // oversight; see this plan's own "the plan's first hard problem" for why.
 #include <cstdint>
 #include <optional>
+#include <string>
 
 #include <gtest/gtest.h>
 
@@ -202,3 +203,91 @@ TEST_P(InvariantsSurviveSamplingAndReplenishmentTest, WithHistory)
 INSTANTIATE_TEST_SUITE_P(
     AllRungs, InvariantsSurviveSamplingAndReplenishmentTest, testing::ValuesIn(bench::all_rungs()),
     [](testing::TestParamInfo<bench::Rung> const& info) { return info.param.name; });
+
+// --- the same three properties, on the finesse ladder -- a materially
+// different construction (genuine per-layout uncertainty, several tricks,
+// a defender leading) from the pool/realistic rungs above, so its own
+// M>=N and determinism properties are confirmed independently rather
+// than assumed to carry over. No history form, so no With/Without split
+// here. ---------------------------------------------------------------
+
+class FinesseLadderDeterminismTest : public testing::TestWithParam<bench::RungFixture>
+{
+};
+
+TEST_P(FinesseLadderDeterminismTest, SampledRunIsBitwiseIdenticalAcrossTwoSeparateCalls)
+{
+    bench::RungFixture const fixture = GetParam();
+    be::EvaluateOptions const options =
+        sampling_options(/*sample_size=*/4u, /*scan_budget=*/1000u, /*replenish_below=*/3u);
+
+    be::EvaluationResult const first = evaluate_fixture(fixture, /*seed=*/11u, options);
+    be::EvaluationResult const second = evaluate_fixture(fixture, /*seed=*/11u, options);
+
+    ASSERT_FALSE(first.error.has_value());
+    ASSERT_FALSE(second.error.has_value());
+    EXPECT_EQ(
+        first.by_strategy.at(bench::scripted_strategy().id).p_make,
+        second.by_strategy.at(bench::scripted_strategy().id).p_make)
+        << "suits=" << fixture.tricks_needed;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AllFinesseRungs, FinesseLadderDeterminismTest, testing::ValuesIn(bench::all_finesse_rungs()),
+    [](testing::TestParamInfo<bench::RungFixture> const& info) {
+        return "suits" + std::to_string(info.param.tricks_needed);
+    });
+
+class FinesseLadderSampleAtLeastSizeReproducesExhaustiveTest
+    : public testing::TestWithParam<bench::RungFixture>
+{
+};
+
+TEST_P(FinesseLadderSampleAtLeastSizeReproducesExhaustiveTest, ReproducesExactly)
+{
+    bench::RungFixture const fixture = GetParam();
+    std::uint64_t const size = fixture.expected_size;
+
+    be::EvaluationResult const exhaustive = evaluate_fixture(
+        fixture, /*seed=*/5u, sampling_options(std::nullopt, std::nullopt, std::nullopt));
+    be::EvaluationResult const sampled =
+        evaluate_fixture(fixture, /*seed=*/5u, sampling_options(size, std::nullopt, std::nullopt));
+
+    ASSERT_FALSE(exhaustive.error.has_value());
+    ASSERT_FALSE(sampled.error.has_value());
+    EXPECT_EQ(
+        exhaustive.by_strategy.at(bench::scripted_strategy().id).p_make,
+        sampled.by_strategy.at(bench::scripted_strategy().id).p_make)
+        << "suits=" << fixture.tricks_needed;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AllFinesseRungs, FinesseLadderSampleAtLeastSizeReproducesExhaustiveTest,
+    testing::ValuesIn(bench::all_finesse_rungs()),
+    [](testing::TestParamInfo<bench::RungFixture> const& info) {
+        return "suits" + std::to_string(info.param.tricks_needed);
+    });
+
+class FinesseLadderInvariantsSurviveSamplingAndReplenishmentTest
+    : public testing::TestWithParam<bench::RungFixture>
+{
+};
+
+TEST_P(FinesseLadderInvariantsSurviveSamplingAndReplenishmentTest, Holds)
+{
+    bench::RungFixture const fixture = GetParam();
+    be::EvaluationResult const result = evaluate_fixture(
+        fixture, /*seed=*/13u,
+        sampling_options(/*sample_size=*/4u, /*scan_budget=*/1000u, /*replenish_below=*/3u));
+    ASSERT_FALSE(result.error.has_value()) << "suits=" << fixture.tricks_needed;
+    double const p_make = result.by_strategy.at(bench::scripted_strategy().id).p_make;
+    EXPECT_GE(p_make, -be::ProbabilitySumTolerance) << "suits=" << fixture.tricks_needed;
+    EXPECT_LE(p_make, 1.0 + be::ProbabilitySumTolerance) << "suits=" << fixture.tricks_needed;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AllFinesseRungs, FinesseLadderInvariantsSurviveSamplingAndReplenishmentTest,
+    testing::ValuesIn(bench::all_finesse_rungs()),
+    [](testing::TestParamInfo<bench::RungFixture> const& info) {
+        return "suits" + std::to_string(info.param.tricks_needed);
+    });

@@ -75,7 +75,8 @@ namespace
             "Runs one benchmarks/belief_evaluation fixture through evaluate() and\n"
             "prints raw counters or timing -- never both, never a ratio.\n\n"
             "Usage: instrument --fixture NAME --history with|without --seed N [options]\n\n"
-            "  --fixture NAME        pool4 pool5 pool6 pool7 pool8 realistic_a realistic_b\n"
+            "  --fixture NAME        pool4 pool5 pool6 pool7 pool8 realistic_a realistic_b,\n"
+            "                        or finesse1 finesse2 finesse3 finesse4 (no history form)\n"
             "  --history FORM        with | without\n"
             "  --seed N              layout source seed (required)\n"
             "  --sample-size N       cap the root's own sample; absent = exhaustive\n"
@@ -187,13 +188,39 @@ namespace
         return true;
     }
 
-    auto find_rung(std::string const& name) -> std::optional<bench::Rung>
+    // "finesseN" (N = 1..DDS_SUITS) names bench::make_finesse_rung(N) --
+    // the genuine-uncertainty ladder, which has no with/without-history
+    // pairing, so --history is accepted but has no effect for these.
+    // Kept out of bench::all_rungs() itself (that list's own callers,
+    // fixtures_test.cpp's HistoryFormIsStrictlySmallerThanUnconstrained
+    // chief among them, assume the pairing these fixtures do not have).
+    auto find_finesse_rung(std::string const& name) -> std::optional<bench::RungFixture>
     {
+        if (name.rfind("finesse", 0) != 0 || name.size() != 8)
+        {
+            return std::nullopt;
+        }
+        char const digit = name[7];
+        if (digit < '1' || digit > '0' + DDS_SUITS)
+        {
+            return std::nullopt;
+        }
+        return bench::make_finesse_rung(digit - '0');
+    }
+
+    auto find_fixture(std::string const& name, std::string const& history)
+        -> std::optional<bench::RungFixture>
+    {
+        std::optional<bench::RungFixture> const finesse = find_finesse_rung(name);
+        if (finesse.has_value())
+        {
+            return finesse;
+        }
         for (bench::Rung const& rung : bench::all_rungs())
         {
             if (name == rung.name)
             {
-                return rung;
+                return history == "with" ? rung.with_history : rung.without_history;
             }
         }
         return std::nullopt;
@@ -385,14 +412,13 @@ auto main(int argc, char** argv) -> int
         return usage();
     }
 
-    std::optional<bench::Rung> const rung = find_rung(options.fixture);
-    if (! rung.has_value())
+    std::optional<bench::RungFixture> const found = find_fixture(options.fixture, options.history);
+    if (! found.has_value())
     {
         std::fprintf(stderr, "unknown --fixture: %s\n", options.fixture.c_str());
         return usage();
     }
-    bench::RungFixture const& fixture =
-        options.history == "with" ? rung->with_history : rung->without_history;
+    bench::RungFixture const& fixture = *found;
 
     if (options.mode == "time")
     {

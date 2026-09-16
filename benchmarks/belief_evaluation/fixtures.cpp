@@ -232,4 +232,54 @@ auto all_rungs() -> std::vector<Rung>
     };
 }
 
+// --- the finesse ladder: genuine per-layout uncertainty ------------------
+
+auto make_finesse_rung(int suits) -> RungFixture
+{
+    // Close to exhaustive_layout_source_integration_test.cpp's own
+    // make_two_card_finesse_root, in each of `suits` suits: North
+    // (declarer) the Nine, South (dummy) the Eight, a pool split between
+    // East and West. That fixture's own pool is {2..7, 10} (7 cards);
+    // this one drops the Seven -- {2..6, 10}, 6 cards -- so that four
+    // replicated suits (the most DDS_SUITS allows) still fit
+    // binomial_coefficient's own domain: 6 suits * 4 = 24 outstanding
+    // cards, under the 26-card ceiling (7 * 4 = 28 would not be). Root's
+    // own East/West split within each suit is only a template for the
+    // counts ExhaustiveLayoutSource reads (fixed_seat_count via popcount)
+    // -- the enumerated space varies which pool cards East actually
+    // holds, same as every other rung in this file.
+    Deal root{};
+    root.trump = DDS_NOTRUMP;
+    root.first = East;  // a defender leads, as the fixture this mirrors does
+    for (int suit = 0; suit < suits; ++suit)
+    {
+        root.remainCards[North][suit] |= (1u << 9);
+        root.remainCards[South][suit] |= (1u << 8);
+        root.remainCards[East][suit] |= (1u << 2);
+        for (int const rank : {3, 4, 5, 6, 10})
+        {
+            root.remainCards[West][suit] |= (1u << rank);
+        }
+    }
+
+    RungFixture fixture{};
+    fixture.root = root;
+    fixture.declarer = North;
+    fixture.tricks_needed = suits;  // one trick per suit, all of them needed
+    fixture.history = PlayTraceBin{};
+    fixture.opening_leader = East;
+    fixture.expected_size = choose(6 * suits, suits);
+    return fixture;
+}
+
+auto all_finesse_rungs() -> std::vector<RungFixture>
+{
+    std::vector<RungFixture> rungs;
+    for (int suits = 1; suits <= DDS_SUITS; ++suits)
+    {
+        rungs.push_back(make_finesse_rung(suits));
+    }
+    return rungs;
+}
+
 }  // namespace dds::belief_evaluation::benchmarks
