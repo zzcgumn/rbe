@@ -16,6 +16,7 @@
 #include <belief_evaluation/validation.hpp>
 
 #include "fixtures.hpp"
+#include "strategies.hpp"
 
 namespace be = dds::belief_evaluation;
 namespace bench = dds::belief_evaluation::benchmarks;
@@ -116,73 +117,20 @@ TEST(FixtureLadderShapeTest, EveryRungNameIsDistinct)
 
 // --- the bottom two rungs are exhaustively evaluable in a test-cycle time
 // budget: evaluate() over the *whole* space (no sampling), both forms,
-// with the same scripted, deterministic strategies the rest of this
-// module's own tests use -- see test_support.hpp's precedent for why a
-// scripted strategy (not the solver) is enough to exercise this. ---------
+// with strategies.hpp's own scripted, deterministic strategy pair --
+// mirroring library/tests/belief_evaluation/test_support.hpp's own
+// precedent for why a scripted strategy (not the solver) is enough to
+// exercise this. ---------
 
 namespace
 {
-    // dds::belief_evaluation::Card, not the global ::Card of the same name
-    // (see namespace_collision_test.cpp for the two coexisting) -- what
-    // WeightedCard and DeclarerStrategy::play both actually want.
-    auto lowest_legal_card(Deal const& deal, int seat) -> be::Card
-    {
-        int led = -1;
-        if (deal.currentTrickRank[0] != 0)
-        {
-            led = deal.currentTrickSuit[0];
-        }
-        if (led != -1 && deal.remainCards[seat][led] != 0)
-        {
-            for (int rank = 2; rank <= 14; ++rank)
-            {
-                if ((deal.remainCards[seat][led] & (1u << rank)) != 0)
-                {
-                    return be::Card{led, rank};
-                }
-            }
-        }
-        for (int suit = 0; suit < DDS_SUITS; ++suit)
-        {
-            unsigned const holding = deal.remainCards[seat][suit];
-            for (int rank = 2; rank <= 14; ++rank)
-            {
-                if ((holding & (1u << rank)) != 0)
-                {
-                    return be::Card{suit, rank};
-                }
-            }
-        }
-        return be::Card{};
-    }
-
-    auto seat_on_play(Deal const& deal) -> int
-    {
-        int played = 0;
-        for (int i = 0; i < 3 && deal.currentTrickRank[i] != 0; ++i)
-        {
-            ++played;
-        }
-        return (deal.first + played) % DDS_HANDS;
-    }
-
-    auto declarer_play(be::ObservationState const& state, be::BeliefView const&) -> be::Card
-    {
-        return lowest_legal_card(state.known_holdings, seat_on_play(state.known_holdings));
-    }
-
-    auto defender_play(be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
-    {
-        return {be::WeightedCard{lowest_legal_card(query.layout, query.seat), 1.0}};
-    }
-
     auto exhaustively_evaluate(bench::RungFixture const& fixture) -> be::EvaluationResult
     {
         ExhaustiveLayoutSource const source(
             fixture.root, fixture.declarer, /*seed=*/1u, fixture.history, fixture.opening_leader);
-        be::DeclarerStrategy const strategy{.id = 1, .play = declarer_play, .state_key = nullptr};
         return be::evaluate(
-            fixture.root, fixture.declarer, fixture.tricks_needed, source, strategy, defender_play);
+            fixture.root, fixture.declarer, fixture.tricks_needed, source, bench::scripted_strategy(),
+            bench::scripted_defender_play);
     }
 }  // namespace
 

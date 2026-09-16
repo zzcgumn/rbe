@@ -1,6 +1,24 @@
 load("//:CPPVARIABLES.bzl", "DDS_CPPOPTS", "DDS_LINKOPTS", "DDS_LOCAL_DEFINES")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 
+# The scripted (solver-free) declarer/defender strategy pair every fixture,
+# guard, and instrument under this directory shares by default -- see
+# strategies.hpp's own module doxygen for why it is not folded into
+# test_support.hpp instead.
+cc_library(
+    name = "strategies",
+    hdrs = ["strategies.hpp"],
+    visibility = ["//benchmarks:__subpackages__"],
+    deps = [
+        "//library/src/belief_evaluation",
+        "//library/src/api:api_definitions",
+        "//library/src/api:dds_constants",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
 # The fixture ladder every benchmark and its correctness guard under this
 # directory measures on -- see fixtures.hpp's own module doxygen. Solver-free:
 # nothing here needs solve_board, only the scripted strategies this
@@ -32,6 +50,7 @@ cc_test(
     srcs = ["fixtures_test.cpp"],
     deps = [
         ":fixtures",
+        ":strategies",
         "//library/src/belief_evaluation",
         "//library/src/api:api_definitions",
         "//library/src/api:dds_constants",
@@ -58,4 +77,48 @@ cc_binary(
     linkopts = DDS_LINKOPTS,
     local_defines = DDS_LOCAL_DEFINES,
     visibility = ["//python:__pkg__"],
+)
+
+# The measuring instrument: runs one fixture through evaluate() with a
+# caller-chosen seed/sample-size/replenishment threshold and prints raw
+# counters or timing. Not tagged manual, so `bazel test //...` builds it
+# everywhere and never runs it -- running it is the several-seeds x
+# several-sample-sizes x several-fixtures sweep the tasks after this one
+# do, not a test. Solver-free today (--strategy scripted is the only
+# strategy implemented); a future strategy that needs the solver adds its
+# own dep here without disturbing :fixtures or :strategies.
+cc_binary(
+    name = "instrument",
+    srcs = ["instrument.cpp"],
+    deps = [
+        ":fixtures",
+        ":strategies",
+        "//library/src/belief_evaluation",
+        "//library/src/api:api_definitions",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# The fast correctness guard beside the instrument above: only what is
+# deterministic (same seed -> same answer bitwise; sample_size >= size()
+# reproduces the exhaustive run exactly; the mass-conservation asserts
+# survive real sampling and replenishment on these bigger fixtures, in the
+# default build where those asserts are live). In the default test cycle,
+# both build modes.
+cc_test(
+    name = "instrument_guard_test",
+    size = "small",
+    srcs = ["instrument_guard_test.cpp"],
+    deps = [
+        ":fixtures",
+        ":strategies",
+        "//library/src/belief_evaluation",
+        "//library/src/api:api_definitions",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
 )
