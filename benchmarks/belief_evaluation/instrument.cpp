@@ -250,6 +250,15 @@ namespace
                                                  : "none");
         std::printf("declarer=%d\n", fixture.declarer);
         std::printf("tricks_needed=%d\n", fixture.tricks_needed);
+        // The fixture's own size() for exactly this history form -- what
+        // "plotted against N" (a table with N ascending) needs, and what
+        // this process would otherwise have no way to report: the
+        // instrument is handed a RungFixture, not the ExhaustiveLayoutSource
+        // built from it, and expected_size is fixtures.hpp's own claim
+        // about that source, pinned by fixtures_test.cpp -- not
+        // re-derived here.
+        std::printf(
+            "expected_size=%llu\n", static_cast<unsigned long long>(fixture.expected_size));
     }
 
     auto build_options(Options const& options) -> be::EvaluateOptions
