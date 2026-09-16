@@ -73,7 +73,16 @@ def instrument_binary(compilation_mode: str = "fastbuild") -> Path:
 
 _INDEXED_KEY = re.compile(r"^(?P<vector>\w+)\[(?P<index>\d+)\]\.(?P<field>\w+)=(?P<value>.+)$")
 _LENGTH_KEY = re.compile(r"^(?P<vector>\w+)\.length=(?P<value>\d+)$")
-_PLAIN_KEY = re.compile(r"^(?P<key>\w+)=(?P<value>.*)$")
+# --mode=time's own per-trial lines -- "elapsed_ms[0]=1.23", "delta_calls[0]=45",
+# "error_callback[0]=..." -- bracketed but with no ".field" after the
+# bracket (unlike the per-depth vectors' own "vector[i].field=" shape
+# above), so a distinct pattern rather than a special case of _INDEXED_KEY.
+_TRIAL_KEY = re.compile(r"^(?P<key>\w+)\[(?P<index>\d+)\]=(?P<value>.+)$")
+# [\w.]+, not \w+: covers plain scalars ("seed=7") and dotted summary
+# scalars alike ("elapsed_ms.best=1.23") -- checked after _LENGTH_KEY
+# above, which is the more specific pattern for a vector's own declared
+# length and must win when both could match.
+_PLAIN_KEY = re.compile(r"^(?P<key>[\w.]+)=(?P<value>.*)$")
 
 
 @dataclass
@@ -87,10 +96,13 @@ class Record:
     preserving the short-tail distinction the instrument's own header
     comment explains -- a depth past this length was never visited, which
     is not the same thing as a depth present with every count at zero.
+    `trials` carries --mode=time's own per-trial scalars (elapsed_ms,
+    delta_calls, ...), each a list indexed by trial number.
     """
 
     fields: dict = field(default_factory=dict)
     vectors: dict = field(default_factory=dict)
+    trials: dict = field(default_factory=dict)
 
 
 def parse_output(text: str) -> Record:
@@ -108,6 +120,15 @@ def parse_output(text: str) -> Record:
             while len(entries) <= index:
                 entries.append({})
             entries[index][m.group("field")] = m.group("value")
+            continue
+        m = _TRIAL_KEY.match(line)
+        if m:
+            key = m.group("key")
+            index = int(m.group("index"))
+            values = record.trials.setdefault(key, [])
+            while len(values) <= index:
+                values.append(None)
+            values[index] = m.group("value")
             continue
         m = _LENGTH_KEY.match(line)
         if m:

@@ -22,6 +22,15 @@
 // the entries themselves -- the distinction EvaluationCounters' own
 // doxygen calls out (a depth with no entry is not a depth with zero) has
 // to survive the trip through this format or it is lost for good.
+//
+// `delta_calls` is printed in both modes: how many times this run's own
+// defender strategy was called, not part of EvaluationCounters (nothing
+// there counts it) so counted here by wrapping the callable itself --
+// counting it alongside a timed run does not reintroduce the confound the
+// count/time split above exists to avoid, since incrementing a counter
+// costs nothing next to what delta itself does; only an *expensive*
+// count (at_calls, which the source itself must actually perform) needs
+// its own separate pass.
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -297,6 +306,32 @@ namespace
         return eval_options;
     }
 
+    // delta's own call count is not part of EvaluationCounters -- nothing
+    // there distinguishes "how many times delta ran" from anything else
+    // -- so this wraps the callable directly, the same way
+    // test_support.hpp's CountingLayoutSource counts LayoutSource::at()
+    // calls. A reference-capturing lambda, not a class with a member
+    // counter: evaluate() takes `DefenderStrategy const&`
+    // (`std::function`), and passing a class instance there constructs a
+    // *copy* into the std::function, silently counting into that copy
+    // instead of the caller's own object. Capturing `&calls` by reference
+    // survives the copy (the closure is copied, the referenced counter is
+    // not) and is the simpler fix besides.
+    auto counting_delta(be::DefenderStrategy wrapped, std::uint64_t& calls) -> be::DefenderStrategy
+    {
+        // `wrapped` captured *by value* (its own std::function, not a
+        // reference to this function's own parameter): the closure below
+        // outlives this call, and a captured reference to a parameter
+        // would dangle the moment this function returns. `calls` is
+        // captured by reference deliberately -- that one does need to
+        // outlive this call, to reach the caller's own counter.
+        return [wrapped, &calls](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
+        {
+            ++calls;
+            return wrapped(query);
+        };
+    }
+
     auto run_count_mode(Options const& options, bench::RungFixture const& fixture) -> int
     {
         be::ExhaustiveLayoutSource const source(
@@ -305,11 +340,13 @@ namespace
         be::EvaluateOptions eval_options = build_options(options);
         eval_options.collect_counters = true;
 
+        std::uint64_t delta_calls = 0;
         be::EvaluationResult const result = be::evaluate(
             fixture.root, fixture.declarer, fixture.tricks_needed, source, bench::scripted_strategy(),
-            bench::scripted_defender_play, eval_options);
+            counting_delta(bench::scripted_defender_play, delta_calls), eval_options);
 
         print_header(options, fixture);
+        std::printf("delta_calls=%llu\n", static_cast<unsigned long long>(delta_calls));
 
         if (result.error.has_value())
         {
@@ -383,13 +420,15 @@ namespace
         {
             be::ExhaustiveLayoutSource const source(
                 fixture.root, fixture.declarer, *options.seed, fixture.history, fixture.opening_leader);
+            std::uint64_t delta_calls = 0;
             auto const start = std::chrono::steady_clock::now();
             be::EvaluationResult const result = be::evaluate(
                 fixture.root, fixture.declarer, fixture.tricks_needed, source, bench::scripted_strategy(),
-                bench::scripted_defender_play, eval_options);
+                counting_delta(bench::scripted_defender_play, delta_calls), eval_options);
             auto const end = std::chrono::steady_clock::now();
             double const elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
             std::printf("elapsed_ms[%d]=%.6f\n", trial, elapsed_ms);
+            std::printf("delta_calls[%d]=%llu\n", trial, static_cast<unsigned long long>(delta_calls));
             if (result.error.has_value())
             {
                 std::printf("error_callback[%d]=%s\n", trial, callback_name(result.error->callback));
