@@ -10,10 +10,12 @@
 #include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>
 
+#include <api/solve_board.hpp>
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
 #include <belief_evaluation/history_verification.hpp>
 #include <belief_evaluation/validation.hpp>
+#include <solver_context/solver_context.hpp>
 
 #include "fixtures.hpp"
 #include "strategies.hpp"
@@ -208,5 +210,29 @@ TEST(FinesseLadderTest, EveryRungExhaustivelyEvaluatesToAGenuinelyNonDegenerateP
         double const p_make = result.by_strategy.at(1u).p_make;
         EXPECT_GT(p_make, 0.05) << "suits=" << fixture.tricks_needed;
         EXPECT_LT(p_make, 0.95) << "suits=" << fixture.tricks_needed;
+    }
+}
+
+// --- the solver ladder: size, and that solve_board actually accepts it ---
+// (the whole reason this ladder exists -- see fixtures.hpp's own module
+// doxygen for the two ways the earlier attempts at this failed). ---------
+
+TEST(SolverLadderTest, SizeMatchesExpected)
+{
+    for (bench::RungFixture const& fixture : {bench::make_solver_rung_a(), bench::make_solver_rung_b()})
+    {
+        EXPECT_EQ(size_of(fixture, /*seed=*/1u), fixture.expected_size)
+            << "tricks_needed=" << fixture.tricks_needed;
+    }
+}
+
+TEST(SolverLadderTest, SolveBoardAcceptsTheRootLayout)
+{
+    SolverContext ctx;
+    for (bench::RungFixture const& fixture : {bench::make_solver_rung_a(), bench::make_solver_rung_b()})
+    {
+        FutureTricks fut{};
+        int const status = solve_board(ctx, fixture.root, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &fut);
+        EXPECT_EQ(status, RETURN_NO_FAULT) << "tricks_needed=" << fixture.tricks_needed;
     }
 }

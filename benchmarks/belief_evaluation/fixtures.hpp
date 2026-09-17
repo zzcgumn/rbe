@@ -93,6 +93,34 @@ auto make_finesse_rung(int suits) -> RungFixture;  // suits in 1..DDS_SUITS
 /// make_finesse_rung(1..DDS_SUITS), ascending N: 6, 66, 816, 10,626.
 auto all_finesse_rungs() -> std::vector<RungFixture>;
 
+// --- a third, separate ladder: the one shape the two above cannot stand
+// in for -- a position solve_board() will actually accept. Every rung
+// above intentionally gives some hand an unequal, unrealistic card count
+// (the pool ladder's whole declarer suit; the finesse ladder's own
+// 1-vs-5 split per suit); solve_board rejects that -- found directly, and
+// twice over: every pool/realistic/finesse rung handed to
+// DoubleDummyDefender fails with ValidationError::DistributionEmpty (a
+// non-zero solve_board status), and this rung's own first two drafts did
+// too, for two different reasons neither anticipated (unequal hand
+// counts outright, then -- after equalising them -- a pool that turned
+// out to include East/West's supposedly-fixed cards in other suits too,
+// since defender_pool_decomposition flattens across every suit either
+// defender holds anything in, not just the contested one). See
+// fixtures.cpp's own comment on both. All four hands hold the same
+// total card count, and East/West hold *only* Spades: `pool_size / 2`
+// each, split between them -- the only suit with real uncertainty, the
+// same construction this file's other rungs already use elsewhere --
+// while North and South alone carry Diamonds as the card-count
+// equaliser (`pool_size / 2 - 1` cards each there), never entering the
+// enumerated pool regardless of suit. tricks_needed = pool_size / 2
+// (every remaining trick, so a tier-1 dead cut can fire the moment the
+// Spades finesse is lost, not only at the very end). See fixtures.cpp. ---
+
+auto make_solver_rung(int pool_size) -> RungFixture;  // pool_size in {4, 6}, even
+
+auto make_solver_rung_a() -> RungFixture;  // pool_size=4: C(4,2)=6
+auto make_solver_rung_b() -> RungFixture;  // pool_size=6: C(6,3)=20
+
 /// Where exhaustive evaluation (evaluate() over the *whole* space, no
 /// sampling) stops being affordable is a measurement, not a guess.
 /// Measured 2026-09-15, scripted single-card strategies (this file's own

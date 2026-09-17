@@ -31,6 +31,21 @@
 // costs nothing next to what delta itself does; only an *expensive*
 // count (at_calls, which the source itself must actually perform) needs
 // its own separate pass.
+//
+// A third mode, --mode=uncut, answers a question neither of the other two
+// can: how many nodes the search tree would have with tier 1 and tier 2
+// both removed (see uncut_tree.hpp's own doxygen for why evaluate() itself
+// cannot report this). Its own pass, not folded into --mode=count,
+// because it runs a *different* recursion (uncut_tree.cpp's own walker,
+// not evaluate()) over what can be a much larger tree than the cut one.
+//
+// --strategy scripted is solver-free and the default; --strategy
+// double_dummy links the solver (DoubleDummyDefender) -- explicitly
+// permitted for this instrument even though the core library must stay
+// solver-free. --tier2 (only meaningful with --strategy double_dummy)
+// additionally supplies a DoubleDummyBound and declares
+// delta_is_double_dummy_optimal, the one configuration that can make
+// tier 2 fire at all.
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -42,13 +57,17 @@
 
 #include <api/dds_data_types.hpp>
 
+#include <belief_evaluation/double_dummy_bound.hpp>
+#include <belief_evaluation/double_dummy_defender.hpp>
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
 #include <belief_evaluation/node.hpp>
 #include <belief_evaluation/validation.hpp>
+#include <solver_context/solver_context.hpp>
 
 #include "fixtures.hpp"
 #include "strategies.hpp"
+#include "uncut_tree.hpp"
 
 namespace be = dds::belief_evaluation;
 namespace bench = dds::belief_evaluation::benchmarks;
@@ -65,12 +84,10 @@ namespace
 
     // NDEBUG, not a guess at compilation_mode: -c opt is the only mode that
     // defines it, and that is the only distinction that actually matters
-    // here -- see plans/08_benchmarks.md decision 4 (not cited in code
-    // beyond this comment; the reasoning is what is being followed, not
-    // the document). -c dbg and the default fastbuild both leave this
-    // "default", which is correct: they agree on whether asserts run, the
-    // only thing this label means, even though they disagree on
-    // optimisation level (a caller is trusted not to benchmark in dbg).
+    // here. -c dbg and the default fastbuild both leave this "default",
+    // which is correct: they agree on whether asserts run, the only thing
+    // this label means, even though they disagree on optimisation level
+    // (a caller is trusted not to benchmark in dbg).
 #ifdef NDEBUG
     constexpr char const* kMode = "opt";
 #else
@@ -82,19 +99,28 @@ namespace
         std::fprintf(
             stderr,
             "Runs one benchmarks/belief_evaluation fixture through evaluate() and\n"
-            "prints raw counters or timing -- never both, never a ratio.\n\n"
+            "prints raw counters, timing, or an uncut node count -- never more than one\n"
+            "of the three per run, never a ratio.\n\n"
             "Usage: instrument --fixture NAME --history with|without --seed N [options]\n\n"
             "  --fixture NAME        pool4 pool5 pool6 pool7 pool8 realistic_a realistic_b,\n"
-            "                        or finesse1 finesse2 finesse3 finesse4 (no history form)\n"
+            "                        or finesse1 finesse2 finesse3 finesse4 (no history form),\n"
+            "                        or solver_a solver_b (solve_board-valid, for --strategy\n"
+            "                        double_dummy; no history form)\n"
             "  --history FORM        with | without\n"
             "  --seed N              layout source seed (required)\n"
             "  --sample-size N       cap the root's own sample; absent = exhaustive\n"
             "  --scan-budget N       cap each scan's own at() calls; absent = unbounded\n"
             "  --replenish-below N   node-local replenishment threshold; absent = off\n"
-            "  --mode count|time     count (default): raw counters. time: wall clock only\n"
+            "  --mode count|time|uncut   count (default): raw counters. time: wall clock\n"
+            "                        only. uncut: the tree size with tier 1 and tier 2\n"
+            "                        both removed (see uncut_tree.hpp)\n"
             "  --repeat N            --mode=time only: repetitions (default 1)\n"
-            "  --strategy scripted   the only strategy this instrument runs (default,\n"
-            "                        and currently the only legal value)\n");
+            "  --strategy scripted|double_dummy   scripted (default): solver-free,\n"
+            "                        lowest-legal-card. double_dummy: DoubleDummyDefender,\n"
+            "                        links the solver\n"
+            "  --tier2               only with --strategy double_dummy: also supply a\n"
+            "                        DoubleDummyBound and declare\n"
+            "                        delta_is_double_dummy_optimal, enabling tier 2\n");
         return 2;
     }
 
@@ -109,6 +135,7 @@ namespace
         std::string mode = "count";
         int repeat = 1;
         std::string strategy = "scripted";
+        bool tier2 = false;
     };
 
     auto parse_u64(char const* text) -> std::uint64_t
@@ -167,6 +194,10 @@ namespace
             {
                 options.strategy = next();
             }
+            else if (arg == "--tier2")
+            {
+                options.tier2 = true;
+            }
             else
             {
                 std::fprintf(stderr, "unrecognised option: %s\n", arg.c_str());
@@ -183,15 +214,19 @@ namespace
             std::fprintf(stderr, "--history must be \"with\" or \"without\"\n");
             return false;
         }
-        if (options.mode != "count" && options.mode != "time")
+        if (options.mode != "count" && options.mode != "time" && options.mode != "uncut")
         {
-            std::fprintf(stderr, "--mode must be \"count\" or \"time\"\n");
+            std::fprintf(stderr, "--mode must be \"count\", \"time\" or \"uncut\"\n");
             return false;
         }
-        if (options.strategy != "scripted")
+        if (options.strategy != "scripted" && options.strategy != "double_dummy")
         {
-            std::fprintf(
-                stderr, "--strategy: only \"scripted\" is implemented by this instrument today\n");
+            std::fprintf(stderr, "--strategy must be \"scripted\" or \"double_dummy\"\n");
+            return false;
+        }
+        if (options.tier2 && options.strategy != "double_dummy")
+        {
+            std::fprintf(stderr, "--tier2 needs --strategy double_dummy\n");
             return false;
         }
         return true;
@@ -224,6 +259,14 @@ namespace
         if (finesse.has_value())
         {
             return finesse;
+        }
+        if (name == "solver_a")
+        {
+            return bench::make_solver_rung_a();
+        }
+        if (name == "solver_b")
+        {
+            return bench::make_solver_rung_b();
         }
         for (bench::Rung const& rung : bench::all_rungs())
         {
@@ -267,6 +310,26 @@ namespace
         return "Unknown";
     }
 
+    auto validation_error_name(be::ValidationError error) -> char const*
+    {
+        switch (error)
+        {
+        case be::ValidationError::None:
+            return "None";
+        case be::ValidationError::CardNotHeld:
+            return "CardNotHeld";
+        case be::ValidationError::CardIllegalForTrick:
+            return "CardIllegalForTrick";
+        case be::ValidationError::ProbabilityNonPositive:
+            return "ProbabilityNonPositive";
+        case be::ValidationError::ProbabilitiesDoNotSumToOne:
+            return "ProbabilitiesDoNotSumToOne";
+        case be::ValidationError::DistributionEmpty:
+            return "DistributionEmpty";
+        }
+        return "Unknown";
+    }
+
     auto print_header(Options const& options, bench::RungFixture const& fixture) -> void
     {
         std::printf("mode=%s\n", kMode);
@@ -286,6 +349,8 @@ namespace
                                                  : "none");
         std::printf("declarer=%d\n", fixture.declarer);
         std::printf("tricks_needed=%d\n", fixture.tricks_needed);
+        std::printf("strategy=%s\n", options.strategy.c_str());
+        std::printf("tier2=%s\n", options.tier2 ? "true" : "false");
         // The fixture's own size() for exactly this history form -- what
         // "plotted against N" (a table with N ascending) needs, and what
         // this process would otherwise have no way to report: the
@@ -332,18 +397,74 @@ namespace
         };
     }
 
+    // The solver-backed pieces a --strategy double_dummy / --tier2 run
+    // needs, all owned here (not returned by value): DoubleDummyDefender's
+    // and DoubleDummyBound's own DefenderStrategy/LayoutBound each capture
+    // a reference to the object that made them, so everything must
+    // outlive the evaluate() call it is used in.
+    struct SolverBacked
+    {
+        // `ctx{}` here, not left for `SolverBacked backed{};` at the call
+        // site to default: aggregate-init of a member with no
+        // corresponding initializer copy-initializes it from `{}`, which
+        // rejects SolverContext's own explicit constructor. A default
+        // member initializer, direct-list-init by contrast, does not.
+        SolverContext ctx{};
+        std::optional<be::DoubleDummyDefender> defender;
+        std::optional<be::DoubleDummyBound> bound;
+    };
+
+    // Not returned by value on purpose: SolverContext's own copy/move
+    // status is not documented and not worth relying on -- every caller
+    // constructs its own SolverBacked as a local and populates it via
+    // this, in place.
+    auto populate_solver_backed(Options const& options, bench::RungFixture const& fixture,
+                                 SolverBacked& backed) -> void
+    {
+        if (options.strategy == "double_dummy")
+        {
+            backed.defender.emplace(backed.ctx);
+        }
+        if (options.tier2)
+        {
+            backed.bound.emplace(backed.ctx, fixture.declarer);
+        }
+    }
+
+    auto raw_delta(Options const& options, SolverBacked& backed) -> be::DefenderStrategy
+    {
+        if (options.strategy == "double_dummy")
+        {
+            return backed.defender->as_strategy();
+        }
+        return bench::scripted_defender_play;
+    }
+
+    auto apply_tier2(Options const& options, SolverBacked& backed, be::EvaluateOptions& eval_options)
+        -> void
+    {
+        if (options.tier2)
+        {
+            eval_options.bound = backed.bound->as_bound();
+            eval_options.delta_is_double_dummy_optimal = true;
+        }
+    }
+
     auto run_count_mode(Options const& options, bench::RungFixture const& fixture) -> int
     {
         be::ExhaustiveLayoutSource const source(
             fixture.root, fixture.declarer, *options.seed, fixture.history, fixture.opening_leader);
 
+        SolverBacked backed{};
+        populate_solver_backed(options, fixture, backed);
         be::EvaluateOptions eval_options = build_options(options);
         eval_options.collect_counters = true;
+        apply_tier2(options, backed, eval_options);
 
         std::uint64_t delta_calls = 0;
         be::EvaluationResult const result = be::evaluate(
             fixture.root, fixture.declarer, fixture.tricks_needed, source, bench::scripted_strategy(),
-            counting_delta(bench::scripted_defender_play, delta_calls), eval_options);
+            counting_delta(raw_delta(options, backed), delta_calls), eval_options);
 
         print_header(options, fixture);
         std::printf("delta_calls=%llu\n", static_cast<unsigned long long>(delta_calls));
@@ -353,6 +474,8 @@ namespace
             be::EvaluationError const& error = *result.error;
             std::printf("error_callback=%s\n", callback_name(error.callback));
             std::printf("error_root_failure=%s\n", root_failure_name(error.root_failure));
+            std::printf("error_validation=%s\n", validation_error_name(error.validation));
+            std::printf("error_seat=%d\n", error.seat);
             return 0;
         }
         std::printf("error_callback=none\n");
@@ -414,17 +537,21 @@ namespace
         print_header(options, fixture);
         std::printf("repeat=%d\n", options.repeat);
 
-        be::EvaluateOptions const eval_options = build_options(options);
+        be::EvaluateOptions eval_options = build_options(options);
         double best_ms = -1.0;
         for (int trial = 0; trial < options.repeat; ++trial)
         {
+            SolverBacked backed{};
+            populate_solver_backed(options, fixture, backed);
+            apply_tier2(options, backed, eval_options);
+
             be::ExhaustiveLayoutSource const source(
                 fixture.root, fixture.declarer, *options.seed, fixture.history, fixture.opening_leader);
             std::uint64_t delta_calls = 0;
             auto const start = std::chrono::steady_clock::now();
             be::EvaluationResult const result = be::evaluate(
                 fixture.root, fixture.declarer, fixture.tricks_needed, source, bench::scripted_strategy(),
-                counting_delta(bench::scripted_defender_play, delta_calls), eval_options);
+                counting_delta(raw_delta(options, backed), delta_calls), eval_options);
             auto const end = std::chrono::steady_clock::now();
             double const elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
             std::printf("elapsed_ms[%d]=%.6f\n", trial, elapsed_ms);
@@ -439,6 +566,26 @@ namespace
             }
         }
         std::printf("elapsed_ms.best=%.6f\n", best_ms);
+        return 0;
+    }
+
+    auto run_uncut_mode(Options const& options, bench::RungFixture const& fixture) -> int
+    {
+        print_header(options, fixture);
+
+        SolverBacked backed{};
+        populate_solver_backed(options, fixture, backed);
+        be::ExhaustiveLayoutSource const source(
+            fixture.root, fixture.declarer, *options.seed, fixture.history, fixture.opening_leader);
+        std::optional<std::uint64_t> const uncut_nodes = bench::count_uncut_nodes(
+            fixture.root, fixture.declarer, fixture.tricks_needed, source, bench::scripted_strategy(),
+            raw_delta(options, backed));
+        if (! uncut_nodes.has_value())
+        {
+            std::printf("uncut_nodes=failed\n");
+            return 1;
+        }
+        std::printf("uncut_nodes=%llu\n", static_cast<unsigned long long>(*uncut_nodes));
         return 0;
     }
 }  // namespace
@@ -462,6 +609,10 @@ auto main(int argc, char** argv) -> int
     if (options.mode == "time")
     {
         return run_time_mode(options, fixture);
+    }
+    if (options.mode == "uncut")
+    {
+        return run_uncut_mode(options, fixture);
     }
     return run_count_mode(options, fixture);
 }

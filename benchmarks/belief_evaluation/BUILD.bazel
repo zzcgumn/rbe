@@ -43,7 +43,9 @@ cc_library(
 # number the tasks after this one report. In the default test cycle, both
 # build modes -- unlike the benchmarks themselves, this is fast enough to
 # run every time (the bottom two rungs' own exhaustive evaluate() calls
-# included).
+# included). Links the solver (for the solver ladder's own
+# SolveBoardAcceptsTheRootLayout guard) -- permitted here for the same
+# reason as :instrument, not for the core library itself.
 cc_test(
     name = "fixtures_test",
     size = "small",
@@ -54,6 +56,8 @@ cc_test(
         "//library/src/belief_evaluation",
         "//library/src/api:api_definitions",
         "//library/src/api:dds_constants",
+        "//library/src/solver_context",
+        "//library/src:dds",
         "@googletest//:gtest_main",
     ],
     copts = DDS_CPPOPTS,
@@ -81,20 +85,66 @@ cc_binary(
 
 # The measuring instrument: runs one fixture through evaluate() with a
 # caller-chosen seed/sample-size/replenishment threshold and prints raw
-# counters or timing. Not tagged manual, so `bazel test //...` builds it
-# everywhere and never runs it -- running it is the several-seeds x
-# several-sample-sizes x several-fixtures sweep the tasks after this one
-# do, not a test. Solver-free today (--strategy scripted is the only
-# strategy implemented); a future strategy that needs the solver adds its
-# own dep here without disturbing :fixtures or :strategies.
+# counters, timing, or an uncut node count. Not tagged manual, so
+# `bazel test //...` builds it everywhere and never runs it -- running it
+# is the several-seeds x several-sample-sizes x several-fixtures sweep the
+# tasks after this one do, not a test. Depends on the solver
+# (double_dummy_defender, double_dummy_bound, solver_context) for
+# --strategy double_dummy and --tier2 -- explicitly permitted for this
+# target even though the core library itself must stay solver-free (see
+# uncut_tree's own comment on the same distinction).
 cc_binary(
     name = "instrument",
     srcs = ["instrument.cpp"],
     deps = [
         ":fixtures",
         ":strategies",
+        ":uncut_tree",
+        "//library/src/belief_evaluation",
+        "//library/src/belief_evaluation:double_dummy_bound",
+        "//library/src/belief_evaluation:double_dummy_defender",
+        "//library/src/api:api_definitions",
+        "//library/src/solver_context",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# How many nodes the search tree would have with tier 1 and tier 2 both
+# removed -- see uncut_tree.hpp's own module doxygen for why evaluate()
+# itself cannot answer that (already_made()/is_dead() are unconditional,
+# no EvaluateOptions flag disables either) and why this needs no change
+# under library/ regardless (built from the same public pieces evaluate()
+# itself is built from).
+cc_library(
+    name = "uncut_tree",
+    srcs = ["uncut_tree.cpp"],
+    hdrs = ["uncut_tree.hpp"],
+    visibility = ["//benchmarks:__subpackages__"],
+    deps = [
         "//library/src/belief_evaluation",
         "//library/src/api:api_definitions",
+        "//library/src/api:dds_constants",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# count_uncut_nodes()'s own correctness: the one property it must always
+# have, a real evaluate() call visiting fewer or equal nodes, never more.
+cc_test(
+    name = "uncut_tree_test",
+    size = "small",
+    srcs = ["uncut_tree_test.cpp"],
+    deps = [
+        ":fixtures",
+        ":strategies",
+        ":uncut_tree",
+        "//library/src/belief_evaluation",
+        "//library/src/api:api_definitions",
+        "@googletest//:gtest_main",
     ],
     copts = DDS_CPPOPTS,
     linkopts = DDS_LINKOPTS,

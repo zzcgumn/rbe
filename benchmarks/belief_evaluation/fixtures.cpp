@@ -282,4 +282,104 @@ auto all_finesse_rungs() -> std::vector<RungFixture>
     return rungs;
 }
 
+// --- the solver rung: a position solve_board() actually accepts --------
+
+namespace
+{
+    /// Spades pool ranks for make_solver_rung(pool_size), chosen (not
+    /// derived from a formula) so the pool always mixes ranks below and
+    /// above North's own Nine -- a pool entirely below it would make
+    /// North's Nine win every layout trivially, the same degenerate
+    /// p_make == 1 problem the finesse ladder's own header explains.
+    auto solver_rung_pool_ranks(int pool_size) -> std::vector<int>
+    {
+        if (pool_size == 4)
+        {
+            return {2, 3, 10, 11};
+        }
+        if (pool_size == 6)
+        {
+            return {2, 3, 4, 10, 11, 12};
+        }
+        return {};  // caller error; make_solver_rung's own two wrappers never pass anything else
+    }
+}  // namespace
+
+auto make_solver_rung(int pool_size) -> RungFixture
+{
+    // solve_board rejects a deal whose four hands do not all hold the
+    // same card count (table_deal_validate.hpp's own three rules, which
+    // its own doxygen says solve_board enforces too). This function's
+    // own first two drafts both tripped that, for two different reasons,
+    // neither anticipated:
+    //
+    //   1. giving East/West `half` Spades on top of one card each in
+    //      Hearts, Diamonds and Clubs, while North/South held only one
+    //      Spade plus those same three suits -- unequal counts outright
+    //      (solve_board's own RETURN_CARD_COUNT, confirmed directly);
+    //   2. after equalising the *counts* by giving North/South extra
+    //      Diamonds, ExhaustiveLayoutSource::size() came back as 252, not
+    //      the intended C(pool_size, half) -- because defender_pool_decomposition
+    //      flattens the pool *across every suit* East or West hold
+    //      anything in, not just Spades, so "fixed" Hearts/Clubs cards on
+    //      East and West were never actually fixed under enumeration; the
+    //      real space mixed them in too.
+    //
+    // The fix for both: East and West hold *only* Spades. Every other
+    // card in the ending -- what equalises the counts -- goes to North
+    // and South alone, who are declarer's own side and never enter the
+    // enumerated pool regardless of suit.
+    std::vector<int> const pool_ranks = solver_rung_pool_ranks(pool_size);
+    int const half = pool_size / 2;
+
+    Deal root{};
+    root.trump = DDS_NOTRUMP;
+    root.first = East;
+    root.remainCards[North][Spades] |= (1u << 9);
+    root.remainCards[South][Spades] |= (1u << 8);
+    for (int i = 0; i < half; ++i)
+    {
+        root.remainCards[East][Spades] |= (1u << pool_ranks[i]);
+    }
+    for (int i = half; i < pool_size; ++i)
+    {
+        root.remainCards[West][Spades] |= (1u << pool_ranks[i]);
+    }
+
+    // Diamonds, North and South only: `half - 1` cards each (the top
+    // `2 * (half - 1)` ranks, split between them) -- the card-count
+    // equaliser, entirely on declarer's own side so East/West's pool
+    // stays Spades alone. North's own top holding is winners in every
+    // layout (nothing else in the deck outranks it), so this suit is not
+    // where the fixture's uncertainty lives -- only Spades is.
+    int const extra = half - 1;
+    for (int i = 0; i < extra; ++i)
+    {
+        root.remainCards[North][Diamonds] |= (1u << (14 - i));
+    }
+    for (int i = 0; i < extra; ++i)
+    {
+        root.remainCards[South][Diamonds] |= (1u << (14 - extra - i));
+    }
+
+    RungFixture fixture{};
+    fixture.root = root;
+    fixture.declarer = North;
+    fixture.tricks_needed = half;  // every remaining trick
+    fixture.history = PlayTraceBin{};
+    fixture.opening_leader = East;
+    fixture.expected_size = choose(pool_size, half);
+    return fixture;
+}
+
+auto make_solver_rung_a() -> RungFixture
+{
+    return make_solver_rung(4);
+}
+
+auto make_solver_rung_b() -> RungFixture
+{
+    return make_solver_rung(6);
+}
+
 }  // namespace dds::belief_evaluation::benchmarks
