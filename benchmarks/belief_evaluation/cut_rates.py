@@ -16,7 +16,12 @@ Three parts:
      doxygen), exhaustive (tier 2's gate is closed under sampling; see
      this task's own background on why that is a fact about the gate,
      not a cost measurement). Cost per bound call against cost per
-     defender-node call, re-measured rather than cited.
+     defender-node call, re-measured rather than cited -- and reported as
+     the *net* wall-time delta divided by bound calls, not an isolated
+     per-call cost: tier 2's own downstream savings (fewer nodes visited,
+     fewer delta calls -- the benefit half of this same measurement) are
+     folded into that net figure, working the other way. See the printed
+     line's own label for the caveat again at the point it is reported.
   3. Whether either measurement contradicts an unconditional "early cuts
      speed things up" claim -- read separately from the docs/specs, not
      computed here.
@@ -175,17 +180,25 @@ def tier2_cost_benefit(binary: Path) -> None:
             f"calls ({fixture})")
 
         if with_bound_med > 0:
-            # Cost per call, from the wall-clock difference and the extra
-            # bound calls that difference bought -- re-measured here, not
-            # cited from the earlier scratch figure (~6us bound / ~1.6us
-            # defender-node), which this task's own background says not to
-            # treat as a baseline.
+            # NOT an isolated per-call cost -- extra_ms is the *net* wall-time
+            # delta between the two runs, and with-tier2 also visits fewer
+            # nodes and makes fewer delta calls (the benefit line above), so
+            # this net figure already has tier 2's own downstream savings
+            # folded into it, working the other way. Dividing that net delta
+            # by bound_calls gives a "us per bound call, net of what tier 2
+            # saved elsewhere" figure, not a clean per-bound-call cost -- an
+            # isolated cost would need bound calls timed on their own,
+            # holding everything else fixed, which this run does not do.
+            # Re-measured here regardless, not cited from the earlier scratch
+            # figure (~6us bound / ~1.6us defender-node), which this task's
+            # own background says not to treat as a baseline.
             extra_ms = with_ms_med - without_ms_med
-            us_per_bound_call = 1000.0 * extra_ms / with_bound_med if with_bound_med else float("nan")
+            us_per_bound_call_net = 1000.0 * extra_ms / with_bound_med if with_bound_med else float("nan")
             us_per_delta_call = (
                 1000.0 * without_ms_med / without_delta_med if without_delta_med else float("nan"))
             print(
-                f"  cost: ~{us_per_bound_call:.2f} us/bound_call (from the wall-time delta), "
+                f"  cost (net, folds in tier 2's own downstream savings -- not an isolated "
+                f"per-call figure): ~{us_per_bound_call_net:.2f} us/bound_call-equivalent, against "
                 f"~{us_per_delta_call:.2f} us/delta_call (without-tier2 baseline)")
         else:
             print("  cost: bound_calls == 0 -- tier 2 never fired here, no cost to attribute")

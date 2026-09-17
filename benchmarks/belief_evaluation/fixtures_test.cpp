@@ -142,9 +142,12 @@ class BottomTwoRungsAreExhaustivelyEvaluableTest : public testing::TestWithParam
 
 // be::ProbabilitySumTolerance (1e-6), not a bare 1.0: a Kahan-summed
 // p_make over a several-hundred-layout node can land a float epsilon
-// above 1.0 (observed on pool6's with-history form, 210 layouts,
-// 1.0000000000000002) -- validation.hpp's own tolerance for exactly this
-// class of aggregate floating-point slack, not a bespoke one.
+// above or below 1.0 -- one run of pool6's with-history form (210
+// layouts) landed at 1.0000000000000002, an illustration of the class of
+// slack this guards against on this platform/compiler/build, not a
+// guaranteed or exact value elsewhere. validation.hpp's own tolerance
+// exists for exactly this class of aggregate floating-point slack, so
+// this test reuses it rather than picking a bespoke bound.
 TEST_P(BottomTwoRungsAreExhaustivelyEvaluableTest, WithoutHistoryCompletesAndReportsAProbability)
 {
     bench::Rung const rung = GetParam();
