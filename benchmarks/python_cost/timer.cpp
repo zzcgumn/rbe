@@ -12,36 +12,26 @@
 // manual, so `bazel test //...` builds it everywhere and never runs it --
 // running it is report.py's job.
 //
-// Solver-free: nothing here needs solve_board, only the same scripted
-// strategies the rest of this plan's own benchmarks use.
-//
-// Deliberately duplicates its own fixture and strategies rather than
-// reaching into library/tests/belief_evaluation/test_support.hpp: that
-// header is private to the core C++ test suite (its own module comment
-// says so), and benchmarks/belief_evaluation/strategies.hpp already
-// established the precedent this file follows -- a small fixture or
-// strategy belongs beside the benchmark that uses it, not folded into a
-// private test-only header. safety_score_declarer_play's own correctness
-// is proven once, in test_support.hpp's copy
-// (safety_score_declarer_play_test.cpp) and its independent Python port
-// (test_belief_space_local_evaluation_python_cost.py) -- this copy is
-// exercised only for its timing, not re-proven here.
+// Solver-free: nothing here needs solve_board. The pi/delta pair timed
+// below lives in strategies.hpp, beside this file -- see that header's own
+// comment for why it is not library/tests/belief_evaluation/test_support.hpp
+// (this plan's own scope rule: no executable line changed under
+// `library/`).
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
-#include <vector>
-
-#include <bit>
 
 #include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>
 
 #include <belief_evaluation/declarer_strategy.hpp>
-#include <belief_evaluation/defender_strategy.hpp>
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
 
+#include "strategies.hpp"
+
 namespace be = dds::belief_evaluation;
+namespace strategies = dds::belief_evaluation::benchmarks::python_cost;
 
 namespace
 {
@@ -82,128 +72,6 @@ namespace
         return root;
     }
 
-    auto seat_on_play(Deal const& deal) -> int
-    {
-        int played = 0;
-        for (int i = 0; i < 3 && deal.currentTrickRank[i] != 0; ++i)
-        {
-            ++played;
-        }
-        return (deal.first + played) % DDS_HANDS;
-    }
-
-    auto lowest_legal_card(Deal const& deal, int seat) -> be::Card
-    {
-        int led = -1;
-        if (deal.currentTrickRank[0] != 0)
-        {
-            led = deal.currentTrickSuit[0];
-        }
-        if (led != -1 && deal.remainCards[seat][led] != 0)
-        {
-            for (int rank = 2; rank <= 14; ++rank)
-            {
-                if ((deal.remainCards[seat][led] & (1u << rank)) != 0)
-                {
-                    return be::Card{led, rank};
-                }
-            }
-        }
-        for (int suit = 0; suit < DDS_SUITS; ++suit)
-        {
-            unsigned const holding = deal.remainCards[seat][suit];
-            for (int rank = 2; rank <= 14; ++rank)
-            {
-                if ((holding & (1u << rank)) != 0)
-                {
-                    return be::Card{suit, rank};
-                }
-            }
-        }
-        return be::Card{};
-    }
-
-    auto trivial_declarer_play(be::ObservationState const& state, be::BeliefView const&) -> be::Card
-    {
-        return lowest_legal_card(state.known_holdings, seat_on_play(state.known_holdings));
-    }
-
-    auto trivial_defender_play(be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
-    {
-        return {be::WeightedCard{lowest_legal_card(query.layout, query.seat), 1.0}};
-    }
-
-    auto enumerate_legal_cards(Deal const& deal, int seat) -> std::vector<be::Card>
-    {
-        std::vector<be::Card> cards;
-        auto const collect = [&](int suit)
-        {
-            unsigned const suit_holding = deal.remainCards[seat][suit];
-            for (int rank = 2; rank <= 14; ++rank)
-            {
-                if ((suit_holding & (1u << rank)) != 0)
-                {
-                    cards.push_back(be::Card{suit, rank});
-                }
-            }
-        };
-        int led = -1;
-        if (deal.currentTrickRank[0] != 0)
-        {
-            led = deal.currentTrickSuit[0];
-        }
-        if (led != -1 && deal.remainCards[seat][led] != 0)
-        {
-            collect(led);
-            return cards;
-        }
-        for (int suit = 0; suit < DDS_SUITS; ++suit)
-        {
-            collect(suit);
-        }
-        return cards;
-    }
-
-    auto higher_defender_count(Deal const& layout, int declarer, int suit, int rank) -> int
-    {
-        int const east = (declarer + 1) % DDS_HANDS;
-        int const west = (declarer + 3) % DDS_HANDS;
-        unsigned const holding = layout.remainCards[east][suit] | layout.remainCards[west][suit];
-        unsigned const above_rank = ~((1u << (rank + 1)) - 1u);
-        return std::popcount(holding & above_rank);
-    }
-
-    // The "real work" pi -- identical rule to
-    // test_support.hpp's safety_score_declarer_play (see that copy's own
-    // doxygen for what it computes and why; proven correct there and in
-    // its Python port, not re-proven here).
-    auto real_work_declarer_play(be::ObservationState const& state, be::BeliefView const& view) -> be::Card
-    {
-        int const seat = seat_on_play(state.known_holdings);
-        std::vector<be::Card> const candidates = enumerate_legal_cards(state.known_holdings, seat);
-
-        be::Card best{};
-        double best_score = 0.0;
-        bool have_best = false;
-        for (be::Card const& candidate : candidates)
-        {
-            double score = 0.0;
-            for (be::BeliefEntry const& entry : view.entries)
-            {
-                score += entry.posterior
-                    * static_cast<double>(higher_defender_count(
-                          entry.layout, state.declarer, candidate.suit, candidate.rank));
-            }
-            if (! have_best || score < best_score || (score == best_score && candidate.rank < best.rank))
-            {
-                best = candidate;
-                best_score = score;
-                have_best = true;
-            }
-        }
-        return best;
-    }
-
     struct Config
     {
         char const* label;
@@ -227,8 +95,9 @@ namespace
         for (int i = 0; i < iterations; ++i)
         {
             be::ExhaustiveLayoutSource const source(root, North, seed);
-            be::EvaluationResult const result =
-                be::evaluate(root, North, /*tricks_needed=*/1, source, pi, trivial_defender_play, config.options);
+            be::EvaluationResult const result = be::evaluate(
+                root, North, /*tricks_needed=*/1, source, pi, strategies::trivial_defender_play,
+                config.options);
             if (! result.error.has_value())
             {
                 sink += result.by_strategy.at(pi.id).p_make;
@@ -267,8 +136,9 @@ auto main(int argc, char** argv) -> int
         Config{"replenishing", replenishing},
     };
 
-    be::DeclarerStrategy const trivial{.id = 1, .play = trivial_declarer_play, .state_key = nullptr};
-    be::DeclarerStrategy const real_work{.id = 2, .play = real_work_declarer_play, .state_key = nullptr};
+    be::DeclarerStrategy const trivial{.id = 1, .play = strategies::trivial_declarer_play, .state_key = nullptr};
+    be::DeclarerStrategy const real_work{
+        .id = 2, .play = strategies::real_work_declarer_play, .state_key = nullptr};
 
     for (Config const& config : configs)
     {

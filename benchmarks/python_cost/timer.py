@@ -114,9 +114,9 @@ def higher_defender_count(layout: dict, declarer: int, suit: int, rank: int) -> 
 
 
 def real_work_declarer_play(state, view):
-    # Identical rule to test_support.hpp's safety_score_declarer_play and
-    # timer.cpp's own copy -- proven correct (both languages, independently
-    # hand-derived) in safety_score_declarer_play_test.cpp and
+    # Identical rule to strategies.hpp's own real_work_declarer_play --
+    # proven correct (both languages, independently hand-derived) in
+    # safety_score_declarer_play_test.cpp and
     # test_belief_space_local_evaluation_python_cost.py; not re-proven
     # here, only timed.
     known_holdings = state.known_holdings

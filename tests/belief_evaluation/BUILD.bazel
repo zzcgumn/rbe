@@ -34,7 +34,6 @@ cc_test(
         "replenishment_test.cpp",
         "reproduction_test.cpp",
         "restricted_choice_test.cpp",
-        "safety_score_declarer_play_test.cpp",
         "sampling_test.cpp",
         "scripted_defender_test.cpp",
         "smoke_test.cpp",

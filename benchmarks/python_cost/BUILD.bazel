@@ -1,6 +1,44 @@
 load("//:CPPVARIABLES.bzl", "DDS_CPPOPTS", "DDS_LINKOPTS", "DDS_LOCAL_DEFINES")
-load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("@rules_python//python:defs.bzl", "py_binary")
+
+# The pi/delta pair timer.cpp times -- see strategies.hpp's own module
+# comment for why this lives here rather than
+# library/tests/belief_evaluation/test_support.hpp (this plan's own scope
+# rule: no executable line changed under `library/`). Header-only, matching
+# benchmarks/belief_evaluation:strategies' own shape.
+cc_library(
+    name = "strategies",
+    hdrs = ["strategies.hpp"],
+    visibility = ["//benchmarks:__subpackages__"],
+    deps = [
+        "//library/src/belief_evaluation",
+        "//library/src/api:api_definitions",
+        "//library/src/api:dds_constants",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# real_work_declarer_play()'s own correctness: a hand-derived case,
+# independent of any fixture or evaluate() call -- see the source file's
+# own header comment for why that is safe here (oracle_test.cpp's own
+# precedent).
+cc_test(
+    name = "safety_score_declarer_play_test",
+    size = "small",
+    srcs = ["safety_score_declarer_play_test.cpp"],
+    deps = [
+        ":strategies",
+        "//library/src/belief_evaluation",
+        "//library/src/api:api_definitions",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
 
 # The C++ side of this capability's own Python-vs-C++ per-callback cost
 # comparison -- see timer.cpp's own header comment. Not tagged manual, so
@@ -12,6 +50,7 @@ cc_binary(
     name = "timer_cpp",
     srcs = ["timer.cpp"],
     deps = [
+        ":strategies",
         "//library/src/belief_evaluation",
         "//library/src/api:api_definitions",
         "//library/src/api:dds_constants",

@@ -1,8 +1,8 @@
-"""Correctness for `safety_score_declarer_play` -- the "real Python-side
+"""Correctness for `real_work_declarer_play` -- the "real Python-side
 work" pi the Python-vs-C++ cost comparison
 (benchmarks/python_cost/) needs, ported line-for-line from
-library/tests/belief_evaluation/test_support.hpp's own C++ version (see
-its own doxygen for what the rule computes and why).
+benchmarks/python_cost/strategies.hpp's own C++ version (see its own
+doxygen for what the rule computes and why).
 
 Hand-derived case, worked independently rather than read from a shared
 generator -- the same choice safety_score_declarer_play_test.cpp's own
