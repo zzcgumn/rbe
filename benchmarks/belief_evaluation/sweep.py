@@ -46,6 +46,12 @@ RUNG_NAMES = [
 # --history is accepted for these but has no effect.
 FINESSE_RUNG_NAMES = ["finesse1", "finesse2", "finesse3", "finesse4"]
 
+# The two solver rungs fixtures.hpp's make_solver_rung_a()/_b() define --
+# the only fixtures in this directory solve_board() actually accepts (see
+# fixtures.hpp's own module doxygen for why every rung above this one
+# fails DoubleDummyDefender). No history form.
+SOLVER_RUNG_NAMES = ["solver_a", "solver_b"]
+
 HISTORY_FORMS = ["without", "with"]
 
 
@@ -157,9 +163,11 @@ def run_instrument(
         binary: Path, *, fixture: str, history: str, seed: int,
         sample_size: int | None = None, scan_budget: int | None = None,
         replenish_below: int | None = None, mode: str = "count", repeat: int | None = None,
+        strategy: str = "scripted", tier2: bool = False,
 ) -> Record:
     assert history in ("with", "without"), history
-    assert mode in ("count", "time"), mode
+    assert mode in ("count", "time", "uncut"), mode
+    assert strategy in ("scripted", "double_dummy"), strategy
     args = [str(binary), "--fixture", fixture, "--history", history, "--seed", str(seed)]
     if sample_size is not None:
         args += ["--sample-size", str(sample_size)]
@@ -171,5 +179,9 @@ def run_instrument(
         args += ["--mode", mode]
     if repeat is not None:
         args += ["--repeat", str(repeat)]
+    if strategy != "scripted":
+        args += ["--strategy", strategy]
+    if tier2:
+        args += ["--tier2"]
     output = subprocess.run(args, check=True, capture_output=True, text=True).stdout
     return parse_output(output)

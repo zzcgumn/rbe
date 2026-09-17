@@ -43,6 +43,23 @@ namespace dds::belief_evaluation::benchmarks
 /// something expand_declarer_node/expand_defender_node rejects (this
 /// walker has no error-reporting path beyond that -- a caller wanting the
 /// specific ValidationError should call evaluate() itself).
+///
+/// **Does not bound evaluate()'s own node count from below in general --
+/// confirmed empirically, not assumed.** This is a single, linear
+/// traversal: every concrete node object is visited exactly once.
+/// `DeclarerStrategy::play`'s own doxygen records that the real
+/// evaluator "walks the tree in its own order and revisits sibling
+/// subtrees" -- a consequence of belief-view renormalisation, not an
+/// implementation detail this walker can opt out of replicating, since
+/// replicating it would mean re-deriving evaluate()'s own recursion
+/// rather than reusing its public pieces. Where no such revisiting
+/// happens, this walker's count is a true upper bound on evaluate()'s
+/// own (checked directly: holds for every rung in fixtures.hpp's finesse
+/// and solver ladders). Where it does happen, evaluate()'s own count can
+/// exceed this walker's, which is not a defect in either -- they are
+/// counting different things. The pool and realistic ladders trigger it;
+/// do not use this walker's count as a "tree fraction removed" figure
+/// for those two ladders.
 auto count_uncut_nodes(
     Deal const& root, int declarer, int tricks_needed, LayoutSource const& source,
     DeclarerStrategy const& pi, DefenderStrategy const& delta) -> std::optional<std::uint64_t>;

@@ -1,11 +1,22 @@
 // count_uncut_nodes() is new benchmark-only code, not a library change --
 // its own correctness needs the same TDD discipline as anything else
-// here. The one property it must have, always: a real evaluate() call
-// (tier 1 and tier 2 both live) can only visit fewer or equal nodes than
-// this walker (both tiers, and only they, are removed here) -- never
-// more. A cut can only shrink a tree, never grow it.
+// here. The property this file checks: a real evaluate() call (tier 1
+// and tier 2 both live) visits fewer or equal nodes than this walker.
+//
+// **Not a universal law, and not checked against every ladder** --
+// found directly, not assumed: the pool and realistic ladders
+// (fixtures.hpp) fail this property, because the real evaluator "walks
+// the tree in its own order and revisits sibling subtrees"
+// (DeclarerStrategy::play's own doxygen) for belief-view
+// renormalisation, while this walker is a single linear traversal that
+// visits each concrete node exactly once -- see uncut_tree.hpp's own
+// doxygen for the fuller explanation. Checked here only against the
+// finesse and solver ladders, where no such revisiting was observed to
+// occur (an assertion failure here on either would be the signal that
+// it started happening there too, not proof it cannot).
 #include <cstdint>
 #include <optional>
+#include <string>
 
 #include <gtest/gtest.h>
 
@@ -61,10 +72,43 @@ INSTANTIATE_TEST_SUITE_P(
         return "suits" + std::to_string(info.param.tricks_needed);
     });
 
+class UncutTreeIsAtLeastAsLargeAsTheCutOneSolverLadderTest
+    : public testing::TestWithParam<bench::RungFixture>
+{
+};
+
+TEST_P(UncutTreeIsAtLeastAsLargeAsTheCutOneSolverLadderTest, Holds)
+{
+    bench::RungFixture const fixture = GetParam();
+    ExhaustiveLayoutSource const source(
+        fixture.root, fixture.declarer, /*seed=*/1u, fixture.history, fixture.opening_leader);
+
+    std::optional<std::uint64_t> const uncut = bench::count_uncut_nodes(
+        fixture.root, fixture.declarer, fixture.tricks_needed, source, bench::scripted_strategy(),
+        bench::scripted_defender_play);
+    ASSERT_TRUE(uncut.has_value()) << "tricks_needed=" << fixture.tricks_needed;
+
+    std::uint64_t const cut = cut_nodes_visited(fixture, /*seed=*/1u);
+    EXPECT_GE(*uncut, cut) << "tricks_needed=" << fixture.tricks_needed << " uncut=" << *uncut
+                           << " cut=" << cut;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    SolverRungs, UncutTreeIsAtLeastAsLargeAsTheCutOneSolverLadderTest,
+    testing::Values(bench::make_solver_rung_a(), bench::make_solver_rung_b()),
+    [](testing::TestParamInfo<bench::RungFixture> const& info) {
+        return "tricks" + std::to_string(info.param.tricks_needed);
+    });
+
 // A fixture built so tier 1 provably never fires anywhere in it would
 // make the walker's count equal the real one exactly, which is a
-// stronger check than >= alone -- but no such fixture exists in this
-// file's own ladder (every finesse rung's own declarer needs *every*
+// stronger check than >= alone -- but no such fixture exists in either
+// ladder checked here (every finesse rung's own declarer needs *every*
 // remaining trick, and once one is lost tier 1's is_dead() legitimately
-// fires). Left as a >= check rather than manufacturing an equality case
-// that would not generalise past its own construction.
+// fires; the solver ladder is built the same way). Left as a >= check
+// rather than manufacturing an equality case that would not generalise
+// past its own construction.
+//
+// The pool and realistic ladders are not checked here at all -- see this
+// file's own header comment for why the property does not hold for them
+// (revisited sibling subtrees, not a bug in either side).

@@ -30,7 +30,9 @@
 // count/time split above exists to avoid, since incrementing a counter
 // costs nothing next to what delta itself does; only an *expensive*
 // count (at_calls, which the source itself must actually perform) needs
-// its own separate pass.
+// its own separate pass. `bound_calls` (only nonzero with --tier2) is the
+// same mechanism applied to the injected LayoutBound tier2_dead() calls,
+// a different and generally much smaller count on the same run.
 //
 // A third mode, --mode=uncut, answers a question neither of the other two
 // can: how many nodes the search tree would have with tier 1 and tier 2
@@ -397,6 +399,19 @@ namespace
         };
     }
 
+    // Same mechanism, for LayoutBound -- what tier2_dead() calls, once
+    // per layout at a node until one is found live, so its own call count
+    // is a different (and generally much smaller) number from delta_calls
+    // even on the same run.
+    auto counting_bound(be::LayoutBound wrapped, std::uint64_t& calls) -> be::LayoutBound
+    {
+        return [wrapped, &calls](Deal const& layout) -> int
+        {
+            ++calls;
+            return wrapped(layout);
+        };
+    }
+
     // The solver-backed pieces a --strategy double_dummy / --tier2 run
     // needs, all owned here (not returned by value): DoubleDummyDefender's
     // and DoubleDummyBound's own DefenderStrategy/LayoutBound each capture
@@ -440,12 +455,12 @@ namespace
         return bench::scripted_defender_play;
     }
 
-    auto apply_tier2(Options const& options, SolverBacked& backed, be::EvaluateOptions& eval_options)
-        -> void
+    auto apply_tier2(Options const& options, SolverBacked& backed, be::EvaluateOptions& eval_options,
+                      std::uint64_t& bound_calls) -> void
     {
         if (options.tier2)
         {
-            eval_options.bound = backed.bound->as_bound();
+            eval_options.bound = counting_bound(backed.bound->as_bound(), bound_calls);
             eval_options.delta_is_double_dummy_optimal = true;
         }
     }
@@ -459,7 +474,8 @@ namespace
         populate_solver_backed(options, fixture, backed);
         be::EvaluateOptions eval_options = build_options(options);
         eval_options.collect_counters = true;
-        apply_tier2(options, backed, eval_options);
+        std::uint64_t bound_calls = 0;
+        apply_tier2(options, backed, eval_options, bound_calls);
 
         std::uint64_t delta_calls = 0;
         be::EvaluationResult const result = be::evaluate(
@@ -468,6 +484,7 @@ namespace
 
         print_header(options, fixture);
         std::printf("delta_calls=%llu\n", static_cast<unsigned long long>(delta_calls));
+        std::printf("bound_calls=%llu\n", static_cast<unsigned long long>(bound_calls));
 
         if (result.error.has_value())
         {
@@ -543,7 +560,8 @@ namespace
         {
             SolverBacked backed{};
             populate_solver_backed(options, fixture, backed);
-            apply_tier2(options, backed, eval_options);
+            std::uint64_t bound_calls = 0;
+            apply_tier2(options, backed, eval_options, bound_calls);
 
             be::ExhaustiveLayoutSource const source(
                 fixture.root, fixture.declarer, *options.seed, fixture.history, fixture.opening_leader);
@@ -556,6 +574,7 @@ namespace
             double const elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
             std::printf("elapsed_ms[%d]=%.6f\n", trial, elapsed_ms);
             std::printf("delta_calls[%d]=%llu\n", trial, static_cast<unsigned long long>(delta_calls));
+            std::printf("bound_calls[%d]=%llu\n", trial, static_cast<unsigned long long>(bound_calls));
             if (result.error.has_value())
             {
                 std::printf("error_callback[%d]=%s\n", trial, callback_name(result.error->callback));
