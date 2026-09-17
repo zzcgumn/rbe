@@ -336,6 +336,97 @@ inline auto single_card_defender(DefenderQuery const& query) -> std::vector<Weig
     return {WeightedCard{lowest_legal_card(query.layout, query.seat), 1.0}};
 }
 
+/// Every card `seat` may legally play in `deal` -- the suit led to the
+/// trick in progress if `seat` holds it, else every suit `seat` holds
+/// anything in. `lowest_legal_card`'s own first branch picks the lowest of
+/// this same set; this returns the whole set, for a strategy (below) that
+/// has to choose among more than one. Named `enumerate_legal_cards`, not
+/// `legal_cards`: trick.hpp already declares a public `legal_cards()`
+/// returning a different, per-suit-bitmask shape, and this header includes
+/// that one too -- the two would collide (a return-type-only overload is
+/// ill-formed) rather than merely shadow.
+inline auto enumerate_legal_cards(Deal const& deal, int seat) -> std::vector<Card>
+{
+    std::vector<Card> cards;
+    auto const collect = [&](int suit)
+    {
+        unsigned const suit_holding = deal.remainCards[seat][suit];
+        for (int rank = 2; rank <= 14; ++rank)
+        {
+            if ((suit_holding & (1u << rank)) != 0)
+            {
+                cards.push_back(Card{suit, rank});
+            }
+        }
+    };
+    int led = -1;
+    if (deal.currentTrickRank[0] != 0)
+    {
+        led = deal.currentTrickSuit[0];
+    }
+    if (led != -1 && deal.remainCards[seat][led] != 0)
+    {
+        collect(led);
+        return cards;
+    }
+    for (int suit = 0; suit < DDS_SUITS; ++suit)
+    {
+        collect(suit);
+    }
+    return cards;
+}
+
+/// How many of `declarer`'s two opponents' cards in `suit`, combined, in
+/// this one concrete `layout`, outrank `rank` -- the two defender seats are
+/// (declarer+1)%DDS_HANDS and (declarer+3)%DDS_HANDS regardless of which of
+/// them is actually on play, since `layout` is one full, concrete deal
+/// (a BeliefEntry's own layout, not the aggregate pool ObservationState
+/// carries for a defender seat).
+inline auto higher_defender_count(Deal const& layout, int declarer, int suit, int rank) -> int
+{
+    int const east = (declarer + 1) % DDS_HANDS;
+    int const west = (declarer + 3) % DDS_HANDS;
+    unsigned const holding = layout.remainCards[east][suit] | layout.remainCards[west][suit];
+    unsigned const above_rank = ~((1u << (rank + 1)) - 1u);
+    return std::popcount(holding & above_rank);
+}
+
+/// A DeclarerStrategy::play with real per-call work, for the Python-vs-C++
+/// per-callback cost comparison python_cost_timer(_test).{cpp,py} run:
+/// among the legal cards the seat on play holds, scores each one by the
+/// posterior-weighted count of defender cards (summed over every entry in
+/// `view`) that would beat it, and plays the lowest-scoring (safest) one,
+/// breaking a tie by rank. Genuinely `entries * legal cards` work, unlike
+/// single_card_declarer_play's O(1) rule above -- built to give that
+/// comparison a callback with real per-call cost inside it, not to be a
+/// good bridge heuristic (it never looks past this one trick).
+inline auto safety_score_declarer_play(ObservationState const& state, BeliefView const& view) -> Card
+{
+    int const seat = seat_on_play(state.known_holdings);
+    std::vector<Card> const candidates = enumerate_legal_cards(state.known_holdings, seat);
+
+    Card best{};
+    double best_score = 0.0;
+    bool have_best = false;
+    for (Card const& candidate : candidates)
+    {
+        double score = 0.0;
+        for (BeliefEntry const& entry : view.entries)
+        {
+            score += entry.posterior
+                * static_cast<double>(
+                    higher_defender_count(entry.layout, state.declarer, candidate.suit, candidate.rank));
+        }
+        if (! have_best || score < best_score || (score == best_score && candidate.rank < best.rank))
+        {
+            best = candidate;
+            best_score = score;
+            have_best = true;
+        }
+    }
+    return best;
+}
+
 /// A bitmask of `ranks` in Deal's own bit convention (bit r for absolute
 /// rank r), for building fixture holdings without hand-computed hex
 /// literals at every call site.

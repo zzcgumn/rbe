@@ -1,0 +1,51 @@
+load("//:CPPVARIABLES.bzl", "DDS_CPPOPTS", "DDS_LINKOPTS", "DDS_LOCAL_DEFINES")
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_python//python:defs.bzl", "py_binary")
+
+# The C++ side of this capability's own Python-vs-C++ per-callback cost
+# comparison -- see timer.cpp's own header comment. Not tagged manual, so
+# `bazel test //...` builds it everywhere and never runs it, matching
+# benchmarks/belief_evaluation:instrument's own precedent exactly
+# (running it is report.py's job, not the default test cycle's).
+# Solver-free: nothing here needs solve_board.
+cc_binary(
+    name = "timer_cpp",
+    srcs = ["timer.cpp"],
+    deps = [
+        "//library/src/belief_evaluation",
+        "//library/src/api:api_definitions",
+        "//library/src/api:dds_constants",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# The Python side of the same comparison, from the compiled binding
+# itself -- needs belief_space_local_evaluation_lib's own build+runfiles
+# wiring, so this is a py_binary (built, not run automatically -- a
+# py_binary is not a test, so `bazel test //...` never executes it either)
+# rather than a plain script the way benchmarks/belief_evaluation's own
+# sweep scripts are (those need no compiled extension, only a subprocess
+# and stdout parsing -- see sweep.py's own module doxygen).
+py_binary(
+    name = "timer_py",
+    srcs = ["timer.py"],
+    main = "timer.py",
+    deps = ["//python:belief_space_local_evaluation_lib"],
+)
+
+# Runs both timers and tabulates the ratio -- the one command this task's
+# own "ships, and is re-runnable" criterion asks for. Depends on both
+# timers as data so `bazel run //benchmarks/python_cost:report` finds
+# both without either needing to be built or located by hand first.
+py_binary(
+    name = "report",
+    srcs = ["report.py"],
+    main = "report.py",
+    data = [
+        ":timer_cpp",
+        ":timer_py",
+    ],
+    deps = ["@rules_python//python/runfiles"],
+)
