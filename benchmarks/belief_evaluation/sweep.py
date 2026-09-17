@@ -163,11 +163,12 @@ def run_instrument(
         binary: Path, *, fixture: str, history: str, seed: int,
         sample_size: int | None = None, scan_budget: int | None = None,
         replenish_below: int | None = None, mode: str = "count", repeat: int | None = None,
-        strategy: str = "scripted", tier2: bool = False,
+        strategy: str = "scripted", tier2: bool = False, policy: str = "touching",
 ) -> Record:
     assert history in ("with", "without"), history
-    assert mode in ("count", "time", "uncut"), mode
+    assert mode in ("count", "time", "uncut", "divergence"), mode
     assert strategy in ("scripted", "double_dummy"), strategy
+    assert policy in ("touching", "all_optimal"), policy
     args = [str(binary), "--fixture", fixture, "--history", history, "--seed", str(seed)]
     if sample_size is not None:
         args += ["--sample-size", str(sample_size)]
@@ -183,5 +184,7 @@ def run_instrument(
         args += ["--strategy", strategy]
     if tier2:
         args += ["--tier2"]
+    if policy != "touching":
+        args += ["--policy", policy]
     output = subprocess.run(args, check=True, capture_output=True, text=True).stdout
     return parse_output(output)

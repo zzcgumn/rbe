@@ -41,29 +41,44 @@
 // because it runs a *different* recursion (uncut_tree.cpp's own walker,
 // not evaluate()) over what can be a much larger tree than the cut one.
 //
+// A fourth, --mode=divergence, answers a different question again: how
+// often SpreadPolicy::TouchingSequence and SpreadPolicy::AllOptimal
+// (spread.hpp) actually choose differently at the same node, not merely
+// whether they *can*. Only meaningful with --strategy double_dummy (it
+// solves query.layout itself, the same call double_dummy_defender.cpp
+// makes) -- see counting_divergence_defender's own comment for why one
+// solve_board call per node is enough to compare both policies, not two.
+//
 // --strategy scripted is solver-free and the default; --strategy
 // double_dummy links the solver (DoubleDummyDefender) -- explicitly
 // permitted for this instrument even though the core library must stay
 // solver-free. --tier2 (only meaningful with --strategy double_dummy)
 // additionally supplies a DoubleDummyBound and declares
 // delta_is_double_dummy_optimal, the one configuration that can make
-// tier 2 fire at all.
+// tier 2 fire at all. --policy (only meaningful with --strategy
+// double_dummy) chooses which SpreadPolicy the real DoubleDummyDefender
+// built for --mode=count/time uses; --mode=divergence ignores it as the
+// *only* defender and instead uses it to pick which of the two policies'
+// results actually drives the tree (see counting_divergence_defender).
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
 #include <api/dds_data_types.hpp>
+#include <api/solve_board.hpp>
 
 #include <belief_evaluation/double_dummy_bound.hpp>
 #include <belief_evaluation/double_dummy_defender.hpp>
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
 #include <belief_evaluation/node.hpp>
+#include <belief_evaluation/spread.hpp>
 #include <belief_evaluation/validation.hpp>
 #include <solver_context/solver_context.hpp>
 
@@ -113,16 +128,23 @@ namespace
             "  --sample-size N       cap the root's own sample; absent = exhaustive\n"
             "  --scan-budget N       cap each scan's own at() calls; absent = unbounded\n"
             "  --replenish-below N   node-local replenishment threshold; absent = off\n"
-            "  --mode count|time|uncut   count (default): raw counters. time: wall clock\n"
-            "                        only. uncut: the tree size with tier 1 and tier 2\n"
-            "                        both removed (see uncut_tree.hpp)\n"
+            "  --mode count|time|uncut|divergence   count (default): raw counters. time:\n"
+            "                        wall clock only. uncut: the tree size with tier 1 and\n"
+            "                        tier 2 both removed (see uncut_tree.hpp). divergence:\n"
+            "                        how often SpreadPolicy::TouchingSequence and\n"
+            "                        ::AllOptimal choose differently (needs --strategy\n"
+            "                        double_dummy; --policy picks which one drives the\n"
+            "                        tree)\n"
             "  --repeat N            --mode=time only: repetitions (default 1)\n"
             "  --strategy scripted|double_dummy   scripted (default): solver-free,\n"
             "                        lowest-legal-card. double_dummy: DoubleDummyDefender,\n"
             "                        links the solver\n"
             "  --tier2               only with --strategy double_dummy: also supply a\n"
             "                        DoubleDummyBound and declare\n"
-            "                        delta_is_double_dummy_optimal, enabling tier 2\n");
+            "                        delta_is_double_dummy_optimal, enabling tier 2\n"
+            "  --policy touching|all_optimal   only with --strategy double_dummy: which\n"
+            "                        SpreadPolicy (spread.hpp) the defender uses; default\n"
+            "                        touching\n");
         return 2;
     }
 
@@ -138,6 +160,7 @@ namespace
         int repeat = 1;
         std::string strategy = "scripted";
         bool tier2 = false;
+        std::string policy = "touching";
     };
 
     auto parse_u64(char const* text) -> std::uint64_t
@@ -200,6 +223,10 @@ namespace
             {
                 options.tier2 = true;
             }
+            else if (arg == "--policy")
+            {
+                options.policy = next();
+            }
             else
             {
                 std::fprintf(stderr, "unrecognised option: %s\n", arg.c_str());
@@ -216,9 +243,10 @@ namespace
             std::fprintf(stderr, "--history must be \"with\" or \"without\"\n");
             return false;
         }
-        if (options.mode != "count" && options.mode != "time" && options.mode != "uncut")
+        if (options.mode != "count" && options.mode != "time" && options.mode != "uncut"
+            && options.mode != "divergence")
         {
-            std::fprintf(stderr, "--mode must be \"count\", \"time\" or \"uncut\"\n");
+            std::fprintf(stderr, "--mode must be \"count\", \"time\", \"uncut\" or \"divergence\"\n");
             return false;
         }
         if (options.strategy != "scripted" && options.strategy != "double_dummy")
@@ -229,6 +257,16 @@ namespace
         if (options.tier2 && options.strategy != "double_dummy")
         {
             std::fprintf(stderr, "--tier2 needs --strategy double_dummy\n");
+            return false;
+        }
+        if (options.policy != "touching" && options.policy != "all_optimal")
+        {
+            std::fprintf(stderr, "--policy must be \"touching\" or \"all_optimal\"\n");
+            return false;
+        }
+        if (options.mode == "divergence" && options.strategy != "double_dummy")
+        {
+            std::fprintf(stderr, "--mode divergence needs --strategy double_dummy\n");
             return false;
         }
         return true;
@@ -332,6 +370,13 @@ namespace
         return "Unknown";
     }
 
+    // "touching"/"all_optimal" name spread.hpp's own two SpreadPolicy
+    // values -- parse_args already rejects anything else.
+    auto to_spread_policy(std::string const& policy) -> be::SpreadPolicy
+    {
+        return policy == "all_optimal" ? be::SpreadPolicy::AllOptimal : be::SpreadPolicy::TouchingSequence;
+    }
+
     auto print_header(Options const& options, bench::RungFixture const& fixture) -> void
     {
         std::printf("mode=%s\n", kMode);
@@ -353,6 +398,7 @@ namespace
         std::printf("tricks_needed=%d\n", fixture.tricks_needed);
         std::printf("strategy=%s\n", options.strategy.c_str());
         std::printf("tier2=%s\n", options.tier2 ? "true" : "false");
+        std::printf("policy=%s\n", options.policy.c_str());
         // The fixture's own size() for exactly this history form -- what
         // "plotted against N" (a table with N ascending) needs, and what
         // this process would otherwise have no way to report: the
@@ -412,6 +458,74 @@ namespace
         };
     }
 
+    // A stable per-card key (suit*100+rank fits both fields' documented
+    // ranges with room to spare) for comparing two WeightedCard vectors as
+    // sets -- WeightedCard has no operator==, and probability is
+    // deliberately excluded from the comparison: this task's own question
+    // is which *cards* the two policies would ever play, not whether they
+    // weight the same cards identically (TouchingSequence and AllOptimal
+    // never do, even when their card sets coincide -- one candidate's
+    // group vs the union of several is not the same weight).
+    auto card_key(be::Card const& card) -> int
+    {
+        return card.suit * 100 + card.rank;
+    }
+
+    auto card_set(std::vector<be::WeightedCard> const& cards) -> std::set<int>
+    {
+        std::set<int> keys;
+        for (be::WeightedCard const& wc : cards)
+        {
+            keys.insert(card_key(wc.card));
+        }
+        return keys;
+    }
+
+    // A DefenderStrategy that solves query.layout once -- the same
+    // solve_board call double_dummy_defender.cpp itself makes -- and from
+    // that one FutureTricks computes spread() under *both* SpreadPolicy
+    // values, rather than making a second solve_board call for the policy
+    // not driving the tree. spread.hpp's own doxygen is why one call
+    // suffices: TouchingSequence's result is always the touching group of
+    // one of the entries AllOptimal unions over, so its card set is always
+    // a subset of AllOptimal's -- comparing the two sets as built from one
+    // `fut` is exact, not an approximation that skips a second solve.
+    //
+    // Counts every call into `calls`, and every call where the two sets
+    // differ into `divergences`; returns `primary`'s own result, so this
+    // drives evaluate()'s tree exactly as DoubleDummyDefender(ctx, primary)
+    // would while also measuring what the *other* policy would have chosen
+    // at the same node.
+    auto counting_divergence_defender(
+        SolverContext& ctx, be::SpreadPolicy primary, std::uint64_t& calls, std::uint64_t& divergences)
+        -> be::DefenderStrategy
+    {
+        return [&ctx, primary, &calls,
+                &divergences](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
+        {
+            ++calls;
+            FutureTricks fut{};
+            // solutions=2, mode=0, target=-1: the exact call
+            // double_dummy_defender.cpp makes, and for the same reason
+            // (see that file's own comment) -- solutions=2 already reports
+            // everything either spread() call below consumes.
+            int const status =
+                solve_board(ctx, query.layout, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &fut);
+            if (status != RETURN_NO_FAULT)
+            {
+                return {};
+            }
+            std::vector<be::WeightedCard> const touching =
+                be::spread(fut, be::SpreadPolicy::TouchingSequence);
+            std::vector<be::WeightedCard> const all_optimal = be::spread(fut, be::SpreadPolicy::AllOptimal);
+            if (card_set(touching) != card_set(all_optimal))
+            {
+                ++divergences;
+            }
+            return primary == be::SpreadPolicy::TouchingSequence ? touching : all_optimal;
+        };
+    }
+
     // The solver-backed pieces a --strategy double_dummy / --tier2 run
     // needs, all owned here (not returned by value): DoubleDummyDefender's
     // and DoubleDummyBound's own DefenderStrategy/LayoutBound each capture
@@ -438,7 +552,7 @@ namespace
     {
         if (options.strategy == "double_dummy")
         {
-            backed.defender.emplace(backed.ctx);
+            backed.defender.emplace(backed.ctx, to_spread_policy(options.policy));
         }
         if (options.tier2)
         {
@@ -607,6 +721,41 @@ namespace
         std::printf("uncut_nodes=%llu\n", static_cast<unsigned long long>(*uncut_nodes));
         return 0;
     }
+
+    auto run_divergence_mode(Options const& options, bench::RungFixture const& fixture) -> int
+    {
+        print_header(options, fixture);
+
+        // Only backed.ctx is used here, not backed.defender: this mode
+        // drives its own solve_board calls directly (see
+        // counting_divergence_defender), one per node, rather than going
+        // through DoubleDummyDefender's own single-policy DefenderStrategy.
+        SolverBacked backed{};
+        be::ExhaustiveLayoutSource const source(
+            fixture.root, fixture.declarer, *options.seed, fixture.history, fixture.opening_leader);
+        be::EvaluateOptions const eval_options = build_options(options);
+
+        std::uint64_t calls = 0;
+        std::uint64_t divergences = 0;
+        be::EvaluationResult const result = be::evaluate(
+            fixture.root, fixture.declarer, fixture.tricks_needed, source, bench::scripted_strategy(),
+            counting_divergence_defender(backed.ctx, to_spread_policy(options.policy), calls, divergences),
+            eval_options);
+
+        std::printf("delta_calls=%llu\n", static_cast<unsigned long long>(calls));
+        std::printf("policy_divergences=%llu\n", static_cast<unsigned long long>(divergences));
+        if (result.error.has_value())
+        {
+            be::EvaluationError const& error = *result.error;
+            std::printf("error_callback=%s\n", callback_name(error.callback));
+            std::printf("error_root_failure=%s\n", root_failure_name(error.root_failure));
+            std::printf("error_validation=%s\n", validation_error_name(error.validation));
+            std::printf("error_seat=%d\n", error.seat);
+            return 0;
+        }
+        std::printf("error_callback=none\n");
+        return 0;
+    }
 }  // namespace
 
 auto main(int argc, char** argv) -> int
@@ -632,6 +781,10 @@ auto main(int argc, char** argv) -> int
     if (options.mode == "uncut")
     {
         return run_uncut_mode(options, fixture);
+    }
+    if (options.mode == "divergence")
+    {
+        return run_divergence_mode(options, fixture);
     }
     return run_count_mode(options, fixture);
 }

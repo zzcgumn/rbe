@@ -85,14 +85,17 @@ cc_binary(
 
 # The measuring instrument: runs one fixture through evaluate() with a
 # caller-chosen seed/sample-size/replenishment threshold and prints raw
-# counters, timing, or an uncut node count. Not tagged manual, so
-# `bazel test //...` builds it everywhere and never runs it -- running it
-# is the several-seeds x several-sample-sizes x several-fixtures sweep the
-# tasks after this one do, not a test. Depends on the solver
-# (double_dummy_defender, double_dummy_bound, solver_context) for
-# --strategy double_dummy and --tier2 -- explicitly permitted for this
-# target even though the core library itself must stay solver-free (see
-# uncut_tree's own comment on the same distinction).
+# counters, timing, an uncut node count, or a spread-policy divergence
+# count. Not tagged manual, so `bazel test //...` builds it everywhere and
+# never runs it -- running it is the several-seeds x several-sample-sizes x
+# several-fixtures sweep the tasks after this one do, not a test. Depends
+# on the solver (double_dummy_defender, double_dummy_bound, solver_context,
+# and //library/src:dds itself for solve_board.hpp -- --mode=divergence
+# calls solve_board directly, the same call double_dummy_defender.cpp
+# makes) for --strategy double_dummy, --tier2 and --mode=divergence --
+# explicitly permitted for this target even though the core library itself
+# must stay solver-free (see uncut_tree's own comment on the same
+# distinction).
 cc_binary(
     name = "instrument",
     srcs = ["instrument.cpp"],
@@ -105,6 +108,7 @@ cc_binary(
         "//library/src/belief_evaluation:double_dummy_defender",
         "//library/src/api:api_definitions",
         "//library/src/solver_context",
+        "//library/src:dds",
     ],
     copts = DDS_CPPOPTS,
     linkopts = DDS_LINKOPTS,
