@@ -98,7 +98,7 @@ smallest live layout count at any depth reached), read 1 — the minimum
 possible — at every cell measured, both sampled and exhaustive. **This is
 not itself a red flag**: a search narrows toward single-layout certainty
 near the end of a resolved line, which is expected at a leaf, not evidence
-of premature collapse partway through. The measurement taken only
+of premature collapse partway through. The measurement takes only
 `layout_min`'s own minimum across all depths in one number, which cannot
 distinguish "collapsed early" from "narrowed exactly where it should
 have" — see Limits.
@@ -298,10 +298,15 @@ defender, exhaustive, 10 seeds:
 
 Clear benefit on both: 80% and 86% fewer nodes visited, 57% and 60% fewer
 delta calls. Cost, re-measured directly: roughly 14-18 µs per bound call
-against roughly 80-108 µs per delta call — but this is a **net** figure
-(the wall-time delta between the two runs, divided by bound calls), not
-an isolated per-call cost: it already has tier 2's own downstream savings
-(fewer nodes, fewer delta calls) folded into it working the other way.
+against roughly 80-108 µs per delta call — but **neither figure is an
+isolated per-call cost**, both are whole-run wall time divided by a call
+count. The bound-call figure is the **net** wall-time delta between the
+two runs, divided by bound calls, which already has tier 2's own
+downstream savings (fewer nodes, fewer delta calls) folded into it
+working the other way; the delta-call figure is the entire
+without-tier-2 run's own wall time — source scanning, node expansion,
+every callback kind, not delta calls in isolation — divided by delta
+calls.
 
 **Recommendation: on this evidence, tier 2 pays, clearly, on both
 fixtures it was tested against.** **Limits: the qualifying-δ sample size

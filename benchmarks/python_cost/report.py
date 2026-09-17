@@ -24,9 +24,15 @@ def _rlocation(path: str) -> str:
     r = runfiles.Create()
     if r is None:
         raise AssertionError("no runfiles environment -- run this via `bazel run`, not `python3` directly")
-    located = r.Rlocation(f"_main/{path}")
+    # Bare logical path first (Linux/macOS), the .exe-suffixed one only if
+    # that is what the runfiles manifest actually has (Windows) -- same
+    # bare/.exe precedence test_belief_space_local_evaluation_parity.py's
+    # own binary lookup uses, adapted to Rlocation() rather than a direct
+    # filesystem check.
+    located = r.Rlocation(f"_main/{path}") or r.Rlocation(f"_main/{path}.exe")
     if located is None:
-        raise AssertionError(f"{path} not found in runfiles -- check this target's own `data` deps")
+        raise AssertionError(
+            f"{path} (or {path}.exe) not found in runfiles -- check this target's own `data` deps")
     return located
 
 

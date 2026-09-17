@@ -3,6 +3,7 @@
 #include <bit>
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include <api/dds_constants.hpp>
@@ -109,23 +110,29 @@ auto count_uncut_nodes(
 
         if (seat == declarer || seat == dummy)
         {
-            ExpandResult const result = expand_declarer_node(node, pi);
+            // Not `const`: result is dead after this branch either way,
+            // and moving *result.child (rather than copying it) avoids an
+            // otherwise-avoidable O(layout-count) deep copy of every
+            // BeliefNode this walker enqueues -- on the larger ladders
+            // (pool8's own 12,870-layout rungs) this walker's own worklist
+            // is exactly where that cost would show up.
+            ExpandResult result = expand_declarer_node(node, pi);
             if (! result.child.has_value())
             {
                 return std::nullopt;
             }
-            pending.push_back(*result.child);
+            pending.push_back(std::move(*result.child));
         }
         else
         {
-            ExpandDefenderResult const result = expand_defender_node(node, delta);
+            ExpandDefenderResult result = expand_defender_node(node, delta);
             if (! result.children.has_value())
             {
                 return std::nullopt;
             }
-            for (BeliefNode const& child : *result.children)
+            for (BeliefNode& child : *result.children)
             {
-                pending.push_back(child);
+                pending.push_back(std::move(child));
             }
         }
     }

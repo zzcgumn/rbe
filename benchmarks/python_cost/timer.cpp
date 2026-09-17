@@ -20,6 +20,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 
 #include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>

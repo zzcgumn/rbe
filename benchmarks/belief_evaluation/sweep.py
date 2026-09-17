@@ -59,22 +59,35 @@ def bazel_bin_root(compilation_mode: str = "fastbuild") -> Path:
     """The real (non-symlink-name-dependent) bazel-bin directory, via
     `bazel info` -- portable across the convenience symlink's own name,
     which differs between a plain checkout and this project's container
-    setup (bazel-bin vs bazel-container-bin, observed directly)."""
-    args = ["bazel", "info", "bazel-bin"]
+    setup (bazel-bin vs bazel-container-bin, observed directly).
+
+    `bazelisk`, not bare `bazel`: this repository pins a Bazel version
+    (`.bazelversion`) and CI enforces invoking it through the pinned
+    launcher (python/tests/ci_bazelisk_test.py, for the workflow YAML --
+    that guard does not reach a script run locally, but the reasoning is
+    the same here: a bare `bazel` on a caller's own PATH can be any
+    version, not the one this project actually builds against)."""
+    args = ["bazelisk", "info", "bazel-bin"]
     if compilation_mode == "opt":
-        args = ["bazel", "info", "-c", "opt", "bazel-bin"]
+        args = ["bazelisk", "info", "-c", "opt", "bazel-bin"]
     output = subprocess.run(args, check=True, capture_output=True, text=True).stdout
     return Path(output.strip())
 
 
 def instrument_binary(compilation_mode: str = "fastbuild") -> Path:
-    path = bazel_bin_root(compilation_mode) / "benchmarks" / "belief_evaluation" / "instrument"
-    if not path.is_file():
-        raise AssertionError(
-            f"{path} does not exist -- build it first: "
-            f"bazel build{' -c opt' if compilation_mode == 'opt' else ''} "
-            "//benchmarks/belief_evaluation:instrument")
-    return path
+    # Bazel emits a cc_binary's runfile as the bare target name on
+    # Linux/macOS but with a .exe suffix on Windows -- prefer the bare
+    # name, fall back to the suffixed one only when that is what actually
+    # exists. Same reasoning and shape as
+    # test_belief_space_local_evaluation_parity.py's own binary lookup.
+    root = bazel_bin_root(compilation_mode) / "benchmarks" / "belief_evaluation" / "instrument"
+    for candidate in (root, root.with_suffix(".exe")):
+        if candidate.is_file():
+            return candidate
+    raise AssertionError(
+        f"{root} (or {root}.exe) does not exist -- build it first: "
+        f"bazel build{' -c opt' if compilation_mode == 'opt' else ''} "
+        "//benchmarks/belief_evaluation:instrument")
 
 
 _INDEXED_KEY = re.compile(r"^(?P<vector>\w+)\[(?P<index>\d+)\]\.(?P<field>\w+)=(?P<value>.+)$")

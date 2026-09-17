@@ -57,12 +57,17 @@ VOID_FORCED_CARDS = 2
 
 
 def ladder_reference_binary() -> Path:
-    path = sweep.bazel_bin_root() / "benchmarks" / "belief_evaluation" / "ladder_reference"
-    if not path.is_file():
-        raise AssertionError(
-            f"{path} does not exist -- build it first: "
-            "bazel build //benchmarks/belief_evaluation:ladder_reference")
-    return path
+    # Bare name on Linux/macOS, .exe on Windows -- same lookup shape as
+    # test_belief_space_local_evaluation_fixture_ladder.py's own
+    # _ladder_reference_binary(), which already needs this for the same
+    # binary.
+    root = sweep.bazel_bin_root() / "benchmarks" / "belief_evaluation" / "ladder_reference"
+    for candidate in (root, root.with_suffix(".exe")):
+        if candidate.is_file():
+            return candidate
+    raise AssertionError(
+        f"{root} (or {root}.exe) does not exist -- build it first: "
+        "bazel build //benchmarks/belief_evaluation:ladder_reference")
 
 
 def run_ladder_reference() -> dict:
