@@ -226,10 +226,44 @@ TEST_P(FinesseLadderDeterminismTest, SampledRunIsBitwiseIdenticalAcrossTwoSepara
 
     ASSERT_FALSE(first.error.has_value());
     ASSERT_FALSE(second.error.has_value());
-    EXPECT_EQ(
-        first.by_strategy.at(bench::scripted_strategy().id).p_make,
-        second.by_strategy.at(bench::scripted_strategy().id).p_make)
-        << "suits=" << fixture.tricks_needed;
+    be::EvaluationValue const& a = first.by_strategy.at(bench::scripted_strategy().id);
+    be::EvaluationValue const& b = second.by_strategy.at(bench::scripted_strategy().id);
+    std::string const label = "suits=" + std::to_string(fixture.tricks_needed);
+
+    // Every counter, not only p_make -- matching DeterminismTest's own
+    // comparison above exactly (this file's own module comment claims
+    // "both p_make and every counter, not merely p_make" as a blanket
+    // property; this test's own first cut checked only p_make, which
+    // left the finesse ladder specifically -- the only ladder with a
+    // real dead-cut rate -- untested for a seed-dependent counter
+    // regression the pool/realistic version would have caught).
+    EXPECT_EQ(a.p_make, b.p_make) << label;
+    ASSERT_TRUE(a.counters.has_value());
+    ASSERT_TRUE(b.counters.has_value());
+    EXPECT_EQ(a.counters->nodes_visited, b.counters->nodes_visited) << label;
+    EXPECT_EQ(a.counters->tier1_made_cuts, b.counters->tier1_made_cuts) << label;
+    EXPECT_EQ(a.counters->tier1_dead_cuts, b.counters->tier1_dead_cuts) << label;
+    EXPECT_EQ(a.counters->tier2_cuts, b.counters->tier2_cuts) << label;
+    ASSERT_EQ(a.counters->sample_size_by_depth.size(), b.counters->sample_size_by_depth.size()) << label;
+    for (std::size_t depth = 0; depth < a.counters->sample_size_by_depth.size(); ++depth)
+    {
+        be::DepthSampleStats const& sa = a.counters->sample_size_by_depth[depth];
+        be::DepthSampleStats const& sb = b.counters->sample_size_by_depth[depth];
+        EXPECT_EQ(sa.nodes, sb.nodes) << label << " depth " << depth;
+        EXPECT_EQ(sa.layout_sum, sb.layout_sum) << label << " depth " << depth;
+        EXPECT_EQ(sa.layout_min, sb.layout_min) << label << " depth " << depth;
+    }
+    ASSERT_EQ(a.counters->replenishment_by_depth.size(), b.counters->replenishment_by_depth.size())
+        << label;
+    for (std::size_t depth = 0; depth < a.counters->replenishment_by_depth.size(); ++depth)
+    {
+        be::DepthReplenishmentStats const& ra = a.counters->replenishment_by_depth[depth];
+        be::DepthReplenishmentStats const& rb = b.counters->replenishment_by_depth[depth];
+        EXPECT_EQ(ra.attempted, rb.attempted) << label << " depth " << depth;
+        EXPECT_EQ(ra.succeeded, rb.succeeded) << label << " depth " << depth;
+        EXPECT_EQ(ra.layouts_added, rb.layouts_added) << label << " depth " << depth;
+        EXPECT_EQ(ra.at_calls, rb.at_calls) << label << " depth " << depth;
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(

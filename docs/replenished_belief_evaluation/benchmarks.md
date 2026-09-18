@@ -232,19 +232,28 @@ swept across three rungs of increasing scale, three thresholds each
 
 | rung | sample_size | threshold | delta_calls | wall time | share of total |
 |---|---:|---:|---:|---:|---:|
-| finesse2 | 30 | 10% | +380% | 6.49x | 85% |
-| finesse2 | 30 | 25% | +157% | 3.63x | 72% |
-| finesse2 | 30 | 50% | +157% | 3.67x | 73% |
-| finesse3 | 204 | 10% | +1353% | 27.38x | 96% |
-| finesse3 | 204 | 25% | +403% | 8.01x | 88% |
-| finesse3 | 204 | 50% | +403% | 8.13x | 88% |
-| pool7 | 343 | 10% | +2194% | 118.47x | 99% |
-| pool7 | 343 | 25% | +2754% | 152.48x | 99% |
-| pool7 | 343 | 50% | +2878% | 158.49x | 99% |
+| finesse2 | 30 | 10% | +381% | 6.48x | 85% |
+| finesse2 | 30 | 25% | +157% | 3.84x | 74% |
+| finesse2 | 30 | 50% | +157% | 3.78x | 74% |
+| finesse3 | 204 | 10% | +1369% | 28.22x | 96% |
+| finesse3 | 204 | 25% | +401% | 8.16x | 88% |
+| finesse3 | 204 | 50% | +401% | 8.35x | 88% |
+| pool7 | 343 | 10% | +2194% | 124.69x | 99% |
+| pool7 | 343 | 25% | +2754% | 162.15x | 99% |
+| pool7 | 343 | 50% | +2878% | 161.46x | 99% |
+
+Every figure above is the median of each seed's own paired (with −
+without) delta, not the difference of two independently-computed
+medians — the two are not the same thing in general (median is not
+linear), though here they land within a few percent of each other on
+every row. Also: the "share of total" column is the with/without
+*configuration* delta as a fraction of the with-run's own total wall
+time, not isolated replenishment-scan time in isolation — the two runs
+also visit different nodes and make different callback counts.
 
 **Recommendation: leaving `replenish_below` absent by default is right.**
 Evidence: every configuration tested with it set showed replenishment
-dominating total wall time (72-99% of the with-replenishment run), and
+dominating total wall time (74-99% of the with-replenishment run), and
 the cost grows sharply, not linearly, with fixture scale — two to nearly
 three orders of magnitude of wall-time multiplier as fixture scale grows
 across the rungs tested. Leaving it absent costs nothing (unchanged
@@ -311,13 +320,15 @@ defender, exhaustive, 10 seeds:
 | solver_b | 20 | 49 / 7 | 50 / 20 | 40 |
 
 Clear benefit on both: 80% and 86% fewer nodes visited, 57% and 60% fewer
-delta calls. Cost, re-measured directly: roughly 14-18 µs per bound call
-against roughly 80-108 µs per delta call — but **neither figure is an
+delta calls. Cost, re-measured directly: roughly 18-25 µs per bound call
+against roughly 80-109 µs per delta call — but **neither figure is an
 isolated per-call cost**, both are whole-run wall time divided by a call
 count. The bound-call figure is the **net** wall-time delta between the
-two runs, divided by bound calls, which already has tier 2's own
-downstream savings (fewer nodes, fewer delta calls) folded into it
-working the other way; the delta-call figure is the entire
+two runs — the median of each seed's own paired (with − without) delta,
+not the difference of two independently-computed medians, which is not
+the same thing in general — divided by bound calls, which already has
+tier 2's own downstream savings (fewer nodes, fewer delta calls) folded
+into it working the other way; the delta-call figure is the entire
 without-tier-2 run's own wall time — source scanning, node expansion,
 every callback kind, not delta calls in isolation — divided by delta
 calls.

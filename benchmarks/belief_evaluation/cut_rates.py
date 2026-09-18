@@ -169,8 +169,20 @@ def tier2_cost_benefit(binary: Path) -> None:
         without_ms_med = statistics.median(without_ms)
         with_ms_med = statistics.median(with_ms)
 
-        nodes_saved = without_nodes_med - with_nodes_med
-        delta_saved = without_delta_med - with_delta_med
+        # Paired per-seed deltas for every *difference* reported below, not
+        # the difference of two independently-computed medians --
+        # median(without) - median(with) is not in general
+        # median(without[i] - with[i]) (median is not a linear statistic),
+        # and the with/without runs above are already paired by seed (the
+        # same TIER2_SEEDS index drives both calls in the loop above), so
+        # the paired form costs nothing extra to compute and is the
+        # statistically correct one. The *levels* printed just below
+        # (without tier2: ..., with tier2: ...) are each their own
+        # independent median, which is fine -- only a *difference* between
+        # two medians is the thing that is not automatically the median of
+        # the difference.
+        nodes_saved = statistics.median(wo - w for wo, w in zip(without_nodes, with_nodes))
+        delta_saved = statistics.median(wo - w for wo, w in zip(without_delta, with_delta))
 
         print(
             f"  without tier2: nodes_visited(med)={without_nodes_med:.0f}  "
@@ -207,7 +219,12 @@ def tier2_cost_benefit(binary: Path) -> None:
             # from the earlier scratch figure (~6us bound / ~1.6us
             # defender-node), which this task's own background says not
             # to treat as a baseline.
-            extra_ms = with_ms_med - without_ms_med
+            #
+            # extra_ms is the paired per-seed median of (with - without),
+            # not with_ms_med - without_ms_med -- see the comment on
+            # nodes_saved/delta_saved above for why that distinction
+            # matters and why the paired form is free to compute here.
+            extra_ms = statistics.median(w - wo for w, wo in zip(with_ms, without_ms))
             us_per_bound_call_net = 1000.0 * extra_ms / with_bound_med if with_bound_med else float("nan")
             us_per_delta_call_equivalent = (
                 1000.0 * without_ms_med / without_delta_med if without_delta_med else float("nan"))

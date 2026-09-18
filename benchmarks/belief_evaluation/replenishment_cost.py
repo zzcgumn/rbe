@@ -13,7 +13,14 @@ Four parts:
      number.
   3. delta call counts and wall clock, WITH replenish_below set against
      WITHOUT it (same fixture, same seed, same sample_size), on two
-     rungs -- replenishment's own share of total cost.
+     rungs -- replenishment's own share of total cost, and a caveat this
+     is a with/without configuration delta (source scanning, node
+     expansion, every callback kind, not replenishment scans in
+     isolation), not an isolated replenishment-only cost. Every
+     with-vs-without comparison below is a *paired* per-seed
+     ratio/percentage, its own median taken after pairing, not the
+     difference of two independently-computed medians (median is not
+     linear, and the with/without runs are already paired by seed).
   4. Comparison against a prior figure (delta calls up 63%, wall time
      roughly tripled, replenishment ~65% of total wall time) that exists
      only as a reverted scratch measurement upstream of this plan and
@@ -138,15 +145,31 @@ def run_wall_time_comparison(binary: Path) -> None:
             with_ms_med = statistics.median(with_ms)
             with_delta_med = statistics.median(with_delta)
 
-            delta_pct = 100.0 * (with_delta_med - without_delta_med) / without_delta_med
-            time_multiplier = with_ms_med / without_ms_med
-            time_share = 100.0 * (with_ms_med - without_ms_med) / with_ms_med
+            # Paired per-seed: with_ms/without_ms/with_delta/without_delta
+            # are already aligned by seed (WALL_TIME_SEEDS drives both the
+            # without_* loop above and this one, in the same order), and
+            # median(with) - median(without) is not in general the median
+            # of (with[i] - without[i]) -- median is not linear, and this
+            # fixture's own sampling makes with_delta/without_delta
+            # genuinely seed-dependent (unlike cut_rates.py's exhaustive
+            # solver ladder, where the same fix left node/delta counts
+            # unchanged because they carry no seed-to-seed variation at
+            # all there). Computed as the median of each seed's own
+            # ratio/percentage, not a paired absolute delta divided by an
+            # unpaired baseline median.
+            delta_pct = statistics.median(
+                100.0 * (w - wo) / wo for w, wo in zip(with_delta, without_delta))
+            time_multiplier = statistics.median(w / wo for w, wo in zip(with_ms, without_ms))
+            time_share = statistics.median(100.0 * (w - wo) / w for w, wo in zip(with_ms, without_ms))
 
             print(
                 f"  replenish_below={replenish_below} ({fraction:.0%} of sample_size): "
                 f"delta_calls={with_delta_med:.0f} ({delta_pct:+.0f}%)  "
-                f"wall_ms={with_ms_med:.4f} ({time_multiplier:.2f}x, "
-                f"replenishment is {time_share:.0f}% of the with-replenishment total)")
+                f"wall_ms={with_ms_med:.4f} ({time_multiplier:.2f}x, the with/without "
+                f"configuration delta is {time_share:.0f}% of the with-replenishment total -- "
+                f"not isolated replenishment-scan time; the two runs also visit different "
+                f"nodes and make different callback counts, see this script's own module "
+                f"doxygen)")
 
             summary.append((fixture, fraction, delta_pct, time_multiplier, time_share))
 

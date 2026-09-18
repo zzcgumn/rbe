@@ -163,9 +163,32 @@ namespace
         std::string policy = "touching";
     };
 
-    auto parse_u64(char const* text) -> std::uint64_t
+    // `flag` names the option this value came from, purely for the error
+    // message -- every caller below passes its own flag name so a bad
+    // value is reported against the option that carried it, not just
+    // "invalid number". Rejects what a bare, unchecked strtoull() would
+    // silently accept: empty text, a leading '-' (strtoull's own
+    // documented behaviour for that is to negate and wrap into a huge
+    // unsigned value, not to reject it -- exactly the footgun a
+    // caller-facing count argument must not have), and any trailing
+    // non-digit character (a malformed value such as "nope" would
+    // otherwise silently parse as 0 and run a different measurement than
+    // the one asked for).
+    auto parse_u64(char const* flag, char const* text) -> std::uint64_t
     {
-        return static_cast<std::uint64_t>(std::strtoull(text, nullptr, 10));
+        if (text[0] == '\0' || text[0] == '-')
+        {
+            std::fprintf(stderr, "%s must be a non-negative integer, got \"%s\"\n", flag, text);
+            std::exit(usage());
+        }
+        char* end = nullptr;
+        unsigned long long const value = std::strtoull(text, &end, 10);
+        if (end == text || *end != '\0')
+        {
+            std::fprintf(stderr, "%s must be a non-negative integer, got \"%s\"\n", flag, text);
+            std::exit(usage());
+        }
+        return static_cast<std::uint64_t>(value);
     }
 
     auto parse_args(int argc, char** argv, Options& options) -> bool
@@ -193,19 +216,19 @@ namespace
             }
             else if (arg == "--seed")
             {
-                options.seed = parse_u64(next());
+                options.seed = parse_u64("--seed", next());
             }
             else if (arg == "--sample-size")
             {
-                options.sample_size = parse_u64(next());
+                options.sample_size = parse_u64("--sample-size", next());
             }
             else if (arg == "--scan-budget")
             {
-                options.scan_budget = parse_u64(next());
+                options.scan_budget = parse_u64("--scan-budget", next());
             }
             else if (arg == "--replenish-below")
             {
-                options.replenish_below = parse_u64(next());
+                options.replenish_below = parse_u64("--replenish-below", next());
             }
             else if (arg == "--mode")
             {

@@ -19,8 +19,10 @@ every rung `ladder_reference` below also emits, already asserts
 `HistoryVerdict::Consistent` before trusting any of these sizes, in the
 default test cycle -- cited, not re-run.
 
-Usage (no separate build step -- `bazel build` runs automatically via the
-`bazel run` invocation below, or build once yourself first):
+Usage -- two steps, not one: this script is invoked directly with
+`python3` (matching sweep.py/cut_rates.py/divergence.py's own convention
+in this directory), which does not build anything itself, so
+`ladder_reference` needs building first:
 
     bazel build //benchmarks/belief_evaluation:ladder_reference
     python3 benchmarks/belief_evaluation/space_size.py
