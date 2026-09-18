@@ -1,5 +1,6 @@
 #include "uncut_tree.hpp"
 
+#include <array>
 #include <bit>
 #include <cstdint>
 #include <optional>
@@ -64,6 +65,28 @@ namespace
         }
         return true;
     }
+
+    // Every card `seat` may legally play first at `deal`, flattened from
+    // trick.hpp's own public legal_cards() -- identical to evaluate.cpp's
+    // own private enumerate_legal_cards (same two-line flattening of the
+    // same public bitmask function), duplicated here rather than reused
+    // since that one is anonymous-namespace-private to evaluate.cpp.
+    auto enumerate_legal_cards(Deal const& deal, int seat) -> std::vector<Card>
+    {
+        std::array<unsigned, DDS_SUITS> const legal = legal_cards(deal, seat);
+        std::vector<Card> cards;
+        for (int suit = 0; suit < DDS_SUITS; ++suit)
+        {
+            for (int rank = 2; rank <= 14; ++rank)
+            {
+                if ((legal[suit] & (1u << rank)) != 0)
+                {
+                    cards.push_back(Card{suit, rank});
+                }
+            }
+        }
+        return cards;
+    }
 }  // namespace
 
 auto count_uncut_nodes(
@@ -87,11 +110,21 @@ auto count_uncut_nodes(
     std::vector<BeliefNode> pending;
     pending.push_back(*root_result.node);
 
+    // Set once, on the very first iteration below (the worklist starts
+    // with exactly one entry -- the root -- so the first pop is
+    // guaranteed to be it, and nothing pushed during that same iteration
+    // can be popped before the loop moves on). Needed because a
+    // declarer-led *root* specifically needs different handling from
+    // every other declarer node -- see the branch below.
+    bool is_root = true;
+
     while (! pending.empty())
     {
         BeliefNode const node = std::move(pending.back());
         pending.pop_back();
         ++count;
+        bool const was_root = is_root;
+        is_root = false;
 
         if (is_terminal(node))
         {
@@ -122,6 +155,39 @@ auto count_uncut_nodes(
                 return std::nullopt;
             }
             pending.push_back(std::move(*result.child));
+
+            if (was_root)
+            {
+                // evaluate()'s own root-handling block (evaluate.cpp)
+                // additionally expands every *other* legal root card too,
+                // to populate root_children -- p_make()'s own general
+                // recursion, which handles every declarer node but the
+                // root (including every other one this walker's own
+                // expand_declarer_node call above reaches), only ever
+                // follows pi's single chosen card. Missing this would
+                // silently undercount a declarer-led root's true node
+                // count -- found directly against evaluate.cpp's own
+                // root-handling block, not assumed. Fixed by mirroring
+                // its exact chosen/other-cards structure with the same
+                // two public pieces it is itself built from:
+                // expand_declarer_node for the chosen card (above),
+                // make_declarer_children for the rest.
+                std::vector<Card> const legal = enumerate_legal_cards(node.state.known_holdings, seat);
+                std::vector<Card> other_cards;
+                other_cards.reserve(legal.size());
+                for (Card const& card : legal)
+                {
+                    if (card.suit != result.card.suit || card.rank != result.card.rank)
+                    {
+                        other_cards.push_back(card);
+                    }
+                }
+                std::vector<BeliefNode> other_children = make_declarer_children(node, other_cards);
+                for (BeliefNode& child : other_children)
+                {
+                    pending.push_back(std::move(child));
+                }
+            }
         }
         else
         {

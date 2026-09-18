@@ -119,6 +119,14 @@ auto main(int argc, char** argv) -> int
     {
         iterations = std::atoi(argv[1]);
     }
+    if (iterations < 1)
+    {
+        // Zero skips run_config's own loop entirely (dividing total_ms by
+        // zero iterations below); negative is nonsensical either way --
+        // reject both rather than print a silently invalid ms_per_iteration.
+        std::fprintf(stderr, "iterations must be a positive integer, got %d\n", iterations);
+        return 1;
+    }
 
     // Same root, same declarer, same tricks_needed, same seed, same
     // sample_size/scan_budget throughout -- only replenish_below differs,

@@ -269,6 +269,16 @@ namespace
             std::fprintf(stderr, "--mode divergence needs --strategy double_dummy\n");
             return false;
         }
+        if (options.repeat < 1)
+        {
+            // Zero or negative skips run_time_mode's own trial loop
+            // entirely, leaving best_ms at its -1.0 sentinel and printing
+            // that as elapsed_ms.best -- a caller easily produces this by
+            // typo (--repeat 0) and would otherwise get a silently
+            // invalid timing record rather than a rejection.
+            std::fprintf(stderr, "--repeat must be a positive integer\n");
+            return false;
+        }
         return true;
     }
 

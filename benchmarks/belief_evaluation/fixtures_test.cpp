@@ -1,9 +1,11 @@
 // The size guard the ladder's own doxygen promises: a fixture whose size
 // drifts silently invalidates every number the tasks after this one
 // report, so this is not a courtesy check.
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <set>
+#include <string>
 
 #include <gtest/gtest.h>
 

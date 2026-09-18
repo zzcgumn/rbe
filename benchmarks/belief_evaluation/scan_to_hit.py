@@ -129,8 +129,24 @@ def run() -> None:
         for fixture in sweep.RUNG_NAMES:
             probe = sweep.run_instrument(binary, fixture=fixture, history=history, seed=SEEDS[0])
             n_probe = int(probe.fields["expected_size"])
+            # max(4, ...): a floor against a degenerate 1-to-3-layout
+            # sample at the smallest rungs, not a cosmetic minimum -- but
+            # it means the actual sampled fraction can exceed the
+            # requested 20% at the smallest ones (pool4-with-history,
+            # N=15: round(0.2*15)=3, floored to 4 -- 26.7%, not 20%),
+            # which breaks the "matched fraction" comparison specifically
+            # at the rung this sweep's own report leans on hardest.
+            # Printed explicitly below so a reader of this fixture's own
+            # row never has to take "20%" on faith -- found directly (not
+            # assumed) when a cold review asked why the with/without
+            # comparison at N=15 was not actually matched.
             sample_size = max(4, round(0.2 * n_probe))
             replenish_below = max(2, sample_size // 2)
+            actual_fraction = sample_size / n_probe
+            if abs(actual_fraction - 0.20) > 0.005:
+                print(
+                    f"  {fixture}: sample_size={sample_size} is {actual_fraction:.1%} of N={n_probe}, "
+                    "not the requested 20% (floored up from a smaller value)")
             rows.append((
                 fixture,
                 *sweep_rung(
@@ -145,7 +161,10 @@ def run() -> None:
         "already-mostly-drawn small space runs out of fresh candidates faster) confounds any\n"
         "effect of history's own narrowing. Sweep 2 removes that confound by holding the\n"
         "*fraction* fixed instead -- the fairer comparison for whether a play history reduces\n"
-        "scan-to-hit.")
+        "scan-to-hit -- except at the smallest rung or two, where the same sample-size floor\n"
+        "sweep 1 needed reappears in a smaller way (a few points off 20%, not sweep 1's own\n"
+        "multiple-of-N-away confound); see this sweep's own printed note above wherever that\n"
+        "happens, rather than assuming every row hit 20% exactly.")
 
 
 if __name__ == "__main__":

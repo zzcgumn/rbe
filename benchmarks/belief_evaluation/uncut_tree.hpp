@@ -44,6 +44,17 @@ namespace dds::belief_evaluation::benchmarks
 /// walker has no error-reporting path beyond that -- a caller wanting the
 /// specific ValidationError should call evaluate() itself).
 ///
+/// A declarer-led root is handled the same way evaluate() itself handles
+/// one (evaluate.cpp's own root-handling block): every legal root card is
+/// expanded, via the same two public pieces evaluate() uses for it
+/// (expand_declarer_node for pi's own chosen card, make_declarer_children
+/// for the rest) -- not only pi's own choice, unlike every other declarer
+/// node (this walker's own general recursion below the root, matching
+/// p_make()'s). Missing this would have undercounted a declarer-led
+/// root's true node count silently; found directly against evaluate.cpp's
+/// own root-handling block and fixed, not merely documented as a
+/// limitation the way the paragraph below is.
+///
 /// **Does not bound evaluate()'s own node count from below in general --
 /// confirmed empirically, not assumed.** This is a single, linear
 /// traversal: every concrete node object is visited exactly once.

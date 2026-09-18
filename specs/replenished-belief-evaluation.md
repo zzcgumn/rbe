@@ -540,10 +540,10 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   short of solving the position, which is the work it exists to avoid; the
   `delta_is_double_dummy_optimal` declaration cannot be checked at all, ever.
   Both fail silently — a bound that is too *low* (`tier2_dead()` fires on a
-  layout declarer would have made, and the node silently contributes zero to
-  a contract that makes; too *high* only suppresses a legitimate prune, and
-  no answer changes), or a declaration that does not hold, produces a wrong
-  probability with no error surfaced anywhere.
+  layout that declarer would have made, and the node silently contributes
+  zero to a contract that makes; too *high* only suppresses a legitimate
+  prune, and no answer changes), or a declaration that does not hold,
+  produces a wrong probability with no error surfaced anywhere.
   `DeclarerStrategy::state_key` (above) is the third obligation of this kind
   already in this module. The fourth: a `LayoutSource` supplied to a
   sampling evaluator must present its layouts in an order that is already

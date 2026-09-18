@@ -70,8 +70,9 @@ struct RootChildValue
 /// position — which is the work the bound exists to avoid. `tier2_dead()`
 /// (below) fires only once every layout's bound falls below what is still
 /// needed, so a bound that is too *low* is the unsound direction: it makes
-/// the cut fire on a node containing a layout declarer would actually have
-/// made, and the node silently contributes zero to a contract that makes.
+/// the cut fire on a node containing a layout that declarer would actually
+/// have made, and the node silently contributes zero to a contract that
+/// makes.
 /// A bound that is too *high* only suppresses a legitimate prune — the
 /// subtree is then evaluated properly and no answer changes, merely
 /// wastefully. This is one of two unvalidatable obligations a caller

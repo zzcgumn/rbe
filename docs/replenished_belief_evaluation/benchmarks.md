@@ -61,25 +61,33 @@ cell:
 
 | fixture | N | true p_make | M=10%N | M=25%N | M=50%N | M=75%N |
 |---|---:|---:|---|---|---|---|
-| finesse1 | 6 | 0.8333 | [0.667, 1.000] | [0.667, 1.000] | [0.667, 1.000] | [0.750, 1.000] |
+| finesse1 | 6 | 0.8333 | [0.667, 1.000] (M=3) | [0.667, 1.000] (M=3) | [0.667, 1.000] (M=3) | [0.750, 1.000] (M=4) |
 | finesse2 | 66 | 0.8333 | [0.429, 1.000] | [0.688, 0.938] | [0.727, 0.909] | [0.780, 0.860] |
 | finesse3 | 816 | 0.7169 | [0.634, 0.829] | [0.647, 0.784] | [0.706, 0.755] | [0.701, 0.734] |
 | finesse4 | 10,626 | 0.6432 | [0.605, 0.668] | [0.623, 0.654] | [0.632, 0.648] | [0.638, 0.647] |
 
-(Linux, default build.) Sixteen (fixture, `M`) cells, no exceptions — the
-true value fell inside the observed range at every single one, including
-the smallest-`M`, widest-spread cells where a bias would be most visible.
-This is the first check in this capability's own testing of whether
-`ExhaustiveLayoutSource`'s keyed-Feistel shuffling is actually unbiased
-with respect to layout consistency, rather than merely asserted to be by
-construction.
+(Linux, default build.) A minimum sample size (against a degenerate 1- or
+2-layout draw) means finesse1's own 10%/25%/50% *labels* all floor to the
+identical `M=3` — the three matching intervals in its row are the same
+configuration measured with three different seed lists, not three
+increasingly larger samples; only its `M=4` column is genuinely distinct.
+Sixteen seed-batches were run across the table; **fourteen** are distinct
+`(fixture, M)` configurations (finesse1 contributes two, not four). The
+true value fell inside the observed range at every single one of the
+sixteen, including the smallest-`M`, widest-spread cells where a bias
+would be most visible. This is the first check in this capability's own
+testing of whether `ExhaustiveLayoutSource`'s keyed-Feistel shuffling is
+actually unbiased with respect to layout consistency, rather than merely
+asserted to be by construction.
 
 **Width shrinks monotonically with `M` at every fixture**, roughly as
 `1/sqrt(M)` by eye (not fit statistically — see Limits below): finesse4's
 own spread narrows from 0.063 (10%N) to 0.009 (75%N), a sevenfold
-tightening for a 7.5x sampling increase. finesse1's own spread barely
-narrows across `M` — expected, not a defect: even at 75% of `N=6` that is
-4 or 5 of 6 total layouts, still close to the whole space.
+tightening for a 7.5x sampling increase. finesse1's own width looks flat
+across its first three columns because they are the same `M=3`, not
+because width is insensitive to `M` there — its own genuine step, `M=3`
+to `M=4`, does narrow (0.333 to 0.250), consistent with the other three
+fixtures' own direction at a fixture too small to show much more.
 
 **Recommendation: `M` around half of `N`** is a reasonable default for a
 reader who cannot afford exhaustive evaluation and wants the estimator's
@@ -125,7 +133,13 @@ whether history narrows the space usefully.
 comparison that removes that confound) rises clearly with `N` (7.4 at
 N=70 to 17.7 at N=12,870, without history), and **history improves or
 matches scan-to-hit in 4 of 5 pool rungs** at matched fraction (only the
-smallest rung is very slightly worse, within small-integer noise).
+smallest rung is very slightly worse, within small-integer noise). The
+smallest with-history rung (N=15) is not *quite* matched — a floor against
+a degenerate sample (below 4 layouts) pushes it to 26.7% of `N` rather
+than 20%, a higher fraction than its without-history counterpart (N=70,
+exactly 20%) gets — which, if anything, understates how much worse it
+looks: the with-history side still came out marginally behind (8.15 vs
+7.44) despite the extra, unearned sampling share.
 
 **Answer: a narrowing hint does not look necessary, on this evidence.**
 At matched sampling fraction, a supplied history already buys most of

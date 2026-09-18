@@ -91,11 +91,23 @@ def run() -> None:
         for fraction, seeds in SEEDS_BY_FRACTION.items():
             probe = sweep.run_instrument(binary, fixture=fixture, history="without", seed=seeds[0])
             n = int(probe.fields["expected_size"])
-            m = max(3, round(fraction * n))
+            # max(3, ...): a floor against a degenerate 1- or 2-layout
+            # sample at the smallest fixtures, not a cosmetic minimum --
+            # but it means the *requested* fraction and the *actual* one
+            # this cell runs at can differ (finesse1, N=6: every fraction
+            # from 10% to 50% floors to the same M=3). Label with the
+            # actual fraction actually sampled, not the requested one, so
+            # this cell's own printed line is never misleading about what
+            # ran -- found directly (not assumed) when a cold review asked
+            # why finesse1's own 10%/25%/50% columns came back identical.
+            requested_m = round(fraction * n)
+            m = max(3, requested_m)
+            actual_fraction = m / n
+            floored_note = "" if m == requested_m else f", requested {fraction:.0%}={requested_m} floored up"
             if m >= n:
                 print(
-                    f"  M={m} (={fraction:.0%} of N={n}) >= N -- skipped, covered by the "
-                    "guard's own M>=N check")
+                    f"  M={m} (={actual_fraction:.0%} of N={n}{floored_note}) >= N -- skipped, "
+                    "covered by the guard's own M>=N check")
                 continue
 
             values = []
@@ -116,7 +128,7 @@ def run() -> None:
 
             status = "true value INSIDE spread" if inside else "*** true value OUTSIDE spread ***"
             print(
-                f"  M={m:>6} (={fraction:.0%} of N={n})  seeds={len(seeds):>2}  "
+                f"  M={m:>6} (={actual_fraction:.0%} of N={n}{floored_note})  seeds={len(seeds):>2}  "
                 f"range=[{lo:.4f}, {hi:.4f}]  spread={spread:.4f}  mean={mean:.4f}  "
                 f"stdev={stdev:.4f}  worst layout_min={worst_layout_min}  -- {status}")
 

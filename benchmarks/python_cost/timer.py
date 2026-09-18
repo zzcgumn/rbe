@@ -168,4 +168,12 @@ def run(iterations: int) -> None:
 
 
 if __name__ == "__main__":
-    run(int(sys.argv[1]) if len(sys.argv) > 1 else 2000)
+    requested_iterations = int(sys.argv[1]) if len(sys.argv) > 1 else 2000
+    if requested_iterations < 1:
+        # Zero or negative divides by iterations at the end of
+        # run_config() -- Python already raises ZeroDivisionError there
+        # rather than printing something silently wrong, but the message
+        # is clearer here, and this matches timer.cpp's own explicit
+        # rejection of the same input.
+        sys.exit(f"iterations must be a positive integer, got {requested_iterations}")
+    run(requested_iterations)
