@@ -65,6 +65,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <optional>
 #include <set>
 #include <string>
@@ -236,7 +237,25 @@ namespace
             }
             else if (arg == "--repeat")
             {
-                options.repeat = std::atoi(next());
+                // Not std::atoi(): it parses only a leading numeric
+                // prefix and silently ignores whatever follows
+                // ("5junk" -> 5, ignoring the rest and diagnosing
+                // nothing), so a malformed value would run a different
+                // repeat count than the one actually typed. Reuses
+                // parse_u64's own full-string, non-negative validation
+                // (the same rigor --seed/--sample-size/--scan-budget/
+                // --replenish-below already have) and adds the one
+                // additional check they do not need: repeat is an int,
+                // not a std::uint64_t, so a value past INT_MAX has to be
+                // rejected explicitly rather than silently truncated by
+                // the cast below.
+                std::uint64_t const value = parse_u64("--repeat", next());
+                if (value > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+                {
+                    std::fprintf(stderr, "--repeat is too large\n");
+                    std::exit(usage());
+                }
+                options.repeat = static_cast<int>(value);
             }
             else if (arg == "--strategy")
             {
