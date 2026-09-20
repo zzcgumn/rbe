@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include <api/dds_constants.hpp>
 #include <belief_evaluation/belief_view.hpp>
 #include <belief_evaluation/declarer_strategy.hpp>
 #include <belief_evaluation/defender_strategy.hpp>
@@ -26,8 +27,8 @@
 #include <belief_evaluation/types.hpp>
 #include <belief_evaluation/validation.hpp>
 #include <solver_context/solver_context.hpp>
-#include <utility/constants.h>
 
+#include "belief_converters.hpp"
 #include "converters.hpp"
 
 namespace py = pybind11;
