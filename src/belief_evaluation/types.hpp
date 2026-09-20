@@ -7,8 +7,8 @@
 #include <string>
 #include <utility>
 
+#include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>
-#include <utility/constants.h>
 
 namespace dds::belief_evaluation
 {

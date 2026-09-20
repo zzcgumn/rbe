@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <vector>
 
-#include <utility/constants.h>
+#include <api/dds_constants.hpp>
 
 #include <belief_evaluation/defender_split.hpp>
 #include <belief_evaluation/types.hpp>

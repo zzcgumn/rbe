@@ -5,11 +5,11 @@
 #include <cstdint>
 #include <map>
 
+#include <api/dds_constants.hpp>
 #include <belief_evaluation/belief_view.hpp>
 #include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/rank_map.hpp>
 #include <belief_evaluation/trick.hpp>
-#include <utility/constants.h>
 
 namespace dds::belief_evaluation
 {

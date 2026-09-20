@@ -2,11 +2,11 @@
 
 #include <cassert>
 
+#include <api/dds_constants.hpp>
 #include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/replenishment.hpp>
 #include <belief_evaluation/trick.hpp>
-#include <utility/constants.h>
 
 namespace dds::belief_evaluation
 {

@@ -3,10 +3,10 @@
 #include <bit>
 #include <cassert>
 
+#include <api/dds_constants.hpp>
 #include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/layout_key.hpp>
 #include <belief_evaluation/rank_map.hpp>
-#include <utility/constants.h>
 
 namespace dds::belief_evaluation
 {

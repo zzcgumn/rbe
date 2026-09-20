@@ -52,7 +52,7 @@ cc_test(
         "//library/src/belief_evaluation:position",
         "//library/src/lookup_tables",
         "//library/src/api:api_definitions",
-        "//library/src/utility:constants",
+        "//library/src/api:dds_constants",
         "@googletest//:gtest_main",
     ],
     copts = DDS_CPPOPTS,
@@ -77,7 +77,7 @@ cc_binary(
         "//library/src/belief_evaluation:position",
         "//library/src/lookup_tables",
         "//library/src/api:api_definitions",
-        "//library/src/utility:constants",
+        "//library/src/api:dds_constants",
         # test_support.hpp's own #include <gtest/gtest.h> (for the
         # EXPECT_*-based fixture-validation helpers this binary does not
         # call) -- gtest, not gtest_main, since this binary defines its
@@ -106,7 +106,7 @@ cc_test(
         "//library/src/belief_evaluation:double_dummy_defender",
         "//library/src/api:api_definitions",
         "//library/src/solver_context",
-        "//library/src/utility:constants",
+        "//library/src/api:dds_constants",
         "@googletest//:gtest_main",
     ],
     copts = DDS_CPPOPTS,
@@ -153,7 +153,7 @@ cc_test(
         "//library/src/belief_evaluation:double_dummy_defender",
         "//library/src/api:api_definitions",
         "//library/src/solver_context",
-        "//library/src/utility:constants",
+        "//library/src/api:dds_constants",
         "@googletest//:gtest_main",
     ],
     copts = DDS_CPPOPTS,

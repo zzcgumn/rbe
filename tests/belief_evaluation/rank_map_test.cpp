@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>
 #include <lookup_tables/lookup_tables.hpp>
-#include <utility/constants.h>
 
 #include <belief_evaluation/types.hpp>
 #include <belief_evaluation/rank_map.hpp>

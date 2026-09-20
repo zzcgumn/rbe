@@ -1,7 +1,7 @@
 #include <belief_evaluation/rank_map.hpp>
 
+#include <api/dds_constants.hpp>
 #include <lookup_tables/lookup_tables.hpp>
-#include <utility/constants.h>
 
 namespace dds::belief_evaluation
 {

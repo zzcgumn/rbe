@@ -1,6 +1,6 @@
 #include <belief_evaluation/layout_key.hpp>
 
-#include <utility/constants.h>
+#include <api/dds_constants.hpp>
 
 namespace dds::belief_evaluation
 {

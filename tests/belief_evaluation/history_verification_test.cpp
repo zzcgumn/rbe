@@ -5,8 +5,8 @@
 #include <utility>
 #include <vector>
 
+#include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>
-#include <utility/constants.h>
 
 #include <belief_evaluation/history_verification.hpp>
 

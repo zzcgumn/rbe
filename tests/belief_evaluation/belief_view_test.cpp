@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include <utility/constants.h>
+#include <api/dds_constants.hpp>
 
 #include <belief_evaluation/belief_view.hpp>
 #include <belief_evaluation/kahan.hpp>

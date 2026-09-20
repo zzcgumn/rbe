@@ -2,7 +2,7 @@
 
 #include <array>
 
-#include <utility/constants.h>
+#include <api/dds_constants.hpp>
 
 #include <belief_evaluation/position.hpp>
 #include <belief_evaluation/renumber.hpp>

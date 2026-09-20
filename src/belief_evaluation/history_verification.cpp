@@ -2,10 +2,10 @@
 
 #include <array>
 
+#include <api/dds_constants.hpp>
 #include <belief_evaluation/position.hpp>
 #include <belief_evaluation/trick.hpp>
 #include <belief_evaluation/void_derivation.hpp>
-#include <utility/constants.h>
 
 namespace dds::belief_evaluation
 {

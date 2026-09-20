@@ -1,8 +1,8 @@
 #include <belief_evaluation/double_dummy_bound.hpp>
 
+#include <api/dds_constants.hpp>
 #include <api/solve_board.hpp>
 #include <solver_context/solver_context.hpp>
-#include <utility/constants.h>
 
 #include <belief_evaluation/trick.hpp>
 

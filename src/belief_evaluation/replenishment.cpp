@@ -3,11 +3,11 @@
 #include <cassert>
 #include <unordered_set>
 
+#include <api/dds_constants.hpp>
 #include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/layout_key.hpp>
 #include <belief_evaluation/node.hpp>
 #include <belief_evaluation/trick.hpp>
-#include <utility/constants.h>
 
 namespace dds::belief_evaluation
 {
