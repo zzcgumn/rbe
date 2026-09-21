@@ -1,0 +1,29 @@
+# Bazel configuration for the replenished belief evaluation repository.
+#
+# Trimmed from dds's .bazelrc: .bazelrc is never inherited across
+# repositories, so anything this tree needs has to be restated here. The
+# sanitiser, wasm, Java and Android stanzas are left out -- no target here
+# uses them. Add them back one at a time, with the dependency each needs,
+# rather than copying the file wholesale.
+
+common --enable_platform_specific_config
+
+# Platform-specific C++ standard flags.
+build:macos --cxxopt=-std=c++20
+build:macos --host_cxxopt=-std=c++20
+# Apple's ld does not accept lld's --start-lib/--end-lib.
+build:macos --features=-supports_start_end_lib
+build:linux --cxxopt=-std=c++20
+build:linux --host_cxxopt=-std=c++20
+# Windows MSVC C++20 comes from the patched rules_cc default_cpp_std feature
+# (see MODULE.bazel single_version_override). Do not add --cxxopt=/std:...
+# here.
+
+# GoogleTest headers can trigger conversion warnings on Clang; suppress them.
+build:macos --cxxopt=-Wno-character-conversion
+build:linux --cxxopt=-Wno-conversion
+
+# The optimised build. CI builds and tests this tree under it on every
+# platform carrying a different config from the default, which
+# python/tests/ci_belief_evaluation_opt_test.py guards.
+build:opt --compilation_mode=opt

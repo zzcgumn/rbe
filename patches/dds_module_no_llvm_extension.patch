@@ -1,0 +1,67 @@
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -83,53 +83,10 @@
+     ],
+ )
+ 
+-llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
+-llvm.toolchain(
+-    name = "llvm_toolchain",
+-    # When bumping these versions, also update .bazelrc build:tsan_macos rpath
+-    # (clang/N) and confirm Xcode ships the same major; see docs/BUILD_SYSTEM.md.
+-    # Keep MSAN_LLVM_VERSION / MSAN_DISTRIBUTION below on the same LLVM release.
+-    # LLVM 21 ld64.lld cannot parse MacOSX 27 SDK TBD files that list
+-    # arm64e.x1. Apple's ld can; last --ld-path wins over the toolchain default
+-    # --ld-path=ld64.lld. Pair with .bazelrc --features=-supports_start_end_lib
+-    # because Apple ld rejects lld's --start-lib/--end-lib. Scoped to this
+-    # toolchain so wasm/emscripten keeps wasm-ld (do not put --ld-path in
+-    # build:macos --linkopt). See docs/BUILD_SYSTEM.md (macOS SDK section).
+-    extra_link_flags = {
+-        "darwin-aarch64": ["--ld-path=/usr/bin/ld"],
+-        "darwin-x86_64": ["--ld-path=/usr/bin/ld"],
+-    },
+-    llvm_versions = {
+-        "darwin-aarch64": "21.1.8",
+-        "linux-x86_64": "21.1.8",
+-        "windows-x86_64": "21.1.8",
+-    },
+-)
+-use_repo(llvm, "llvm_toolchain")
++# The llvm toolchain extension and toolchain registration are removed when
++# dds is consumed as a dependency: toolchains_llvm rejects non-root use of
++# its extension, and the root module registers the toolchain itself.
+ 
+-# MemorySanitizer toolchain (Linux x86_64 only). Not registered globally —
+-# selected via --config=msan (--extra_toolchains=@llvm_toolchain_msan//:all).
+-# Pinned to the exact Ubuntu 22.04 LLVM build that the instrumented libc++
+-# overlay was compiled against; see toolchains_llvm tests/MODULE.bazel and
+-# docs/BUILD_SYSTEM.md (MSAN section).
+-MSAN_LLVM_VERSION = "21.1.8"
+-MSAN_DISTRIBUTION = "clang+llvm-%s-x86_64-linux-gnu-ubuntu-22.04.tar.zst" % MSAN_LLVM_VERSION
+-
+-llvm.toolchain(
+-    name = "llvm_toolchain_msan",
+-    alternative_llvm_sources = [
+-        "https://github.com/RealtimeRoboticsGroup/toolchains/releases/download/{llvm_version}/{basename}",
+-    ],
+-    distribution = MSAN_DISTRIBUTION,
+-    extra_llvm_distributions = {
+-        MSAN_DISTRIBUTION: "3e9ab559182f45143c36d761fcee6818935187a8f54354ecb043643b642769f0",
+-    },
+-    libcxx_sha256 = "56e33981bb71aba8704026534093f81ba9783cff0bf701681f1781d2ecb50a87",
+-    libcxx_url = "https://github.com/RealtimeRoboticsGroup/toolchains/releases/download/%s/libcxx-msan-%s-x86_64-linux-gnu-ubuntu-22.04.tar.zst" % (MSAN_LLVM_VERSION, MSAN_LLVM_VERSION),
+-    llvm_versions = {"": MSAN_LLVM_VERSION},
+-)
+-use_repo(llvm, "llvm_toolchain_msan")
+-
+ # Apple toolchain repo; selected only for --config=asan via .bazelrc (not registered globally).
+ apple_cc_configure = use_extension("@apple_support//crosstool:setup.bzl", "apple_cc_configure_extension")
+ use_repo(apple_cc_configure, "local_config_apple_cc", "local_config_apple_cc_toolchains")
+@@ -149,6 +106,3 @@
+     requirements_lock = "//web:requirements_lock.txt",
+ )
+ use_repo(pip, "pypi")
+-
+-register_toolchains("@llvm_toolchain//:all")
+-register_toolchains("@emsdk//:all")
+\ No newline at end of file

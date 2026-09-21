@@ -1,0 +1,97 @@
+module(
+    name = "rbe",
+    version = "0.1.0",
+)
+
+# --- The solver -------------------------------------------------------------
+# Not in the Bazel Central Registry, so it comes in by git_override, pinned to
+# a commit rather than a branch: a floating pin turns an unrelated dds change
+# into an unexplained failure here. This commit is dds develop at the point
+# this repository was split out, and carries dds-bridge/dds#396 (the Deal
+# converters the Python bindings below reuse).
+bazel_dep(name = "dds", version = "3.1.0")
+git_override(
+    module_name = "dds",
+    commit = "5d0390f9",
+    remote = "https://github.com/dds-bridge/dds.git",
+    # dds's own MODULE.bazel uses the toolchains_llvm extension and registers
+    # toolchains. Both are root-module-only concerns -- toolchains_llvm fails
+    # outright with "Only the root module can use the 'llvm' extension" -- so
+    # the patch strips them and this file does that job instead. The patch is
+    # tied to the pinned commit above: bump one, regenerate the other.
+    patch_strip = 1,
+    patches = ["//patches:dds_module_no_llvm_extension.patch"],
+)
+
+# --- Everything below is restated from dds, not inherited from it -----------
+# bzlmod honours single_version_override / archive_override only in the ROOT
+# module. dds carries both, and as a bazel_dep its copies are silently
+# ignored here. Dropping either does not announce itself as a missing
+# override: it shows up as C++20 failing to compile on Windows, or as an
+# unrelated -Werror failure on Linux.
+
+bazel_dep(name = "rules_cc", version = "0.2.18")
+
+# MSVC default_cpp_std is hardcoded to /std:c++17 in rules_cc. Raise it to
+# /std:c++20 so googletest and every Windows cc_* compile match the project
+# baseline without restating /std in DDS_CPPOPTS (D9025).
+single_version_override(
+    module_name = "rules_cc",
+    version = "0.2.18",
+    patch_strip = 1,
+    patches = ["//:patches/rules_cc_msvc_default_cpp_std_cxx20.patch"],
+)
+
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "googletest", version = "1.17.0.bcr.2")
+bazel_dep(name = "pybind11_bazel", version = "3.0.1")
+bazel_dep(name = "rules_python", version = "2.0.1")
+
+# BCR 1.8.0 still emits unused `-stdlib=libc++` under `-nostdinc++`, which
+# fails -Werror builds. Override to the #791 fix until BCR publishes >1.8.0.
+bazel_dep(name = "toolchains_llvm", version = "1.8.0")
+
+archive_override(
+    module_name = "toolchains_llvm",
+    integrity = "sha256-spaFpVBa8JGs27s/9vk0Xb4gd8fJ9OFmnxaBYPeOt4o=",
+    strip_prefix = "toolchains_llvm-c3ac93f5c61cb78487765d2e81e7485ad3f8bf2c",
+    urls = [
+        "https://github.com/bazel-contrib/toolchains_llvm/archive/c3ac93f5c61cb78487765d2e81e7485ad3f8bf2c.tar.gz",
+        "https://codeload.github.com/bazel-contrib/toolchains_llvm/tar.gz/c3ac93f5c61cb78487765d2e81e7485ad3f8bf2c",
+    ],
+)
+
+llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
+
+# Keep in step with dds: the two trees compile into the same binaries, and a
+# toolchain skew here shows up as a diagnostic dds does not produce.
+#
+# LLVM 21 ld64.lld cannot parse MacOSX 27 SDK TBD files that list arm64e.x1.
+# Apple's ld can; last --ld-path wins over the toolchain default. Pair with
+# .bazelrc --features=-supports_start_end_lib, because Apple's ld rejects
+# lld's --start-lib/--end-lib.
+llvm.toolchain(
+    name = "llvm_toolchain",
+    extra_link_flags = {
+        "darwin-aarch64": ["--ld-path=/usr/bin/ld"],
+        "darwin-x86_64": ["--ld-path=/usr/bin/ld"],
+    },
+    llvm_versions = {
+        "darwin-aarch64": "21.1.8",
+        "linux-x86_64": "21.1.8",
+        "windows-x86_64": "21.1.8",
+    },
+)
+use_repo(llvm, "llvm_toolchain")
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    is_default = True,
+    python_version = "3.14",
+)
+use_repo(python, "python_3_14")
+
+# Registered here rather than relied on from dds: a dependency module's
+# registrations are honoured but ordered after the root's, so stating it
+# makes which toolchain wins a property of this file.
+register_toolchains("@llvm_toolchain//:all")

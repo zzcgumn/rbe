@@ -1,0 +1,73 @@
+# The config_settings CPPVARIABLES.bzl selects on. Copied from dds for the
+# same reason that file is: its select() keys are bare //: labels, so they
+# resolve here and the settings have to exist here.
+#
+# The four solver toggles (debug_all, scheduler, ab_stats, tt_reset_debug)
+# gate defines nothing in this repository reads. They are kept so
+# CPPVARIABLES.bzl stays a near-verbatim copy of dds's, diffable line for
+# line; dropping them would mean editing the select()s and losing that.
+
+config_setting(
+    name = "build_macos",
+    constraint_values = ["@platforms//os:osx"],
+)
+
+config_setting(
+    name = "debug_build_macos",
+    constraint_values = ["@platforms//os:osx"],
+    values = {"compilation_mode": "dbg"},
+)
+
+config_setting(
+    name = "build_linux",
+    constraint_values = ["@platforms//os:linux"],
+)
+
+config_setting(
+    name = "debug_build_linux",
+    constraint_values = ["@platforms//os:linux"],
+    values = {"compilation_mode": "dbg"},
+)
+
+config_setting(
+    name = "build_windows",
+    constraint_values = [
+        "@platforms//os:windows",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "debug_build_windows",
+    constraint_values = [
+        "@platforms//os:windows",
+        "@platforms//cpu:x86_64",
+    ],
+    values = {"compilation_mode": "dbg"},
+)
+
+config_setting(
+    name = "debug_all",
+    define_values = {"debug_all": "true"},
+)
+
+config_setting(
+    name = "scheduler",
+    define_values = {"scheduler": "true"},
+)
+
+config_setting(
+    name = "ab_stats",
+    define_values = {"ab_stats": "true"},
+)
+
+config_setting(
+    name = "tt_reset_debug",
+    define_values = {"tt_reset_debug": "true"},
+)
+
+# Read by the CI guard test, the same way dds exposes its own.
+exports_files(
+    [".bazelrc"],
+    visibility = ["//python:__pkg__"],
+)
