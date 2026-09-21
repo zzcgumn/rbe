@@ -16,7 +16,9 @@ This project uses GitHub as its primary version control and collaboration platfo
   - `fix/<short-description>` for bug fixes  
   - `chore/<short-description>` for maintenance
   - `refactor/<short-description>` for refactoring
-- Branch names must be lowercase and use hyphens instead of spaces.
+- Branch names must be lowercase, and use underscores to separate words
+  within the description: `feature/python_wheel`, not
+  `feature/python-wheel`. The `<type>/` prefix keeps its slash.
 
 ## Pull Request Rules
 1. **Always** open a PR for changes — no direct commits to `main`.
