@@ -76,7 +76,7 @@ class TestTheEntryPointWorks(unittest.TestCase):
 class TestOutOfRangeDeclarerRaises(unittest.TestCase):
     # evaluate()'s own declarer is forwarded to the C++ evaluator's
     # make_root(), which indexes remainCards[declarer] while filtering
-    # candidates with no range check of its own -- library/src/ has
+    # candidates with no range check of its own -- src/ has
     # nothing that reports this as a cause the way a rejected history or a
     # RootFailure does, so an out-of-range value here is undefined
     # behaviour unless this binding boundary catches it first, the same

@@ -1,0 +1,50 @@
+# .github/workflows/ci_macos.yml
+name: CI – macOS
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build_and_test:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Bazelisk
+        uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+          disk-cache: true
+          repository-cache: true
+
+      - name: Build
+        run: bazelisk build --verbose_failures //...
+
+      - name: Test
+        run: bazelisk test --verbose_failures --test_output=errors //...
+
+      # The optimised build (-c opt plus -DNDEBUG). This is the platform
+      # that also carries ThinLTO (-flto=thin in both DDS_CPPOPTS and
+      # DDS_LINKOPTS' macOS arms), so it is a different compilation again
+      # from Linux's optimised build.
+      # python/tests/ci_belief_evaluation_opt_test.py guards that these two
+      # lines keep naming this module.
+      - name: Build belief_evaluation (optimised)
+        run: bazelisk build --config=opt --verbose_failures //src/belief_evaluation
+
+      - name: Test belief_evaluation (optimised)
+        run: bazelisk test --config=opt --verbose_failures --test_output=errors //tests/belief_evaluation/...
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: bazel-testlogs-macos
+          path: bazel-testlogs/**
+          if-no-files-found: ignore

@@ -26,10 +26,10 @@
 #include <belief_evaluation/spread.hpp>
 #include <belief_evaluation/types.hpp>
 #include <belief_evaluation/validation.hpp>
+#include <dds3/converters.hpp>
 #include <solver_context/solver_context.hpp>
 
 #include "belief_converters.hpp"
-#include "converters.hpp"
 
 namespace py = pybind11;
 namespace be = dds::belief_evaluation;

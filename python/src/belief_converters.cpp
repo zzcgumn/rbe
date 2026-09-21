@@ -4,7 +4,7 @@
 
 #include <pybind11/pybind11.h>
 
-#include "converters.hpp"
+#include <dds3/converters.hpp>
 
 namespace py = pybind11;
 namespace be = dds::belief_evaluation;

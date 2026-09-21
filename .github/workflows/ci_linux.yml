@@ -1,0 +1,61 @@
+# .github/workflows/ci_linux.yml
+name: CI – Linux
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # The LLVM toolchain extracts to ~4 GB and dds is built from source on
+      # every run, so the runner's default free space is not comfortable.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
+
+      - name: Setup Bazelisk
+        uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+          disk-cache: true
+          repository-cache: true
+
+      - name: Build
+        run: bazelisk build --verbose_failures //...
+
+      - name: Test
+        run: bazelisk test --verbose_failures --test_output=errors //...
+
+      # The optimised build (-c opt plus -DNDEBUG). Its own step rather than
+      # folded into the two above: an optimised build of this tree is a
+      # different compilation, and nothing else here exercises --config=opt.
+      # python/tests/ci_belief_evaluation_opt_test.py guards that these two
+      # lines keep naming this module.
+      - name: Build belief_evaluation (optimised)
+        run: bazelisk build --config=opt --verbose_failures //src/belief_evaluation
+
+      - name: Test belief_evaluation (optimised)
+        run: bazelisk test --config=opt --verbose_failures --test_output=errors //tests/belief_evaluation/...
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: bazel-testlogs-linux
+          path: bazel-testlogs/**
+          if-no-files-found: ignore

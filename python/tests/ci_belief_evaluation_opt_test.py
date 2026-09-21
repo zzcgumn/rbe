@@ -38,8 +38,8 @@ def _repo_root(start: Path | None = None) -> Path:
 # a Linux-only guard would leave macOS, the untested one, uncovered.
 _GUARDED_WORKFLOWS = ("ci_linux.yml", "ci_macos.yml")
 
-_OPT_BUILD_TARGET = "//library/src/belief_evaluation"
-_OPT_TEST_TARGET = "//library/tests/belief_evaluation/..."
+_OPT_BUILD_TARGET = "//src/belief_evaluation"
+_OPT_TEST_TARGET = "//tests/belief_evaluation/..."
 
 
 def _line_covers_module_under_opt(line: str, subcommand: str, target: str) -> bool:
@@ -91,7 +91,7 @@ class TestOptRegexRejectsNarrowedOrRemovedCoverage(unittest.TestCase):
     def test_rejects_a_build_missing_config_opt(self) -> None:
         self.assertFalse(
             _line_covers_module_under_opt(
-                "bazelisk build --verbose_failures //library/src/belief_evaluation",
+                "bazelisk build --verbose_failures //src/belief_evaluation",
                 "build",
                 _OPT_BUILD_TARGET,
             )
@@ -100,7 +100,7 @@ class TestOptRegexRejectsNarrowedOrRemovedCoverage(unittest.TestCase):
     def test_rejects_a_test_target_pattern_narrowed_away_from_the_module(self) -> None:
         self.assertFalse(
             _line_covers_module_under_opt(
-                "bazelisk test --config=opt //library/tests/some_other_module/...",
+                "bazelisk test --config=opt //tests/some_other_module/...",
                 "test",
                 _OPT_TEST_TARGET,
             )
@@ -109,7 +109,7 @@ class TestOptRegexRejectsNarrowedOrRemovedCoverage(unittest.TestCase):
     def test_rejects_a_commented_out_invocation(self) -> None:
         self.assertFalse(
             _line_covers_module_under_opt(
-                "# bazelisk build --config=opt //library/src/belief_evaluation",
+                "# bazelisk build --config=opt //src/belief_evaluation",
                 "build",
                 _OPT_BUILD_TARGET,
             )
@@ -118,7 +118,7 @@ class TestOptRegexRejectsNarrowedOrRemovedCoverage(unittest.TestCase):
     def test_rejects_the_wrong_subcommand(self) -> None:
         self.assertFalse(
             _line_covers_module_under_opt(
-                "bazelisk fetch --config=opt //library/src/belief_evaluation",
+                "bazelisk fetch --config=opt //src/belief_evaluation",
                 "build",
                 _OPT_BUILD_TARGET,
             )
@@ -127,7 +127,7 @@ class TestOptRegexRejectsNarrowedOrRemovedCoverage(unittest.TestCase):
     def test_accepts_the_committed_invocation_shape(self) -> None:
         self.assertTrue(
             _line_covers_module_under_opt(
-                "bazelisk build --config=opt --verbose_failures //library/src/belief_evaluation",
+                "bazelisk build --config=opt --verbose_failures //src/belief_evaluation",
                 "build",
                 _OPT_BUILD_TARGET,
             )
@@ -135,7 +135,7 @@ class TestOptRegexRejectsNarrowedOrRemovedCoverage(unittest.TestCase):
         self.assertTrue(
             _line_covers_module_under_opt(
                 "bazelisk test --config=opt --verbose_failures --test_output=errors "
-                "//library/tests/belief_evaluation/...",
+                "//tests/belief_evaluation/...",
                 "test",
                 _OPT_TEST_TARGET,
             )
@@ -147,14 +147,14 @@ class TestOptRegexRejectsNarrowedOrRemovedCoverage(unittest.TestCase):
         """
         self.assertTrue(
             _line_covers_module_under_opt(
-                "bazelisk build //library/src/belief_evaluation --config=opt --verbose_failures",
+                "bazelisk build //src/belief_evaluation --config=opt --verbose_failures",
                 "build",
                 _OPT_BUILD_TARGET,
             )
         )
         self.assertTrue(
             _line_covers_module_under_opt(
-                "bazelisk test //library/tests/belief_evaluation/... --verbose_failures --config=opt",
+                "bazelisk test //tests/belief_evaluation/... --verbose_failures --config=opt",
                 "test",
                 _OPT_TEST_TARGET,
             )

@@ -1,0 +1,207 @@
+load("//:CPPVARIABLES.bzl", "DDS_CPPOPTS")
+load("@pybind11_bazel//:build_defs.bzl", "pybind_extension")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+pybind_extension(
+    name = "_belief_space_local_evaluation",
+    srcs = [
+        "src/belief_converters.cpp",
+        "src/belief_converters.hpp",
+        "src/belief_space_local_evaluation.cpp",
+        # The Deal converters, compiled into this extension rather than
+        # linked: pybind_extension compiles its own srcs with
+        # -fvisibility=hidden, and a cc_library dependency would not inherit
+        # that, so dds3_python's symbols would be exported from both this
+        # .so and dds3's own and could interpose at load time. dds exposes
+        # them as a filegroup for exactly this reason.
+        "@dds//python:converters_srcs",
+    ],
+    copts = DDS_CPPOPTS,
+    deps = [
+        # converters.hpp on an include path, as <dds3/converters.hpp>. The
+        # filegroup alone is not enough: converters.cpp's own quoted include
+        # resolves next to itself, but this extension's own sources have no
+        # way to name the header otherwise.
+        "@dds//python:converters_hdrs",
+        # converters.hpp's own #include <dds/dds.hpp>, for the dds3-specific
+        # types its other functions convert.
+        "@dds//library/src:dds",
+        "//src/belief_evaluation",
+        # The solver seam: DoubleDummyDefender and DoubleDummyBound, both
+        # solver-linked, unlike the rest of this extension. SolverContext
+        # itself is never registered here -- dds3 keeps that registration
+        # (see belief_space_local_evaluation.cpp's own comment on the
+        # cross-module pattern), so no dep on dds3's extension is needed for
+        # that; these two are what actually need the solver.
+        "//src/belief_evaluation:double_dummy_bound",
+        "//src/belief_evaluation:double_dummy_defender",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Copy the extension into the package directory under the platform-specific
+# filename Python expects for native modules.
+genrule(
+    name = "_belief_space_local_evaluation_in_package_unix",
+    srcs = [":_belief_space_local_evaluation"],
+    outs = ["belief_space_local_evaluation/_belief_space_local_evaluation.so"],
+    cmd = "cp \"$(location :_belief_space_local_evaluation)\" \"$@\"",
+)
+
+genrule(
+    name = "_belief_space_local_evaluation_in_package_windows",
+    srcs = [":_belief_space_local_evaluation"],
+    outs = ["belief_space_local_evaluation/_belief_space_local_evaluation.pyd"],
+    cmd = "cp \"$(location :_belief_space_local_evaluation)\" \"$@\"",
+    cmd_bat = "copy /Y \"$(location :_belief_space_local_evaluation)\" \"$@\"",
+)
+
+alias(
+    name = "_belief_space_local_evaluation_in_package",
+    actual = select({
+        "//:build_windows": ":_belief_space_local_evaluation_in_package_windows",
+        "//conditions:default": ":_belief_space_local_evaluation_in_package_unix",
+    }),
+)
+
+py_library(
+    name = "belief_space_local_evaluation_lib",
+    srcs = ["belief_space_local_evaluation/__init__.py"],
+    data = [":_belief_space_local_evaluation_in_package"],
+    imports = ["."],
+    # __init__.py imports dds3 before this module's own extension, so that
+    # SolverContext's pybind registration is in place first. Both extensions
+    # resolve one pybind11 through the module graph, so the interpreter-level
+    # type registry is shared exactly as it was inside dds.
+    deps = ["@dds//python:dds3_lib"],
+    visibility = ["//visibility:public"],
+)
+
+# Guard: CI builds and tests this tree under -c opt on every platform that
+# carries a different build config from the default (Linux and macOS; macOS
+# additionally carries ThinLTO).
+py_test(
+    name = "ci_belief_evaluation_opt_test",
+    size = "small",
+    main = "tests/ci_belief_evaluation_opt_test.py",
+    srcs = ["tests/ci_belief_evaluation_opt_test.py"],
+    data = ["//.github/workflows:all_workflows"],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_import_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_import.py",
+    srcs = ["tests/test_belief_space_local_evaluation_import.py"],
+    deps = [":belief_space_local_evaluation_lib"],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_conversions_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_conversions.py",
+    srcs = ["tests/test_belief_space_local_evaluation_conversions.py"],
+    deps = [":belief_space_local_evaluation_lib"],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_layout_source_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_layout_source.py",
+    srcs = ["tests/test_belief_space_local_evaluation_layout_source.py"],
+    deps = [":belief_space_local_evaluation_lib"],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_belief_view_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_belief_view.py",
+    srcs = ["tests/test_belief_space_local_evaluation_belief_view.py"],
+    deps = [":belief_space_local_evaluation_lib"],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_strategies_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_strategies.py",
+    srcs = ["tests/test_belief_space_local_evaluation_strategies.py"],
+    deps = [":belief_space_local_evaluation_lib"],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_evaluate_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_evaluate.py",
+    srcs = ["tests/test_belief_space_local_evaluation_evaluate.py"],
+    deps = [":belief_space_local_evaluation_lib"],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_results_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_results.py",
+    srcs = ["tests/test_belief_space_local_evaluation_results.py"],
+    deps = [":belief_space_local_evaluation_lib"],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_errors_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_errors.py",
+    srcs = ["tests/test_belief_space_local_evaluation_errors.py"],
+    deps = [":belief_space_local_evaluation_lib"],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_solver_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_solver.py",
+    srcs = ["tests/test_belief_space_local_evaluation_solver.py"],
+    deps = [
+        ":belief_space_local_evaluation_lib",
+        "@dds//python:dds3_lib",
+    ],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_docs_examples_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_docs_examples.py",
+    srcs = ["tests/test_belief_space_local_evaluation_docs_examples.py"],
+    deps = [
+        ":belief_space_local_evaluation_lib",
+        "@dds//python:dds3_lib",
+    ],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_parity_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_parity.py",
+    srcs = ["tests/test_belief_space_local_evaluation_parity.py"],
+    data = [
+        "//.github/workflows:all_workflows",  # _repo_root's own marker
+        "//tests/belief_evaluation:parity_reference",
+    ],
+    deps = [":belief_space_local_evaluation_lib"],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_python_cost_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_python_cost.py",
+    srcs = ["tests/test_belief_space_local_evaluation_python_cost.py"],
+    deps = [":belief_space_local_evaluation_lib"],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_fixture_ladder_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_fixture_ladder.py",
+    srcs = ["tests/test_belief_space_local_evaluation_fixture_ladder.py"],
+    data = [
+        "//.github/workflows:all_workflows",  # _repo_root's own marker
+        "//benchmarks/belief_evaluation:ladder_reference",
+    ],
+    deps = [":belief_space_local_evaluation_lib"],
+)

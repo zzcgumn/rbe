@@ -4,7 +4,7 @@ play.
 
 size() on three roots, a sampled/replenishing run compared bitwise, and
 counters compared field for field all read their fixtures and expected
-answers from library/tests/belief_evaluation/parity_reference, a small C++
+answers from tests/belief_evaluation/parity_reference, a small C++
 program run once as a subprocess and its stdout parsed as Python literals.
 This is a "build both sides of every comparison from one description"
 mechanism: hand-transcribing the same fixture once in each language is
@@ -62,7 +62,7 @@ def _parity_reference_binary() -> Path:
     # to find its own data dependency there. Prefer the bare name (it is
     # what every other platform has); fall back to the suffixed one only
     # when that is what actually exists.
-    root = _repo_root() / "library" / "tests" / "belief_evaluation" / "parity_reference"
+    root = _repo_root() / "tests" / "belief_evaluation" / "parity_reference"
     for candidate in (root, root.with_suffix(".exe")):
         if candidate.is_file():
             return candidate
