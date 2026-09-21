@@ -1,6 +1,7 @@
 load("//:CPPVARIABLES.bzl", "DDS_CPPOPTS")
 load("@pybind11_bazel//:build_defs.bzl", "pybind_extension")
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:packaging.bzl", "py_wheel", "py_wheel_dist")
 
 pybind_extension(
     name = "_belief_space_local_evaluation",
@@ -204,4 +205,81 @@ py_test(
         "//benchmarks/belief_evaluation:ladder_reference",
     ],
     deps = [":belief_space_local_evaluation_lib"],
+)
+
+# dds3's extension, staged into its package directory here rather than
+# depended on through dds's own :_dds3_in_package -- that alias is
+# package-private, while the extension itself is public. Without this the
+# wheel ships dds3/__init__.py and no dds3/_dds3.so, which imports cleanly
+# right up until the first call. Mirrors dds's own genrule pair, including
+# the Windows filename.
+genrule(
+    name = "_dds3_in_package_unix",
+    srcs = ["@dds//python:_dds3"],
+    outs = ["dds3/_dds3.so"],
+    cmd = "cp \"$(location @dds//python:_dds3)\" \"$@\"",
+)
+
+genrule(
+    name = "_dds3_in_package_windows",
+    srcs = ["@dds//python:_dds3"],
+    outs = ["dds3/_dds3.pyd"],
+    cmd = "cp \"$(location @dds//python:_dds3)\" \"$@\"",
+    cmd_bat = "copy /Y \"$(location @dds//python:_dds3)\" \"$@\"",
+)
+
+alias(
+    name = "_dds3_in_package",
+    actual = select({
+        "//:build_windows": ":_dds3_in_package_windows",
+        "//conditions:default": ":_dds3_in_package_unix",
+    }),
+)
+
+# One wheel, two top-level imports (dds3 and belief_space_local_evaluation).
+# Both extensions link the same static solver library, so two wheels would
+# duplicate it on disk and double the install step for a caller who wants
+# both -- and every caller wants both, since this package's __init__ imports
+# dds3 before its own extension to get SolverContext registered first.
+py_wheel(
+    name = "rbe_wheel",
+    distribution = "rbe",
+    version = "0.1.0",
+    summary = "Replenished belief evaluation for bridge declarer play, with the dds double dummy solver",
+    homepage = "https://github.com/zzcgumn/rbe",
+    license = "Apache-2.0",
+    python_requires = ">=3.10",
+    # NOTE: this is tagged py3-none-any while shipping two compiled
+    # extensions, so pip will install it on a platform it cannot import on.
+    # Inherited from dds's own wheel rather than introduced here. Fixing it
+    # means real python_tag/abi/platform tags, which is a distribution
+    # decision (which interpreters and platforms are published), not a
+    # mechanical change.
+    deps = [
+        ":belief_space_local_evaluation_lib",
+        ":_belief_space_local_evaluation_in_package",
+        "@dds//python:dds3_lib",
+        ":_dds3_in_package",
+    ],
+    strip_path_prefixes = ["python/"],
+    entry_points = {},
+)
+
+# Guard: the wheel must carry both packages *and* both compiled extensions.
+# py_wheel takes a py_library's srcs but not the extension its data points
+# at, so a wheel that ships dds3/__init__.py without dds3/_dds3.so builds
+# clean, installs clean, imports clean, and fails on the first call. That
+# happened while this target was being written.
+py_test(
+    name = "wheel_contents_test",
+    size = "small",
+    main = "tests/test_wheel_contents.py",
+    srcs = ["tests/test_wheel_contents.py"],
+    data = [":rbe_wheel"],
+)
+
+py_wheel_dist(
+    name = "rbe_wheel_dist",
+    out = "dist",
+    wheel = ":rbe_wheel",
 )

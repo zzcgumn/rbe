@@ -1,0 +1,16 @@
+# Bazel's convenience symlinks. They point into a machine-local output base,
+# so committing them makes the tree unusable on any other machine.
+bazel-*
+
+# Wheel output (//python:rbe_wheel_dist).
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Local agent/editor working artifacts.
+.claude/settings.local.json
+.serena/

@@ -16,6 +16,26 @@ contract is `specs/replenished-belief-evaluation.md`.
 | `benchmarks/` | the measuring instruments and their correctness guards |
 | `python/` | the `belief_space_local_evaluation` extension and its tests |
 
+## Installing
+
+```
+bazelisk build //python:rbe_wheel_dist   # writes dist/rbe-<version>-*.whl
+pip install dist/rbe-0.1.0-py3-none-any.whl
+```
+
+One wheel, two top-level imports: `belief_space_local_evaluation` and
+`dds3`. They are packaged together because both extensions link the same
+static solver library -- two wheels would duplicate it on disk -- and
+because every caller needs both anyway: this package's `__init__` imports
+`dds3` first, so that `SolverContext`'s pybind registration is in place
+before its own extension loads.
+
+The wheel is tagged `py3-none-any` while shipping two compiled extensions,
+so pip will install it on a platform it cannot import on. That is inherited
+from dds's own wheel. Giving it real interpreter/ABI/platform tags is a
+distribution decision -- which interpreters and platforms get published --
+rather than a mechanical change, and has not been taken.
+
 ## Building
 
 ```
