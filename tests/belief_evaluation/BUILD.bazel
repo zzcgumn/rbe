@@ -1,0 +1,162 @@
+load("//:CPPVARIABLES.bzl", "DDS_CPPOPTS", "DDS_LINKOPTS", "DDS_LOCAL_DEFINES")
+load("@rules_cc//cc:defs.bzl", "cc_test")
+# Its own separate load, rather than adding cc_binary to the line above:
+# this file is otherwise untouched by every earlier task in this plan
+# (zero deletions under library/ beyond the rename task's own exception),
+# and extending the existing load() line would turn one of its own lines
+# into a deletion-plus-insertion pair rather than a pure addition.
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+cc_test(
+    name = "belief_evaluation_test",
+    size = "small",
+    srcs = [
+        "aggr_invariance_test.cpp",
+        "belief_view_test.cpp",
+        "constrained_decomposition_test.cpp",
+        "counters_test.cpp",
+        "cuts_test.cpp",
+        "declarer_node_test.cpp",
+        "defender_node_test.cpp",
+        "defender_split_test.cpp",
+        "evaluate_test.cpp",
+        "fixture_validation_test.cpp",
+        "history_verification_test.cpp",
+        "kahan_test.cpp",
+        "keyed_permutation_test.cpp",
+        "layout_key_test.cpp",
+        "node_test.cpp",
+        "oracle_test.cpp",
+        "position_test.cpp",
+        "rank_map_test.cpp",
+        "renumber_test.cpp",
+        "replenishment_scan_test.cpp",
+        "replenishment_test.cpp",
+        "reproduction_test.cpp",
+        "restricted_choice_test.cpp",
+        "sampling_test.cpp",
+        "scripted_defender_test.cpp",
+        "smoke_test.cpp",
+        "spread_test.cpp",
+        "terminal_test.cpp",
+        "test_support.hpp",
+        "trick_test.cpp",
+        "two_way_experiment_test.cpp",
+        "exhaustive_layout_source_integration_test.cpp",
+        "exhaustive_layout_source_test.cpp",
+        "validation_test.cpp",
+        "void_derivation_test.cpp",
+    ],
+    deps = [
+        "//library/src/belief_evaluation",
+        "//library/src/belief_evaluation:position",
+        "//library/src/lookup_tables",
+        "//library/src/api:api_definitions",
+        "//library/src/api:dds_constants",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# Not a test target: a plain program, invoked as a subprocess by the
+# Python bindings' own parity test (python/tests/test_belief_space_local_evaluation_parity.py),
+# that builds a handful of fixtures, runs the real evaluator over them, and
+# prints both to stdout as Python literals -- see the source file's own
+# header comment for why this exists. Solver-free, same deps as
+# belief_evaluation_test above.
+cc_binary(
+    name = "parity_reference",
+    srcs = [
+        "parity_reference.cpp",
+        "test_support.hpp",
+    ],
+    deps = [
+        "//library/src/belief_evaluation",
+        "//library/src/belief_evaluation:position",
+        "//library/src/lookup_tables",
+        "//library/src/api:api_definitions",
+        "//library/src/api:dds_constants",
+        # test_support.hpp's own #include <gtest/gtest.h> (for the
+        # EXPECT_*-based fixture-validation helpers this binary does not
+        # call) -- gtest, not gtest_main, since this binary defines its
+        # own main() and linking gtest_main too would conflict.
+        "@googletest//:gtest",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+    visibility = ["//python:__pkg__"],
+)
+
+# Separate from belief_evaluation_test above so that target does not link
+# the solver either -- only this one does, matching
+# //library/src/belief_evaluation:double_dummy_defender's own separation
+# from the core library.
+cc_test(
+    name = "double_dummy_defender_test",
+    size = "small",
+    srcs = [
+        "double_dummy_defender_test.cpp",
+        "test_support.hpp",
+    ],
+    deps = [
+        "//library/src/belief_evaluation",
+        "//library/src/belief_evaluation:double_dummy_defender",
+        "//library/src/api:api_definitions",
+        "//library/src/solver_context",
+        "//library/src/api:dds_constants",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# The compile-level proof that dds::belief_evaluation's own Card and
+# api/dds.h's ::Card genuinely coexist in one translation unit, with no
+# rename trick. No solver linkage needed -- api/dds.h is a data-model-only
+# header, reached the same way //library/src/belief_evaluation itself
+# reaches it. A separate target rather than a source in belief_evaluation_test
+# because the whole point is what a translation unit can contain, and mixing
+# it into a file with any workaround of its own would blur that.
+cc_test(
+    name = "namespace_collision_test",
+    size = "small",
+    srcs = [
+        "namespace_collision_test.cpp",
+    ],
+    deps = [
+        "//library/src/belief_evaluation",
+        "//library/src/api:api_definitions",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# Sibling of double_dummy_defender_test, mirroring
+# //library/src/belief_evaluation:double_dummy_bound's own separation from
+# the core library.
+cc_test(
+    name = "double_dummy_bound_test",
+    size = "small",
+    srcs = [
+        "double_dummy_bound_test.cpp",
+        "test_support.hpp",
+    ],
+    deps = [
+        "//library/src/belief_evaluation",
+        "//library/src/belief_evaluation:double_dummy_bound",
+        "//library/src/belief_evaluation:double_dummy_defender",
+        "//library/src/api:api_definitions",
+        "//library/src/solver_context",
+        "//library/src/api:dds_constants",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)

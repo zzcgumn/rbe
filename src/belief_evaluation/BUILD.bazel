@@ -1,0 +1,124 @@
+load("//:CPPVARIABLES.bzl", "DDS_CPPOPTS", "DDS_LINKOPTS", "DDS_LOCAL_DEFINES")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "belief_evaluation",
+    srcs = [
+        "belief_view.cpp",
+        "constrained_decomposition.cpp",
+        "defender_split.cpp",
+        "evaluate.cpp",
+        "expand.cpp",
+        "history_verification.cpp",
+        "kahan.cpp",
+        "keyed_permutation.cpp",
+        "layout_key.cpp",
+        "node.cpp",
+        "rank_map.cpp",
+        "renumber.cpp",
+        "replenishment.cpp",
+        "spread.cpp",
+        "trick.cpp",
+        "exhaustive_layout_source.cpp",
+        "validation.cpp",
+        "void_derivation.cpp",
+    ],
+    hdrs = [
+        "belief_view.hpp",
+        "constrained_decomposition.hpp",
+        "declarer_strategy.hpp",
+        "defender_split.hpp",
+        "defender_strategy.hpp",
+        "evaluate.hpp",
+        "expand.hpp",
+        "history_verification.hpp",
+        "kahan.hpp",
+        "keyed_permutation.hpp",
+        "layout_key.hpp",
+        "layout_source.hpp",
+        "node.hpp",
+        "rank_map.hpp",
+        "renumber.hpp",
+        "replenishment.hpp",
+        "spread.hpp",
+        "trick.hpp",
+        "types.hpp",
+        "exhaustive_layout_source.hpp",
+        "validation.hpp",
+        "void_derivation.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":position",
+        "//library/src/lookup_tables",
+        "//library/src/api:api_definitions",
+        "//library/src/api:dds_constants",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# Position, legal_plays() and trick_winner() are a minimal trick-mechanics
+# helper that exists to state and test the renumbering isomorphism (see
+# position.hpp's own doxygen) and to back trick.cpp's Deal-facing wrappers.
+# Kept out of belief_evaluation's own srcs/hdrs and depended on privately
+# (a same-package dependency, so belief_evaluation's own .cc files can
+# still include position.hpp), so the header is not re-exported to that
+# library's public consumers — mirroring the testable_* pattern elsewhere
+# in this tree (e.g. //library/src/heuristic_sorting:testable_heuristic_sorting).
+cc_library(
+    name = "position",
+    srcs = ["position.cpp"],
+    hdrs = ["position.hpp"],
+    visibility = ["//library/tests/belief_evaluation:__pkg__"],
+    deps = [
+        "//library/src/api:dds_constants",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# Depends on the solver (//library/src:dds), deliberately kept out of the
+# core belief_evaluation library's own deps: the core evaluator must stay
+# solver-free (a caller supplying their own defender should not link the
+# solver to get the evaluator), and this is where a future GIL-release
+# boundary for the Python binding needs to live, cleanly separated from the
+# callback boundary that runs on the calling thread.
+cc_library(
+    name = "double_dummy_defender",
+    srcs = ["double_dummy_defender.cpp"],
+    hdrs = ["double_dummy_defender.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":belief_evaluation",
+        "//library/src:dds",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# Sibling of double_dummy_defender, same reasoning for staying out of the
+# core library's own deps -- and the same intended pairing: a caller
+# combining this bound with DoubleDummyDefender is in the sound
+# configuration EvaluateOptions::delta_is_double_dummy_optimal documents.
+cc_library(
+    name = "double_dummy_bound",
+    srcs = ["double_dummy_bound.cpp"],
+    hdrs = ["double_dummy_bound.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":belief_evaluation",
+        "//library/src:dds",
+        "//library/src/api:dds_constants",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
