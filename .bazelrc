@@ -8,6 +8,19 @@
 
 common --enable_platform_specific_config
 
+# Nothing here is built for Android, and nothing here is built for Java
+# either -- but dds depends on rules_jvm_external for its //jni Maven jar,
+# which pulls in rules_android, whose android_sdk_repository extension probes
+# $ANDROID_HOME while analysing *any* target. On GitHub's ubuntu runners the
+# free-disk-space step deletes the SDK's platform APIs while leaving
+# ANDROID_HOME exported, and the extension then hard-fails and takes the
+# whole build down. Pinning the variable to empty makes it emit its empty
+# stub repo instead, which is the path non-Android builds are meant to take.
+#
+# This is inherited through the dependency, not from anything in this tree,
+# which is exactly why it was missed when this file was trimmed from dds's.
+common --repo_env=ANDROID_HOME=
+
 # Platform-specific C++ standard flags.
 build:macos --cxxopt=-std=c++20
 build:macos --host_cxxopt=-std=c++20
