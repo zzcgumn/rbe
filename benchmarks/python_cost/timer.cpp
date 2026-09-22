@@ -13,10 +13,8 @@
 // running it is report.py's job.
 //
 // Solver-free: nothing here needs solve_board. The pi/delta pair timed
-// below lives in strategies.hpp, beside this file -- see that header's own
-// comment for why it is not library/tests/belief_evaluation/test_support.hpp
-// (this plan's own scope rule: no executable line changed under
-// `library/`).
+// below lives in strategies.hpp, beside this file -- see that header for
+// why it is not in tests/belief_evaluation/test_support.hpp.
 #include <chrono>
 #include <cstdint>
 #include <cstdio>

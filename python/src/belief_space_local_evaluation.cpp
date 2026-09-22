@@ -269,7 +269,7 @@ auto register_observation_state_bindings(py::module_& module) -> void
 // reading freed memory the moment the callback returns, silently, with
 // plausible-looking values.
 //
-// The fix is a validity flag the *binding* owns (nothing in library/src/
+// The fix is a validity flag the *binding* owns (nothing in src/
 // changes for this): a shared_ptr<bool>, one per call, set false when the
 // callback returns -- including when it raises, which is why invalidation
 // is scope-bound (BeliefViewInvalidator's destructor) rather than placed on
@@ -752,7 +752,7 @@ auto evaluate(
     // Checked here, unconditionally, before declarer ever reaches the C++
     // evaluator: make_root() indexes remainCards[declarer] (and, via
     // dummy = (declarer + 2) % DDS_HANDS, remainCards[dummy] too) with no
-    // range check of its own -- library/src/ has no RootFailure cause for
+    // range check of its own -- src/ has no RootFailure cause for
     // this, since it is not a runtime condition on a valid root, it is a
     // malformed argument, the same class of thing ExhaustiveLayoutSource's
     // own constructor pre-checks declarer/opening_leader for before ever
@@ -1022,7 +1022,7 @@ public:
 };
 
 // Mirrors defender_pool_decomposition's own count exactly (that function
-// itself is not exposed to Python, and library/src/ has no public
+// itself is not exposed to Python, and src/ has no public
 // accessor for a pool's size in isolation) -- the total number of
 // distinct cards either defender's remain_cards claims. dict_to_deal only
 // validates each value's own bit shape, not that the two defender hands

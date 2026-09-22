@@ -122,7 +122,7 @@ TEST(FixtureLadderShapeTest, EveryRungNameIsDistinct)
 // --- the bottom two rungs are exhaustively evaluable in a test-cycle time
 // budget: evaluate() over the *whole* space (no sampling), both forms,
 // with strategies.hpp's own scripted, deterministic strategy pair --
-// mirroring library/tests/belief_evaluation/test_support.hpp's own
+// mirroring tests/belief_evaluation/test_support.hpp's own
 // precedent for why a scripted strategy (not the solver) is enough to
 // exercise this. ---------
 

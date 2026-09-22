@@ -5,7 +5,7 @@
 // benchmarks/belief_evaluation/strategies.hpp, which already established
 // the precedent this file follows: a small strategy belongs beside the
 // benchmark that uses it, not folded into
-// library/tests/belief_evaluation/test_support.hpp (private to the core
+// tests/belief_evaluation/test_support.hpp (private to the core
 // C++ test suite -- its own module comment says so, and this plan's own
 // task breakdown says explicitly not to extend it). `real_work_declarer_
 // play`'s own correctness is proven once, independent of any fixture or
@@ -72,7 +72,7 @@ inline auto lowest_legal_card(Deal const& deal, int seat) -> Card
 
 /// The trivial pi/delta this comparison's other side of the ratio needs --
 /// O(1) per call, matching single_card_declarer_play/single_card_defender's
-/// own rule (library/tests/belief_evaluation/test_support.hpp) exactly, so
+/// own rule (tests/belief_evaluation/test_support.hpp) exactly, so
 /// that rule is duplicated a third time here rather than the correctness
 /// this plan already proved for it (parity_reference.cpp's own parity
 /// test) being re-proven. Named for their role in this comparison

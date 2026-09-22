@@ -19,7 +19,7 @@ namespace dds::belief_evaluation::benchmarks
 
 namespace
 {
-    // Local, matching library/tests/belief_evaluation/test_support.hpp's
+    // Local, matching tests/belief_evaluation/test_support.hpp's
     // own card_count exactly -- that header is private to the core C++
     // test suite (its own comment says so), so duplicated here rather
     // than reused, the same choice fixtures.cpp's own binomial-coefficient
