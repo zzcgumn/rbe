@@ -183,9 +183,23 @@ auto result = compute_area(
 - Mark compile-time constants with `constexpr`.
 
 ### Documentation
-- Public APIs: Doxygen-style comments.
-- Explain non-obvious design choices.
-- Provide usage examples for complex interfaces.
+Three places, and putting a thing in the wrong one is how the header
+doxygen turns into an essay:
+
+- **Header doxygen** — what a *caller* needs: the contract, the units, the
+  lifetime, and any caveat that changes what they write. Doxygen-style, on
+  every public API. Keep it to what a caller must know; a rejected
+  alternative design is not that.
+- **`docs/module_map.md`** — anything true across several headers. If a
+  second header would need the same paragraph, it belongs here and both
+  link to it.
+- **`specs/replenished-belief-evaluation.md`** — the design record: why a
+  contract is what it is, what was rejected, what is deliberately out of
+  scope.
+
+Implementation comments in a `.cpp` explain code that is non-obvious *as
+code* — a surprising ordering, a subtle precondition, a workaround. They
+do not restate the header.
 
 ## Testing
 - Use GoogleTest.

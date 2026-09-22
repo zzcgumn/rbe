@@ -8,9 +8,11 @@ walking a belief tree, replenishing the sampled belief set as the tree narrows.
 It is built on the [dds](https://github.com/dds-bridge/dds) double dummy solver,
 which it consumes as a Bazel module dependency.
 
+- The caller's guide is `docs/belief_space_local_evaluation.md`
+- The module map and the conventions common to every header are `docs/module_map.md`
+- The implemented contract, and the reasoning behind it, is `specs/replenished-belief-evaluation.md`
 - The algorithm is `docs/replenished_belief_evaluation/algorithm.md`
 - The measurements behind its defaults are `docs/replenished_belief_evaluation/benchmarks.md`
-- The implemented contract is `specs/replenished-belief-evaluation.md`
 
 **Read the spec before changing behaviour.** It is not a summary written after
 the fact; it is what the tests encode, and a change that contradicts it is a
