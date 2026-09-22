@@ -381,7 +381,12 @@ trick-maximising, not contract-aware).
 - [`docs/replenished_belief_evaluation/algorithm.md`](replenished_belief_evaluation/algorithm.md) —
   the theory: the belief-space formulation, why it turns a POMDP into a
   belief MDP, and the derivation `P_make` implements.
-- [`docs/python_interface.md`](python_interface.md) and
-  [`docs/c++_interface.md`](c++_interface.md) — the double-dummy solver
-  proper, which this capability calls into only through the optional
-  solver seam above.
+- [`docs/module_map.md`](module_map.md) — which header holds what, and the
+  conventions that hold across all of them. For changing the library
+  rather than using it.
+- [`specs/replenished-belief-evaluation.md`](../specs/replenished-belief-evaluation.md) —
+  the design record: every capability-wide contract and invariant, with
+  the reasoning behind each.
+- The double-dummy solver proper, which this capability reaches only
+  through the optional solver seam above, documents its own Python and C++
+  interfaces in the [dds](https://github.com/dds-bridge/dds) repository.

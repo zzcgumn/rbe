@@ -16,24 +16,18 @@ namespace dds::belief_evaluation
 {
 
 /// The result of replaying a root-space candidate forward along a node's
-/// own played sequence, accumulating `p_j` through `delta` at every
-/// defender ply. Three outcomes, and they must not be confused:
+/// played sequence. Three outcomes, which must not be confused:
 ///
-/// - **an ordinary rejection**: `layout` is `std::nullopt`, `error` is
-///   `ValidationError::None`. The candidate does not follow this line --
-///   the seat on play at some ply does not hold the recorded card, or
-///   `delta` assigns that card zero probability (or omits it) in this
-///   candidate. This is the "matches the played sequence" filter itself,
-///   not a failure of anything;
-/// - **a `delta` contract violation encountered during replay**: `layout`
-///   is `std::nullopt`, `error` is the specific `ValidationError`, `seat`
-///   is which defender was asked, `offending_layout` is the candidate as
-///   replayed up to that ply. Reported exactly the way
-///   `expand_defender_node` reports one, through the same vocabulary --
-///   see that function's own doxygen;
-/// - **success**: `layout` holds the candidate played forward to the
-///   node's own depth, `p_j` is the probability the defenders would have
-///   played the observed sequence in this candidate, `error` is `None`.
+/// - **rejection**: no `layout`, `error` is `None`. The candidate does not
+///   follow this line — the seat on play does not hold the recorded card,
+///   or `delta` gives it no probability. This is the filter working, not a
+///   failure;
+/// - **a `delta` contract violation**: no `layout`, `error` names the
+///   cause, `seat` and `offending_layout` locate it. Reported exactly as
+///   `expand_defender_node` reports one;
+/// - **success**: `layout` is the candidate played forward to the node's
+///   depth, `p_j` the probability the defenders would have played the
+///   observed sequence in it.
 struct ReplayResult
 {
     std::optional<Deal> layout;
@@ -43,44 +37,28 @@ struct ReplayResult
     Deal offending_layout{};                        ///< meaningful only when error is not None
 };
 
-/// Plays a root-space `candidate` forward along `node_state`'s own played
-/// sequence, or rejects it, accumulating `p_j` at every defender ply along
-/// the way. See `ReplayResult`'s own doxygen for the three outcomes.
+/// Plays a root-space `candidate` forward along `node_state`'s played
+/// sequence, or rejects it, accumulating `p_j` at every defender ply. See
+/// `ReplayResult` for the three outcomes.
 ///
-/// The first `history_for(root_layout).number` entries of
-/// `node_state.history` are skipped: those cards are already reflected in
-/// `candidate`'s own `currentTrick*` fields (a candidate that reached this
-/// point already passed `make_root`'s consistency filter, which requires
-/// sharing `root_layout`'s current-trick state exactly), so replaying them
-/// from index 0 would play them a second time — producing a `Deal` that
-/// looks like a legal position and is wrong. This is the same prefix
-/// `make_root` itself skips when seeding `ObservationState::history`, and
-/// both go through `history_for` so the two can never disagree about where
-/// it ends. Those pre-root defender cards contribute nothing to `p_j`
-/// either — `make_root` sets every drawn layout's `p_i = 1` regardless of
-/// what was already in the root's trick — so skipping them keeps a
-/// replenished layout's weight on exactly the same footing as a drawn
-/// one's.
+/// The first `history_for(root_layout).number` entries are skipped: those
+/// cards are already in `candidate`'s own `currentTrick*` fields, so
+/// replaying them would play them twice and produce a legal-looking `Deal`
+/// that is wrong. They contribute nothing to `p_j` either — `make_root`
+/// gives every drawn layout `p_i = 1` regardless of what was in the root's
+/// trick — so a replenished layout's weight stays on the same footing as a
+/// drawn one's.
 ///
-/// At each remaining entry, the seat is derived via `seat_on_play` on the
-/// candidate *as replayed so far* — never read from `node_state.first`,
-/// which is the root's own leader and is unrelated once play has moved on
-/// (see `ObservationState`'s own doxygen on `tricks_remaining` for the same
-/// point made about a different field).
+/// The seat at each remaining entry comes from `seat_on_play` against the
+/// candidate as replayed so far, never from `node_state.first`.
 ///
-/// A declarer or dummy card is always legal in `candidate` — those
-/// holdings are common knowledge and bit-identical across every consistent
-/// layout — and is asserted rather than checked; it contributes nothing to
-/// `p_j`, matching how `p` is built during ordinary expansion (declarer's
-/// play neither filters nor reweights). A **defender** ply calls `delta`
-/// in the intermediate state replayed alongside the layout (via
-/// `advance_state`, from `node_state`'s own root — the recursion retains no
-/// intermediate states, so this is the only way to recover the exact query
-/// the original expansion made). `delta`'s probability for the card
-/// actually played is multiplied into `p_j`; an omitted card and a
-/// zero-probability card mean the same thing here (an ordinary rejection),
-/// and the raw probability is used as `delta` returned it, never
-/// renormalised — exactly as `expand_defender_node` does.
+/// A declarer or dummy card is always legal — those holdings are common
+/// knowledge — so it is asserted rather than checked, and contributes
+/// nothing to `p_j`. A **defender** ply calls `delta` in the intermediate
+/// state replayed alongside the layout via `advance_state`; its probability
+/// for the card actually played is multiplied into `p_j`, used raw and
+/// never renormalised, exactly as `expand_defender_node` does. An omitted
+/// card and a zero-probability card both mean rejection.
 auto replay_candidate(
     Deal const& candidate,
     Deal const& root_layout,
@@ -88,8 +66,7 @@ auto replay_candidate(
     DefenderStrategy const& delta) -> ReplayResult;
 
 /// One layout the node-local scan accepted: the replayed `Deal`, its
-/// accumulated `p_j` (see `replay_candidate`), and its root-space key (see
-/// `BeliefNode::root_keys`) -- carried alongside the layout rather than
+/// accumulated `p_j`, and its root-space key — carried rather than
 /// recomputed later, since the scan already derived it to check the
 /// exclusion set.
 struct ScanCandidate
@@ -99,17 +76,12 @@ struct ScanCandidate
     std::uint64_t root_key;
 };
 
-/// The result of a node-local replenishment scan: the accepted candidates,
-/// or a `delta` contract violation encountered while replaying one of
-/// them. No `RootFailure`-shaped failure exists here: a scan that finds
-/// nothing is an ordinary outcome, not an error -- the node simply keeps
-/// the layouts it already had. `candidates` and `outcome` are meaningful
-/// only when `error` is `ValidationError::None`; `seat` and
-/// `offending_layout` only when it is not, mirroring `ReplayResult`'s own
-/// shape for the same reason. `at_calls` -- how many `source.at()` calls
-/// this scan made -- is meaningful regardless: it is what a caller's own
-/// scan-to-hit instrumentation reports on, whether the scan succeeded,
-/// found nothing, or hit a contract violation partway through.
+/// The result of a node-local replenishment scan. There is no
+/// `RootFailure`-shaped failure here: a scan that finds nothing is an
+/// ordinary outcome, and the node keeps the layouts it had. `candidates`
+/// and `outcome` are meaningful only when `error` is `None`, `seat` and
+/// `offending_layout` only when it is not. `at_calls` is meaningful either
+/// way — it is what scan-to-hit instrumentation reports on.
 struct ScanResult
 {
     std::vector<ScanCandidate> candidates;
@@ -121,58 +93,37 @@ struct ScanResult
 };
 
 /// Scans `source` from index 0 for layouts consistent with `root_layout`
-/// that satisfy `node`'s own played sequence (see `replay_candidate`) and
-/// are not already among `node.root_keys`, up to `wanted` candidates and
-/// `budget` calls to `source.at()`.
+/// that satisfy `node`'s played sequence and are not already among
+/// `node.root_keys`, up to `wanted` candidates and `budget` `at()` calls.
 ///
-/// The filters apply in this order, for cost and not only correctness: `at()`,
-/// then `is_consistent` (the same cheap check `make_root` itself applies —
-/// a candidate outside the belief space at all is rejected before anything
-/// else looks at it), then the root-space exclusion set (cheap, and
-/// possible before any replay precisely because the key is root-space —
-/// see `BeliefNode::root_keys`), then `replay_candidate` (which folds the
-/// history-following check and `delta`'s own accumulation into one pass —
-/// a candidate rejected on a card it does not hold costs no `delta` call).
-/// A candidate already present in `node.root_keys` costs no `delta` call
-/// either, for the same reason.
+/// Filters apply cheapest-first: `at()`, then `is_consistent`, then the
+/// root-space exclusion set (possible before any replay precisely because
+/// the key is root-space), then `replay_candidate`. A candidate rejected
+/// earlier costs no `delta` call.
 ///
-/// The exclusion set is built once, from `node.root_keys`, before the scan
-/// starts, and is not grown as candidates are accepted during it. `source`
-/// is free to return the same root-space layout at two indices within the
-/// scan's own range (see `BeliefNode::root_keys`'s own doxygen), and if it
-/// does, both copies are accepted as separate entries. This is not new: it
-/// is precisely `make_root`'s own behaviour today, which dedupes candidates
-/// against nothing while scanning. A future de-duplication *within* one
-/// scan, should a `LayoutSource` ever motivate it, is a `make_root` change
-/// first and a `scan_for_replenishment` change to match, not the other way
-/// around.
+/// The exclusion set is built once and not grown as candidates are
+/// accepted, so a source returning the same root-space layout at two
+/// indices within one scan yields two entries. That is `make_root`'s
+/// existing behaviour; de-duplicating within a scan would be a `make_root`
+/// change first.
 ///
-/// `budget` counts `source.at()` calls specifically, matching
-/// `RootOptions::scan_budget`'s own definition exactly, so a node-local
-/// scan-to-hit measurement is commensurable with the root's.
+/// `budget` counts `source.at()` calls, matching `RootOptions::scan_budget`
+/// exactly, so node-local and root scan-to-hit are commensurable.
+/// `ScanOutcome`'s tie-break is `make_root`'s: `wanted` is checked first,
+/// and reaching the end of `source` is `SourceExhausted` even if nothing
+/// was accepted — which is what licenses clearing `is_sample` at such a
+/// node.
 ///
-/// `ScanOutcome`'s tie-break is kept identical to `make_root`'s: reaching
-/// `wanted` and `budget` at the same step reports `SampleFilled`, since
-/// `wanted` is checked first at every step. Reaching the end of `source`
-/// reports `SourceExhausted` even if nothing was accepted — the node holds
-/// everything its own path admits, which is what licenses `is_sample` being
-/// set to false at such a node (see `ScanOutcome`'s own doxygen, written for
-/// exactly this reuse).
+/// `node.state.declarer` is used throughout rather than a separate
+/// parameter. `source.size()` is assumed already validated: `node` could
+/// not exist unless `make_root` had required it.
 ///
-/// `node`'s own declarer (`node.state.declarer`) is used throughout, not a
-/// separate parameter -- common knowledge, identical across every layout
-/// the node holds. `source.size()` is assumed to have already been
-/// validated: `node` could not exist at all unless some earlier
-/// `make_root` call already required `source.size()` to be present.
-///
-/// `wanted == 0` returns immediately -- `SampleFilled`, `at_calls == 0`,
-/// no candidates -- without calling `source.size()` or building the
-/// exclusion set from `node.root_keys` at all. The loop below would reach
-/// the identical outcome on its own first iteration regardless, but not
-/// before paying for both; skipping them matters because `wanted == 0` is
-/// not a rare input here. It is the case
+/// `wanted == 0` returns immediately — `SampleFilled`, no candidates, no
+/// `source.size()` call and no exclusion set built. The loop would reach
+/// the same outcome anyway, but not before paying for both, and this is
+/// not a rare input: it is what
 /// `EvaluateOptions::sampling.replenish_below` set above `sample_size`
-/// reaches at every node on every call (see that field's own doxygen).
+/// reaches at every node.
 auto scan_for_replenishment(
     BeliefNode const& node,
     Deal const& root_layout,

@@ -16,14 +16,10 @@ namespace dds::belief_evaluation
 /// A single card. Suits and ranks are otherwise passed as separate `int`s
 /// throughout dds; this exists purely as a convenient callback return/param.
 ///
-/// `api/dds.h` separately declares its own unrelated, layout-identical
-/// `struct Card` (same two `int` members, same order) at global scope --
-/// unrelated in meaning, since the two carry different rank conventions in
-/// different places in this codebase. The two coexist in the same
-/// translation unit by namespace: this one is `dds::belief_evaluation::Card`,
-/// that one is `::Card`, and nothing here needs to avoid or reorder an
-/// include to keep them apart. See `namespace_collision_test.cpp` for both
-/// referenced side by side.
+/// `api/dds.h` declares an unrelated, layout-identical `::Card` at global
+/// scope, carrying a different rank convention. The two coexist by
+/// namespace with no include ordering needed; `namespace_collision_test.cpp`
+/// references both side by side.
 struct Card
 {
     int suit;  ///< 0=S, 1=H, 2=D, 3=C
@@ -112,13 +108,10 @@ struct BeliefView
 };
 
 /// A declarer node's per-child bookkeeping record, for a future reuse
-/// cache. **Not yet populated.** The exhaustive evaluator has no cache and
-/// declarer nodes have exactly one child, so nothing here has a reason to
-/// write to this struct or a way to test a value it wrote —
-/// half-populating it now would let it silently acquire fields a future
-/// caller trusts without ever having been exercised. The `p_make` map
-/// shape is chosen for a future strategy-comparison search, not used
-/// before then.
+/// cache. **Not yet populated**, deliberately: with no cache and one child
+/// per declarer node, nothing could write to it or test what it wrote, and
+/// half-populating it would let it acquire fields a future caller trusts
+/// without ever having been exercised.
 struct NodeSearchInfo
 {
     Deal renumbered;   ///< remaining cards, gaps removed

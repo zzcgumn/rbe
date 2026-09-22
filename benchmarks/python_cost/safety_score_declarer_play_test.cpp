@@ -2,7 +2,7 @@
 // timer.{cpp,py} time against trivial_declarer_play's O(1) rule -- its own
 // scoring is what makes that comparison mean anything, so it gets a
 // hand-derived correctness check independent of evaluate() and of any
-// fixture (library/tests/belief_evaluation/oracle_test.cpp's own precedent
+// fixture (tests/belief_evaluation/oracle_test.cpp's own precedent
 // for why a small enough case is safe to hand-derive rather than build a
 // "same construction, once" generator for: a transcription slip here would
 // show up as *some other score*, not as an agreement with the wrong one).

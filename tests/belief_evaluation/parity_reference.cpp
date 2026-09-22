@@ -13,7 +13,7 @@
 // the Python test's fixture and the C++ answer it compares against both
 // come from the same construction, once.
 //
-// Solver-free, matching //library/src/belief_evaluation's own deps below:
+// Solver-free, matching //src/belief_evaluation's own deps below:
 // nothing here needs solve_board, only the scripted strategies every
 // other C++ test in this suite already uses.
 #include <cstdint>

@@ -9,68 +9,48 @@
 #include <belief_evaluation/defender_strategy.hpp>
 #include <belief_evaluation/layout_source.hpp>
 
-// How many nodes the search tree would have, with tier 1 and tier 2 both
-// removed entirely -- for "how much of the tree does a cut actually
-// remove", which evaluate() itself cannot answer directly: already_made() and
-// is_dead() are called unconditionally in evaluate.cpp, with no
-// EvaluateOptions flag to disable either, so there is no way to ask the
-// real evaluator for an uncut count. Built entirely from the public
-// pieces evaluate() itself is built from -- make_root, is_terminal,
-// expand_declarer_node, expand_defender_node -- so this needs no change
-// under library/.
+// How many nodes the search tree would have with tier 1 and tier 2 both
+// removed -- the denominator for "how much of the tree does a cut remove",
+// which evaluate() cannot answer itself: already_made() and is_dead() are
+// unconditional, with no option to disable either. Built from the same
+// public pieces evaluate() is built from (make_root, is_terminal, the two
+// expand functions), so it needs no change under src/.
 namespace dds::belief_evaluation::benchmarks
 {
 
 /// Walks the full tree over `source` for `(root, declarer, tricks_needed)`,
 /// calling `pi`/`delta` at every node and never checking already_made(),
 /// is_dead() or tier2_dead() -- so a subtree a real evaluate() call would
-/// have cut here gets expanded in full. Stops recursing at a node exactly
-/// when either is_terminal() holds (no hand anywhere has a card left,
-/// evaluate()'s own stopping rule, not a cut), or the seat on play at that
-/// node is void in every layout the node holds -- not a cut either: a
-/// void seat cannot be asked to choose (this project's own fixtures
-/// routinely give declarer or dummy far fewer cards than the defenders'
-/// own pool, by design -- see fixtures.hpp -- so this boundary is reached
-/// well before is_terminal() would be on most of them). Checked against
-/// `node.layouts` directly rather than `node.state.known_holdings`: the
-/// latter is exact for declarer and dummy but is the *aggregate pool* for
-/// a defender seat (both defenders' entries hold the same union value,
-/// not each one's own split), so it can read nonzero for a defender who
-/// is actually void everywhere this node's own belief has already
-/// narrowed to.
+/// have cut here gets expanded in full. Stops recursing when is_terminal()
+/// holds (evaluate()'s own stopping rule, not a cut), or when the seat on
+/// play is void in every layout the node holds -- not a cut either, since
+/// a void seat cannot be asked to choose. Most fixtures here give declarer
+/// or dummy far fewer cards than the defenders' pool, so that second
+/// boundary is usually reached first. Checked against `node.layouts`, not
+/// `node.state.known_holdings`, whose defender entries hold the aggregate
+/// pool rather than each seat's own split and so read nonzero for a seat
+/// that is actually void.
 ///
 /// Returns the total node count, or nullopt if `pi`/`delta` ever returns
 /// something expand_declarer_node/expand_defender_node rejects (this
 /// walker has no error-reporting path beyond that -- a caller wanting the
 /// specific ValidationError should call evaluate() itself).
 ///
-/// A declarer-led root is handled the same way evaluate() itself handles
-/// one (evaluate.cpp's own root-handling block): every legal root card is
-/// expanded, via the same two public pieces evaluate() uses for it
-/// (expand_declarer_node for pi's own chosen card, make_declarer_children
-/// for the rest) -- not only pi's own choice, unlike every other declarer
-/// node (this walker's own general recursion below the root, matching
-/// p_make()'s). Missing this would have undercounted a declarer-led
-/// root's true node count silently; found directly against evaluate.cpp's
-/// own root-handling block and fixed, not merely documented as a
-/// limitation the way the paragraph below is.
+/// A declarer-led root is handled as evaluate() handles one: every legal
+/// root card is expanded, through the same two pieces evaluate() uses
+/// (expand_declarer_node for pi's choice, make_declarer_children for the
+/// rest) -- not only pi's choice, unlike every declarer node below the
+/// root. Missing this silently undercounted a declarer-led root.
 ///
-/// **Does not bound evaluate()'s own node count from below in general --
-/// confirmed empirically, not assumed.** This is a single, linear
-/// traversal: every concrete node object is visited exactly once.
-/// `DeclarerStrategy::play`'s own doxygen records that the real
-/// evaluator "walks the tree in its own order and revisits sibling
-/// subtrees" -- a consequence of belief-view renormalisation, not an
-/// implementation detail this walker can opt out of replicating, since
-/// replicating it would mean re-deriving evaluate()'s own recursion
-/// rather than reusing its public pieces. Where no such revisiting
-/// happens, this walker's count is a true upper bound on evaluate()'s
-/// own (checked directly: holds for every rung in fixtures.hpp's finesse
-/// and solver ladders). Where it does happen, evaluate()'s own count can
-/// exceed this walker's, which is not a defect in either -- they are
-/// counting different things. The pool and realistic ladders trigger it;
-/// do not use this walker's count as a "tree fraction removed" figure
-/// for those two ladders.
+/// **Not an upper bound on evaluate()'s own node count in general --
+/// confirmed empirically, not assumed.** This is a single linear traversal,
+/// visiting every node object once, while the real evaluator revisits
+/// sibling subtrees (see `DeclarerStrategy::play`). Where no revisiting
+/// happens this count is a true upper bound on evaluate()'s, which holds
+/// for every rung of fixtures.hpp's finesse and solver ladders. The pool
+/// and realistic ladders do trigger revisiting, and evaluate()'s count
+/// there can exceed this one -- they are counting different things. Do
+/// not report a "tree fraction removed" for those two ladders.
 auto count_uncut_nodes(
     Deal const& root, int declarer, int tricks_needed, LayoutSource const& source,
     DeclarerStrategy const& pi, DefenderStrategy const& delta) -> std::optional<std::uint64_t>;

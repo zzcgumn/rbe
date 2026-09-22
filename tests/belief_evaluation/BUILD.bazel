@@ -1,10 +1,8 @@
 load("//:CPPVARIABLES.bzl", "DDS_CPPOPTS", "DDS_LINKOPTS", "DDS_LOCAL_DEFINES")
 load("@rules_cc//cc:defs.bzl", "cc_test")
-# Its own separate load, rather than adding cc_binary to the line above:
-# this file is otherwise untouched by every earlier task in this plan
-# (zero deletions under library/ beyond the rename task's own exception),
-# and extending the existing load() line would turn one of its own lines
-# into a deletion-plus-insertion pair rather than a pure addition.
+# Its own separate load rather than adding cc_binary to the line above, so
+# that adding it was a pure addition rather than turning an existing line
+# into a deletion-plus-insertion pair.
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 
 cc_test(
@@ -92,7 +90,7 @@ cc_binary(
 
 # Separate from belief_evaluation_test above so that target does not link
 # the solver either -- only this one does, matching
-# //library/src/belief_evaluation:double_dummy_defender's own separation
+# //src/belief_evaluation:double_dummy_defender's own separation
 # from the core library.
 cc_test(
     name = "double_dummy_defender_test",
@@ -117,7 +115,7 @@ cc_test(
 # The compile-level proof that dds::belief_evaluation's own Card and
 # api/dds.h's ::Card genuinely coexist in one translation unit, with no
 # rename trick. No solver linkage needed -- api/dds.h is a data-model-only
-# header, reached the same way //library/src/belief_evaluation itself
+# header, reached the same way //src/belief_evaluation itself
 # reaches it. A separate target rather than a source in belief_evaluation_test
 # because the whole point is what a translation unit can contain, and mixing
 # it into a file with any workaround of its own would blur that.
@@ -138,7 +136,7 @@ cc_test(
 )
 
 # Sibling of double_dummy_defender_test, mirroring
-# //library/src/belief_evaluation:double_dummy_bound's own separation from
+# //src/belief_evaluation:double_dummy_bound's own separation from
 # the core library.
 cc_test(
     name = "double_dummy_bound_test",

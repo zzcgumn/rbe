@@ -7,9 +7,11 @@ last-updated: 2026-09-12
 # Replenished Belief Evaluation
 
 > **Specs vs. doxygen.** Per-symbol signatures, parameters and return
-> encodings live in the header doxygen under `library/src/belief_evaluation/`.
-> This spec records the capability-wide contracts and invariants that span
-> more than one symbol — not a function reference.
+> encodings live in the header doxygen under `src/belief_evaluation/`, and
+> the conventions common to all of them in
+> [`docs/module_map.md`](../docs/module_map.md). This spec records the
+> capability-wide contracts and invariants that span more than one symbol,
+> and the reasoning behind them — not a function reference.
 
 ## Purpose
 
@@ -208,7 +210,7 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   the same outstanding pool — not the source's raw size, which may include
   layouts the root position rules out.
 - **A shipped `LayoutSource` now exists** — `ExhaustiveLayoutSource`
-  (`library/src/belief_evaluation/exhaustive_layout_source.hpp`) — and for
+  (`src/belief_evaluation/exhaustive_layout_source.hpp`) — and for
   a caller using it, "the belief space" is exactly what the paragraph above
   has always meant by "consistent with the root position": every defender
   split of the outstanding pool, with trump, the trick in progress, and
@@ -623,32 +625,32 @@ layout-identical `Card` at global scope (reached transitively through
 `api/dds.h`, a thin aggregator); the two coexist by namespace, with no
 rename or include-ordering trick anywhere in the module.
 
-- `library/src/belief_evaluation/types.hpp` — `Card`, `StrategyId`,
+- `src/belief_evaluation/types.hpp` — `Card`, `StrategyId`,
   `StateKey`, `ObservationState`, `BeliefEntry`, `BeliefView`, `RankMap`,
   `NodeSearchInfo`, and the weight-quantity aliases.
-- `library/src/belief_evaluation/declarer_strategy.hpp` — `DeclarerStrategy`.
-- `library/src/belief_evaluation/defender_strategy.hpp` — `WeightedCard`,
+- `src/belief_evaluation/declarer_strategy.hpp` — `DeclarerStrategy`.
+- `src/belief_evaluation/defender_strategy.hpp` — `WeightedCard`,
   `DefenderQuery`, `DefenderStrategy`.
-- `library/src/belief_evaluation/layout_source.hpp` — `LayoutSource`.
-- `library/src/belief_evaluation/defender_split.hpp` — `DefenderPool`,
+- `src/belief_evaluation/layout_source.hpp` — `LayoutSource`.
+- `src/belief_evaluation/defender_split.hpp` — `DefenderPool`,
   `defender_pool_decomposition()`, `binomial_coefficient()`,
   `unrank_combination()`, `apply_defender_split()` — the pure combinatorics
   `ExhaustiveLayoutSource` (below) is built from: a root's pooled defender
   cards and each defender's own count, the k-subset enumeration over them,
   and applying a chosen subset back onto a root layout as a split.
-- `library/src/belief_evaluation/keyed_permutation.hpp` —
+- `src/belief_evaluation/keyed_permutation.hpp` —
   `keyed_permutation()`, a seeded bijection on `[0, N)` storing nothing —
   general-purpose, not specific to this capability's own types, and the
   mechanism `ExhaustiveLayoutSource` uses to randomise its enumeration
   order.
-- `library/src/belief_evaluation/void_derivation.hpp` — `VoidsBySeat`,
+- `src/belief_evaluation/void_derivation.hpp` — `VoidsBySeat`,
   `derive_voids()` — a play history alone to every seat's voids, pure trick
   arithmetic with no `Deal` or holdings involved.
-- `library/src/belief_evaluation/history_verification.hpp` —
+- `src/belief_evaluation/history_verification.hpp` —
   `HistoryVerdict`, `verify_history()` — whether a supplied history actually
   belongs to a supplied root, and which of its distinct causes rejects it
   when it does not.
-- `library/src/belief_evaluation/constrained_decomposition.hpp` —
+- `src/belief_evaluation/constrained_decomposition.hpp` —
   `ConstrainedSpaceStatus`, `ConstrainedDecomposition`,
   `decompose_constrained()`, `constrained_space_size()` — applies a pair of
   per-suit void sets to a `DefenderPool` (above), partitioning it into cards
@@ -657,21 +659,21 @@ rename or include-ordering trick anywhere in the module.
   generalisation of `defender_pool_decomposition`'s own unconstrained count,
   reached by the same `binomial_coefficient()` call rather than a parallel
   one.
-- `library/src/belief_evaluation/exhaustive_layout_source.hpp` —
+- `src/belief_evaluation/exhaustive_layout_source.hpp` —
   `ExhaustiveLayoutSource`, the shipped `LayoutSource` — see "Behaviour &
   invariants" above for what it enumerates, with and without a supplied
   play history.
-- `library/src/belief_evaluation/renumber.hpp` — `renumber()`.
-- `library/src/belief_evaluation/rank_map.hpp` — `make_rank_map()`.
-- `library/src/belief_evaluation/layout_key.hpp` — `layout_key()`.
-- `library/src/belief_evaluation/validation.hpp` — `ValidationError`,
+- `src/belief_evaluation/renumber.hpp` — `renumber()`.
+- `src/belief_evaluation/rank_map.hpp` — `make_rank_map()`.
+- `src/belief_evaluation/layout_key.hpp` — `layout_key()`.
+- `src/belief_evaluation/validation.hpp` — `ValidationError`,
   `validate_declarer_card()`, `validate_defender_distribution()`.
-- `library/src/belief_evaluation/kahan.hpp` — `KahanAccumulator`.
-- `library/src/belief_evaluation/trick.hpp` — `seat_on_play()`,
+- `src/belief_evaluation/kahan.hpp` — `KahanAccumulator`.
+- `src/belief_evaluation/trick.hpp` — `seat_on_play()`,
   `legal_cards()`, `trick_complete_winner()`, `play()`, and the module's one
   boundary between `Deal`'s absolute-rank bit convention and the compacted
   convention `RankMap`, `renumber()` and every lookup table use.
-- `library/src/belief_evaluation/node.hpp` — `BeliefNode`, `RootOptions`,
+- `src/belief_evaluation/node.hpp` — `BeliefNode`, `RootOptions`,
   `RootConstructionResult`, `RootFailure`, `ScanOutcome`, `make_root()`,
   `root_observation_state()`, `history_for()`, `is_consistent()`,
   `node_mass()`, `terminal_value()`, `is_terminal()`, `tricks_remaining()`.
@@ -686,7 +688,7 @@ rename or include-ordering trick anywhere in the module.
   build a root's state and filter candidates, exposed so a node-local
   replenishment scan (below) goes through the identical logic rather than
   a second copy of it.
-- `library/src/belief_evaluation/replenishment.hpp` —
+- `src/belief_evaluation/replenishment.hpp` —
   `replay_candidate()`, `ReplayResult`, `scan_for_replenishment()`,
   `ScanCandidate`, `ScanResult`. `replay_candidate()` plays a root-space
   candidate forward along a node's own played sequence, accumulating
@@ -696,15 +698,15 @@ rename or include-ordering trick anywhere in the module.
   `RootOptions::scan_budget` uses. Solver-free, in the core library
   target, like the rest of this list above the double-dummy entries
   below.
-- `library/src/belief_evaluation/belief_view.hpp` — `make_belief_view()`.
-- `library/src/belief_evaluation/expand.hpp` — `expand_declarer_node()`,
+- `src/belief_evaluation/belief_view.hpp` — `make_belief_view()`.
+- `src/belief_evaluation/expand.hpp` — `expand_declarer_node()`,
   `make_declarer_children()`, `expand_defender_node()`, their result
   types, and `advance_state()` — the state-advancement step both
   expansion paths already used internally, exposed so a node-local
   replenishment replay (`replay_candidate()`, above) can rebuild the same
   intermediate states from the root rather than a second copy of the
   logic.
-- `library/src/belief_evaluation/evaluate.hpp` — `evaluate()`, the public
+- `src/belief_evaluation/evaluate.hpp` — `evaluate()`, the public
   entry point, plus `EvaluationResult`, `EvaluationValue`,
   `EvaluationError`, `RootChildValue`, `EvaluateOptions`,
   `EvaluationCounters`, `LayoutBound`, and the cut predicates
@@ -720,18 +722,18 @@ rename or include-ordering trick anywhere in the module.
   with no behaviour change; a
   default-constructed `SamplingOptions` means exactly what all three being
   absent from a flat `EvaluateOptions` used to mean.
-- `library/src/belief_evaluation/spread.hpp` — `SpreadPolicy`, `spread()`.
+- `src/belief_evaluation/spread.hpp` — `SpreadPolicy`, `spread()`.
   Part of the core library: solver-free, taking an already-solved
   `FutureTricks`.
-- `library/src/belief_evaluation/double_dummy_defender.hpp` —
+- `src/belief_evaluation/double_dummy_defender.hpp` —
   `DoubleDummyDefender`. **A separate Bazel target**
-  (`//library/src/belief_evaluation:double_dummy_defender`), depending on
+  (`//src/belief_evaluation:double_dummy_defender`), depending on
   the solver — not part of the core library above, and not linked by
   anything that only needs the core evaluator.
-- `library/src/belief_evaluation/double_dummy_bound.hpp` —
+- `src/belief_evaluation/double_dummy_bound.hpp` —
   `DoubleDummyBound`, a `LayoutBound` backed by `solve_board()`. **Also a
   separate, solver-linked Bazel target**
-  (`//library/src/belief_evaluation:double_dummy_bound`), sibling to
+  (`//src/belief_evaluation:double_dummy_bound`), sibling to
   `double_dummy_defender` above and paired with it for the intended sound
   tier-2 configuration.
 

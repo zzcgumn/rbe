@@ -3,9 +3,17 @@
 A belief-space local evaluator for bridge declarer play, built on the
 [dds](https://github.com/dds-bridge/dds) double dummy solver.
 
-The algorithm is `docs/replenished_belief_evaluation/algorithm.md`; the
-measurements behind its defaults are `.../benchmarks.md`; the implemented
-contract is `specs/replenished-belief-evaluation.md`.
+Four documents, in the order you are likely to want them:
+
+| Document | For |
+| --- | --- |
+| [`docs/belief_space_local_evaluation.md`](docs/belief_space_local_evaluation.md) | using the library, in Python or C++ |
+| [`docs/module_map.md`](docs/module_map.md) | changing it: which header holds what, and the conventions across all of them |
+| [`specs/replenished-belief-evaluation.md`](specs/replenished-belief-evaluation.md) | the design record — every capability-wide contract, and why |
+| [`docs/replenished_belief_evaluation/algorithm.md`](docs/replenished_belief_evaluation/algorithm.md) | the theory |
+
+The measurements behind the defaults are
+[`.../benchmarks.md`](docs/replenished_belief_evaluation/benchmarks.md).
 
 ## Layout
 
@@ -24,11 +32,12 @@ pip install dist/rbe-0.1.0-py3-none-any.whl
 ```
 
 One wheel, two top-level imports: `belief_space_local_evaluation` and
-`dds3`. They are packaged together because both extensions link the same
-static solver library -- two wheels would duplicate it on disk -- and
-because every caller needs both anyway: this package's `__init__` imports
-`dds3` first, so that `SolverContext`'s pybind registration is in place
-before its own extension loads.
+`dds3`. They ship together because both extensions link the same static
+solver library — two wheels would duplicate it on disk — and because every
+caller needs both anyway. The package's `__init__` imports `dds3` first so
+that `SolverContext`'s pybind registration is in place before its own
+extension loads, and both extensions resolve one pybind11 through the
+module graph, so they share the interpreter-level type registry.
 
 The wheel is tagged `py3-none-any` while shipping two compiled extensions,
 so pip will install it on a platform it cannot import on. That is inherited
@@ -58,8 +67,3 @@ Two things about that dependency are not obvious:
   applies overrides only in the root module and never shares `.bazelrc`. They
   must stay in step with dds's copies: this code is compiled into the same
   binaries as the solver's, under the same `-Werror`.
-
-The Python package imports `dds3` before its own extension, so that
-`SolverContext`'s pybind registration is in place first. Both extensions
-resolve one pybind11 through the module graph, so they share the
-interpreter-level type registry.

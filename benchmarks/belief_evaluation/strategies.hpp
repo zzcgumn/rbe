@@ -4,7 +4,7 @@
 // instrument under this directory needs when it does not care which
 // strategy is running -- only that the search has somewhere legal to go.
 // Deterministic and scripted (no solver, no randomness), matching
-// library/tests/belief_evaluation/test_support.hpp's own
+// tests/belief_evaluation/test_support.hpp's own
 // lowest_legal_card/single_card_declarer_play/single_card_defender
 // precedent exactly; duplicated rather than reused because that header is
 // private to the core C++ test suite (its own comment says so) and a

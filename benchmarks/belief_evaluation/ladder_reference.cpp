@@ -2,7 +2,7 @@
 // Python-side fixture ladder test, that prints every rung from fixtures.hpp
 // to stdout as Python literals. Same "build both sides of every comparison
 // from one description" mechanism as
-// library/tests/belief_evaluation/parity_reference.cpp -- see that file's
+// tests/belief_evaluation/parity_reference.cpp -- see that file's
 // own header comment for why reading this program's own output is
 // preferred over hand-transcribing the ladder a second time in Python.
 #include <cstdint>
