@@ -11,38 +11,34 @@ namespace dds::belief_evaluation
 
 /// Which set of cards a DoubleDummyDefender spreads probability over, given
 /// a solved position's `FutureTricks`. The two differ in more than
-/// behaviour -- they differ in what *licenses* the resulting uniform
-/// distribution, and a caller choosing between them is choosing which
-/// justification applies to their defender.
+/// behaviour: they differ in what *licenses* the resulting uniform
+/// distribution, so choosing between them is choosing which justification
+/// applies to your defender.
 enum class SpreadPolicy
 {
     /// Spread uniformly over the touching-card group of the single
     /// canonical best card (the highest `score`, dds's own tie-break
     /// order): `{rank[k]} u bits(equals[k])` for that one `k`.
     ///
-    /// The cards in one touching-card group are literally interchangeable
-    /// given the layout -- playing the king or the queen from a held KQ
-    /// leaves positions that are isomorphic under the renumbering
-    /// isomorphism (a strictly order-preserving bijection within the suit,
-    /// under which every rule of trick-taking is preserved). The uniform
-    /// distribution over that group is therefore not a modelling guess but
-    /// the canonical distribution over an equivalence class the theory
-    /// already licenses, and the elementary weight-based (`W_{pi,delta}`)
-    /// derivation in `docs/replenished_belief_evaluation/algorithm.md`
-    /// covers it unchanged. This is what restricted choice actually is.
+    /// Cards in one touching group are interchangeable given the layout:
+    /// king or queen from a held KQ leaves isomorphic positions under the
+    /// renumbering bijection. The uniform distribution over the group is
+    /// therefore the canonical distribution over an equivalence class the
+    /// theory already licenses, not a modelling guess, and algorithm.md's
+    /// elementary `W_{pi,delta}` derivation covers it unchanged. This is
+    /// what restricted choice actually is.
     TouchingSequence,
 
     /// Spread uniformly over the union of every candidate's touching-card
     /// group, for every candidate tied on the maximum score, across suits.
     ///
-    /// These cards are equally *good* but not otherwise equivalent -- the
+    /// These cards are equally *good* but not otherwise equivalent: the
     /// resulting positions are not isomorphic, and the distribution's shape
-    /// depends on how many suits happen to tie. This is the case
-    /// `algorithm.md` warns about when it says a heuristic defender is "not
-    /// guaranteed to stay within the requirements for the `W_{pi,delta}`
-    /// based formulation": the more general `Omega = S x B` construction is
-    /// what covers it, not the elementary derivation. A caller selecting
-    /// this policy has moved to that advanced justification.
+    /// depends on how many suits happen to tie. This is what algorithm.md
+    /// warns about in saying a heuristic defender is "not guaranteed to
+    /// stay within the requirements for the `W_{pi,delta}` based
+    /// formulation"; the more general `Omega = S x B` construction is what
+    /// covers it. Selecting this policy moves to that justification.
     AllOptimal,
 };
 

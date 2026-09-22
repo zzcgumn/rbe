@@ -5,24 +5,17 @@
 namespace dds::belief_evaluation
 {
 
-/// Whether a supplied play history actually belongs to a supplied root, and
-/// if not, which check caught it. `Consistent` is the only acceptance value;
-/// every other value names a distinct, independently testable rejection
-/// cause -- see `verify_history`'s own doxygen for what each one checks.
+/// Whether a supplied play history belongs to a supplied root, and if not,
+/// which check caught it. `Consistent` is the only acceptance value; every
+/// other names a distinct, independently testable cause. `verify_history`
+/// documents the order the checks run in.
 enum class HistoryVerdict
 {
     Consistent,
 
-    /// `history.number` is outside `[0, 52]` (`PlayTraceBin::suit`/`rank`'s
-    /// own 52-element bound), `opening_leader` or `declarer` is outside
-    /// `[0, DDS_HANDS)`, or some played card's own suit is outside
-    /// `[0, DDS_SUITS)` or rank outside `[2, 14]`. Checked first, and
-    /// before any of it is ever used to index anything: `history` is
-    /// caller input like any other value this function checks, and a
-    /// malformed shape is reported the same way a malformed *fit against
-    /// the root* is, not left to `derive_voids`'s own asserted-or-clamped
-    /// fallback (see that function's own doxygen) to catch on this
-    /// function's behalf.
+    /// Malformed input: `history.number` outside `[0, 52]`,
+    /// `opening_leader` or `declarer` outside `[0, DDS_HANDS)`, or a played
+    /// card's suit outside `[0, DDS_SUITS)` or rank outside `[2, 14]`.
     InvalidInput,
 
     /// The same (suit, rank) appears twice among `history`'s played cards.
@@ -42,81 +35,49 @@ enum class HistoryVerdict
     TrickLengthMismatch,
 
     /// The trailing cards' *count* matches `root`'s trick in progress, but
-    /// the cards themselves -- or their order -- do not.
+    /// the cards themselves — or their order — do not.
     TrailingTrickMismatch,
 
-    /// `opening_leader` is wrong. Replaying every complete trick in
-    /// `history` from `opening_leader` (the same trick arithmetic
-    /// `derive_voids` uses internally) gives a seat for the trick
-    /// containing the trailing cards that disagrees with `root.first`.
-    /// Since every seat `derive_voids` ever attributes a card to is that
-    /// same replay offset by a fixed rotation from `opening_leader`, this
-    /// single check is equivalent to checking `opening_leader` itself:
-    /// a wrong one rotates every attribution by the same non-zero amount,
-    /// so it can never coincidentally land back on the right seat here.
-    /// Neither the card partition nor the trailing cards' own identity
-    /// depends on which seat played which card, so this is the one check
-    /// that catches a history whose cards and order are both right but
-    /// whose seats are not -- exactly the class of error that would
-    /// otherwise reach `derive_voids` and silently force a suit onto the
-    /// wrong defender.
+    /// `opening_leader` is wrong: replaying `history`'s complete tricks
+    /// from it lands on a seat that disagrees with `root.first`.
     LeaderMismatch,
 
     /// `history` derives declarer or dummy void in a suit `root` shows that
-    /// seat still holding. Declarer's and dummy's holdings are exact in
-    /// `root`, so this is a hard contradiction rather than a matter of
-    /// interpretation -- unlike a defender's, whose split `root` does not
-    /// itself commit to (see `DefenderPool`'s own doxygen).
+    /// seat still holding. A hard contradiction, since both holdings are
+    /// exact in `root` — unlike a defender's, whose split `root` does not
+    /// itself commit to.
     VoidContradiction,
 };
 
 /// Checks `history` (played from `opening_leader`) against `root`, for
-/// `declarer` (dummy is `(declarer + 2) % DDS_HANDS`). A rejection is
-/// *reported*, not asserted: `history` is caller input, exactly like a
-/// declarer's or defender's illegal card, and this module's posture is that
-/// caller input is reported while an internal invariant failure asserts.
+/// `declarer`. A rejection is *reported*, not asserted: `history` is caller
+/// input, like an illegal card from a callback.
 ///
-/// The checks run in this order, the first failure reported and the rest
-/// left unevaluated:
+/// The checks run in this order, the first failure reported:
 ///
-/// 0. **The shape of the input itself.** `history.number` must be in
-///    `[0, 52]`, `opening_leader` and `declarer` each in `[0, DDS_HANDS)`,
-///    and every one of `history`'s `history.number` cards must have a suit
-///    in `[0, DDS_SUITS)` and a rank in `[2, 14]` (`InvalidInput` if not) --
-///    checked before any of it is used to index anything, since every
-///    check below does exactly that.
-/// 1. **The card partition.** Every played card and every card `root` still
-///    shows held must together be exactly the 52 distinct cards of a deck --
-///    no duplicate among the played cards (`DuplicatedCard`), no card both
-///    played and still held (`CardPlayedAndHeld`), and nothing left over on
-///    either side once both are accounted for (`MissingCard`). Cards of the
-///    trick in progress are already removed from `root`'s own `remainCards`
-///    by the time a root is built (see `play()`), so they belong to
-///    `history`'s side of the partition and not `root`'s -- confirmed
-///    against `play()`'s own behaviour, not assumed.
-/// 2. **The trailing trick.** `root`'s own trick in progress (its
-///    `currentTrickSuit`/`currentTrickRank`, 0 to 3 cards) must equal
-///    `history`'s own trailing cards, in order -- first their *count*
-///    (`TrickLengthMismatch` if not), then the cards themselves
-///    (`TrailingTrickMismatch` if the count matches but the cards or their
-///    order do not). This catches what the partition check above cannot: the
-///    same 52 cards, played in a sequence that disagrees with `root` about
-///    what is currently in progress.
-/// 3. **The leader.** Replaying `history`'s complete tricks from
-///    `opening_leader` must land on `root.first` as the seat leading the
-///    trick the trailing cards belong to (`LeaderMismatch` if not). Neither
-///    of the two checks above depends on *which seat* played which card --
-///    only on which cards, in what order -- so a history with the right 52
-///    cards in the right sequence but attributed to the wrong seats throughout
-///    (every card shifted by the same fixed rotation, since that is the only
-///    way a wrong `opening_leader` can go wrong) passes both of them. This is
-///    the one check that catches it.
-/// 4. **The free cross-check.** `derive_voids(history, opening_leader,
-///    root.trump)` must not put declarer or dummy void in a suit `root`
-///    shows them holding. This costs nothing beyond what step 1 already
-///    computed and catches a *non-uniform* seat error -- cards reattributed
-///    among seats in a way that is not a single fixed rotation, so step 3
-///    above does not catch it either.
+/// 0. **The shape of the input** (`InvalidInput`) — before any of it is
+///    used to index anything, since every check below does exactly that.
+/// 1. **The card partition**: every played card and every card `root`
+///    still shows held must together be the 52 distinct cards of a deck
+///    (`DuplicatedCard`, `CardPlayedAndHeld`, `MissingCard`). Cards of the
+///    trick in progress belong to `history`'s side of the partition, since
+///    `play()` has already removed them from `root`'s `remainCards`.
+/// 2. **The trailing trick** (`TrickLengthMismatch`, then
+///    `TrailingTrickMismatch`) — catching what the partition cannot: the
+///    same 52 cards in a sequence that disagrees with `root` about what is
+///    in progress.
+/// 3. **The leader** (`LeaderMismatch`). **Load-bearing, not redundant**:
+///    neither check above depends on *which seat* played which card, so a
+///    history with the right cards in the right order but every seat
+///    shifted by the same rotation passes both — and would otherwise reach
+///    `derive_voids` and force a suit onto the wrong defender. Since every
+///    seat `derive_voids` attributes a card to is that same replay offset
+///    by a fixed rotation, checking this one seat is equivalent to
+///    checking `opening_leader` itself.
+/// 4. **The free cross-check** (`VoidContradiction`), costing nothing
+///    beyond what step 1 computed: it catches a *non-uniform* seat error,
+///    cards reattributed in a way that is not a single fixed rotation, so
+///    step 3 does not catch it either.
 auto verify_history(Deal const& root, int declarer, PlayTraceBin const& history, int opening_leader)
     -> HistoryVerdict;
 

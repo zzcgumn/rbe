@@ -50,11 +50,14 @@ namespace
         return Card{node.state.history.suit[n], node.state.history.rank[n]};
     }
 
-    /// nodes_visited's single write site: every other counter this module
-    /// will ever add is a candidate for its own such helper, but this one
-    /// is shared between p_make (every recursive call) and evaluate() (the
-    /// root, which dispatches the same way but outside p_make) — see
-    /// evaluate()'s own root-handling block for the paired call.
+    // --- counters -----------------------------------------------------
+    //
+    // One small helper per counter, each its counter's single write site
+    // and each checking the null `counters` pointer the same way. All but
+    // the last are called from two places: p_make(), and evaluate()'s own
+    // root-handling block, which dispatches the same way from outside
+    // p_make.
+
     auto count_node(EvaluationCounters* counters) -> void
     {
         if (counters != nullptr)
@@ -63,12 +66,6 @@ namespace
         }
     }
 
-    /// tier1_made_cuts's single write site, following count_node()'s
-    /// pattern: one small helper per counter, each checking the null
-    /// `counters` pointer the same way. Called at both sites the
-    /// already_made() cut fires -- p_make() and evaluate()'s own
-    /// root-handling block, which mirrors every cut for the reason
-    /// documented at count_node()'s own paired call.
     auto count_tier1_made_cut(EvaluationCounters* counters) -> void
     {
         if (counters != nullptr)
@@ -77,9 +74,6 @@ namespace
         }
     }
 
-    /// tier1_dead_cuts's single write site, following count_node()'s
-    /// pattern. Called at both sites the is_dead() cut fires -- p_make()
-    /// and evaluate()'s own root-handling block.
     auto count_tier1_dead_cut(EvaluationCounters* counters) -> void
     {
         if (counters != nullptr)
@@ -88,9 +82,6 @@ namespace
         }
     }
 
-    /// tier2_cuts's single write site, following count_node()'s pattern.
-    /// Called at both sites the tier2_dead() cut fires -- p_make() and
-    /// evaluate()'s own root-handling block.
     auto count_tier2_cut(EvaluationCounters* counters) -> void
     {
         if (counters != nullptr)
@@ -99,15 +90,11 @@ namespace
         }
     }
 
-    /// sample_size_by_depth's single write site, following count_node()'s
-    /// pattern, called at the exact same two sites (p_make() and
-    /// evaluate()'s own root-handling block) with the exact same node and
-    /// depth count_node() itself uses -- every node reached is recorded
-    /// here, not only ones a cut later touches, matching nodes_visited's
-    /// own "terminal or expanded, including the root" scope. Grows the
-    /// vector on demand: see EvaluationCounters::sample_size_by_depth's own
-    /// doxygen for why a trailing zero-entry must never mean "reached but
-    /// empty".
+    /// Called with the same node and depth count_node() uses, so every
+    /// node reached is recorded here, not only ones a cut later touches.
+    /// Grows the vector on demand — see
+    /// EvaluationCounters::sample_size_by_depth for why a trailing
+    /// zero-entry must never mean "reached but empty".
     auto record_sample_size(EvaluationCounters* counters, BeliefNode const& node, int depth) -> void
     {
         if (counters == nullptr)
@@ -129,17 +116,9 @@ namespace
         stats.nodes += 1;
     }
 
-    /// replenishment_by_depth's single write site, following
-    /// record_sample_size()'s own pattern -- except there is only **one**
-    /// call site for this one (inside replenish_node(), guarded by the
-    /// same "a scan actually ran" condition that guards everything else
-    /// replenishment does), not two: replenishment never happens at the
-    /// root, so depth 0's entry would only ever be able to record zeros,
-    /// and evaluate()'s own root-handling block has nothing to call this
-    /// with. Left unsaid, the next reader familiar with count_node()'s and
-    /// record_sample_size()'s own two-site pattern would assume this one
-    /// needed a root-block call too, and add one that could only ever add
-    /// zero.
+    /// The exception to the two-call-site pattern above: this one is
+    /// called only from replenish_node(). Replenishment never happens at
+    /// the root, so a root-block call could only ever record zeros.
     auto record_replenishment_attempt(
         EvaluationCounters* counters,
         int depth,
@@ -163,35 +142,19 @@ namespace
         stats.at_calls += at_calls;
     }
 
-    /// Everything the recursion carries unchanged from the root down to
-    /// every node, declarer or defender, sample or exhaustive. Held by
-    /// const reference and passed down unmodified at every call --
-    /// widening this struct is how the recursion gains new read-only
-    /// context in future without touching every call site's parameter
-    /// list again.
+    /// Everything the recursion carries unchanged from the root down.
+    /// Held and passed by const reference; widening it is how the
+    /// recursion gains read-only context without touching every call
+    /// site's parameter list.
     ///
-    /// `error` is deliberately not a member: it is a mutable out-parameter
-    /// the recursion writes to report a callback failure, and burying a
-    /// mutable out-parameter in a struct named "context" would make it
-    /// stop looking like one. `depth` is deliberately not a member either
-    /// (see p_make()'s own parameter list): it is the one thing that
-    /// genuinely differs per call, so it stays a plain parameter rather
-    /// than forcing every level either to copy it into a by-value context
-    /// or to pay for a by-const-reference context header just for one
-    /// field that changes every call.
+    /// Three things are deliberately *not* members. `error` is a mutable
+    /// out-parameter, and burying one in a struct named "context" would
+    /// stop it looking like one. `depth` genuinely differs per call.
+    /// `declarer` and `tricks_needed` are already reachable through
+    /// `node.state`, and a second path to the same fact could drift.
     ///
-    /// `declarer` and `tricks_needed` are deliberately absent too, despite
-    /// being genuinely fixed for the whole recursion: both are already
-    /// reachable at every node through `node.state.declarer` and
-    /// `node.state.tricks_needed` -- common knowledge, identical across
-    /// every layout the node holds. A second path to the same fact would
-    /// let the two drift.
-    ///
-    /// `root_layout` and `source` are both const references to objects
-    /// owned by evaluate()'s caller and outliving the whole recursion --
-    /// SearchContext itself is only ever constructed on evaluate()'s own
-    /// stack and passed down by const reference, never copied or held by
-    /// value anywhere below it.
+    /// `root_layout` and `source` reference objects owned by evaluate()'s
+    /// caller, outliving the whole recursion.
     struct SearchContext
     {
         DeclarerStrategy const& pi;
@@ -202,46 +165,28 @@ namespace
         LayoutSource const& source;
     };
 
-    /// Tops `node` back up towards `ctx.options.sampling.sample_size` from
-    /// `ctx.source` when `node.layouts.size()` is below
-    /// `ctx.options.sampling.replenish_below`, rescaling `kappa` so the
-    /// node's mass is unchanged, and setting `is_sample = false` when the
-    /// scan reaches `ScanOutcome::SourceExhausted` -- the node then
-    /// genuinely holds the whole of its own remaining belief space, whether
-    /// or not that scan added anything (see `ScanOutcome`'s own doxygen).
-    /// Returns `std::nullopt` when nothing changes at all -- no threshold
-    /// set, the trigger not met, no `sample_size` to top up to (see
-    /// `SamplingOptions::replenish_below`'s own doxygen for why that case
-    /// is treated as "nothing to do" rather than an error), or a scan that
-    /// found nothing new *and* did not exhaust the source (bound by the
-    /// budget instead) -- in every one of those cases the caller must fall
-    /// back to using `node` itself unchanged, not a copy of it.
+    /// Tops `node` back up towards `sample_size` when its layout count is
+    /// below `replenish_below`, rescaling `kappa` so the node's mass is
+    /// unchanged, and clearing `is_sample` when the scan reaches
+    /// `ScanOutcome::SourceExhausted`.
     ///
-    /// The trigger is `node.layouts.size() < *ctx.options.sampling.replenish_below`
-    /// and **nothing else** -- not gated on `node.is_sample`, not on how
-    /// many layouts are already made or dead. See
-    /// `SamplingOptions::replenish_below`'s own doxygen for why: the rule
-    /// algorithm.md states is that the trigger may depend only on sample
-    /// size or total probability mass, and anything else is a bias smuggled
-    /// into what should be a purely mechanical top-up.
+    /// Returns `std::nullopt` whenever nothing changed — no threshold, the
+    /// trigger unmet, no `sample_size` to top up to, or a scan that found
+    /// nothing and did not exhaust the source. The caller then uses `node`
+    /// itself, not a copy.
     ///
-    /// The rescale is algebraically exact: with `E = Sigma p_i` before and
-    /// `E' = Sigma p_i` after (both accumulated the same way `node_mass`
-    /// accumulates, via `KahanAccumulator`), `kappa' = kappa * E / E'`
-    /// gives `kappa' * E' = kappa * E` -- the node's mass is unchanged to
-    /// floating-point tolerance, not merely close. Skipped entirely when
-    /// the scan finds nothing (`E' == E` exactly, so the division would
-    /// otherwise compute 1.0 and multiply by it -- correct in principle,
-    /// but "usually 1.0" is not the same guarantee as "untouched", and this
-    /// is the one case where the difference is worth the branch).
+    /// The trigger is the layout count and **nothing else**: see
+    /// `SamplingOptions::replenish_below`.
     ///
-    /// On a `delta` contract violation encountered during the scan,
-    /// `error` is set (through the same `EvaluationError` shape
-    /// `expand_defender_node`'s own errors use, since it is the same
-    /// callback breaking the same contract) and `std::nullopt` is
-    /// returned; the caller must check `error` before falling back to
-    /// `node`, exactly as every other error-reporting call in this
-    /// recursion requires.
+    /// The rescale is algebraically exact — with `E` and `E'` the Kahan
+    /// sums of `p` before and after, `kappa' = kappa * E / E'` gives
+    /// `kappa' * E' = kappa * E`. Skipped when the scan added nothing, so
+    /// that "untouched" is a guarantee rather than "usually 1.0".
+    ///
+    /// A `delta` contract violation during the scan sets `error` (the same
+    /// `EvaluationError` shape `expand_defender_node` uses — same callback,
+    /// same contract) and returns `std::nullopt`, so the caller must check
+    /// `error` before falling back to `node`.
     auto replenish_node(
         BeliefNode const& node,
         SearchContext const& ctx,
@@ -471,23 +416,8 @@ auto is_dead(ObservationState const& state) -> bool
 
 auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool
 {
-    // Gated on !node.is_sample, unlike either tier-1 cut: those read only
-    // tricks_won_by_declarer, tricks_needed and the outstanding pool, all
-    // common knowledge identical across every layout the node holds
-    // regardless of whether the node is a full space or a sample of one --
-    // sampling removes layouts, it does not change how many cards are left
-    // or how many tricks have been won. This cut instead concludes "every
-    // layout in this node is dead" from the layouts the node happens to
-    // hold; on a sample that is only "every layout *drawn* is dead", which
-    // says nothing about every layout in the true space, so a layout that
-    // would have made could simply not have been drawn. Once a root sample
-    // size is requested and actually binds, is_sample propagates true to
-    // every descendant through both expansion paths, switching this cut off
-    // from there down -- except at a node whose own replenishment scan
-    // exhausts source, which sets is_sample back to false there (see that
-    // field's own doxygen) and re-engages this exact same gate, honestly:
-    // such a node genuinely holds the whole of its own remaining space, not
-    // a floor-based exception to what this function checks.
+    // Gated on !node.is_sample, unlike either tier-1 cut -- see this
+    // function's own doxygen for the soundness argument.
     if (node.is_sample)
     {
         return false;
@@ -551,31 +481,25 @@ auto evaluate(
 
     if (already_made(root.state))
     {
-        // Tier 1's already-made cut, mirrored here for the same reason
-        // count_node() is: pi is never even asked which seat is on play,
-        // because there is nothing left to decide -- the contract is made
-        // in every layout the root holds before a single card is played.
-        // root_children stays empty for the same reason it does at a
-        // terminal root: no first-card decision exists to report
-        // alternatives for.
+        // Tier 1's already-made cut. pi is never even asked which seat is
+        // on play: the contract is made in every layout the root holds
+        // before a card is played, so there is no first-card decision to
+        // report alternatives for and root_children stays empty.
         count_tier1_made_cut(counters_ptr);
         value.p_make = node_mass(root);
     }
     else if (is_dead(root.state))
     {
-        // Tier 1's dead cut, mirrored here for the same reason: the
-        // contract cannot be made from the root even in principle, so
-        // p_make stays 0.0 and root_children stays empty -- there is no
-        // point reporting alternatives for a first card when every one of
-        // them leads to the same impossible outcome.
+        // Tier 1's dead cut: the contract cannot be made from the root
+        // even in principle, so p_make stays 0.0 and root_children stays
+        // empty -- every first card leads to the same outcome.
         count_tier1_dead_cut(counters_ptr);
         value.p_make = 0.0;
     }
     else if (tier2_dead(root, options))
     {
-        // Tier 2's cut, mirrored here for the same reason: every layout
-        // the root holds is dead by the injected bound, under the
-        // caller's own double-dummy-optimal declaration.
+        // Tier 2's cut: every layout the root holds is dead by the
+        // injected bound, under the caller's own declaration.
         count_tier2_cut(counters_ptr);
         value.p_make = 0.0;
     }

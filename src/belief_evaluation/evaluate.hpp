@@ -24,22 +24,15 @@ enum class EvaluationCallback
     DefenderStrategy,
 };
 
-/// A user-supplied callback's contract violation (or, for
-/// `RootConstruction`, an unusable `LayoutSource`), with enough context to
-/// locate the offending call: which callback, which seat was asked, and
-/// the layout it was evaluated against.
+/// A callback's contract violation, or an unusable `LayoutSource`, with
+/// enough context to locate the offending call.
 ///
-/// `layout` is `node.state.known_holdings` for a `DeclarerPlay` error (the
-/// card is checked against declarer's or dummy's exact holding, common to
-/// the whole node); the one specific layout whose distribution violated the
-/// contract for a `DefenderStrategy` error; and the root layout passed to
-/// `evaluate()` for a `RootConstruction` error.
-///
-/// `validation` is always `ValidationError::None` for a `RootConstruction`
-/// error — there is no callback return to validate; `root_failure` carries
-/// the actual cause instead, and is meaningful only for a `RootConstruction`
-/// error (`RootFailure::None` otherwise, the same way `seat` and `layout`
-/// carry a different meaning per `callback` value already).
+/// `seat` and `layout` mean something different per `callback`: `layout` is
+/// the node's `known_holdings` for `DeclarerPlay`, the one offending layout
+/// for `DefenderStrategy`, and the root layout for `RootConstruction`.
+/// `validation` and `root_failure` are likewise exclusive — a
+/// `RootConstruction` error carries the cause in `root_failure` and leaves
+/// `validation` at `None`, since there is no callback return to validate.
 struct EvaluationError
 {
     ValidationError validation;
@@ -60,131 +53,63 @@ struct RootChildValue
 
 /// A caller-supplied double-dummy upper bound on the tricks declarer can
 /// take from a given layout, for EvaluateOptions::bound. Consumed by
-/// `tier2_dead()` (below) — kept as a seam separate from the cut itself so
-/// the cut is testable with a scripted bound and no solver in the loop,
-/// exactly as `spread()` is testable without `solve_board`.
+/// `tier2_dead()`, and kept separate from the cut so the cut is testable
+/// with a scripted bound and no solver in the loop.
 ///
-/// **Not validated, and cannot be**: π's card is checkable against the
-/// layout, δ's distribution is checkable against the contract, but a
-/// claimed trick bound is checkable against nothing short of solving the
-/// position — which is the work the bound exists to avoid. `tier2_dead()`
-/// (below) fires only once every layout's bound falls below what is still
-/// needed, so a bound that is too *low* is the unsound direction: it makes
-/// the cut fire on a node containing a layout that declarer would actually
-/// have made, and the node silently contributes zero to a contract that
-/// makes.
-/// A bound that is too *high* only suppresses a legitimate prune — the
-/// subtree is then evaluated properly and no answer changes, merely
-/// wastefully. This is one of two unvalidatable obligations a caller
-/// supplying a bound takes on; see
-/// EvaluateOptions::delta_is_double_dummy_optimal for the other, and
-/// `DeclarerStrategy::state_key`'s own doxygen for the same register
-/// applied to a different obligation already in this module.
+/// **Not validated, and cannot be** — checking a claimed trick bound means
+/// solving the position, which is the work the bound exists to avoid. Too
+/// *low* is the unsound direction: it makes the cut fire on a node holding
+/// a layout declarer would have made, which then contributes zero. Too high
+/// only loses pruning. This is one of two unvalidatable obligations a bound
+/// brings with it; see EvaluateOptions::delta_is_double_dummy_optimal.
 using LayoutBound = std::function<int(Deal const&)>;
 
-/// The three sampling-related fields, grouped because they are coupled and
-/// not because they compose freely — see each field's own doxygen for what
-/// still binds independently of the others. Default-constructed means
-/// exactly what all three being absent from a flat `EvaluateOptions` used
-/// to mean: exhaustive enumeration, an unbounded scan, no replenishment.
+/// The three sampling-related fields, grouped because they are coupled.
+/// Default-constructed means exhaustive enumeration, an unbounded scan, and
+/// no replenishment.
 ///
-/// **Grouping is not composing.** `scan_budget` applies whether or not
-/// `sample_size` is set — it binds a scan's own cost regardless of what the
-/// scan is for — and `replenish_below` does nothing at all unless
-/// `sample_size` is also present, since there is no separate top-up target
-/// (see that field's own doxygen for the exact degenerate cases). Reading
-/// the three as "a sampling mode, configured by three knobs" is the wrong
-/// mental model; reading them as "three related but individually-scoped
-/// settings" is the right one.
+/// **Grouping is not composing.** `scan_budget` binds whether or not
+/// `sample_size` is set; `replenish_below` does nothing at all without
+/// `sample_size`, since there is no separate top-up target.
 struct SamplingOptions
 {
     /// Cap the number of layouts drawn for the root, absent for exhaustive
-    /// enumeration (every consistent layout, unchanged behaviour). When
-    /// present, threaded straight through to `make_root` as
-    /// `RootOptions::sample_size` — see that field, and `make_root`'s own
-    /// doxygen, for the exact scanning and `is_sample` semantics. No seed
-    /// anywhere: the source's own ordering is where any randomness has to
-    /// live (see `LayoutSource::at`'s doxygen), not here.
+    /// enumeration. Threaded straight through to `make_root` as
+    /// `RootOptions::sample_size`; see that field for the scanning and
+    /// `is_sample` semantics. No seed here or anywhere in the evaluator —
+    /// randomness lives in the source's own ordering.
     std::optional<std::uint64_t> sample_size;
 
-    /// Cap the number of `source.at()` calls a single scan may make — the
-    /// root's own, via `RootOptions::scan_budget` (see that field for what
-    /// it counts), and, identically, any node-local replenishment scan:
-    /// this is a **per-scan** cap, not a per-run total, so a node-local
-    /// scan starts a fresh budget of its own rather than sharing what the
-    /// root already spent. Applies whether or not `sample_size` is set: a
-    /// `scan_budget` narrower than the source binds and degrades the root
-    /// on its own. A budget that binds is not an error — see
-    /// `RootFailure::ScanBudgetExhausted` for the one case that still is
-    /// (nothing survived before the budget ran out).
+    /// Cap the number of `source.at()` calls a **single scan** may make —
+    /// the root's own, and, identically, each node-local replenishment
+    /// scan, which starts a fresh budget rather than sharing what the root
+    /// spent. Applies whether or not `sample_size` is set. A budget that
+    /// binds is a degraded draw, not an error; see
+    /// `RootFailure::ScanBudgetExhausted` for the case that is.
     std::optional<std::uint64_t> scan_budget;
 
     /// Replenish a node whose `layouts.size()` is below this, topping it
     /// back up towards `sample_size` from `source` before any cut is
-    /// evaluated at it and before any `BeliefView` is built there. Absent
-    /// by default -- which is what keeps every existing behaviour
-    /// byte-for-byte unchanged: with no threshold, the recursion never
-    /// scans past the root and never touches a node's `kappa`.
+    /// evaluated and before any `BeliefView` is built there. Absent by
+    /// default, which leaves the recursion never scanning past the root.
     ///
-    /// The trigger reads **only** `node.layouts.size()` — nothing about
-    /// `is_sample`, how many layouts are already made or dead, or any
-    /// other property of the node. algorithm.md is explicit that the rule
-    /// to trigger replenishment must depend only on sample size or total
-    /// probability mass, since anything else biases the result; `is_sample`
-    /// specifically is both redundant (an exhaustive node's count is what
-    /// it is, so a caller who sets this with no `sample_size` simply gets a
-    /// scan that finds nothing new) and one more thing that would need to
-    /// stay correct as a node's own scan can flip it mid-search.
+    /// The trigger reads **only** `node.layouts.size()` — not `is_sample`,
+    /// not how many layouts are made or dead. algorithm.md requires the
+    /// rule to depend only on sample size or probability mass; anything
+    /// else biases the result.
     ///
     /// **Coupled with `sample_size`: there is no separate top-up target.**
-    /// A node is topped back up towards `sample_size` itself, since a
-    /// caller who already said how large a sample they want should not
-    /// have to say it twice — now visible in the shape, both fields living
-    /// on the same type. If `sample_size` is absent, this field is treated
-    /// as absent too: a replenishment threshold with no target to top up
-    /// to has nothing to do, and the scan never runs. Reuses `scan_budget`
-    /// as each individual replenishment scan's own cap (see that field)
-    /// rather than adding a fourth coupled field for it.
+    /// With `sample_size` absent this field is treated as absent too, and
+    /// the scan never runs. Each scan is capped by `scan_budget`.
     ///
-    /// A value **above** `sample_size` is accepted, not rejected, but is
-    /// degenerate: a node's own count can never *exceed* `sample_size`
-    /// (that is what tops it up to), so the threshold is met at every node
-    /// on entry and the trigger condition holds every time -- but that is
-    /// not "fires for free every time". Three cases, and only one of them
-    /// is genuinely free:
-    ///
-    /// - **`node.no_more_available` is already set.** Checked before the
-    ///   scan and short-circuits it entirely -- zero `source.at()` calls,
-    ///   and *not* recorded in `EvaluationCounters::replenishment_by_depth`
-    ///   at all, not even as an attempt. See that field's own doxygen.
-    /// - **`wanted = sample_size - current` is zero** (a node whose count
-    ///   still equals `sample_size` unchanged, which holds through any
-    ///   number of declarer plies but stops holding the moment a defender
-    ///   split has first dropped a node's count below it). `replenish_node`
-    ///   computes `wanted` and calls `scan_for_replenishment` regardless of
-    ///   its value -- unlike the `no_more_available` case above, there is no
-    ///   short-circuit for `wanted == 0` in `replenish_node` itself. But
-    ///   `scan_for_replenishment` has its own early return for exactly this
-    ///   input (see that function's own doxygen), so no `source.size()`
-    ///   call and no exclusion-set build happen either -- the scan returns
-    ///   immediately at zero `source.at()` calls, and *is* recorded as an
-    ///   attempt (`at_calls == 0`, `succeeded == false`).
-    /// - **`wanted > 0`**: a real, possibly expensive, node-local scan runs
-    ///   and is recorded as an attempt. This includes the case where the
-    ///   scan ends in `SourceExhausted` having found nothing -- that scan
-    ///   still spent real `at()` calls reaching the end of `source`; it is
-    ///   not a fourth free case.
-    ///
-    /// So this setting does not make replenishment free in general: it
-    /// makes the trigger condition true at every node, with real cost
-    /// wherever a split has already happened, the source still has
-    /// candidates to offer, and `no_more_available` has not already ruled
-    /// the path out. A reader of `EvaluationCounters::replenishment_by_depth`
-    /// should not read `attempted` as "the trigger condition held": a
-    /// `no_more_available` short-circuit holds the condition but is not
-    /// counted; `attempted` counts only firings that actually called
-    /// `scan_for_replenishment`, and even among those `at_calls` is what
-    /// distinguishes a free `wanted == 0` return from a real scan.
+    /// A value **above** `sample_size` is accepted but degenerate: the
+    /// threshold is then met at every node. That is not free. Only a node
+    /// with `no_more_available` already set short-circuits at no cost, and
+    /// it is not recorded in `EvaluationCounters::replenishment_by_depth`
+    /// at all. A node already at `sample_size` records an attempt costing
+    /// nothing (`at_calls == 0`); anything below it pays for a real scan,
+    /// including one that reaches the end of `source` having found nothing.
+    /// So `attempted` counts scans that ran, never times the trigger held.
     std::optional<std::uint64_t> replenish_below;
 };
 
@@ -197,69 +122,44 @@ struct EvaluateOptions
     bool retain_root = false;
 
     /// Populate EvaluationValue::counters. Off by default, so the ordinary
-    /// path pays nothing to collect what nothing is asking for. Collecting
-    /// counters must never change `p_make` or `root_children` — every
-    /// counter measures this run's own shape or cost and none of them
-    /// feeds back into the recursion (see counters_test.cpp's paired-run
-    /// check, both directions).
+    /// path pays nothing. Collecting counters never changes `p_make` or
+    /// `root_children` — counters_test.cpp pins that in both directions.
     bool collect_counters = false;
 
-    /// See LayoutBound's own doxygen. Absent by default (a default-
-    /// constructed `std::function` is empty), which leaves `tier2_dead()`
-    /// disabled the same way `delta_is_double_dummy_optimal` being unset
-    /// does — the two are separate obligations and neither implies the
-    /// other; see that field for why they are not collapsed into one.
+    /// See LayoutBound. Absent by default, which leaves `tier2_dead()`
+    /// disabled just as an unset `delta_is_double_dummy_optimal` does.
     LayoutBound bound;
 
     /// The caller's declaration that `delta` holds declarer to the
-    /// double-dummy trick count whatever declarer does — i.e. that `delta`
-    /// is double-dummy optimal *for trick count*. Unset by default,
-    /// **separate** from `bound` itself: supplying a bound and making this
-    /// declaration assert different things (a function, versus a claim
-    /// about δ's behaviour), and a caller may legitimately want a bound
-    /// computed for instrumentation while their δ does not qualify.
-    /// Collapsing the two into one flag would make the unsound
-    /// configuration the easy one.
+    /// double-dummy trick count whatever declarer does. **Separate** from
+    /// `bound` on purpose: the two assert different things, and a caller
+    /// may want a bound for instrumentation while their δ does not qualify.
     ///
-    /// This does **not** conflict with the separate, already-documented
-    /// fact that a trick-maximising defender is not best defence against a
-    /// *contract* (see `DoubleDummyDefender`'s own doxygen) — that caveat
-    /// is about the contract; this declaration is about trick count, and a
-    /// trick-maximising δ (`DoubleDummyDefender` under either
-    /// `SpreadPolicy`) satisfies it against any π, since maximising tricks
-    /// for both sides at `target = -1` holds declarer to the double-dummy
-    /// trick count regardless of which card declarer actually plays.
+    /// This is about *trick count*, so a trick-maximising δ satisfies it —
+    /// including `DoubleDummyDefender`, which is separately documented as
+    /// not being best defence against a *contract*. The two claims do not
+    /// conflict.
     ///
-    /// **Cannot be validated, and a wrong declaration is silently wrong in
-    /// only one direction.** If `delta` does not actually hold declarer to
-    /// the double-dummy trick count — a scripted δ that ducks a trick it
-    /// need not have lost, for instance — `tier2_dead()` can discard a
-    /// layout where declarer, following π, would actually have made the
-    /// contract. The bound is an upper bound on double-dummy play; nothing
-    /// here checks that δ delivers double-dummy play.
+    /// **Cannot be validated**, and a wrong declaration is silently wrong
+    /// in one direction: a δ that ducks a trick it need not lose lets
+    /// `tier2_dead()` discard a layout declarer would have made. The bound
+    /// is an upper bound on double-dummy play; nothing checks that δ
+    /// delivers double-dummy play.
     bool delta_is_double_dummy_optimal = false;
 
     /// `sample_size`, `scan_budget` and `replenish_below`, grouped — see
-    /// `SamplingOptions`' own doxygen for what the grouping does and does
-    /// not imply. Default-constructed, so a caller wanting none of it
-    /// writes nothing and every existing default-constructed
-    /// `EvaluateOptions` still means exactly what it meant before this type
-    /// existed: exhaustive enumeration, no scan budget, no replenishment.
+    /// `SamplingOptions`. Default-constructed: exhaustive enumeration, no
+    /// scan budget, no replenishment.
     SamplingOptions sampling;
 };
 
 /// Per-depth aggregate of `node.layouts.size()` across every node reached
-/// at that depth. A node's layout count is not uniform within a depth —
-/// defender expansion splits a node's layouts across children by which
-/// card each layout's defender played — so no single statistic answers
-/// "the sample size at depth d"; this carries enough to compute the three
-/// that matter: `layout_sum / nodes` for the mean (reads naturally, is
-/// what "how fast does the sample collapse" is usually asking);
-/// `layout_min` directly, the alarming number (a single node down to one
-/// layout is where a strategy gets its false certainty); and `layout_sum`
-/// on its own, which — by mass conservation — tracks total surviving
-/// layouts but *hides* collapse, since many tiny nodes and one large one
-/// sum the same as a uniform spread.
+/// at that depth. A depth has no single sample size — defender expansion
+/// splits layouts across children — so this carries enough for the three
+/// statistics that matter: `layout_sum / nodes` for the mean, `layout_min`
+/// for the alarming case (a node down to one layout is where a strategy
+/// gets false certainty), and `layout_sum` for total surviving layouts,
+/// which *hides* collapse since many tiny nodes sum as one large one does.
 struct DepthSampleStats
 {
     std::uint64_t nodes = 0;       ///< nodes reached at this depth
@@ -268,23 +168,15 @@ struct DepthSampleStats
 };
 
 /// Per-depth aggregate of every node-local replenishment scan attempted at
-/// that depth. Follows `DepthSampleStats`' own precedent -- one struct per
-/// depth holding several related counts, not four parallel vectors.
+/// that depth.
 ///
-/// `attempted` and `succeeded` are both counted, not folded into one,
-/// because they answer different questions: `attempted - succeeded` is
-/// exactly how often a scan ran and found nothing (the number that says
-/// whether `BeliefNode::no_more_available` is doing real work or is cheap
-/// insurance that rarely bites); `succeeded` against `layouts_added` gives
-/// the average top-up size. `at_calls` sums every such scan's own
-/// `ScanResult::at_calls`, counted the same way `RootOptions::scan_budget`
-/// counts them, so a scan-to-hit ratio (`at_calls` per `layouts_added`) is
-/// derivable from this alone -- deliberately not stored as a ratio itself,
-/// since a ratio cannot be summed across depths or runs and ratio-shaped
-/// data should not be either. Never incremented at the root: replenishment
-/// does not happen there (`make_root` just built it from a fresh scan), so
-/// depth 0's entry, if it exists at all (from `sample_size_by_depth`
-/// sharing the same indexing), is structurally all zero.
+/// `attempted` and `succeeded` are kept apart because their difference is
+/// how often a scan ran and found nothing — which is what says whether
+/// `BeliefNode::no_more_available` is doing real work. `at_calls` counts
+/// the same way `RootOptions::scan_budget` does, so a scan-to-hit ratio is
+/// derivable; it is not stored as a ratio, since ratios cannot be summed
+/// across depths or runs. Never incremented at the root: `make_root` built
+/// it from a fresh scan, so depth 0's entry is structurally all zero.
 struct DepthReplenishmentStats
 {
     std::uint64_t attempted = 0;      ///< replenishment scans that actually ran at this depth
@@ -293,24 +185,18 @@ struct DepthReplenishmentStats
     std::uint64_t at_calls = 0;       ///< total source.at() calls across every scan at this depth
 };
 
-/// Instrumentation `evaluate()` can report about its own run, populated
-/// only when EvaluateOptions::collect_counters is set — see
-/// EvaluationValue::counters. Nothing here is read back into `p_make`;
-/// every field is purely a fact about this run's own shape or cost.
+/// Instrumentation `evaluate()` reports about its own run, populated only
+/// when EvaluateOptions::collect_counters is set. Nothing here is read back
+/// into `p_make`; every field is a fact about this run's shape or cost.
 ///
-/// This is the module's shared instrumentation mechanism, not a type
-/// specific to whatever fills it in first: node count, cut counts by
-/// tier, sample size by depth (`DepthSampleStats`), and replenishment
-/// counts and scan-to-hit by depth (`DepthReplenishmentStats`) all live
-/// here, each arriving as its own member rather than reshaping the type
-/// that came before it. A later addition belongs here too, the same way.
+/// This is the module's shared instrumentation type. A later counter
+/// arrives as one more member here rather than reshaping what came before.
 struct EvaluationCounters
 {
     /// Every BeliefNode reached and evaluated for a value — terminal or
-    /// expanded, including the root itself. Meaningful on its own with no
-    /// cuts implemented at all: a cut that fires reduces this count below
-    /// the same fixture's uncut run, which is how a cut's tests prove it
-    /// actually fired rather than merely computing the right number.
+    /// expanded, including the root. This is how a cut's tests prove it
+    /// fired rather than merely computing the right number: a firing cut
+    /// drops this below the same fixture's uncut run.
     std::uint64_t nodes_visited = 0;
 
     /// Every already_made() cut that fired: the contract is already made in
@@ -329,59 +215,43 @@ struct EvaluationCounters
     /// the root (or an ancestor) was sampled.
     std::uint64_t tier2_cuts = 0;
 
-    /// Index i is depth i's own DepthSampleStats, root at depth 0 (the same
-    /// indexing p_make()'s own depth parameter uses). Grown as depth is
-    /// reached, not pre-sized to the tree's
-    /// maximum possible depth — a cut ending a branch early would otherwise
-    /// leave trailing zero-entries that read as "the sample collapsed to
-    /// nothing" rather than "nothing went that deep". An index beyond
-    /// `size() - 1` — not merely an entry with `nodes == 0` — is what
-    /// means "no node was ever visited at this depth"; every populated
-    /// entry has `nodes >= 1`, since `make_root` and every child-
-    /// construction function guarantee at least one layout survives, which
-    /// in turn guarantees the node itself exists to be counted. Populated
-    /// on the exhaustive path too, where it is a fact about the tree's own
-    /// shape rather than about a sample.
+    /// Index i is depth i's own DepthSampleStats, root at depth 0 — the
+    /// same indexing p_make()'s depth parameter uses. Grown as depth is
+    /// reached rather than pre-sized, so that an index beyond `size() - 1`
+    /// is what means "no node was ever visited at this depth"; a trailing
+    /// zero-entry would instead read as a sample collapsed to nothing.
+    /// Every populated entry has `nodes >= 1`. Populated on the exhaustive
+    /// path too, where it describes the tree's shape rather than a sample.
     std::vector<DepthSampleStats> sample_size_by_depth;
 
-    /// Index i is depth i's own DepthReplenishmentStats, same indexing as
-    /// `sample_size_by_depth`, grown on demand the same way and for the
-    /// same reason (a trailing zero-entry must never be confused with
-    /// "nothing went that deep" -- an index beyond `size() - 1` is what
-    /// means that here too). Populated whether or not any scan at that
-    /// depth actually found anything; an unpopulated depth (index beyond
-    /// `size() - 1`) means replenishment was never even attempted there,
-    /// which is different from attempting and finding nothing.
+    /// Index i is depth i's own DepthReplenishmentStats, indexed and grown
+    /// exactly as `sample_size_by_depth` is, and read the same way: an
+    /// index beyond `size() - 1` means replenishment was never attempted
+    /// at that depth, which is not the same as attempting and finding
+    /// nothing.
     std::vector<DepthReplenishmentStats> replenishment_by_depth;
 };
 
 /// `P_make` for one declarer strategy against one defender strategy, plus
-/// root-child values for a search layer above the evaluator to compare
-/// candidate root actions without re-running the whole search once per
-/// candidate.
+/// root-child values, so that a search layer above can compare candidate
+/// root actions without re-running the whole search per candidate.
 ///
-/// - If the root is a declarer (or dummy) node: one entry per card
-///   declarer or dummy may legally play first, each the `P_make` of
-///   committing to that card and following `pi` thereafter. These are
-///   **alternatives, not a partition** — `p_make` equals whichever entry
-///   corresponds to `pi`'s actual choice at the root, not their sum.
-/// - If the root is a defender node: one entry per card `delta` assigns
-///   positive probability to somewhere in the belief space — exactly the
-///   children defender-node expansion produces. These **do** sum to
-///   `p_make`, since defender children partition mass by construction (see
-///   specs/replenished-belief-evaluation.md's mass-conservation invariant).
-/// - Empty at a terminal root (no cards left to play a first card from), or
-///   at a root where declarer has already banked every trick the contract
-///   needs before any card is played -- in both cases there is no
-///   first-card decision left to report alternatives for.
+/// - Declarer (or dummy) root: one entry per card that may legally be
+///   played first, each the `P_make` of committing to it and following `pi`
+///   thereafter. **Alternatives, not a partition** — `p_make` is whichever
+///   entry `pi` actually chose, not the sum.
+/// - Defender root: one entry per card `delta` gives positive probability
+///   to somewhere in the belief space. These **do** sum to `p_make`, since
+///   defender children partition mass by construction.
+/// - Empty at a terminal root, and at a root where declarer has already
+///   banked every trick needed: no first-card decision remains.
 struct EvaluationValue
 {
     double p_make = 0.0;
     std::vector<RootChildValue> root_children;
 
     /// The root BeliefNode, populated only when EvaluateOptions::retain_root
-    /// is set. Not a full retained tree — see evaluate.cpp and the spec for
-    /// why a full tree is not retained by default.
+    /// is set. The root alone, never a tree.
     std::optional<BeliefNode> retained_root;
 
     /// This run's instrumentation, populated only when
@@ -390,100 +260,67 @@ struct EvaluationValue
 };
 
 /// Either the value, or the EvaluationError a callback's return (or
-/// `source`) violated — never both. Never an exception across the callback
-/// boundary: a callback is user input, not an internal, so a contract
-/// violation is reported here rather than thrown. A genuine internal
-/// invariant failure (mass conservation off by more than tolerance) is a
-/// different category and asserts rather than reporting through this type.
+/// `source`) violated — never both. A callback is caller input, so a
+/// contract violation is reported here rather than thrown; an internal
+/// invariant failure asserts instead.
 struct EvaluationResult
 {
-    /// `pi.id`'s dense-mapped entry. Exactly one entry today — `evaluate()`
-    /// takes a single DeclarerStrategy — but keyed by the caller's own
-    /// StrategyId (not an internal dense index) so a caller can look its
-    /// own strategy up directly, and so the shape survives a future
-    /// multi-strategy comparison without changing.
+    /// `pi.id`'s entry. Exactly one today — `evaluate()` takes a single
+    /// DeclarerStrategy — but keyed by the caller's own StrategyId so that
+    /// a caller can look its own strategy up, and so the shape survives a
+    /// future multi-strategy comparison.
     std::map<StrategyId, EvaluationValue> by_strategy;
     std::optional<EvaluationError> error;  ///< meaningful only when by_strategy is empty
 };
 
-/// Tier 1's already-made cut: true once declarer has banked every trick
-/// the contract needs, whatever is left to play. Sound with no
-/// precondition at all -- tricks_won_by_declarer and tricks_needed are
-/// both common knowledge, identical across every layout the node holds,
-/// so once this holds the contract is made in every layout of the node
-/// and nothing about pi, delta, or sampling enters the argument. No gate.
+/// Tier 1's already-made cut: true once declarer has banked every trick the
+/// contract needs, whatever is left to play. Sound with no precondition —
+/// both trick counts are common knowledge, identical across every layout in
+/// the node — so there is no gate.
 ///
-/// Exposed (rather than kept private to evaluate.cpp) for the same reason
-/// `is_terminal()`/`terminal_value()` are: so a test can construct an
-/// `ObservationState`/`BeliefNode` by hand and check the cut condition in
-/// isolation, without going through the whole recursion.
+/// Exposed, rather than kept private to evaluate.cpp, so a test can build a
+/// node by hand and check the condition without the recursion.
 auto already_made(ObservationState const& state) -> bool;
 
 /// Tier 1's dead cut, the mirror of already_made(): true once declarer
-/// cannot reach tricks_needed even by winning every remaining trick.
-/// Sound with no precondition, same argument as already_made() --
-/// tricks_won_by_declarer, tricks_needed and the outstanding pool
-/// (tricks_remaining() reads it) are all common knowledge, identical
-/// across every layout the node holds. No gate.
+/// cannot reach tricks_needed even by winning every remaining trick. Sound
+/// with no precondition, same argument, no gate.
 auto is_dead(ObservationState const& state) -> bool;
 
 /// Tier 2's node-level cut: true only when the caller has made the
 /// EvaluateOptions::delta_is_double_dummy_optimal declaration *and* every
-/// layout at `node` is dead by the injected bound (EvaluateOptions::bound).
-/// Absent either, this never fires, whatever the bound says -- the
-/// declaration is not a performance switch (see that field's own doxygen
-/// for why R <= DD is false against a defence that errs).
+/// layout at `node` is dead by EvaluateOptions::bound. Absent either, this
+/// never fires — the declaration is not a performance switch.
 ///
-/// Gated on `! node.is_sample`, unlike either tier-1 cut above: those read
-/// only common knowledge, identical across every layout regardless of
-/// whether the node is a full space or a sample of one. This cut instead
-/// concludes "every layout in this node is dead" from the layouts the node
-/// happens to hold; on a sample that is only "every layout *drawn* is
-/// dead", which says nothing about every layout in the true space. A root
-/// that is a genuine sample propagates `is_sample = true` to every child
-/// through both expansion paths, switching this gate off from there down
-/// -- except at a node whose own replenishment scan reaches
-/// `ScanOutcome::SourceExhausted`, which sets `is_sample` back to `false`
-/// there (see that field's own doxygen): the gate fires again at exactly
-/// such a node, through this same unchanged condition, because it
-/// genuinely holds the whole of its own remaining space and is no longer
-/// a sample by any honest reading of the flag. This is not a refinement to
-/// a replenishment floor -- `docs/replenished_belief_evaluation/algorithm.md`
-/// permits early cuts once a node reaches such a floor, and this gate does
-/// not track one; it only ever asks the one question `! node.is_sample`
-/// already asks, which happens to become true here too.
+/// **Gated on `! node.is_sample`**, unlike the tier-1 cuts, which read only
+/// common knowledge. This one concludes "every layout in this node is dead"
+/// from the layouts the node happens to hold, which on a sample is only
+/// "every layout drawn is dead". A sampled root propagates `is_sample` down
+/// both expansion paths and switches the gate off — except at a node whose
+/// own replenishment scan exhausted the source, which sets `is_sample` back
+/// to false there and so genuinely holds the whole of its remaining space.
+/// The gate fires again there through this same unchanged condition; it
+/// tracks no replenishment floor.
 ///
-/// Stops at the first live layout (`bound(layout) >=` what is still
-/// needed) rather than calling `bound` for every layout: each call is a
-/// double-dummy solve in production.
+/// Stops at the first live layout rather than calling `bound` for every
+/// one: each call is a double-dummy solve in production.
 ///
-/// **Never a make-cut.** This function only ever answers "is every layout
-/// dead" -- it has no "not dead" branch that concludes anything about a
-/// make, because DD >= rho implies nothing about R: pi may play worse than
-/// double dummy, so the single solve behind a bound must never be reused
-/// to conclude the contract makes. Node-level, not per-layout: dropping a
-/// dead layout here would renormalise every surviving layout's posterior,
-/// changing what an arbitrary caller-supplied pi does with the belief view
-/// it is given -- this function returns before any view is built at or
-/// below `node`, so that problem cannot arise.
+/// **Never a make-cut.** `DD >= rho` implies nothing about `R` — `pi` may
+/// play worse than double dummy — so the solve behind a bound must never be
+/// reused to conclude the contract makes. Node-level, not per-layout:
+/// dropping a dead layout would renormalise every survivor's posterior and
+/// change what an arbitrary `pi` does with the view it is given. This
+/// returns before any view is built at or below `node`.
 auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool;
 
 /// Evaluates `P_make` for `pi` against `delta` over the root belief space
-/// `make_root` builds from `source`: every layout consistent with
-/// `root_layout` by default, or — if `options.sampling.sample_size` is
-/// supplied — a bounded prefix of them (see
-/// `EvaluateOptions::sampling.sample_size` and `make_root`'s own doxygen).
-/// If `options.sampling.replenish_below` is also set, a
-/// node whose own layout count falls below it is topped back up from
-/// `source` before it is evaluated further — see that field's own doxygen
-/// for the trigger and `EvaluationCounters`' replenishment fields
-/// (`replenishment_by_depth`) for what a run reports about it. Absent, a
-/// sampled root's layout count only ever shrinks as defenders play, exactly
-/// as before. Early cuts
-/// (already_made(), is_dead(), tier2_dead() above) skip subtrees that are
-/// guaranteed to contribute exactly zero to the result — none of them
-/// change any answer; see `specs/replenished-belief-evaluation.md` for what
-/// makes each sound.
+/// `make_root` builds from `source`: every consistent layout by default, or
+/// a bounded prefix under `options.sampling.sample_size`. With
+/// `options.sampling.replenish_below` also set, a node whose layout count
+/// falls below it is topped back up from `source` before being evaluated
+/// further; absent, a sampled root's count only ever shrinks as defenders
+/// play. The early cuts above skip subtrees that contribute exactly zero
+/// and change no answer.
 ///
 /// `state_key` is never called: there is no cache yet.
 auto evaluate(

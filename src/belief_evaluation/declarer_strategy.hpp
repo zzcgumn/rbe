@@ -21,23 +21,17 @@ struct DeclarerStrategy
 
     /// Chooses declarer's or dummy's next card, whichever seat is on play.
     ///
-    /// **Must be a pure function of its arguments.** The evaluator walks the
-    /// tree in its own order and revisits sibling subtrees; a strategy that
-    /// accumulates state across calls will silently return different cards
-    /// for the same node and corrupt the result. This library only supports
-    /// deterministic strategies.
+    /// **Must be a pure function of its arguments.** The evaluator walks
+    /// the tree in its own order and revisits sibling subtrees, so a
+    /// strategy accumulating state across calls silently returns different
+    /// cards for the same node and corrupts the result. Only deterministic
+    /// strategies are supported.
     ///
-    /// The most likely accidental violation is a *seeded* strategy: drawing
-    /// from one PRNG stream across the whole search makes the card returned
-    /// at a node depend on how many decisions preceded it in traversal
-    /// order, rather than on the node itself. That breaks silently under
-    /// early cuts (which change how many draws precede a given node), under
-    /// any future cache keyed on `state_key`, and makes `state_key`
-    /// impossible to write honestly in the first place. The remedy is to
-    /// derive the choice from the state instead of from a stream —
-    /// `choice = hash(seed, state) mod n` — which gives the same card for
-    /// the same state regardless of traversal order, cuts, caching, or
-    /// sibling evaluations.
+    /// The likely accidental violation is a *seeded* strategy drawing from
+    /// one PRNG stream across the whole search: the card then depends on
+    /// how many decisions preceded it in traversal order. Derive the
+    /// choice from the state instead — `choice = hash(seed, state) mod n`
+    /// — which is stable under cuts, caching and sibling evaluations.
     ///
     /// The returned rank is **absolute**, never relative to the node's
     /// outstanding-card pool. A strategy reasoning in relative terms
@@ -46,13 +40,15 @@ struct DeclarerStrategy
 
     /// Optional. Declares what `play` consults *beyond* the position the
     /// evaluator already keys on — nothing more, since the evaluator
-    /// supplies the position component of any cache key itself.
+    /// supplies the position component of any cache key itself. Never
+    /// called today; there is no cache yet.
     ///
-    /// Unset disables reuse for this strategy entirely. Set but returning an
-    /// empty key is the strongest declaration available: "nothing beyond the
-    /// position", i.e. maximal reuse. A key coarser than `play`'s real
-    /// dependence produces a wrong probability, not a slow one, so this
-    /// function must be pure on the same terms as `play`.
+    /// Three states, not two: unset disables reuse entirely, an empty key
+    /// is the strongest declaration available ("nothing beyond the
+    /// position", so maximal reuse), and a non-empty key names the rest. A
+    /// key coarser than `play`'s real dependence produces a wrong
+    /// probability, not a slow one, and nothing checks it — so this must be
+    /// pure on the same terms as `play`.
     std::function<StateKey(ObservationState const&, BeliefView const&)> state_key;
 };
 

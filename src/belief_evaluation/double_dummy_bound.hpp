@@ -2,20 +2,9 @@
 
 #include <belief_evaluation/evaluate.hpp>
 
-/// Forward-declared, not included -- same reason as
-/// `DoubleDummyDefender`'s own forward declaration, including the same
-/// measurement: every current includer of this header already needs the
-/// full `solver_context.hpp`, so this buys nothing measurable today, but
-/// the header itself is genuinely heavy (~25x a translation unit's compile
-/// time over just this forward declaration, on the order of 200ms extra
-/// per TU) and a future includer that only references `SolverContext`
-/// without calling into the solver pays that for nothing. Kept for that
-/// future consumer.
-///
-/// Declared here, above `namespace dds::belief_evaluation` below, for the
-/// same reason as `double_dummy_defender.hpp`'s own copy of this note: this
-/// is `::SolverContext` at global scope, not a namespaced, never-defined
-/// lookalike.
+/// Forward-declared rather than included, and declared here at global
+/// scope, for the same reasons as `double_dummy_defender.hpp`'s own copy —
+/// see that header.
 class SolverContext;
 
 namespace dds::belief_evaluation
@@ -26,49 +15,38 @@ namespace dds::belief_evaluation
 /// actually on lead at that layout.
 ///
 /// **`solve_board`'s own score is not this, directly.** It reports tricks
-/// for whichever side is on lead at the position solved -- verified
-/// empirically (see double_dummy_bound_test.cpp's own orientation tests),
-/// not assumed -- so a raw score is declarer's own bound only when
-/// declarer or dummy happens to be on lead at `layout`. When a defender is
-/// on lead instead, the raw score is the *defenders'* own best trick
-/// count, and declarer's bound is derived as tricks_remaining(layout) minus
-/// that (bridge is zero-sum trick by trick: every remaining trick goes to
-/// exactly one side).
+/// for whichever side is on lead at the position solved — verified
+/// empirically in double_dummy_bound_test.cpp, not assumed. When a defender
+/// is on lead the raw score is the *defenders'* best trick count, and
+/// declarer's bound is `tricks_remaining(layout)` minus it, bridge being
+/// zero-sum trick by trick.
 ///
-/// **The precondition this bound carries, stated for the caller who
-/// obtains one from here**: `R <= DD` (the reason a cut may use this bound
-/// at all) holds only when the paired `delta` is double-dummy optimal for
-/// trick count -- see `EvaluateOptions::delta_is_double_dummy_optimal`'s
-/// own doxygen for what that means and why it cannot be checked here.
-/// `DoubleDummyDefender` (either `SpreadPolicy`) satisfies it, and pairing
-/// this bound with that defender is the intended sound configuration.
+/// **The precondition a caller takes on**: `R <= DD`, which is what lets a
+/// cut use this bound at all, holds only when the paired `delta` is
+/// double-dummy optimal for trick count — see
+/// `EvaluateOptions::delta_is_double_dummy_optimal`. `DoubleDummyDefender`
+/// satisfies it under either `SpreadPolicy`, and pairing the two is the
+/// intended sound configuration.
 class DoubleDummyBound
 {
 public:
-    /// `ctx` is not owned, same as `DoubleDummyDefender`'s own contract --
-    /// the caller creates, configures and outlives it. `declarer` is fixed
-    /// for this bound's whole lifetime, matching `evaluate()`'s own single
-    /// `declarer` parameter for one evaluation.
+    /// `ctx` is not owned, as with `DoubleDummyDefender`. `declarer` is
+    /// fixed for this bound's whole lifetime, matching `evaluate()`'s own
+    /// single `declarer` per evaluation.
     explicit DoubleDummyBound(SolverContext& ctx, int declarer);
 
-    /// Solves `layout` once per call (no result cache -- same reasoning as
-    /// `DoubleDummyDefender`: future work that needs one shares it across
-    /// callers rather than caching inside this provider). A non-zero
-    /// `solve_board` status returns 14 -- one more than the most tricks any
-    /// deal could ever have (13), so it can never be mistaken for a real
-    /// bound by a cut that only ever compares against `tricks_needed -
-    /// tricks_won` (both bounded well below that). There is no validation
-    /// path here to fall into the way `DoubleDummyDefender`'s solver
-    /// failure falls into `validate_defender_distribution` -- a bound
-    /// provider has no distribution to reject, so this sentinel is the
-    /// only signal a failure has, and it is deliberately impossible to
-    /// confuse with a trick count rather than merely unlikely to be.
-    /// Deliberately too *high*, not too low: a future cut only ever reads
-    /// a bound as an upper limit on what declarer can take, so an
-    /// unrealistically high sentinel just fails to prune (wasteful, not
-    /// unsound) on a solver failure, where a too-low sentinel would make
-    /// the cut fire and silently report zero for a contract that makes --
-    /// exactly the trap this whole seam exists to avoid.
+    /// Solves `layout` once per call, with no result cache — same
+    /// reasoning as `DoubleDummyDefender`.
+    ///
+    /// A non-zero `solve_board` status returns 14: one more than any deal
+    /// could ever have, so it cannot be mistaken for a real bound by a cut
+    /// comparing against tricks still needed. Unlike
+    /// `DoubleDummyDefender`, there is no validation path for a failure to
+    /// fall into — a bound provider has no distribution to reject — so this
+    /// sentinel is the only signal, and is deliberately too *high*: a cut
+    /// reads a bound as an upper limit, so a high sentinel merely fails to
+    /// prune, where a low one would fire the cut and silently report zero
+    /// for a contract that makes.
     auto as_bound() -> LayoutBound;
 
 private:
