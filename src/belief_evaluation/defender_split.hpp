@@ -16,6 +16,12 @@ namespace dds::belief_evaluation
 /// is a function of: everything else `is_consistent` compares is fixed by
 /// the root, and the only freedom left is which of these cards each
 /// defender holds.
+///
+/// **The fixed seat is `(declarer + 1) % DDS_HANDS`**, throughout this
+/// header and everywhere else the module identifies a layout by a
+/// defender's holding — one defender's cards determine the other's by
+/// complement, and the seat must never vary between one computation and
+/// another. See docs/module_map.md, convention 6.
 struct DefenderPool
 {
     /// Every card either defender holds at the root — the union, suit by
@@ -84,10 +90,11 @@ auto unrank_combination(std::uint64_t index, int n, int k) -> std::vector<int>;
 // --- applying a split back onto a Deal -------------------------------------
 
 /// Applies `fixed_seat_cards` — indices into `pool.cards`, naming what the
-/// fixed seat holds — to `root`, returning the resulting `Deal`. Unnamed
-/// pooled cards go to the other defender, with the complement derived from
-/// `pool` rather than from `root`'s other-defender holding, so a bug in the
-/// pool surfaces here rather than being masked.
+/// fixed seat (`(declarer + 1) % DDS_HANDS`) holds — to `root`, returning
+/// the resulting `Deal`. Unnamed pooled cards go to the other defender,
+/// with the complement derived from `pool` rather than from `root`'s
+/// other-defender holding, so a bug in the pool surfaces here rather than
+/// being masked.
 ///
 /// Built by copy-and-overwrite: only the two defenders' `remainCards` are
 /// replaced, so trump, `first`, both `currentTrick*` arrays and declarer's

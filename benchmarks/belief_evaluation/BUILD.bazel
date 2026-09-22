@@ -23,7 +23,7 @@ cc_library(
 # directory measures on -- see fixtures.hpp's own module doxygen. Solver-free:
 # nothing here needs solve_board, only the scripted strategies this
 # capability's own C++ test suite already uses (test_support.hpp's
-# precedent), matching //library/src/belief_evaluation's own deps below.
+# precedent), matching //src/belief_evaluation's own deps below.
 cc_library(
     name = "fixtures",
     srcs = ["fixtures.cpp"],
@@ -90,7 +90,7 @@ cc_binary(
 # never runs it -- running it is the several-seeds x several-sample-sizes x
 # several-fixtures sweep the tasks after this one do, not a test. Depends
 # on the solver (double_dummy_defender, double_dummy_bound, solver_context,
-# and //library/src:dds itself for solve_board.hpp -- --mode=divergence
+# and @dds//library/src:dds itself for solve_board.hpp -- --mode=divergence
 # calls solve_board directly, the same call double_dummy_defender.cpp
 # makes) for --strategy double_dummy, --tier2 and --mode=divergence --
 # explicitly permitted for this target even though the core library itself
@@ -119,7 +119,7 @@ cc_binary(
 # removed -- see uncut_tree.hpp's own module doxygen for why evaluate()
 # itself cannot answer that (already_made()/is_dead() are unconditional,
 # no EvaluateOptions flag disables either) and why this needs no change
-# under library/ regardless (built from the same public pieces evaluate()
+# under src/ regardless (built from the same public pieces evaluate()
 # itself is built from).
 cc_library(
     name = "uncut_tree",
