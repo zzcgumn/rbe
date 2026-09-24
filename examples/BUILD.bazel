@@ -1,0 +1,42 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# Runnable examples. Nothing here is part of the library: these are the
+# scripts a new caller reads first, and the small amount of bridge plumbing
+# (notation, trick mechanics) they need that the library itself has no
+# reason to carry.
+
+py_library(
+    name = "example_support",
+    srcs = [
+        "bridge_notation.py",
+        "play_sequence.py",
+        "strategies.py",
+    ],
+    imports = ["."],
+    deps = [
+        "//python:belief_space_local_evaluation_lib",
+        # The solver seam: DoubleDummyDefence builds a DoubleDummyDefender
+        # and a DoubleDummyBound, both of which take a dds3.SolverContext.
+        "@dds//python:dds3_lib",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "guess_6nt_belief_space",
+    srcs = ["guess_6nt_belief_space.py"],
+    main = "guess_6nt_belief_space.py",
+    deps = [":example_support"],
+)
+
+py_test(
+    name = "guess_6nt_belief_space_test",
+    size = "small",
+    main = "test_guess_6nt_belief_space.py",
+    srcs = ["test_guess_6nt_belief_space.py"],
+    deps = [
+        ":example_support",
+        ":guess_6nt_belief_space",
+        "@dds//python:dds3_lib",
+    ],
+)
