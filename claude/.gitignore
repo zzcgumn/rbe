@@ -1,0 +1,5 @@
+# Conversation records. Local only -- the contents of this directory are
+# never committed. This file is tracked so the rule arrives with a fresh
+# clone, rather than depending on each checkout remembering to add it.
+*
+!.gitignore
