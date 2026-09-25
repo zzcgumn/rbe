@@ -397,3 +397,86 @@ TEST_F(DoubleDummyBoundTest, TierTwoCutRateUnderSamplingIsExactlyZeroBecauseOfTh
     // that visibly fails.
     EXPECT_EQ(sampled.by_strategy.at(1u).p_make, 0.0);
 }
+
+// --- known unsoundness: a no-search solve reports "not evaluated" as a score
+//
+// **These tests assert behaviour that is wrong.** They exist so it cannot
+// change silently. When the bound is fixed, they fail; update them and the
+// doxygen on `DoubleDummyBound::as_bound()` together.
+//
+// `as_bound()` asks solve_board for `solutions = 1` and reads `score[0]` as
+// declarer's trick count. When the solver answers without searching it
+// returns `nodes == 0`, `cards == 1` and `score == -2`, which means "not
+// evaluated" rather than a trick count -- and `as_bound()` returns it as
+// though it were one. A negative bound is below any `tricks_needed`, so
+// `tier2_dead()` fires on a live node and `evaluate()` reports 0.0 for a
+// contract that makes.
+//
+// Two triggers, one mechanism. Measured directly, varying one thing at a
+// time (`solutions = 3` scores every one of these correctly):
+//
+//   single suit, two cards per hand, no filler   -> nodes 0, score -2
+//   the same holdings plus one filler heart each -> nodes 13, score 3
+//   two suits, mid-trick, one legal card         -> nodes 0, score -2
+//   two suits, mid-trick, two touching cards     -> nodes 0, score -2
+//   two suits, fresh trick, four legal cards     -> nodes 19, score 3
+//
+// So the single-suit shape this file's own fixture note records (see
+// make_declarer_wins_exactly_half_the_tricks) and a forced-or-all-equals
+// play are both ways into the same no-search path; neither is the cause on
+// its own. `nodes == 0` is what they share.
+//
+// The fix is one clamp in as_bound(): treat a score outside
+// [0, tricks_remaining] as SolverFailureSentinel, which the header already
+// documents as deliberately too high so that it merely fails to prune.
+// Optionally re-solve those nodes with `solutions = 3` to keep the pruning.
+
+namespace
+{
+    // Single suit, two cards per hand -- deliberately *without* the filler
+    // suit every other fixture here carries, because the missing filler is
+    // one of the two triggers under test.
+    auto make_single_suit_two_cards_each() -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = South;  // dummy, so declarer's side is on lead
+        deal.remainCards[North][Spades] = (1u << King) | (1u << Jack);
+        deal.remainCards[East][Spades] = (1u << 6) | (1u << Five);
+        deal.remainCards[South][Spades] = (1u << 10) | (1u << 9);
+        deal.remainCards[West][Spades] = (1u << Queen) | (1u << Four);
+        return deal;
+    }
+}
+
+TEST_F(DoubleDummyBoundTest, KnownUnsoundnessANoSearchSolveYieldsANegativeBound)
+{
+    Deal const layout = make_single_suit_two_cards_each();
+    SolverContext ctx;
+    be::DoubleDummyBound provider(ctx, North);
+    be::LayoutBound const bound = provider.as_bound();
+
+    // What it should be: 2. Declarer's side takes exactly two of the four
+    // tricks here, which `solutions = 3` reports correctly.
+    EXPECT_LT(bound(layout), 0) << "the bound no longer leaks solve_board's "
+                                  "\"not evaluated\" score -- if it now returns 2, the "
+                                  "unsoundness is fixed: delete this test and update "
+                                  "double_dummy_bound.hpp's doxygen";
+}
+
+TEST_F(DoubleDummyBoundTest, KnownUnsoundnessANegativeBoundIsBelowAnyTricksNeeded)
+{
+    // Why the negative matters: it is not merely a wrong number, it is a
+    // number that fires the cut. Any tricks_needed a caller could ask for
+    // is above it, so `tier2_dead()` concludes "every layout here is dead"
+    // at a node where declarer in fact takes two tricks.
+    Deal const layout = make_single_suit_two_cards_each();
+    SolverContext ctx;
+    be::DoubleDummyBound provider(ctx, North);
+    be::LayoutBound const bound = provider.as_bound();
+
+    for (int tricks_needed = 1; tricks_needed <= 4; ++tricks_needed)
+    {
+        EXPECT_LT(bound(layout), tricks_needed) << "at tricks_needed = " << tricks_needed;
+    }
+}

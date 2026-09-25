@@ -26,7 +26,13 @@ namespace dds::belief_evaluation
 /// double-dummy optimal for trick count — see
 /// `EvaluateOptions::delta_is_double_dummy_optimal`. `DoubleDummyDefender`
 /// satisfies it under either `SpreadPolicy`, and pairing the two is the
-/// intended sound configuration.
+/// intended configuration.
+///
+/// **It is not currently a sound one — see `as_bound()`'s own "Known
+/// unsoundness".** Until that is fixed, this bound can fire the cut on a
+/// live node, so an evaluation using it may report 0.0 for a contract that
+/// makes. Prefer running without `bound` (which costs pruning only) unless
+/// you have checked the positions your search reaches.
 class DoubleDummyBound
 {
 public:
@@ -47,6 +53,26 @@ public:
     /// reads a bound as an upper limit, so a high sentinel merely fails to
     /// prune, where a low one would fire the cut and silently report zero
     /// for a contract that makes.
+    ///
+    /// **Known unsoundness: that guard is bypassed on the success path.**
+    /// `solutions = 1` asks the solver for the best card, and when it can
+    /// answer without searching it returns `nodes == 0`, `cards == 1` and
+    /// `score == -2` — "not evaluated", not a trick count. The status is
+    /// `RETURN_NO_FAULT`, so the sentinel above never applies and the −2 is
+    /// returned as if it were a bound. Being negative it is below any
+    /// `tricks_needed`, so `tier2_dead()` fires on a live node and
+    /// `evaluate()` reports 0.0 for a contract that makes. Measured, not
+    /// inferred; pinned by
+    /// `double_dummy_bound_test.cpp`'s `KnownUnsoundness*` tests, which
+    /// also record the two triggers (a single-suit position with more than
+    /// one card per hand, and a forced or all-equals play) and that both
+    /// reach the same no-search path.
+    ///
+    /// The fix is to treat a score outside `[0, tricks_remaining(layout)]`
+    /// as `SolverFailureSentinel`, which restores the "too high, never too
+    /// low" property the paragraph above promises. Re-solving those nodes
+    /// with `solutions = 3` recovers the lost pruning; every score measured
+    /// that way was correct.
     auto as_bound() -> LayoutBound;
 
 private:
