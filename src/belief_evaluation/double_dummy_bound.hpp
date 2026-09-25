@@ -55,24 +55,28 @@ public:
     /// for a contract that makes.
     ///
     /// **Known unsoundness: that guard is bypassed on the success path.**
-    /// `solutions = 1` asks the solver for the best card, and when it can
-    /// answer without searching it returns `nodes == 0`, `cards == 1` and
-    /// `score == -2` — "not evaluated", not a trick count. The status is
-    /// `RETURN_NO_FAULT`, so the sentinel above never applies and the −2 is
-    /// returned as if it were a bound. Being negative it is below any
-    /// `tricks_needed`, so `tier2_dead()` fires on a live node and
-    /// `evaluate()` reports 0.0 for a contract that makes. Measured, not
-    /// inferred; pinned by
-    /// `double_dummy_bound_test.cpp`'s `KnownUnsoundness*` tests, which
-    /// also record the two triggers (a single-suit position with more than
-    /// one card per hand, and a forced or all-equals play) and that both
-    /// reach the same no-search path.
+    /// `solutions = 1` asks the solver for the best card, and on positions
+    /// this evaluator reaches it can return `score[0] == -2` — "not
+    /// evaluated", not a trick count — with `status == RETURN_NO_FAULT`. The
+    /// sentinel above therefore never applies and the −2 is returned as if it
+    /// were a bound. Being negative it is below any `tricks_needed`, so
+    /// `tier2_dead()` fires on a live node and `evaluate()` reports 0.0 for a
+    /// contract that makes. Measured; `solutions = 3` scores every affected
+    /// position correctly.
     ///
-    /// The fix is to treat a score outside `[0, tricks_remaining(layout)]`
-    /// as `SolverFailureSentinel`, which restores the "too high, never too
-    /// low" property the paragraph above promises. Re-solving those nodes
-    /// with `solutions = 3` recovers the lost pruning; every score measured
-    /// that way was correct.
+    /// **Which positions trigger it is not established.** Do not trust a
+    /// trigger story, including the narrower one this header used to give and
+    /// the one in `double_dummy_bound_test.cpp`'s own fixture note: a
+    /// parameterised table in that file refutes both, showing `nodes == 0`
+    /// coinciding with a correct score, the same holdings scoring correctly
+    /// when only `first` changes, a two-suit position failing, and a forced
+    /// play succeeding.
+    ///
+    /// The safe fix does not need the trigger: treat a score outside
+    /// `[0, tricks_remaining(layout)]` as `SolverFailureSentinel`, restoring
+    /// the "too high, never too low" property the paragraph above promises.
+    /// Recovering the lost pruning does need it, or a retry at
+    /// `solutions = 3`.
     auto as_bound() -> LayoutBound;
 
 private:

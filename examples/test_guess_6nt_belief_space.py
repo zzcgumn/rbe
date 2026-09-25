@@ -5,29 +5,30 @@ thing a new caller reads, and they exercise the Python surface from outside
 the library the way a caller does. This is what makes "the examples still
 work" a fact rather than a hope.
 
-The ending is small enough to settle independently. Of the 70 possible
-splits of the defenders' eight cards, declarer takes the three tricks needed
-in:
+Every asserted value, and what each one is worth. "Re-derived" means a test
+here recomputes the answer independently and would catch a regression;
+"golden" means it asserts a number established once, elsewhere, and would
+absorb one.
 
-  44  playing low, against defenders who also play low
-  14  playing low, against double-dummy defenders
-  55  playing the cash-two-hearts line, against double-dummy defenders
-  35  the same line, against a defender that covers when covering wins
+| value | what it is | status |
+| --- | --- | --- |
+| 44/70 | fixed line, both sides low | golden (settled by direct playout) |
+| 14/70 | playing low vs double dummy | golden, but cross-checked by the per-layout average below |
+| 55/70 | fixed line vs double dummy | **re-derived** -- set equality against DoubleDummyBound per layout |
+| 35/70 | fixed line vs cover-when-wins | golden (settled by exhaustive minimax); the *ordering* against 55 is re-derived |
+| 1.0 | belief finesse vs low | golden; exact, and the ceiling against that defence is 70/70 |
+| 60/70 | belief finesse vs cover-when-wins | golden (settled by the same minimax) |
+| 0.4488 | belief finesse vs double dummy | golden, and the weakest of the lot -- see below |
 
-Only 55 is checked against a ceiling *by a test here*:
-test_the_line_reaches_the_ceiling_against_double_dummy_defence recomputes
-`DoubleDummyBound` per layout and asserts set equality, so it pins "optimal
-against that defender" and not merely the score.
+**0.4488 is not a bridge quantity.** It is a mixture, not n/70, because
+`DoubleDummyDefender` spreads probability over tied-for-best cards -- so it
+depends on which of several equally good cards dds happens to name first and
+on `SpreadPolicy`. It pins a solver tie-break, not a property of the ending.
+What is worth pinning there is the *ordering* it participates in
+(test_neither_declarer_dominates_the_other), and that is asserted separately.
 
-The other three are plain assertions on a number. Each was derived
-independently of the library before being written down -- 44 and 35 by
-direct playout and by exhaustive minimax over every defensive choice
-respectively -- but that derivation is *not* re-run here, so as tests they
-are golden values and would absorb a regression rather than catch one. What
-guards 35 instead is
-test_it_beats_double_dummy_defence_against_this_declarer, which asserts the
-ordering rather than the value -- the property that would actually break
-first if either strategy were edited.
+The minimax and playout that settled the golden values are deliberately not
+committed; see rbe-notes. Their absence is why those rows say golden.
 """
 
 import io
@@ -39,7 +40,7 @@ import dds3
 import belief_space_local_evaluation as bsle
 
 import guess_6nt_belief_space as example
-from bridge_notation import NORTH, SOUTH, SPADES, HEARTS, holding
+from bridge_notation import HEARTS, NORTH, SOUTH, SPADES, holding
 from strategies import (
     double_dummy_defender,
     lowest_eligible_declarer,
@@ -315,6 +316,73 @@ class TestTheBeliefReadingDeclarer(unittest.TestCase):
                               queen_of_spades_when_it_wins)
 
         self.assertEqual(first, second)
+
+
+class TestTheDocstring(unittest.TestCase):
+    """The example's own module docstring has drifted from main() twice, in
+    both cases because the paragraph and the code it describes are ~150 lines
+    apart. This is the structural guard, not a third round of proofreading."""
+
+    def test_the_docstring_matches_the_grid(self) -> None:
+        doc = example.__doc__
+
+        self.assertIn(f"{len(example.DECLARERS)} declarers", doc)
+        self.assertIn(f"{len(example.DEFENCE_NAMES)} defences", doc)
+        for name, _ in example.DECLARERS:
+            self.assertIn(name.replace(" ", ""), doc.replace(" ", "").replace("\n", ""))
+
+    def test_the_grid_axes_agree_with_each_other(self) -> None:
+        # DEFENCE_NAMES exists so the docstring can be checked without
+        # constructing a SolverContext; it has to stay in step with the real
+        # list, which does construct one.
+        ctx = dds3.SolverContext()
+
+        self.assertEqual(
+            tuple(n for n, _ in example.defences_with(ctx)), example.DEFENCE_NAMES)
+
+    def test_exactly_one_declarer_reads_the_belief_view(self) -> None:
+        # The scope claim the docstring makes, detected by behaviour rather
+        # than by reading the source. It has to run a real evaluation: the
+        # belief finesse consults `view` only in third hand on a spade, so
+        # probing it at the root would wrongly report that it never does.
+        sequence = example.guess_6nt()
+
+        readers = []
+        for name, pi in example.DECLARERS:
+            seen = []
+
+            class Watching:
+                """Delegates to the real view and records that it was read."""
+
+                def __init__(self, view):
+                    self._view = view
+
+                @property
+                def entries(self):
+                    seen.append("entries")
+                    return self._view.entries
+
+                @property
+                def is_sample(self):
+                    seen.append("is_sample")
+                    return self._view.is_sample
+
+                @property
+                def space_size(self):
+                    seen.append("space_size")
+                    return self._view.space_size
+
+            def watched(state, view, pi=pi):
+                return pi(state, Watching(view))
+
+            result = bsle.evaluate(
+                sequence.current_deal, sequence.declarer, sequence.tricks_needed,
+                _source(sequence), watched, lowest_eligible_defender)
+            self.assertNotIn("error", result)
+            if seen:
+                readers.append(name)
+
+        self.assertEqual(readers, ["belief finesse"])
 
 
 class TestTheScriptRuns(unittest.TestCase):

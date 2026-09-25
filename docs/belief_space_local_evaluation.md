@@ -414,12 +414,16 @@ Measured on a four-card ending, declarer playing low, over 70 layouts:
 So **pairing `DoubleDummyBound` with `DoubleDummyDefender` — the
 configuration this document and `double_dummy_bound.hpp` both describe as
 the intended one — can report 0.0 for a contract that makes.** Until it is
-fixed, run without `bound`; the cost is pruning only, never soundness. Two
-triggers reach the same no-search path (a single-suit position with more
-than one card per hand, and a forced or all-equals play), and
-`solutions = 3` scores every measured case correctly. Pinned by
-`tests/belief_evaluation/double_dummy_bound_test.cpp`'s `KnownUnsoundness*`
-tests, whose comment carries the measurements and the fix.
+fixed, run without `bound`; the cost is pruning only, never soundness.
+
+**Which positions trigger it is not established**, and an earlier version of
+this section asserted a trigger that turned out to be wrong. What is pinned,
+by `tests/belief_evaluation/double_dummy_bound_test.cpp`'s `KnownUnsoundness*`
+tests, is the symptom and a refutation of the obvious explanations: a
+no-search solve can also return a *correct* score, the same holdings score
+correctly when only the seat on lead changes, a two-suit position also fails,
+and a forced play does not. `solutions = 3` scores every affected position
+correctly.
 
 `DoubleDummyDefender` is unaffected: it reads card identity and `equals`
 from the same result, not the score.

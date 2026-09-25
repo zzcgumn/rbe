@@ -18,15 +18,29 @@ problem, and it is exactly the kind of problem belief-space evaluation is
 for: the answer is not a card, it is a probability over the layouts still
 consistent with the play so far.
 
-This example gets to that ending, builds the belief space, and evaluates it
-three times. Declarer plays one fixed line throughout -- cash the two
-hearts, then a spade, covering the queen -- and only the defenders change:
-they play low, then double dummy, then a rule tailored to this ending. Since
-pi is held constant, every difference between the three numbers is the
-defenders' doing and nothing else.
+This example gets to that ending, builds the belief space, and evaluates
+2 declarers against 3 defences over it -- six evaluations, printed as a grid.
 
-The ranking is the point, and it is not the expected one: the tailored rule
-defends better than the double-dummy solver does. See strategies.py.
+The declarers are the **fixed line** (cash the heart ace, then the ten, then a
+spade, covering the queen if it appears) and the **belief finesse** (the same,
+except that the spade guess is read off the belief space instead of decided in
+advance). The defences are **low**, **double dummy**, and **cover when it
+wins**. `DECLARERS` and `defences_with()` below are the single source of both
+the grid and the counts in this paragraph, and a test asserts they agree,
+because this paragraph has twice drifted from the code underneath it.
+
+The finding is that **neither declarer dominates**. Reading the belief space
+beats the fixed line against two of the three defences and loses to it
+against the third, so "best line" is not defined independently of the defence
+assumed -- which is the question belief-space evaluation exists to ask, and
+the reason a number is the answer rather than a card.
+
+**Scope.** One of the two declarers reads the BeliefView; that is deliberate
+and is the smallest thing that makes the library's point visible. The more
+elaborate view-reading examples -- conditioning on a sampled space, a
+strategy that updates across tricks -- are deliberately not here. They wait
+on the API changes this example was written to find, which are listed under
+"Known gaps" in docs/belief_space_local_evaluation.md.
 
 Run it with:
 
@@ -121,6 +135,36 @@ def cash_two_hearts_and_play_a_spade(state, view):
     return min(legal, key=lambda card: (card.rank, card.suit))
 
 
+# The grid's two axes, at module scope so that this module's own docstring can
+# be checked against them (see test_the_docstring_matches_the_grid) rather than
+# drifting from them, which it has done twice.
+DECLARERS = (
+    ("fixed line", cash_two_hearts_and_play_a_spade),
+    # The only strategy here that reads the BeliefView -- see the docstring's
+    # own Scope note for why exactly one does.
+    ("belief finesse", finesse_the_queen_from_the_beliefs),
+)
+
+DEFENCE_NAMES = ("low", "double dummy", "cover when it wins")
+
+
+def defences_with(ctx):
+    """The three defences. Takes a SolverContext because one of them solves.
+
+    `DoubleDummyDefender` maximises *tricks*, not the contract, and assumes
+    declarer plays double dummy from here -- which neither declarer above
+    does. Both are why it is not best defence here. `queen_of_spades_when_it_wins`
+    is optimal against the fixed line (exhaustive minimax over every defensive
+    choice lets that line through in exactly the same layouts) and not against
+    the belief finesse.
+    """
+    return (
+        ("low", lowest_eligible_defender),
+        ("double dummy", double_dummy_defender(ctx)),
+        ("cover when it wins", queen_of_spades_when_it_wins),
+    )
+
+
 def main() -> None:
     sequence = guess_6nt()
     root = sequence.current_deal
@@ -173,26 +217,10 @@ def main() -> None:
         print("       (equal here: every suit shown out of is already exhausted)")
     print()
 
-    # Two declarers against three defences, every pair over the same belief
-    # space. One axis at a time is what makes any of it readable.
+    # Every pair over the same belief space. One axis at a time is what makes
+    # any of it readable.
     ctx = dds3.SolverContext()
-    declarers = [
-        ("fixed line", cash_two_hearts_and_play_a_spade),
-        # The only strategy here that reads the BeliefView.
-        ("belief finesse", finesse_the_queen_from_the_beliefs),
-    ]
-    defences = [
-        ("low", lowest_eligible_defender),
-        # Solves each layout and spreads over the tied-for-best cards. Note
-        # what it optimises -- tricks, not the contract -- and that it also
-        # assumes *declarer* plays double dummy from here, which neither of
-        # these declarers does.
-        ("double dummy", double_dummy_defender(ctx)),
-        # Optimal against the fixed line: exhaustive minimax over every
-        # defensive choice lets that line through in exactly the same
-        # layouts. Not optimal against the belief finesse.
-        ("cover when it wins", queen_of_spades_when_it_wins),
-    ]
+    declarers, defences = DECLARERS, defences_with(ctx)
 
     grid = {}
     for pi_name, pi in declarers:
