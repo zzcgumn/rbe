@@ -9,19 +9,24 @@ four diamonds, one heart -- and then declarer is in the four-card ending
     North   S KJ7    H Q
     South   S T9     H AT
 
-needing three more. The heart ace is one. The other two have to come from
-spades, against East and West holding S AQ6542 and H 92 between them (six
-spades and two hearts -- the eight cards the 70 layouts split), and
-which defender holds the spade queen is not known. That is the whole
+needing three more. Two are hearts: North's queen crashes under the ace, but
+the defenders hold only H 92, so the ten is good as well. The third has to
+come from spades, against East and West holding S AQ6542 and H 92 between
+them -- six spades and two hearts, the eight cards the 70 layouts split --
+and which defender holds the spade queen is not known. That is the whole
 problem, and it is exactly the kind of problem belief-space evaluation is
 for: the answer is not a card, it is a probability over the layouts still
 consistent with the play so far.
 
 This example gets to that ending, builds the belief space, and evaluates it
-twice: once with both sides playing the lowest card they are allowed to, and
-once with the defenders replaced by the double-dummy solver. Declarer plays
-low in both, so the difference between the two numbers is the defenders'
-doing and nothing else.
+three times. Declarer plays one fixed line throughout -- cash the two
+hearts, then a spade, covering the queen -- and only the defenders change:
+they play low, then double dummy, then a rule tailored to this ending. Since
+pi is held constant, every difference between the three numbers is the
+defenders' doing and nothing else.
+
+The ranking is the point, and it is not the expected one: the tailored rule
+defends better than the double-dummy solver does. See strategies.py.
 
 Run it with:
 
@@ -53,7 +58,6 @@ from bridge_notation import (
 from play_sequence import PlaySequence
 from strategies import (
     double_dummy_defender,
-    lowest_eligible_declarer,
     lowest_eligible_defender,
     queen_of_spades_when_it_wins,
 )

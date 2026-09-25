@@ -1,11 +1,10 @@
-"""Runs the example, and checks the two numbers it prints.
+"""Runs the example, and checks the numbers it prints.
 
 An example nobody runs is an example that rots -- these scripts are the first
 thing a new caller reads, and they exercise the Python surface from outside
 the library the way a caller does. This is what makes "the examples still
 work" a fact rather than a hope.
 
-No expected `P_make` here is a golden value recorded from a previous run.
 The ending is small enough to settle independently. Of the 70 possible
 splits of the defenders' eight cards, declarer takes the three tricks needed
 in:
@@ -15,9 +14,20 @@ in:
   55  playing the cash-two-hearts line, against double-dummy defenders
   35  the same line, against a defender that covers when covering wins
 
-The last two are checked against ceilings rather than merely asserted: 55
-against the double-dummy bound, and 35 against exhaustive minimax over every
-defensive choice. So they pin "optimal" and not only a score.
+Only 55 is checked against a ceiling *by a test here*:
+test_the_line_reaches_the_ceiling_against_double_dummy_defence recomputes
+`DoubleDummyBound` per layout and asserts set equality, so it pins "optimal
+against that defender" and not merely the score.
+
+The other three are plain assertions on a number. Each was derived
+independently of the library before being written down -- 44 and 35 by
+direct playout and by exhaustive minimax over every defensive choice
+respectively -- but that derivation is *not* re-run here, so as tests they
+are golden values and would absorb a regression rather than catch one. What
+guards 35 instead is
+test_it_beats_double_dummy_defence_against_this_declarer, which asserts the
+ordering rather than the value -- the property that would actually break
+first if either strategy were edited.
 """
 
 import io
@@ -198,10 +208,13 @@ class TestAnOptimalDefence(unittest.TestCase):
     """queen_of_spades_when_it_wins -- optimal against this declarer line."""
 
     def test_it_holds_the_line_to_35_of_the_70_layouts(self) -> None:
-        # 35 is not an observed number: exhaustive minimax over every
-        # defensive choice against this (deterministic) declarer line lets it
-        # through in exactly 35 layouts, and in exactly these 35. No defence
-        # can do better, so this delta is optimal here.
+        # A golden value: this asserts the number, it does not re-derive it.
+        # 35 was established once, outside the library, by exhaustive minimax
+        # over every defensive choice against this (deterministic) declarer
+        # line -- which lets it through in exactly 35 layouts, and in exactly
+        # those 35, so no defence can do better and this delta is optimal
+        # here. That minimax is deliberately not committed; the property it
+        # established is guarded by the ordering test below instead.
         sequence = example.guess_6nt()
 
         result = bsle.evaluate(
