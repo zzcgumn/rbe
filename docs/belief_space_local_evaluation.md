@@ -287,9 +287,9 @@ bound = bsle.DoubleDummyBound(ctx, declarer)              # usable directly as b
 ```
 
 A `SolverContext` built through `dds3` works here directly — the two
-modules share one type. **`DoubleDummyBound` is currently unsound — see
-"Known gaps" below before using it.** It also **fixes `declarer` at
-construction and is not reusable across declarers**; reusing one across
+modules share one type. `DoubleDummyBound` **prunes nothing on positions the
+solver will not score** — sound, but weaker than it looks; see "Known gaps"
+below. It also **fixes `declarer` at construction and is not reusable across declarers**; reusing one across
 two declarers produces a silently wrong bound, which then feeds the
 bound-gated cut, whose soundness depends on the bound being right for the
 declarer actually being evaluated. `DoubleDummyDefender` **maximises
@@ -395,14 +395,20 @@ Found by writing `examples/`, and recorded here rather than left in an
 example's docstring. Each is a property of this implementation, not of the
 approach.
 
-### `DoubleDummyBound` can report a bound of −2, and the cut believes it
+### `DoubleDummyBound` prunes nothing on positions the solver will not score
 
-`DoubleDummyBound` asks the solver for `solutions = 1`. When the solver can
-name the best card without searching it returns `nodes == 0` and
-`score == -2`, meaning *not evaluated* rather than a trick count, with a
-success status — so the bound returns −2 as though it were a real bound.
-Being negative it is below any `tricks_needed`, so the bound-gated cut fires
-on a live node.
+`DoubleDummyBound` asks the solver for `solutions = 1`. On some positions this
+evaluator reaches, `solve_board` answers `score[0] == -2` — *not evaluated*,
+rather than a trick count — and pairs it with a **success** status, so the
+status check cannot catch it. `as_bound()` therefore range-checks the raw score
+against `[0, tricks_remaining(layout)]` before converting it, and returns
+`SolverFailureSentinel` (14, deliberately higher than any deal's trick count)
+for anything outside. A bound is read as an upper limit, so too high costs
+pruning and nothing else.
+
+The cost is real: on such a position the bound contributes nothing and tier 2
+visits as many nodes as tier 1 alone. Correctness is unaffected, and pairing
+`DoubleDummyBound` with `DoubleDummyDefender` is sound.
 
 Measured on a four-card ending, declarer playing low, over 70 layouts:
 
@@ -411,24 +417,40 @@ Measured on a four-card ending, declarer playing low, over 70 layouts:
 | no options | 0.2000 |
 | `bound=` alone | 0.2000 |
 | `delta_is_double_dummy_optimal=True` alone | 0.2000 |
-| **both** | **0.0000** |
+| both | 0.2000 |
 | the 70 layouts evaluated one at a time, averaged | 0.2000 |
 
-So **pairing `DoubleDummyBound` with `DoubleDummyDefender` — the
-configuration this document and `double_dummy_bound.hpp` both describe as
-the intended one — can report 0.0 for a contract that makes.** Until it is
-fixed, run without `bound`; the cost is pruning only, never soundness.
+**The `both` row read 0.0000 before the range check existed** — a contract that
+makes, reported as certain to fail. The −2 went straight through as a bound,
+and being negative it was below any `tricks_needed`, so the bound-gated cut
+fired on a live node. Worth knowing if you are reading an older revision, and
+worth knowing as the shape of the failure a bound can produce: a wrong bound
+does not raise, it silently answers a different question.
 
-**Which positions trigger it is not established**, and an earlier version of
-this section asserted a trigger that turned out to be wrong. What is pinned,
-by `tests/belief_evaluation/double_dummy_bound_test.cpp`'s `KnownUnsoundness*`
-tests, is the symptom and a refutation of the obvious explanations: a
+Note that a clamp into the range would **not** have fixed it: clamping −2 gives
+0, which is still below every `tricks_needed >= 1`, so the cut would have kept
+firing while the bug looked fixed. The replacement value has to be too high,
+not merely in range.
+
+One asymmetry, since it decides what you see when probing an older revision:
+the −2 only became a *low* bound with declarer or dummy on lead, where the raw
+score is already declarer's own. With a defender on lead the conversion is
+`tricks_remaining - score`, so −2 became `tricks_remaining + 2` — too high, and
+therefore harmless. Both conversions read the same raw score and one check now
+covers both.
+
+**Which positions the solver answers this way is not established**, and
+recovering the lost pruning needs that, or a retry at `solutions = 3` (which
+scores every affected position correctly). An earlier revision of this section
+asserted a trigger that turned out to be wrong; do not trust a trigger story,
+including that one. What is pinned, by
+`tests/belief_evaluation/double_dummy_bound_test.cpp`, is the solver's
+behaviour, the guard, and a refutation of the obvious explanations: a
 no-search solve can also return a *correct* score, the same holdings score
 correctly when only the seat on lead changes, a two-suit position also fails,
-and a forced play does not. `solutions = 3` scores every affected position
-correctly.
+and a forced play does not.
 
-`DoubleDummyDefender` is unaffected: it reads card identity and `equals`
+`DoubleDummyDefender` was never affected: it reads card identity and `equals`
 from the same result, not the score.
 
 ### Trick mechanics are not exposed to Python

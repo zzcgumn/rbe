@@ -36,8 +36,43 @@ auto DoubleDummyBound::as_bound() -> LayoutBound
             return SolverFailureSentinel;
         }
 
-        // solve_board's score is tricks for whichever side is on lead at
-        // `layout` -- verified empirically, not assumed (see
+        // Both orientations below read score[0] as a trick count taken by
+        // one side of a zero-sum split, so the range it has to lie in is
+        // the same for either: no side can take more tricks than remain,
+        // and none can take fewer than none. Computed once here, before
+        // the split, because the guard below applies to both.
+        ObservationState state{};
+        state.declarer = declarer_;
+        state.known_holdings = layout;  // a raw layout Deal has every hand's exact holding, which is
+                                        // more than tricks_remaining() needs (it only reads
+                                        // declarer's own entry) but never less
+        int const remaining = tricks_remaining(state);
+
+        // The status guard above does not catch everything solve_board can
+        // answer with. At solutions = 1 it can return score[0] == -2 --
+        // "not evaluated" rather than a trick count -- carrying
+        // RETURN_NO_FAULT, and on the declarer-on-lead branch that -2 would
+        // be returned as a bound directly: negative, hence below any
+        // tricks_needed, firing the caller's cut on a live node. Treat any
+        // score outside the range as the sentinel instead, which restores
+        // the "too high, never too low" property the sentinel exists for --
+        // the cost of a spurious sentinel is pruning, never soundness.
+        //
+        // Deliberately not a clamp: clamping -2 into range gives 0, and 0
+        // is below every tricks_needed >= 1, so the cut would still fire
+        // while the bug looked fixed. The replacement has to be too high.
+        //
+        // Which positions answer this way is not established -- this guard
+        // does not need to know, which is why it can land ahead of that.
+        // See double_dummy_bound_test.cpp's no_search_cases() for the
+        // measured table and what it refutes.
+        if (fut.score[0] < 0 || fut.score[0] > remaining)
+        {
+            return SolverFailureSentinel;
+        }
+
+        // score is tricks for whichever side is on lead at `layout` --
+        // verified empirically, not assumed (see
         // double_dummy_bound_test.cpp's orientation tests). When declarer
         // or dummy is on lead, that already is declarer's own bound; when
         // a defender is on lead, score is the *defenders'* own best trick
@@ -52,12 +87,7 @@ auto DoubleDummyBound::as_bound() -> LayoutBound
             return fut.score[0];
         }
 
-        ObservationState temp{};
-        temp.declarer = declarer_;
-        temp.known_holdings = layout;  // a raw layout Deal has every hand's exact holding, which is
-                                        // more than tricks_remaining() needs (it only reads
-                                        // declarer's own entry) but never less
-        return tricks_remaining(temp) - fut.score[0];
+        return remaining - fut.score[0];
     };
 }
 

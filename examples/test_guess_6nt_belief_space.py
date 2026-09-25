@@ -152,7 +152,9 @@ class TestDoubleDummyDefence(unittest.TestCase):
         # must equal the mean of P_make over each layout evaluated alone.
         # This is what caught DoubleDummyBound returning dds's "not
         # evaluated" sentinel as though it were a trick count: the bounded
-        # run reported 0.0 while this average stayed at 0.2.
+        # run reported 0.0 while this average stayed at 0.2. The bound now
+        # range-checks the score, so the two agree; the cross-check is worth
+        # keeping for the next bound, not only for that one.
         sequence = example.guess_6nt()
         ctx = dds3.SolverContext()
         delta = double_dummy_defender(ctx)

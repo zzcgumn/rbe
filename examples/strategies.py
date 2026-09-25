@@ -249,13 +249,14 @@ def double_dummy_defender(ctx, policy=None):
     context, and one of these, per worker.
 
     Not paired here with `DoubleDummyBound`, which is the configuration the
-    library documents as the intended sound one. On this example's root that
-    pairing reports `P_make = 0` for a position that makes 20% of the time:
-    `DoubleDummyBound` calls `solve_board` with `solutions=1`, and dds
-    answers a forced or all-equals play with `score = -2` -- "not evaluated"
-    rather than a trick count -- which the bound returns as if it were one.
-    A negative bound is below any `tricks_needed`, so the tier-2 cut fires
-    on live nodes. Left out until that is fixed; it costs pruning only.
+    library documents as the intended one, only because this example has no
+    use for pruning -- 70 layouts and a four-card ending. The pairing is
+    sound: on positions where `solve_board` at `solutions=1` answers -2
+    ("not evaluated" rather than a trick count), `DoubleDummyBound` returns
+    its too-high sentinel instead, so the cut cannot fire on a live node.
+    That costs pruning on those positions and nothing else. Which positions
+    they are is not established -- see "Known gaps" in
+    docs/belief_space_local_evaluation.md.
     """
     import belief_space_local_evaluation as bsle
 

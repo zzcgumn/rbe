@@ -400,25 +400,34 @@ TEST_F(DoubleDummyBoundTest, TierTwoCutRateUnderSamplingIsExactlyZeroBecauseOfTh
     EXPECT_EQ(sampled.by_strategy.at(1u).p_make, 0.0);
 }
 
-// --- known unsoundness: solve_board can report "not evaluated" as a score
-//
-// **The tests below assert behaviour that is wrong.** They exist so it cannot
-// change silently. When the bound is fixed they fail; update them and the
-// doxygen on `DoubleDummyBound::as_bound()` together.
+// --- solve_board's "not evaluated" score, and the guard that contains it
 //
 // What is established. `as_bound()` asks solve_board for `solutions = 1` and
-// reads `score[0]` as declarer's trick count. On positions this evaluator
-// reaches, solve_board can return `score[0] == -2` with
-// `status == RETURN_NO_FAULT` -- "not evaluated" rather than a trick count.
-// The status guard therefore never fires, the -2 is returned as a bound, and
-// being negative it is below any `tricks_needed`, so `tier2_dead()` fires on a
-// live node and `evaluate()` reports 0.0 for a contract that makes.
+// reads `score[0]` as a trick count. On positions this evaluator reaches,
+// solve_board can instead return `score[0] == -2` -- "not evaluated" -- with
+// `status == RETURN_NO_FAULT`, so the status guard does not catch it.
 // `solutions = 3` scores every affected position correctly.
 //
-// **What is NOT established: which positions trigger it.** An earlier version
-// of this comment claimed two triggers (a single-suit position with more than
-// one card per hand, and a forced or all-equals play) reaching one mechanism,
-// `nodes == 0`. That was wrong, and the parameterised test below is the
+// Until the guard below existed, that -2 was returned as a bound on the
+// declarer-on-lead branch: negative, hence below any `tricks_needed`, so
+// `tier2_dead()` fired on a live node and `evaluate()` reported 0.0 for a
+// contract that makes. `as_bound()` now range-checks the raw score before the
+// orientation split and answers `SolverFailureSentinel` (14) instead, which is
+// deliberately too *high* -- a bound read as an upper limit can only lose
+// pruning by being too high, where too low fires the cut. The cost is real and
+// is pruning only: on these positions tier 2 no longer contributes anything.
+//
+// Deliberately not a clamp, which is a distinct operation and an unsound one:
+// clamping -2 into `[0, tricks_remaining]` gives 0, and 0 is below every
+// `tricks_needed >= 1`, so the cut would still fire on every affected node
+// while the bug looked fixed. (An earlier commit message on the example branch
+// says "one clamp to [0, tricks_remaining]" -- wrong for this reason.)
+//
+// **What is still NOT established: which positions answer this way.** The
+// guard does not depend on knowing, which is why it could land first. An
+// earlier version of this comment claimed two triggers (a single-suit position
+// with more than one card per hand, and a forced or all-equals play) reaching
+// one mechanism, `nodes == 0`. That was wrong, and the table below is the
 // refutation rather than a demonstration:
 //
 //   - `nodes == 0` occurs with a *correct* score (SingleSuitOneCardEach), so
@@ -431,31 +440,20 @@ TEST_F(DoubleDummyBoundTest, TierTwoCutRateUnderSamplingIsExactlyZeroBecauseOfTh
 //   - A forced play scores correctly (TwoSuitsForcedFollow), so being forced
 //     is not sufficient.
 //
-// So: the symptom is pinned, the trigger is open. Anyone fixing this should
-// not trust a trigger story, including this one. Note that this file's own
-// fixture note (see make_declarer_wins_exactly_half_the_tricks) records a
-// narrower observation -- single suit, more than one card per hand -- which
-// the second bullet above also contradicts as a complete account.
+// So: the symptom is pinned, the guard is pinned, the trigger is open. Anyone
+// recovering the lost pruning needs the trigger, or a retry at `solutions = 3`;
+// they should not trust a trigger story, including this one. Note that this
+// file's own fixture note (see make_declarer_wins_exactly_half_the_tricks)
+// records a narrower observation -- single suit, more than one card per hand --
+// which the second bullet above also contradicts as a complete account.
 //
-// The safe fix does not depend on knowing the trigger: *treat* a score outside
-// `[0, tricks_remaining(layout)]` **as SolverFailureSentinel** (14), which
-// restores the "too high, never too low" property the sentinel already
-// promises. Recovering the lost pruning does need the trigger, or a retry with
-// `solutions = 3`.
-//
-// That is deliberately not a clamp, and a clamp would not do: clamping -2 into
-// the range gives 0, and 0 is below every tricks_needed >= 1, so the cut would
-// still fire on every affected node while looking fixed. The replacement value
-// has to be too high, not merely in range. (An earlier commit message on this
-// branch says "one clamp to [0, tricks_remaining]" -- that phrasing is wrong
-// for this reason.)
-//
-// One asymmetry the symptom description above glosses over. A negative score
-// only becomes a *low* bound on the declarer-on-lead branch, where as_bound()
-// returns score[0] directly. On the defender-on-lead branch it returns
-// `tricks_remaining - score[0]`, so -2 becomes tricks_remaining + 2 -- too
-// high, and therefore harmless. Probing a defender-on-lead node shows an
-// implausibly large bound rather than a negative one.
+// One asymmetry worth keeping in mind when probing. A negative score only
+// became a *low* bound on the declarer-on-lead branch, where as_bound()
+// returned score[0] directly. On the defender-on-lead branch it returns
+// `tricks_remaining - score[0]`, so -2 became tricks_remaining + 2 -- too
+// high, and therefore harmless. A defender-on-lead node showed an implausibly
+// large bound rather than a negative one. Both branches are guarded now, since
+// both read the same raw score.
 
 namespace
 {
@@ -468,6 +466,7 @@ namespace
         char const* name;
         Deal deal;
         bool score_is_negative;  ///< what solutions = 1 does today
+        int tricks;              ///< tricks the position holds, = cards per hand
     };
 
     auto spades(std::initializer_list<int> ranks) -> unsigned
@@ -503,33 +502,35 @@ namespace
              make_deal(South, {spades({King, Jack}), spades({6, Five}), spades({10, 9}),
                                spades({Queen, Four})},
                        {None, None, None, None}),
-             true},
+             true, 2},
             {"SameHoldingsLedFromNorth",
              make_deal(North, {spades({King, Jack}), spades({6, Five}), spades({10, 9}),
                                spades({Queen, Four})},
                        {None, None, None, None}),
-             false},
+             false, 2},
             {"SingleSuitOneCardEach",
              make_deal(South, {spades({King}), spades({6}), spades({10}), spades({Queen})},
                        {None, None, None, None}),
-             false},
+             false, 1},
             {"TwoSuitsOneHeartInWest",
              make_deal(South, {spades({King, Jack}), spades({6, Five}), spades({10, 9}),
                                spades({Queen})},
                        {None, None, None, 1u << 9}),
-             true},
+             true, 2},
             {"TwoSuitsForcedFollow",
              make_deal(South, {spades({King}), spades({6}), spades({10}), spades({Queen})},
                        {1u << Queen, 1u << Two, 1u << Ace, 1u << 9}),
-             false},
+             false, 2},
         };
     }
 }
 
 // Each row asserts what solve_board does today, at both solutions = 1 and
 // solutions = 3, so the table above is a measurement a reader can re-run
-// rather than a claim they have to take.
-TEST_F(DoubleDummyBoundTest, KnownUnsoundnessSolutionsOneCanReportNotEvaluated)
+// rather than a claim they have to take. This one probes the solver directly
+// and is therefore unaffected by as_bound()'s guard: it records the behaviour
+// the guard exists to contain, and would only change if dds itself did.
+TEST_F(DoubleDummyBoundTest, SolverCanAnswerNotEvaluatedAtSolutionsOneWithASuccessStatus)
 {
     SolverContext ctx;
     bool any_negative = false;
@@ -549,6 +550,8 @@ TEST_F(DoubleDummyBoundTest, KnownUnsoundnessSolutionsOneCanReportNotEvaluated)
         EXPECT_EQ(status_three, RETURN_NO_FAULT) << one.name;
         EXPECT_EQ(one_solution.score[0] < 0, one.score_is_negative) << one.name;
         EXPECT_GE(three_solutions.score[0], 0) << one.name << ": solutions = 3 always scores";
+        EXPECT_LE(three_solutions.score[0], one.tricks)
+            << one.name << ": no side takes more tricks than the position holds";
 
         if (one_solution.score[0] < 0)
         {
@@ -566,45 +569,114 @@ TEST_F(DoubleDummyBoundTest, KnownUnsoundnessSolutionsOneCanReportNotEvaluated)
         }
     }
 
-    EXPECT_TRUE(any_negative) << "no position still reproduces the negative score -- "
-                                 "the unsoundness may be fixed; see this section's comment";
+    EXPECT_TRUE(any_negative)
+        << "no position here still reproduces the negative score -- if dds now scores all "
+           "five, the guard in as_bound() is dead code and this table no longer measures "
+           "anything; re-derive it before deleting either";
     EXPECT_TRUE(any_zero_nodes_with_a_correct_score)
         << "nodes == 0 no longer coincides with a correct score anywhere here, so the "
            "refutation this table exists for no longer holds -- re-derive it";
 }
 
-TEST_F(DoubleDummyBoundTest, KnownUnsoundnessANegativeScoreBecomesANegativeBound)
+TEST_F(DoubleDummyBoundTest, ANotEvaluatedScoreSurfacesAsTheSentinelNotAsANegativeBound)
 {
-    // The step that makes the solver's sentinel a soundness problem rather
-    // than a curiosity: as_bound() passes it straight through.
-    Deal const layout = no_search_cases().front().deal;
+    // The guard's whole job, on the one position that needs it: a raw score
+    // of -2 must leave as_bound() as the sentinel and not as itself.
+    NoSearchCase const failing = no_search_cases().front();
+    ASSERT_TRUE(failing.score_is_negative) << failing.name;
+
     SolverContext ctx;
     be::DoubleDummyBound provider(ctx, North);
     be::LayoutBound const bound = provider.as_bound();
 
-    EXPECT_LT(bound(layout), 0) << "the bound no longer leaks solve_board's \"not "
-                                  "evaluated\" score -- if it now returns a value in "
-                                  "[0, 4], the unsoundness is fixed: delete these tests "
-                                  "and update double_dummy_bound.hpp's doxygen";
+    EXPECT_EQ(bound(failing.deal), 14)
+        << "expected the sentinel (14). A negative value means the guard is gone and "
+           "solve_board's \"not evaluated\" score is leaking into the cut again; a value "
+           "in [0, " << failing.tricks << "] means someone recovered the pruning, which "
+           "needs the trigger established -- see this section's comment";
+
+    // The inverse of the property the unguarded bound broke: the sentinel is
+    // above every tricks_needed this position could be asked for, so the cut
+    // cannot fire on it. Bounded by the tricks the position actually holds --
+    // every hand has two cards, so asking about a third would be asking about
+    // a position that does not exist.
+    for (int tricks_needed = 1; tricks_needed <= failing.tricks; ++tricks_needed)
+    {
+        EXPECT_GT(bound(failing.deal), tricks_needed) << "at tricks_needed = " << tricks_needed;
+    }
 }
 
-TEST_F(DoubleDummyBoundTest, KnownUnsoundnessANegativeBoundIsBelowAnyTricksNeeded)
+TEST_F(DoubleDummyBoundTest, EveryBoundIsAtTheSentinelOrInsideTheTrickRangeNeverBelowIt)
 {
-    // Why the negative matters: it is not merely a wrong number, it is a
-    // number that fires the cut. Any tricks_needed a caller could ask for is
-    // above it, so tier2_dead() concludes "every layout here is dead" at a
-    // node where declarer in fact takes tricks.
-    Deal const layout = no_search_cases().front().deal;
+    // The guard stated as the invariant rather than as one position: whatever
+    // solve_board answers, as_bound() returns either a real bound within the
+    // tricks the position holds, or the sentinel -- never a value below the
+    // range, which is the only way a bound can fire a cut it should not.
     SolverContext ctx;
     be::DoubleDummyBound provider(ctx, North);
     be::LayoutBound const bound = provider.as_bound();
 
-    // Bounded by the tricks the position actually has: every hand holds two
-    // cards, so there are two tricks and declarer's side takes both of them
-    // (score 2 at solutions = 3). Looping to 4 would assert about
-    // tricks_needed values this position could never be asked for.
-    for (int tricks_needed = 1; tricks_needed <= 2; ++tricks_needed)
+    for (NoSearchCase const& one : no_search_cases())
     {
-        EXPECT_LT(bound(layout), tricks_needed) << "at tricks_needed = " << tricks_needed;
+        int const value = bound(one.deal);
+        EXPECT_GE(value, 0) << one.name << ": a bound below zero is below every tricks_needed";
+        if (value != 14)
+        {
+            EXPECT_LE(value, one.tricks) << one.name;
+        }
+        // And the cases the solver cannot score are exactly the ones that
+        // reach the sentinel -- the guard fires where it is needed and
+        // nowhere else, so a future fix to dds shows up here as a change.
+        EXPECT_EQ(value == 14, one.score_is_negative) << one.name;
     }
+}
+
+TEST_F(DoubleDummyBoundTest, WithTheBoundEvaluateStillReportsTheTrueValueOnAnUnscorablePosition)
+{
+    // The end-to-end assertion, and the one that would have caught this in
+    // the first place: run the same position with and without the bound and
+    // require the same answer. Before the guard, this reported 0.0 with the
+    // bound and 1.0 without it.
+    //
+    // TheFailingFixture, from declarer's side: North (declarer) holds
+    // spades K J, South (dummy) T 9, and the defenders hold Q 6 5 4 between
+    // them. North's king is above every defender card, so declarer's side
+    // wins at least one of the two tricks however anyone plays -- hand
+    // checkable, and it makes the true value 1.0 at tricks_needed = 1 for
+    // any pi and any delta.
+    Deal const layout = no_search_cases().front().deal;
+    be::VectorLayoutSource source({layout});
+    SolverContext ctx;
+    be::DoubleDummyDefender defender(ctx);
+    be::DoubleDummyBound provider(ctx, North);
+    be::DeclarerStrategy const pi{
+        .id = 1, .play = be::single_card_declarer_play, .state_key = nullptr};
+
+    be::EvaluationResult const without_bound = be::evaluate(
+        layout, North, /*tricks_needed=*/1, source, pi, defender.as_strategy(),
+        be::EvaluateOptions{.collect_counters = true});
+
+    be::EvaluationResult const with_bound = be::evaluate(
+        layout, North, /*tricks_needed=*/1, source, pi, defender.as_strategy(),
+        be::EvaluateOptions{
+            .collect_counters = true,
+            .bound = provider.as_bound(),
+            .delta_is_double_dummy_optimal = true});
+
+    ASSERT_FALSE(without_bound.error.has_value());
+    ASSERT_FALSE(with_bound.error.has_value());
+    EXPECT_EQ(without_bound.by_strategy.at(1u).p_make, 1.0);
+    EXPECT_EQ(with_bound.by_strategy.at(1u).p_make, without_bound.by_strategy.at(1u).p_make)
+        << "the bound changed the answer, which a sound bound cannot do -- it may only "
+           "change how much work reaching it took";
+
+    // What the guard costs, recorded so it is not mistaken for a free fix:
+    // the sentinel prunes nothing, so tier 2 does no work at all on this
+    // position. Recovering that needs the trigger, or a retry at
+    // solutions = 3.
+    ASSERT_TRUE(without_bound.by_strategy.at(1u).counters.has_value());
+    ASSERT_TRUE(with_bound.by_strategy.at(1u).counters.has_value());
+    EXPECT_EQ(
+        with_bound.by_strategy.at(1u).counters->nodes_visited,
+        without_bound.by_strategy.at(1u).counters->nodes_visited);
 }

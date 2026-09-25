@@ -28,11 +28,10 @@ namespace dds::belief_evaluation
 /// satisfies it under either `SpreadPolicy`, and pairing the two is the
 /// intended configuration.
 ///
-/// **It is not currently a sound one — see `as_bound()`'s own "Known
-/// unsoundness".** Until that is fixed, this bound can fire the cut on a
-/// live node, so an evaluation using it may report 0.0 for a contract that
-/// makes. Prefer running without `bound` (which costs pruning only) unless
-/// you have checked the positions your search reaches.
+/// One caveat that is a matter of strength, not soundness: on positions the
+/// solver answers "not evaluated" for, this bound gives up rather than
+/// guessing and prunes nothing — see `as_bound()`'s own
+/// "Unscorable positions".
 class DoubleDummyBound
 {
 public:
@@ -54,29 +53,33 @@ public:
     /// prune, where a low one would fire the cut and silently report zero
     /// for a contract that makes.
     ///
-    /// **Known unsoundness: that guard is bypassed on the success path.**
-    /// `solutions = 1` asks the solver for the best card, and on positions
-    /// this evaluator reaches it can return `score[0] == -2` — "not
-    /// evaluated", not a trick count — with `status == RETURN_NO_FAULT`. The
-    /// sentinel above therefore never applies and the −2 is returned as if it
-    /// were a bound. Being negative it is below any `tricks_needed`, so
-    /// `tier2_dead()` fires on a live node and `evaluate()` reports 0.0 for a
-    /// contract that makes. Measured; `solutions = 3` scores every affected
-    /// position correctly.
+    /// **Unscorable positions also reach that sentinel, by a second
+    /// route.** A non-zero status is not the only way `solve_board` declines
+    /// to answer: at `solutions = 1`, on positions this evaluator reaches, it
+    /// can return `score[0] == -2` — "not evaluated", not a trick count —
+    /// carrying `status == RETURN_NO_FAULT`, so the status check above does
+    /// not see it. The raw score is therefore range-checked against
+    /// `[0, tricks_remaining(layout)]` before the orientation conversion, and
+    /// anything outside it becomes `SolverFailureSentinel` too. Both
+    /// conversions read the same raw score, so one check covers declarer,
+    /// dummy and defender on lead alike.
     ///
-    /// **Which positions trigger it is not established.** Do not trust a
-    /// trigger story, including the narrower one this header used to give and
-    /// the one in `double_dummy_bound_test.cpp`'s own fixture note: a
-    /// parameterised table in that file refutes both, showing `nodes == 0`
-    /// coinciding with a correct score, the same holdings scoring correctly
-    /// when only `first` changes, a two-suit position failing, and a forced
-    /// play succeeding.
+    /// Note that this is *not* a clamp, and a clamp would not do: clamping
+    /// −2 into the range gives 0, which is below every `tricks_needed >= 1`,
+    /// so the cut would still fire on every affected node while the bug
+    /// looked fixed. The replacement value has to be too high.
     ///
-    /// The safe fix does not need the trigger: treat a score outside
-    /// `[0, tricks_remaining(layout)]` as `SolverFailureSentinel`, restoring
-    /// the "too high, never too low" property the paragraph above promises.
-    /// Recovering the lost pruning does need it, or a retry at
-    /// `solutions = 3`.
+    /// The cost is pruning, and it is real: on an unscorable position this
+    /// bound contributes nothing, and tier 2 visits as many nodes as tier 1
+    /// alone. **Which positions the solver answers this way is not
+    /// established**, and recovering the lost pruning needs that, or a retry
+    /// at `solutions = 3` (which scores every affected position correctly).
+    /// Do not trust a trigger story, including the narrower one this header
+    /// used to give and the one in `double_dummy_bound_test.cpp`'s own
+    /// fixture note: a parameterised table in that file refutes both, showing
+    /// `nodes == 0` coinciding with a correct score, the same holdings
+    /// scoring correctly when only `first` changes, a two-suit position
+    /// failing, and a forced play succeeding.
     auto as_bound() -> LayoutBound;
 
 private:
