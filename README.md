@@ -23,6 +23,8 @@ The measurements behind the defaults are
 | `tests/belief_evaluation/` | 347 C++ cases across four targets |
 | `benchmarks/` | the measuring instruments and their correctness guards |
 | `python/` | the `belief_space_local_evaluation` extension and its tests |
+| `examples/` | runnable examples of the Python surface, and the small amount of bridge plumbing they need |
+| `claude/` | a tripwire, not a home: working notes live in the private sibling `../rbe-notes`. Nothing here is ever committed — see [`CLAUDE.md`](CLAUDE.md) |
 
 ## Installing
 
