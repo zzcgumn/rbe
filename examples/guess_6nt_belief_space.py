@@ -55,6 +55,7 @@ from strategies import (
     double_dummy_defender,
     lowest_eligible_declarer,
     lowest_eligible_defender,
+    queen_of_spades_when_it_wins,
 )
 
 SEED = 1
@@ -163,25 +164,34 @@ def main() -> None:
         print("       (equal here: every suit shown out of is already exhausted)")
     print()
 
-    # Declarer plays low throughout, in both runs below. Holding pi fixed is
-    # what makes the two numbers comparable: every difference between them is
+    # Declarer plays the same line in all three runs below. Holding pi fixed
+    # is what makes the numbers comparable: every difference between them is
     # the defenders' doing.
-    playing_low = evaluate(
-        sequence, source, cash_two_hearts_and_play_a_spade, lowest_eligible_defender)
-
-    # The same position against defenders who can see through the backs of
-    # the cards: DoubleDummyDefender solves each layout and spreads its
-    # probability over the tied-for-best cards. Remember what it optimises --
-    # tricks, not the contract -- so this is not "best defence against 6NT".
     ctx = dds3.SolverContext()
-    double_dummy = evaluate(
-        sequence, source, cash_two_hearts_and_play_a_spade, double_dummy_defender(ctx))
+    runs = [
+        ("Defenders play low", lowest_eligible_defender),
+        # Solves each layout and spreads over the tied-for-best cards. Note
+        # what it optimises -- tricks, not the contract -- and note that it
+        # also assumes *declarer* will play double dummy from here, which
+        # this declarer does not. Both are why it is not best defence here.
+        ("Defenders play double dummy", double_dummy_defender(ctx)),
+        # Optimal against this particular declarer: checked by exhaustive
+        # minimax over every defensive choice, which lets the line through in
+        # exactly these layouts and no others.
+        ("Defenders cover when it wins", queen_of_spades_when_it_wins),
+    ]
 
-    report("Defenders play low", playing_low)
-    report("Defenders play double dummy", double_dummy)
+    values = []
+    for heading, delta in runs:
+        value = evaluate(sequence, source, cash_two_hearts_and_play_a_spade, delta)
+        report(heading, value)
+        values.append((heading, value["p_make"]))
 
-    print("Cost of double-dummy defence: "
-          f"{double_dummy['p_make'] - playing_low['p_make']:+.4f}")
+    print("Against this fixed declarer line:")
+    for heading, p_make in values:
+        print(f"    {heading:<30} {p_make:.4f}")
+    print("\nDouble-dummy defence is not the best defence here -- it defends\n"
+          "against a declarer who plays double dummy too, and this one does not.")
 
 
 def evaluate(sequence, source, pi, delta, **options) -> dict:

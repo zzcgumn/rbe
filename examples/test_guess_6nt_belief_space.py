@@ -13,9 +13,11 @@ in:
   44  playing low, against defenders who also play low
   14  playing low, against double-dummy defenders
   55  playing the cash-two-hearts line, against double-dummy defenders
+  35  the same line, against a defender that covers when covering wins
 
-and that last 55 is checked against the double-dummy ceiling rather than
-just asserted, so it pins "this line is optimal here", not only its score.
+The last two are checked against ceilings rather than merely asserted: 55
+against the double-dummy bound, and 35 against exhaustive minimax over every
+defensive choice. So they pin "optimal" and not only a score.
 """
 
 import io
@@ -32,6 +34,7 @@ from strategies import (
     double_dummy_defender,
     lowest_eligible_declarer,
     lowest_eligible_defender,
+    queen_of_spades_when_it_wins,
 )
 
 
@@ -149,12 +152,14 @@ class TestTheDeclarerLine(unittest.TestCase):
         self.assertNotIn("error", result)
         self.assertAlmostEqual(result["by_strategy"][1]["p_make"], 55 / 70, places=9)
 
-    def test_the_line_is_double_dummy_optimal_in_this_ending(self) -> None:
-        # The stronger claim, and the reason 55/70 is the right number rather
-        # than merely the observed one: the layouts this line brings home are
-        # exactly the layouts in which three tricks can be taken at all. It
-        # cannot be improved on here -- which is worth pinning, because it is
-        # what would break first if the line were edited.
+    def test_the_line_reaches_the_ceiling_against_double_dummy_defence(self) -> None:
+        # Against *double-dummy* defence the line brings home exactly the
+        # layouts in which three tricks are double-dummy achievable -- it
+        # cannot be improved on against that defender. Scoped deliberately:
+        # this says nothing about other defences, and
+        # TestAnOptimalDefence below shows a defender that holds the same
+        # line to 35/70, because double-dummy defence assumes declarer is
+        # also playing double dummy and this declarer is not.
         sequence = example.guess_6nt()
         ctx = dds3.SolverContext()
         bound = bsle.DoubleDummyBound(ctx, sequence.declarer)
@@ -189,6 +194,44 @@ class TestTheDeclarerLine(unittest.TestCase):
         self.assertEqual(len(brings_home), 55)
 
 
+class TestAnOptimalDefence(unittest.TestCase):
+    """queen_of_spades_when_it_wins -- optimal against this declarer line."""
+
+    def test_it_holds_the_line_to_35_of_the_70_layouts(self) -> None:
+        # 35 is not an observed number: exhaustive minimax over every
+        # defensive choice against this (deterministic) declarer line lets it
+        # through in exactly 35 layouts, and in exactly these 35. No defence
+        # can do better, so this delta is optimal here.
+        sequence = example.guess_6nt()
+
+        result = bsle.evaluate(
+            sequence.current_deal, sequence.declarer, sequence.tricks_needed,
+            _source(sequence), example.cash_two_hearts_and_play_a_spade,
+            queen_of_spades_when_it_wins)
+
+        self.assertNotIn("error", result)
+        self.assertAlmostEqual(result["by_strategy"][1]["p_make"], 35 / 70, places=9)
+
+    def test_it_beats_double_dummy_defence_against_this_declarer(self) -> None:
+        # The finding worth keeping: trick-maximising defence is not
+        # contract-minimising defence, and it also presumes a double-dummy
+        # declarer. Against a fixed, blind line a tailored defender does
+        # strictly better -- 35/70 against 55/70.
+        sequence = example.guess_6nt()
+        ctx = dds3.SolverContext()
+        pi = example.cash_two_hearts_and_play_a_spade
+
+        def run(delta):
+            result = bsle.evaluate(
+                sequence.current_deal, sequence.declarer, sequence.tricks_needed,
+                _source(sequence), pi, delta)
+            self.assertNotIn("error", result)
+            return result["by_strategy"][1]["p_make"]
+
+        self.assertLess(run(queen_of_spades_when_it_wins),
+                        run(double_dummy_defender(ctx)))
+
+
 class TestTheScriptRuns(unittest.TestCase):
     def test_main_runs_and_reports_p_make(self) -> None:
         output = io.StringIO()
@@ -202,6 +245,7 @@ class TestTheScriptRuns(unittest.TestCase):
         # have no choice left that changes the outcome.
         self.assertIn("Defenders play low: P_make = 0.7857", printed)
         self.assertIn("Defenders play double dummy: P_make = 0.7857", printed)
+        self.assertIn("Defenders cover when it wins: P_make = 0.5000", printed)
 
 
 if __name__ == "__main__":

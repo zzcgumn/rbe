@@ -21,7 +21,8 @@ the actual deal -- because a defender's own cards are not hidden from them,
 and is called once per layout.
 """
 
-from play_sequence import legal_cards, seat_on_play
+from bridge_notation import SPADES
+from play_sequence import cards_on_trick, legal_cards, seat_on_play
 
 
 def lowest_eligible_card(deal: dict, seat: int):
@@ -66,6 +67,69 @@ def lowest_eligible_defender(layout, seat, state):
     """
     del state  # Deterministic: this defender conditions on their own cards only.
     return [(lowest_eligible_card(layout, seat), 1.0)]
+
+
+QUEEN, KING, ACE = 12, 13, 14
+
+
+def _lowest(legal):
+    return min(legal, key=lambda card: (card.rank, card.suit))
+
+
+def _pick(legal, suit, rank):
+    for card in legal:
+        if card.suit == suit and card.rank == rank:
+            return card
+    return None
+
+
+def _spade_queen_cannot_be_beaten(layout: dict, seat: int) -> bool:
+    """Whether the spade queen, played now by `seat`, takes the trick.
+
+    Three things have to hold. Spades must be the suit of the trick --
+    contract 6NT, so there is no trump to ruff with, and a queen thrown on
+    another suit's trick never wins. Nothing already played can be higher.
+    And no seat still to play can beat it, which in spades means holding the
+    ace or the king.
+
+    That last test reads the other hands out of `layout`, which a defender
+    strategy is given in full. It is the same licence `DoubleDummyDefender`
+    takes: a model defender is allowed to see through the cards, and the
+    result is a statement about the position rather than a guess from one
+    seat's knowledge. A strategy meant to be realistic would have to work
+    from `state` instead.
+
+    It asks whether the queen *can* be beaten, not whether it will be --
+    a seat holding the king might play low. Assuming otherwise would make
+    this claim depend on declarer's strategy, and a defender that is only
+    right against one declarer is not much of a defender.
+    """
+    on_trick = cards_on_trick(layout)
+    if on_trick and on_trick[0].suit != SPADES:
+        return False
+    if any(c.suit == SPADES and c.rank > QUEEN for c in on_trick):
+        return False
+
+    for position in range(len(on_trick) + 1, 4):
+        later = (layout["first"] + position) % 4
+        higher = (1 << ACE) | (1 << KING)
+        if layout["remain_cards"][later][SPADES] & higher:
+            return False
+    return True
+
+
+def queen_of_spades_when_it_wins(layout, seat, state):
+    """delta: play the spade queen when it takes the trick, otherwise low.
+
+    Written against this example's ending, where locating that one card is
+    the whole problem -- not a general defensive rule.
+    """
+    del state  # Conditions on the layout alone.
+    legal = legal_cards(layout, seat)
+    queen = _pick(legal, SPADES, QUEEN)
+    if queen is not None and _spade_queen_cannot_be_beaten(layout, seat):
+        return [(queen, 1.0)]
+    return [(_lowest(legal), 1.0)]
 
 
 # --- templates ------------------------------------------------------------
