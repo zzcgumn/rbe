@@ -517,7 +517,9 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   and a cut on `DD < ρ` then reports zero for a contract that in fact makes.
   `DoubleDummyDefender` (either `SpreadPolicy`) satisfies the precondition —
   trick-maximising for both sides at every node — and pairing it with
-  `DoubleDummyBound` is the intended sound configuration. The other
+  `DoubleDummyBound` is the intended sound configuration — **as a design;
+  the shipped `DoubleDummyBound` does not currently deliver it, see Known
+  gaps below.** The other
   direction is equally load-bearing and easy to miss precisely because it
   looks free once the bound is already computed: `DD ≥ ρ` implies **nothing**
   about `R`, since π may play worse than double dummy, so the single solve
@@ -735,9 +737,26 @@ rename or include-ordering trick anywhere in the module.
   separate, solver-linked Bazel target**
   (`//src/belief_evaluation:double_dummy_bound`), sibling to
   `double_dummy_defender` above and paired with it for the intended sound
-  tier-2 configuration.
+  tier-2 configuration — which it does not currently achieve; see Known
+  gaps.
 
 ## Known gaps / non-goals
+
+- **`DoubleDummyBound` does not deliver the `DD` it promises, so the tier-2
+  configuration this document calls "the intended sound configuration" is not
+  currently sound.** The design claim is unaffected: `R ≤ DD` does hold when
+  the paired δ is double-dummy optimal for trick count. The implementation is
+  the problem — `solve_board` at `solutions = 1` can return `score[0] == -2`,
+  meaning "not evaluated", with a successful status, and `as_bound()` returns
+  it as a bound. A negative bound is below any `tricks_needed`, so
+  `tier2_dead()` fires on a live node and `evaluate()` reports 0.0 for a
+  contract that makes. Which positions trigger it is **not** established; the
+  obvious explanations are refuted by a parameterised table in
+  `tests/belief_evaluation/double_dummy_bound_test.cpp`, whose
+  `KnownUnsoundness*` tests pin the symptom. Callers should omit `bound`,
+  which costs pruning only. See "Known gaps" in
+  `docs/belief_space_local_evaluation.md`. Recorded here rather than fixed
+  here; the fix is a separate change.
 
 - `is_consistent()` does not compare defender hand sizes, so it accepts a
   strictly larger set of candidates than the set of legal bridge positions

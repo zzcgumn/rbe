@@ -153,10 +153,21 @@ def defences_with(ctx):
 
     `DoubleDummyDefender` maximises *tricks*, not the contract, and assumes
     declarer plays double dummy from here -- which neither declarer above
-    does. Both are why it is not best defence here. `queen_of_spades_when_it_wins`
-    is optimal against the fixed line (exhaustive minimax over every defensive
-    choice lets that line through in exactly the same layouts) and not against
-    the belief finesse.
+    does. Both are why it is not best defence here.
+
+    It also does **not** spread over every tied-for-best card. Under the
+    default `SpreadPolicy.TouchingSequence` it takes the canonical best card
+    -- highest score, ties broken by dds's own ordering -- and that one card's
+    touching group, discarding the other tied entries. Measured at one node
+    here, `solutions = 2` returns three cards tied at the maximum and the
+    defender plays one of them with probability 1.0. So the "double dummy"
+    column is partly determined by dds's ordering among non-touching equals,
+    not by anything about double-dummy defence. `SpreadPolicy.AllOptimal` is
+    the policy that spreads over all of them.
+
+    `queen_of_spades_when_it_wins` is optimal against the fixed line
+    (exhaustive minimax over every defensive choice lets that line through in
+    exactly the same layouts) and not against the belief finesse.
     """
     return (
         ("low", lowest_eligible_defender),
@@ -262,8 +273,8 @@ def report_root_children(heading: str, value: dict) -> None:
 
     # At a declarer root these are *alternatives*, not a partition: each is
     # what the contract is worth if declarer plays that card now and follows
-    # the same lowest-card rule afterwards. They do not sum to P_make, and
-    # P_make is whichever one pi actually chose.
+    # the same pi afterwards -- whichever pi was passed, not a lowest-card
+    # rule. They do not sum to P_make, and P_make is whichever one pi chose.
     for card, p_make in sorted(value["root_children"], key=lambda entry: -entry[1]):
         print(f"    lead {format_card(card)}   {p_make:.4f}")
     print()

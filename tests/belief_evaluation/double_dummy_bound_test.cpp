@@ -437,10 +437,25 @@ TEST_F(DoubleDummyBoundTest, TierTwoCutRateUnderSamplingIsExactlyZeroBecauseOfTh
 // narrower observation -- single suit, more than one card per hand -- which
 // the second bullet above also contradicts as a complete account.
 //
-// The safe fix does not depend on knowing the trigger: treat a score outside
-// `[0, tricks_remaining(layout)]` as SolverFailureSentinel, which restores the
-// "too high, never too low" property the sentinel already promises. Recovering
-// the lost pruning does need it, or a retry with `solutions = 3`.
+// The safe fix does not depend on knowing the trigger: *treat* a score outside
+// `[0, tricks_remaining(layout)]` **as SolverFailureSentinel** (14), which
+// restores the "too high, never too low" property the sentinel already
+// promises. Recovering the lost pruning does need the trigger, or a retry with
+// `solutions = 3`.
+//
+// That is deliberately not a clamp, and a clamp would not do: clamping -2 into
+// the range gives 0, and 0 is below every tricks_needed >= 1, so the cut would
+// still fire on every affected node while looking fixed. The replacement value
+// has to be too high, not merely in range. (An earlier commit message on this
+// branch says "one clamp to [0, tricks_remaining]" -- that phrasing is wrong
+// for this reason.)
+//
+// One asymmetry the symptom description above glosses over. A negative score
+// only becomes a *low* bound on the declarer-on-lead branch, where as_bound()
+// returns score[0] directly. On the defender-on-lead branch it returns
+// `tricks_remaining - score[0]`, so -2 becomes tricks_remaining + 2 -- too
+// high, and therefore harmless. Probing a defender-on-lead node shows an
+// implausibly large bound rather than a negative one.
 
 namespace
 {
@@ -584,7 +599,11 @@ TEST_F(DoubleDummyBoundTest, KnownUnsoundnessANegativeBoundIsBelowAnyTricksNeede
     be::DoubleDummyBound provider(ctx, North);
     be::LayoutBound const bound = provider.as_bound();
 
-    for (int tricks_needed = 1; tricks_needed <= 4; ++tricks_needed)
+    // Bounded by the tricks the position actually has: every hand holds two
+    // cards, so there are two tricks and declarer's side takes both of them
+    // (score 2 at solutions = 3). Looping to 4 would assert about
+    // tricks_needed values this position could never be asked for.
+    for (int tricks_needed = 1; tricks_needed <= 2; ++tricks_needed)
     {
         EXPECT_LT(bound(layout), tricks_needed) << "at tricks_needed = " << tricks_needed;
     }

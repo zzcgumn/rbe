@@ -132,9 +132,12 @@ import belief_space_local_evaluation as bsle
 A complete worked example — playing a hand out to a mid-play root, building
 the belief space from the play history, and evaluating one declarer line
 against three defences — is `examples/guess_6nt_belief_space.py`, runnable
-with `bazelisk run //examples:guess_6nt_belief_space`. Every code block below
-is also executed verbatim by
-`python/tests/test_belief_space_local_evaluation_docs_examples.py`.
+with `bazelisk run //examples:guess_6nt_belief_space`. Every **Python** code
+block below is exercised by
+`python/tests/test_belief_space_local_evaluation_docs_examples.py`, with the
+doc's placeholder names (`root`, `declarer`, `seed`, `tricks_needed`) bound to
+concrete values there -- so "exercised", not literally verbatim. The two C++
+blocks are not run by that test.
 
 ### The building blocks
 

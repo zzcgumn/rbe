@@ -18,8 +18,9 @@ published, and a push cannot be taken back.
 ## Working notes live in `../rbe-notes`, a private sibling
 
 Plans, analyses, reviews, task breakdowns and scratch files go to
-`../rbe-notes`, a private sibling checkout, never into this tree. Its own README
-describes the layout; the notes-aware skills resolve the path themselves.
+`../rbe-notes`, a private sibling checkout, never into this tree. Its layout is
+documented there; nothing in this repository points at a file inside it, for
+the reason given below.
 
 A sibling repository rather than an ignored directory here, for two reasons:
 

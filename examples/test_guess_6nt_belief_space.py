@@ -158,7 +158,6 @@ class TestDoubleDummyDefence(unittest.TestCase):
         delta = double_dummy_defender(ctx)
         source = _source(sequence)
 
-
         total = 0.0
         for index in range(source.size()):
             one = bsle.evaluate(
@@ -198,7 +197,6 @@ class TestTheDeclarerLine(unittest.TestCase):
         bound = bsle.DoubleDummyBound(ctx, sequence.declarer)
         delta = double_dummy_defender(ctx)
         source = _source(sequence)
-
 
         brings_home, achievable = set(), set()
         for index in range(source.size()):
@@ -278,6 +276,13 @@ class TestTheBeliefReadingDeclarer(unittest.TestCase):
             1.0, places=9)
 
     def test_it_makes_in_60_of_the_70_against_the_tailored_defender(self) -> None:
+        # A golden value, like 44 and 35: established once by playing this
+        # declarer against this defender over each of the 70 layouts and
+        # counting, not re-derived here. It is not a ceiling -- the ceiling
+        # against this defence is 70/70 -- so 60 says the belief finesse
+        # locates the queen in 60 of the 70 splits and not that 60 is the most
+        # any declarer could manage. The ordering test below is what would
+        # catch a regression; this pins the number for reference.
         self.assertAlmostEqual(
             self._p_make(example.finesse_the_queen_from_the_beliefs,
                          queen_of_spades_when_it_wins),
@@ -305,17 +310,43 @@ class TestTheBeliefReadingDeclarer(unittest.TestCase):
         self.assertGreater(tailored_belief, tailored_fixed)
         self.assertLess(dd_belief, dd_fixed)
 
-    def test_it_is_a_pure_function_of_its_arguments(self) -> None:
-        # The contract the evaluator relies on: it revisits sibling subtrees,
-        # so a strategy that answered the same node differently on a second
-        # visit would corrupt the result. Two identical runs must agree
-        # exactly, bit for bit.
-        first = self._p_make(example.finesse_the_queen_from_the_beliefs,
-                             queen_of_spades_when_it_wins)
-        second = self._p_make(example.finesse_the_queen_from_the_beliefs,
-                              queen_of_spades_when_it_wins)
+    def test_it_answers_a_repeated_node_the_same_way(self) -> None:
+        # The contract the evaluator relies on, checked *within* one traversal
+        # rather than across two. The evaluator revisits sibling subtrees, so
+        # the hazard is a strategy answering the same node differently on a
+        # second visit; two identical runs compared afterwards cannot see that
+        # and would pass for any strategy whose state resets between calls.
+        #
+        # Keyed on everything pi is allowed to condition on: the position and
+        # the trick in progress. If the same key ever yields two different
+        # cards, pi is not a function of its arguments.
+        sequence = example.guess_6nt()
+        seen = {}
+        collisions = []
 
-        self.assertEqual(first, second)
+        visits = {}
+
+        def watched(state, view):
+            deal = state.known_holdings
+            key = (tuple(tuple(row) for row in deal["remain_cards"]),
+                   deal["first"], deal["current_trick_suit"], deal["current_trick_rank"])
+            visits[key] = visits.get(key, 0) + 1
+            card = example.finesse_the_queen_from_the_beliefs(state, view)
+            previous = seen.setdefault(key, card)
+            if previous != card:
+                collisions.append((key, previous, card))
+            return card
+
+        result = bsle.evaluate(
+            sequence.current_deal, sequence.declarer, sequence.tricks_needed,
+            _source(sequence), watched, queen_of_spades_when_it_wins)
+
+        self.assertNotIn("error", result)
+        self.assertEqual(collisions, [])
+        # The check is vacuous unless nodes really are revisited. They are:
+        # measured at 773 calls over 322 distinct nodes, one of them 24 times.
+        self.assertGreater(max(visits.values()), 1)
+        self.assertGreater(sum(visits.values()), len(visits))
 
 
 class TestTheDocstring(unittest.TestCase):
@@ -385,6 +416,14 @@ class TestTheDocstring(unittest.TestCase):
         self.assertEqual(readers, ["belief finesse"])
 
 
+def _is_float(token: str) -> bool:
+    try:
+        float(token)
+    except ValueError:
+        return False
+    return True
+
+
 class TestTheScriptRuns(unittest.TestCase):
     def test_main_runs_and_reports_the_grid(self) -> None:
         output = io.StringIO()
@@ -403,8 +442,19 @@ class TestTheScriptRuns(unittest.TestCase):
         # defenders did have a choice that changes the outcome. Double-dummy
         # defence optimises trick count against a double-dummy declarer, and
         # this declarer is neither.
-        self.assertIn("0.7857              0.7857              0.5000", printed)
-        self.assertIn("1.0000              0.4488              0.8571", printed)
+        # The values, parsed out of their row -- not the row verbatim, whose
+        # spacing is a function of the longest defence name and would fail on
+        # a rename for no behavioural reason.
+        rows = {}
+        for line in printed.splitlines():
+            for name, _ in example.DECLARERS:
+                # A grid row is the declarer's name followed by nothing but
+                # numbers. Other lines start with a declarer's name too.
+                rest = line[len(name):].split() if line.startswith(name) else None
+                if rest and all(_is_float(token) for token in rest):
+                    rows[name] = [float(token) for token in rest]
+        self.assertEqual(rows["fixed line"], [0.7857, 0.7857, 0.5000])
+        self.assertEqual(rows["belief finesse"], [1.0000, 0.4488, 0.8571])
 
 
 if __name__ == "__main__":

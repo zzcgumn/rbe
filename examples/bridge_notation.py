@@ -25,7 +25,6 @@ SUIT_SYMBOLS = ("♠", "♥", "♦", "♣")
 # A denomination, in dds's `trump` encoding: the four suits keep their own
 # numbers and notrump follows them.
 NOTRUMP = 4
-DENOMINATION_LETTERS = "SHDCN"
 
 RANK_LETTERS = "23456789TJQKA"
 
@@ -33,7 +32,9 @@ RANK_LETTERS = "23456789TJQKA"
 def rank_from_letter(letter: str) -> int:
     """'2'..'9', 'T', 'J', 'Q', 'K', 'A' -> the absolute rank 2..14."""
     index = RANK_LETTERS.find(letter.upper())
-    if index < 0:
+    if not letter or index < 0:
+        # str.find("") returns 0, so the empty string would otherwise parse
+        # as the first letter -- silently, and as a legal value.
         raise ValueError(f"not a rank: {letter!r}")
     return index + 2
 
@@ -46,23 +47,19 @@ def rank_letter(rank: int) -> str:
 
 def suit_from_letter(letter: str) -> int:
     index = SUIT_LETTERS.find(letter.upper())
-    if index < 0:
+    if not letter or index < 0:
+        # str.find("") returns 0, so the empty string would otherwise parse
+        # as the first letter -- silently, and as a legal value.
         raise ValueError(f"not a suit: {letter!r}")
     return index
 
 
 def seat_from_letter(letter: str) -> int:
     index = SEAT_LETTERS.find(letter.upper())
-    if index < 0:
+    if not letter or index < 0:
+        # str.find("") returns 0, so the empty string would otherwise parse
+        # as the first letter -- silently, and as a legal value.
         raise ValueError(f"not a seat: {letter!r}")
-    return index
-
-
-def denomination_from_letter(letter: str) -> int:
-    """'S', 'H', 'D', 'C' -> the suit; 'N' (or 'NT') -> NOTRUMP."""
-    index = DENOMINATION_LETTERS.find(letter.upper())
-    if index < 0:
-        raise ValueError(f"not a denomination: {letter!r}")
     return index
 
 
@@ -172,16 +169,6 @@ def format_hand(remain_cards_row, symbols: bool = True) -> str:
         ranks = "".join(rank_letter(rank) for rank in ranks_in(remain_cards_row[suit]))
         parts.append(f"{letters[suit]} {ranks or '-'}")
     return "  ".join(parts)
-
-
-def format_deal(deal: dict, symbols: bool = True) -> str:
-    """All four hands, one per line, North first. Not a diagram: an example
-    that prints a position wants it greppable more than it wants it pretty."""
-    lines = []
-    for seat in range(4):
-        lines.append(
-            f"{SEAT_NAMES[seat]:>5}  {format_hand(deal['remain_cards'][seat], symbols)}")
-    return "\n".join(lines)
 
 
 def format_denomination(trump: int, symbols: bool = True) -> str:

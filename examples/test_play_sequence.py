@@ -257,13 +257,30 @@ class TestPlaySequence(unittest.TestCase):
         self.assertEqual(sequence.tricks_needed, 11)
 
     def test_a_trick_won_by_the_defence_does_not_count(self) -> None:
+        # The `else` of `if winner in (declarer, dummy)` -- the branch that
+        # decides tricks_won_by_declarer, hence tricks_needed, hence what
+        # "make" means to evaluate(). Nothing else in this package takes it:
+        # all nine tricks of guess_6nt() go to declarer's side.
         sequence = self._sequence()
 
-        sequence.play_trick("C6 C2 CT CQ")  # South's queen... wins.
-        self.assertEqual(sequence.tricks_won_by_declarer, 1)
+        # West leads a low club, North plays low, East's ten wins.
+        sequence.play_trick("C5 C2 CT C3")
 
-        sequence.play_trick("CK C8 C4 C9")  # South leads the king; South wins.
-        self.assertEqual(sequence.tricks_won_by_declarer, 2)
+        self.assertEqual(sequence.current_deal["first"], EAST)
+        self.assertEqual(sequence.tricks_won_by_declarer, 0)
+        self.assertEqual(sequence.tricks_needed, 12)  # unchanged
+        self.assertEqual(sequence.completed_tricks[-1][2], EAST)
+
+    def test_the_counter_advances_only_on_tricks_the_declaring_side_wins(self) -> None:
+        sequence = self._sequence()
+
+        sequence.play_trick("C5 C2 CT C3")  # East wins.
+        self.assertEqual(sequence.tricks_won_by_declarer, 0)
+
+        # East leads, so the order is E, S, W, N -- South's king wins.
+        sequence.play_trick("C9 CK C6 C4")
+        self.assertEqual(sequence.tricks_won_by_declarer, 1)
+        self.assertEqual(sequence.tricks_needed, 11)
 
     def test_the_history_records_every_card_in_play_order(self) -> None:
         sequence = self._sequence()
@@ -284,6 +301,105 @@ class TestPlaySequence(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             sequence.play_trick("C4 C9 CQ CK")
         self.assertIn("already in progress", str(caught.exception))
+
+
+class TestTheHistoryConstrainsTheBeliefSpace(unittest.TestCase):
+    """That passing `history=` actually changes the answer.
+
+    The guide gives a whole section to this ("omitting it does not fail, it
+    quietly answers a different question"), and `PlaySequence` exists largely
+    to collect the history -- but on the Guess 6NT root the constrained and
+    unconstrained spaces are both 70, because every suit either defender
+    showed out of is already exhausted there. So nothing in that example
+    demonstrates the history doing anything, and a regression that silently
+    dropped it would pass every other test in this package.
+
+    This fixture is built for the purpose: East holds no spades at all, so a
+    spade lead makes East discard while four spades are still outstanding in
+    West's hand.
+    """
+
+    # North/East/South/West. East is void in spades; every suit is otherwise
+    # distributed so that one trick establishes exactly one void.
+    DEAL_EAST_VOID_IN_SPADES = (
+        "N: AKQJ.76.AKQ.AKQJ"
+        " .AKQJT98.765.432"
+        " T987.54.JT9.T987"
+        " 65432.32.8432.65")
+
+    def _after_one_spade_trick(self):
+        sequence = PlaySequence(
+            parse_deal(self.DEAL_EAST_VOID_IN_SPADES),
+            declarer=SOUTH, trump=NOTRUMP, level=3)
+        # West leads, so the order is W, N, E, S: East's heart is the discard.
+        sequence.play_trick("S2 SJ H8 S7")
+        return sequence
+
+    def test_the_show_out_removes_most_of_the_space(self) -> None:
+        sequence = self._after_one_spade_trick()
+
+        without = bsle.ExhaustiveLayoutSource(
+            sequence.current_deal, sequence.declarer, 1)
+        with_history = bsle.ExhaustiveLayoutSource(
+            sequence.current_deal, sequence.declarer, 1,
+            history=sequence.history, opening_leader=sequence.opening_leader)
+
+        # C(24, 12): twelve of the defenders' twenty-four outstanding cards.
+        self.assertEqual(without.size(), 2704156)
+        # C(20, 12): East cannot hold any of the four outstanding spades, so
+        # East's twelve come from the twenty non-spade cards.
+        self.assertEqual(with_history.size(), 125970)
+        self.assertLess(with_history.size(), without.size())
+
+    def test_the_history_is_consistent(self) -> None:
+        sequence = self._after_one_spade_trick()
+
+        source = bsle.ExhaustiveLayoutSource(
+            sequence.current_deal, sequence.declarer, 1,
+            history=sequence.history, opening_leader=sequence.opening_leader)
+
+        self.assertEqual(source.history_verdict(), bsle.HistoryVerdict.Consistent)
+
+
+class TestTheTemplates(unittest.TestCase):
+    """empty_declarer / empty_defender are copy-me templates, and a template
+    nobody has run is the kind that turns out not to work. These pin the two
+    things a reader needs from them: the signature `evaluate()` calls with,
+    and that the body is the only part left to fill in."""
+
+    def test_they_take_the_arguments_evaluate_passes(self) -> None:
+        import inspect
+
+        from strategies import empty_declarer, empty_defender
+
+        self.assertEqual(list(inspect.signature(empty_declarer).parameters),
+                         ["state", "view"])
+        self.assertEqual(list(inspect.signature(empty_defender).parameters),
+                         ["layout", "seat", "state"])
+
+    def test_they_raise_rather_than_returning_something_wrong(self) -> None:
+        from strategies import empty_declarer, empty_defender
+
+        with self.assertRaises(NotImplementedError):
+            empty_declarer(None, None)
+        with self.assertRaises(NotImplementedError):
+            empty_defender(None, None, None)
+
+    def test_the_real_strategies_match_the_template_signatures(self) -> None:
+        # The templates are only useful if copying one gives a working shape.
+        import inspect
+
+        from strategies import (
+            empty_declarer,
+            empty_defender,
+            lowest_eligible_declarer,
+            lowest_eligible_defender,
+        )
+
+        self.assertEqual(list(inspect.signature(lowest_eligible_declarer).parameters),
+                         list(inspect.signature(empty_declarer).parameters))
+        self.assertEqual(list(inspect.signature(lowest_eligible_defender).parameters),
+                         list(inspect.signature(empty_defender).parameters))
 
 
 class TestAgainstTheLibrary(unittest.TestCase):

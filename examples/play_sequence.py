@@ -110,8 +110,7 @@ def play_card(deal: dict, card) -> dict:
     if deal["remain_cards"][seat][card.suit] & (1 << card.rank) == 0:
         raise ValueError(
             f"{SEAT_NAMES[seat]} does not hold {format_card(card, symbols=False)}")
-    legal = legal_cards(deal, seat)
-    if not any(c.suit == card.suit and c.rank == card.rank for c in legal):
+    if card not in legal_cards(deal, seat):
         raise ValueError(
             f"{SEAT_NAMES[seat]} must follow suit and cannot play "
             f"{format_card(card, symbols=False)}")

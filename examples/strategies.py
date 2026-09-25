@@ -86,8 +86,11 @@ def pick(legal, suit, rank):
     return None
 
 
-def _spade_queen_cannot_be_beaten(layout: dict, seat: int) -> bool:
-    """Whether the spade queen, played now by `seat`, takes the trick.
+def _spade_queen_cannot_be_beaten(layout: dict) -> bool:
+    """Whether the spade queen, played now by the seat on play, takes the
+    trick. The seat is derived from `layout` rather than passed: it is
+    `first` advanced by the cards already on the trick, and taking it as an
+    argument would let a caller disagree with the position.
 
     Three things have to hold. Spades must be the suit of the trick --
     contract 6NT, so there is no trump to ruff with, and a queen thrown on
@@ -130,7 +133,7 @@ def queen_of_spades_when_it_wins(layout, seat, state):
     del state  # Conditions on the layout alone.
     legal = legal_cards(layout, seat)
     queen = pick(legal, SPADES, QUEEN)
-    if queen is not None and _spade_queen_cannot_be_beaten(layout, seat):
+    if queen is not None and _spade_queen_cannot_be_beaten(layout):
         return [(queen, 1.0)]
     return [(_lowest(legal), 1.0)]
 
