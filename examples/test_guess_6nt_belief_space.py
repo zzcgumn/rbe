@@ -69,6 +69,23 @@ class TestTheEnding(unittest.TestCase):
             self.assertEqual(sum(bin(mask).count("1") for mask in remain_cards[seat]), 4)
 
 
+class OneLayout(bsle.LayoutSource):
+    """A source holding a single layout -- exempt from obligation 4 (a
+    randomised order) because one element has only one order. Used to check
+    P_make against a per-layout average and against the double-dummy bound."""
+
+    def __init__(self, layout):
+        super().__init__()
+        self._layout = layout
+
+    def size(self):
+        return 1
+
+    def at(self, index):
+        del index
+        return self._layout
+
+
 def _source(sequence):
     return bsle.ExhaustiveLayoutSource(
         sequence.current_deal, sequence.declarer, example.SEED,
@@ -81,8 +98,24 @@ class TestTheBeliefSpace(unittest.TestCase):
 
         source = _source(sequence)
 
-        self.assertEqual(source.history_verdict(), bsle.HistoryVerdict.Consistent)
+        # history_verdict() can only ever return Consistent from Python -- a
+        # bad history raises from the constructor instead -- so asserting it
+        # would pin nothing. The size is the real assertion, and the raising
+        # behaviour is pinned separately below.
         self.assertEqual(source.size(), 70)  # C(8, 4): eight cards out, East has four.
+
+    def test_a_bad_history_raises_from_the_constructor(self) -> None:
+        # The documented "Python is deliberately stricter than C++" contract:
+        # in C++ a non-Consistent verdict is an accessor a caller may ignore;
+        # here it raises, so a caller who never thinks to check still finds
+        # out. This is what makes the verdict assertion above redundant.
+        sequence = example.guess_6nt()
+
+        with self.assertRaises(bsle.BeliefSpaceLocalEvaluationError):
+            bsle.ExhaustiveLayoutSource(
+                sequence.current_deal, sequence.declarer, example.SEED,
+                history=[bsle.Card(0, 14), bsle.Card(0, 14)],  # the same card twice
+                opening_leader=sequence.opening_leader)
 
 
 class TestPMake(unittest.TestCase):
@@ -124,17 +157,6 @@ class TestDoubleDummyDefence(unittest.TestCase):
         delta = double_dummy_defender(ctx)
         source = _source(sequence)
 
-        class OneLayout(bsle.LayoutSource):
-            def __init__(self, layout):
-                super().__init__()
-                self._layout = layout
-
-            def size(self):
-                return 1
-
-            def at(self, index):
-                del index
-                return self._layout
 
         total = 0.0
         for index in range(source.size()):
@@ -176,17 +198,6 @@ class TestTheDeclarerLine(unittest.TestCase):
         delta = double_dummy_defender(ctx)
         source = _source(sequence)
 
-        class OneLayout(bsle.LayoutSource):
-            def __init__(self, layout):
-                super().__init__()
-                self._layout = layout
-
-            def size(self):
-                return 1
-
-            def at(self, index):
-                del index
-                return self._layout
 
         brings_home, achievable = set(), set()
         for index in range(source.size()):
@@ -245,20 +256,87 @@ class TestAnOptimalDefence(unittest.TestCase):
                         run(double_dummy_defender(ctx)))
 
 
+class TestTheBeliefReadingDeclarer(unittest.TestCase):
+    """finesse_the_queen_from_the_beliefs -- the only strategy that reads the
+    BeliefView, and the only one whose result depends on the posteriors."""
+
+    def _p_make(self, pi, delta) -> float:
+        sequence = example.guess_6nt()
+        result = bsle.evaluate(
+            sequence.current_deal, sequence.declarer, sequence.tricks_needed,
+            _source(sequence), pi, delta)
+        self.assertNotIn("error", result)
+        return result["by_strategy"][1]["p_make"]
+
+    def test_it_always_makes_against_defenders_who_play_low(self) -> None:
+        # Exactly 1.0, not approximately: against a defender that never puts
+        # the queen up, reading the beliefs locates it in every layout.
+        self.assertAlmostEqual(
+            self._p_make(example.finesse_the_queen_from_the_beliefs,
+                         lowest_eligible_defender),
+            1.0, places=9)
+
+    def test_it_makes_in_60_of_the_70_against_the_tailored_defender(self) -> None:
+        self.assertAlmostEqual(
+            self._p_make(example.finesse_the_queen_from_the_beliefs,
+                         queen_of_spades_when_it_wins),
+            60 / 70, places=9)
+
+    def test_neither_declarer_dominates_the_other(self) -> None:
+        # The finding this example exists to show, pinned as an ordering
+        # rather than as two numbers: reading the beliefs is better against
+        # the tailored defender and worse against double-dummy defence. So
+        # "best line" is not defined independently of the defence assumed.
+        #
+        # Why it loses to double dummy: that defender spreads probability over
+        # tied-for-best cards, which shapes the posterior the finesse reads,
+        # and it optimises trick count against a declarer playing double dummy
+        # -- which neither of these declarers is.
+        ctx = dds3.SolverContext()
+        fixed, belief = (example.cash_two_hearts_and_play_a_spade,
+                         example.finesse_the_queen_from_the_beliefs)
+
+        tailored_fixed = self._p_make(fixed, queen_of_spades_when_it_wins)
+        tailored_belief = self._p_make(belief, queen_of_spades_when_it_wins)
+        dd_fixed = self._p_make(fixed, double_dummy_defender(ctx))
+        dd_belief = self._p_make(belief, double_dummy_defender(ctx))
+
+        self.assertGreater(tailored_belief, tailored_fixed)
+        self.assertLess(dd_belief, dd_fixed)
+
+    def test_it_is_a_pure_function_of_its_arguments(self) -> None:
+        # The contract the evaluator relies on: it revisits sibling subtrees,
+        # so a strategy that answered the same node differently on a second
+        # visit would corrupt the result. Two identical runs must agree
+        # exactly, bit for bit.
+        first = self._p_make(example.finesse_the_queen_from_the_beliefs,
+                             queen_of_spades_when_it_wins)
+        second = self._p_make(example.finesse_the_queen_from_the_beliefs,
+                              queen_of_spades_when_it_wins)
+
+        self.assertEqual(first, second)
+
+
 class TestTheScriptRuns(unittest.TestCase):
-    def test_main_runs_and_reports_p_make(self) -> None:
+    def test_main_runs_and_reports_the_grid(self) -> None:
         output = io.StringIO()
         with redirect_stdout(output):
             example.main()
 
         printed = output.getvalue()
         self.assertIn("Contract: 6NT by South", printed)
-        # main() runs cash_two_hearts_and_play_a_spade against both defences.
-        # The two agree: once declarer commits to that line the defenders
-        # have no choice left that changes the outcome.
-        self.assertIn("Defenders play low: P_make = 0.7857", printed)
-        self.assertIn("Defenders play double dummy: P_make = 0.7857", printed)
-        self.assertIn("Defenders cover when it wins: P_make = 0.5000", printed)
+        # Printed as declarer sees it: the defenders' cards as one pool, never
+        # split. Their actual hands must not appear.
+        self.assertIn("\u2660 AQ6542", printed)
+        self.assertNotIn("\u2660 Q42", printed)
+        # Low and double-dummy defence happen to coincide against the fixed
+        # line. That is a coincidence of this ending, not a property of it --
+        # the third column shows the same line held to 0.5000, so the
+        # defenders did have a choice that changes the outcome. Double-dummy
+        # defence optimises trick count against a double-dummy declarer, and
+        # this declarer is neither.
+        self.assertIn("0.7857              0.7857              0.5000", printed)
+        self.assertIn("1.0000              0.4488              0.8571", printed)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,12 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 # scripts a new caller reads first, and the small amount of bridge plumbing
 # (notation, trick mechanics) they need that the library itself has no
 # reason to carry.
+#
+# No target here is visible outside this package, deliberately. The plumbing
+# is not reusable API: play_sequence re-implements
+# src/belief_evaluation/trick.hpp because those mechanics are not bound to
+# Python, and a second caller depending on this copy would make that
+# duplication permanent rather than a gap waiting to be closed.
 
 py_library(
     name = "example_support",
@@ -15,28 +21,43 @@ py_library(
     imports = ["."],
     deps = [
         "//python:belief_space_local_evaluation_lib",
-        # The solver seam: DoubleDummyDefence builds a DoubleDummyDefender
-        # and a DoubleDummyBound, both of which take a dds3.SolverContext.
+        # The solver seam: double_dummy_defender() constructs a
+        # DoubleDummyDefender, which takes a dds3.SolverContext.
         "@dds//python:dds3_lib",
     ],
-    visibility = ["//visibility:public"],
+)
+
+# The example as a library, so the binary and both tests import one module
+# rather than a py_test depending on a py_binary.
+py_library(
+    name = "guess_6nt_belief_space_lib",
+    srcs = ["guess_6nt_belief_space.py"],
+    imports = ["."],
+    deps = [":example_support"],
 )
 
 py_binary(
     name = "guess_6nt_belief_space",
-    srcs = ["guess_6nt_belief_space.py"],
-    main = "guess_6nt_belief_space.py",
-    deps = [":example_support"],
+    srcs = ["run_guess_6nt_belief_space.py"],
+    main = "run_guess_6nt_belief_space.py",
+    deps = [":guess_6nt_belief_space_lib"],
 )
 
 py_test(
     name = "guess_6nt_belief_space_test",
     size = "small",
-    main = "test_guess_6nt_belief_space.py",
     srcs = ["test_guess_6nt_belief_space.py"],
-    deps = [
-        ":example_support",
-        ":guess_6nt_belief_space",
-        "@dds//python:dds3_lib",
-    ],
+    main = "test_guess_6nt_belief_space.py",
+    deps = [":guess_6nt_belief_space_lib"],
+)
+
+# The bridge plumbing, tested directly rather than only through the one deal.
+# It re-implements trick.hpp's mechanics, so a divergence produces a wrong
+# root rather than an error -- see the file's own docstring.
+py_test(
+    name = "play_sequence_test",
+    size = "small",
+    srcs = ["test_play_sequence.py"],
+    main = "test_play_sequence.py",
+    deps = [":guess_6nt_belief_space_lib"],
 )

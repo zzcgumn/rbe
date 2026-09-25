@@ -38,28 +38,28 @@ import dds3
 import belief_space_local_evaluation as bsle
 from belief_space_local_evaluation import Card
 
-from play_sequence import cards_on_trick, legal_cards, seat_on_play
-
 from bridge_notation import (
+    HEARTS,
     NOTRUMP,
     SEAT_NAMES,
-    NORTH,
     SOUTH,
     SPADES,
-    HEARTS,
-    DIAMONDS,
-    CLUBS,
     format_card,
-    format_deal,
     format_denomination,
+    format_hand,
     parse_deal,
-    ranks_in
 )
-from play_sequence import PlaySequence
+from play_sequence import PlaySequence, cards_on_trick, legal_cards, seat_on_play
 from strategies import (
+    ACE,
+    KING,
+    QUEEN,
+    TEN,
     double_dummy_defender,
+    finesse_the_queen_from_the_beliefs,
     lowest_eligible_defender,
     queen_of_spades_when_it_wins,
+    pick as _pick,
 )
 
 SEED = 1
@@ -82,16 +82,6 @@ def guess_6nt() -> PlaySequence:
     sequence.play_trick("HJ H6 HK H7")  # A heart to the king, and South is on play.
 
     return sequence
-
-ACE, TEN, QUEEN, KING = 14, 10, 12, 13
-
-
-def _pick(legal, suit, rank):
-    """That card, if it is one of the legal ones -- else None."""
-    for card in legal:
-        if card.suit == suit and card.rank == rank:
-            return card
-    return None
 
 
 def cash_two_hearts_and_play_a_spade(state, view):
@@ -123,8 +113,7 @@ def cash_two_hearts_and_play_a_spade(state, view):
 
     # Following. Cover the queen: if the spade queen is already on this
     # trick and the king is still ours to play, put it up.
-    queen_played = any(c.suit == SPADES and c.rank == QUEEN for c in on_trick)
-    if queen_played:
+    if Card(SPADES, QUEEN) in on_trick:
         king = _pick(legal, SPADES, KING)
         if king is not None:
             return king
@@ -135,14 +124,31 @@ def cash_two_hearts_and_play_a_spade(state, view):
 def main() -> None:
     sequence = guess_6nt()
     root = sequence.current_deal
+    declarer, dummy = sequence.declarer, (sequence.declarer + 2) % 4
 
     print(f"Contract: {sequence.level}{format_denomination(root['trump'])} "
-          f"by {SEAT_NAMES[sequence.declarer]}\n")
+          f"by {SEAT_NAMES[declarer]}\n")
     print(sequence.format_tricks())
     print(f"\nDeclarer has {sequence.tricks_won_by_declarer} tricks and needs "
           f"{sequence.tricks_needed} more from:\n")
-    print(format_deal(root))
-    print(f"\n{SEAT_NAMES[root['first']]} to play.\n")
+
+    # Printed the way declarer sees it, not the way the dealer dealt it:
+    # declarer's and dummy's cards exactly, and the defenders' outstanding
+    # cards as one pool. That is precisely what `ObservationState` gives pi --
+    # both defender entries there hold this same union, never one hand -- and
+    # printing the real split here would undercut the whole point one line
+    # after claiming the queen's location is unknown.
+    # Computed as a union, not read off a seat. `root` is a real layout, so
+    # each defender entry there is that defender's own hand -- the pooled
+    # entry only exists in `ObservationState.known_holdings`. Reading one
+    # seat here would silently print half the pool, and look plausible.
+    lho, rho = (declarer + 1) % 4, (declarer + 3) % 4
+    pool = [root["remain_cards"][lho][s] | root["remain_cards"][rho][s] for s in range(4)]
+    for seat, label in ((dummy, "dummy"), (declarer, "declarer")):
+        print(f"{SEAT_NAMES[seat]:>5} ({label:<8}) {format_hand(root['remain_cards'][seat])}")
+    print(f"{'E/W':>5} ({'pool':<8}) {format_hand(pool)}")
+    print(f"\n{SEAT_NAMES[root['first']]} to play. Which defender holds the "
+          f"{format_card(Card(SPADES, QUEEN))} is what the belief space is over.\n")
 
     # The play history is what makes this the *right* belief space rather than
     # merely a plausible one: it rules out the layouts in which a defender
@@ -151,11 +157,10 @@ def main() -> None:
     # play history: needed, not merely optional" in
     # docs/belief_space_local_evaluation.md.
     source = bsle.ExhaustiveLayoutSource(
-        root, sequence.declarer, SEED,
+        root, declarer, SEED,
         history=sequence.history, opening_leader=sequence.opening_leader)
-    unconstrained = bsle.ExhaustiveLayoutSource(root, sequence.declarer, SEED)
+    unconstrained = bsle.ExhaustiveLayoutSource(root, declarer, SEED)
 
-    print(f"History verdict:            {source.history_verdict()}")
     print(f"Belief space, with history: {source.size()} layouts")
     print(f"       ... without history: {unconstrained.size()} layouts")
     if source.size() == unconstrained.size():
@@ -168,34 +173,50 @@ def main() -> None:
         print("       (equal here: every suit shown out of is already exhausted)")
     print()
 
-    # Declarer plays the same line in all three runs below. Holding pi fixed
-    # is what makes the numbers comparable: every difference between them is
-    # the defenders' doing.
+    # Two declarers against three defences, every pair over the same belief
+    # space. One axis at a time is what makes any of it readable.
     ctx = dds3.SolverContext()
-    runs = [
-        ("Defenders play low", lowest_eligible_defender),
+    declarers = [
+        ("fixed line", cash_two_hearts_and_play_a_spade),
+        # The only strategy here that reads the BeliefView.
+        ("belief finesse", finesse_the_queen_from_the_beliefs),
+    ]
+    defences = [
+        ("low", lowest_eligible_defender),
         # Solves each layout and spreads over the tied-for-best cards. Note
-        # what it optimises -- tricks, not the contract -- and note that it
-        # also assumes *declarer* will play double dummy from here, which
-        # this declarer does not. Both are why it is not best defence here.
-        ("Defenders play double dummy", double_dummy_defender(ctx)),
-        # Optimal against this particular declarer: checked by exhaustive
-        # minimax over every defensive choice, which lets the line through in
-        # exactly these layouts and no others.
-        ("Defenders cover when it wins", queen_of_spades_when_it_wins),
+        # what it optimises -- tricks, not the contract -- and that it also
+        # assumes *declarer* plays double dummy from here, which neither of
+        # these declarers does.
+        ("double dummy", double_dummy_defender(ctx)),
+        # Optimal against the fixed line: exhaustive minimax over every
+        # defensive choice lets that line through in exactly the same
+        # layouts. Not optimal against the belief finesse.
+        ("cover when it wins", queen_of_spades_when_it_wins),
     ]
 
-    values = []
-    for heading, delta in runs:
-        value = evaluate(sequence, source, cash_two_hearts_and_play_a_spade, delta)
-        report(heading, value)
-        values.append((heading, value["p_make"]))
+    grid = {}
+    for pi_name, pi in declarers:
+        for delta_name, delta in defences:
+            grid[(pi_name, delta_name)] = evaluate(sequence, source, pi, delta)["p_make"]
 
-    print("Against this fixed declarer line:")
-    for heading, p_make in values:
-        print(f"    {heading:<30} {p_make:.4f}")
-    print("\nDouble-dummy defence is not the best defence here -- it defends\n"
-          "against a declarer who plays double dummy too, and this one does not.")
+    width = max(len(n) for n, _ in defences) + 2
+    print("P_make, declarer down the side, defence across:\n")
+    print(" " * 16 + "".join(f"{n:>{width}}" for n, _ in defences))
+    for pi_name, _ in declarers:
+        row = "".join(f"{grid[(pi_name, d)]:>{width}.4f}" for d, _ in defences)
+        print(f"{pi_name:<16}{row}")
+
+    print("\nNeither declarer dominates, and that is the result worth having:")
+    print("  - reading the beliefs beats the fixed line against two defences...")
+    print("  - ...and loses to it against double dummy, which is defending")
+    print("    against a declarer that plays double dummy -- neither of these does.")
+    print("\nSo there is no single best line here independent of the defence")
+    print("assumed, which is the question belief-space evaluation exists to ask.")
+
+    report_root_children(
+        "belief finesse vs cover when it wins",
+        evaluate(sequence, source, finesse_the_queen_from_the_beliefs,
+                 queen_of_spades_when_it_wins))
 
 
 def evaluate(sequence, source, pi, delta, **options) -> dict:
@@ -208,7 +229,7 @@ def evaluate(sequence, source, pi, delta, **options) -> dict:
     return result["by_strategy"][1]  # Keyed by pi's strategy id, always 1 here.
 
 
-def report(heading: str, value: dict) -> None:
+def report_root_children(heading: str, value: dict) -> None:
     print(f"{heading}: P_make = {value['p_make']:.4f}")
 
     # At a declarer root these are *alternatives*, not a partition: each is

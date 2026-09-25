@@ -1,4 +1,4 @@
-"""Two strategies to evaluate against each other, and the empty templates to
+"""Strategies to evaluate against each other, and the empty templates to
 copy when writing your own.
 
 `evaluate()` takes a declarer strategy pi and a defender strategy delta and
@@ -21,8 +21,8 @@ the actual deal -- because a defender's own cards are not hidden from them,
 and is called once per layout.
 """
 
-from bridge_notation import SPADES
-from play_sequence import cards_on_trick, legal_cards, seat_on_play
+from bridge_notation import HEARTS, SPADES
+from play_sequence import cards_on_trick, legal_cards, seat_on_play, trick_leader
 
 
 def lowest_eligible_card(deal: dict, seat: int):
@@ -44,8 +44,10 @@ def lowest_eligible_declarer(state, view):
     """pi: declarer (and dummy) always play the lowest eligible card.
 
     A deliberately terrible declarer, and a useful one: it makes no use of
-    `view` at all, so `P_make` under it is the floor a real strategy has to
-    beat, and any difference between two runs is down to delta alone.
+    `view` at all, so `P_make` under it is a reference value every other
+    strategy here can be read against, and any difference between two runs
+    is down to delta alone. Not a floor -- a strategy can do worse than
+    playing low, and one that leads its own winners will.
 
     `state.known_holdings` is exact for declarer and dummy, which are the only
     seats pi is ever asked about -- a defender's entry there is the *pool* of
@@ -69,14 +71,15 @@ def lowest_eligible_defender(layout, seat, state):
     return [(lowest_eligible_card(layout, seat), 1.0)]
 
 
-QUEEN, KING, ACE = 12, 13, 14
+TEN, JACK, QUEEN, KING, ACE = 10, 11, 12, 13, 14
 
 
 def _lowest(legal):
     return min(legal, key=lambda card: (card.rank, card.suit))
 
 
-def _pick(legal, suit, rank):
+def pick(legal, suit, rank):
+    """That card, if it is one of the legal ones -- else None."""
     for card in legal:
         if card.suit == suit and card.rank == rank:
             return card
@@ -126,10 +129,70 @@ def queen_of_spades_when_it_wins(layout, seat, state):
     """
     del state  # Conditions on the layout alone.
     legal = legal_cards(layout, seat)
-    queen = _pick(legal, SPADES, QUEEN)
+    queen = pick(legal, SPADES, QUEEN)
     if queen is not None and _spade_queen_cannot_be_beaten(layout, seat):
         return [(queen, 1.0)]
     return [(_lowest(legal), 1.0)]
+
+
+def finesse_the_queen_from_the_beliefs(state, view):
+    """pi: as `cash_two_hearts_and_play_a_spade`, but the spade guess is read
+    off the belief space instead of fixed in advance.
+
+    The only strategy here that touches `view` -- and the reason the library
+    exists. The two hearts are forced (nothing to decide), and covering a
+    played queen is certain, so the one real decision is which defender to
+    play for the queen. That is a probability, not a card, and it is sitting
+    in `view`.
+
+    `entry.posterior` is the probability of that layout given everything
+    observed. Summing it over the layouts in which the queen sits with a
+    particular defender gives the probability that defender holds it. On this
+    ending the two are 0.5 each at the root, so the choice only becomes
+    informative once the defenders' own play has narrowed the space -- which
+    is exactly what a belief space is for.
+
+    **`view` is valid only for this call.** Read what is needed and return;
+    storing it, or an entry from it, and touching either afterwards raises
+    `ExpiredBeliefViewError`. A `layout` dict already read stays usable, but
+    there is no reason to keep one here.
+    """
+    deal = state.known_holdings
+    seat = seat_on_play(deal)
+    legal = legal_cards(deal, seat)
+    on_trick = cards_on_trick(deal)
+
+    if not on_trick:
+        lead = pick(legal, HEARTS, ACE) or pick(legal, HEARTS, TEN)
+        if lead is not None:
+            return lead
+        # Leading spades. Play the low card from the hand that has one, so
+        # the queen has to commit before the honour behind it does.
+        return min(legal, key=lambda card: (card.rank, card.suit))
+
+    if any(c.suit == SPADES and c.rank == QUEEN for c in on_trick):
+        king = pick(legal, SPADES, KING)
+        if king is not None:
+            return king
+
+    # Third hand on a spade: finesse or play for the drop, according to which
+    # defender the beliefs put the queen with. `rho` is the defender who has
+    # already played to this trick; if the queen is more likely to be over
+    # there it is already committed and the jack is safe, so play low --
+    # otherwise the king is the card that cannot be beaten by it.
+    if on_trick[0].suit == SPADES:
+        rho = (trick_leader(deal) + len(on_trick) - 1) % 4
+        queen_with_rho = sum(
+            entry.posterior for entry in view.entries
+            if entry.layout["remain_cards"][rho][SPADES] & (1 << QUEEN))
+        jack = pick(legal, SPADES, JACK)
+        king = pick(legal, SPADES, KING)
+        if queen_with_rho > 0.5 and jack is not None:
+            return jack
+        if queen_with_rho < 0.5 and king is not None:
+            return king
+
+    return min(legal, key=lambda card: (card.rank, card.suit))
 
 
 # --- templates ------------------------------------------------------------
