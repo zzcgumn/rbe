@@ -670,8 +670,11 @@ TEST_F(DoubleDummyBoundTest, WithTheBoundEvaluateStillReportsTheTrueValueOnAnUns
     //
     // What the retry buys is measured where cuts actually happen. On the
     // four-card ending in examples/, tier 2 takes nodes visited from 6283 to
-    // 3445 with 174 cuts, at no wall-clock cost -- the solver calls cost about
-    // what the saved nodes did.
+    // 3159 with 197 cuts, and is faster in wall-clock terms than tier 1 alone
+    // -- the retry costs less than searching the subtrees it lets the cut
+    // remove. (3445/174 was the number *before* this commit's retry; a stale
+    // copy of it here would be the exact "prose outlives the commit it
+    // describes" defect this file's own comments elsewhere warn against.)
     ASSERT_TRUE(without_bound.by_strategy.at(1u).counters.has_value());
     ASSERT_TRUE(with_bound.by_strategy.at(1u).counters.has_value());
     EXPECT_EQ(

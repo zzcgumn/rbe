@@ -37,10 +37,18 @@ namespace dds::belief_evaluation
 /// also plays double dummy; against a declarer following a fixed line, or one
 /// reasoning over a belief space, a defence tailored to *that* declarer can do
 /// strictly better. Visible in `examples/`' own grid, where this defender
-/// concedes a contract that a simple "cover when it wins" rule defeats:
-/// 0.4488 against 0.8571 on the same ending, against the same declarer. So
-/// "double dummy" names how this defender computes, not a ceiling on how well
-/// the defence can do.
+/// concedes a contract that a simple "cover when it wins" rule defeats: a
+/// wide margin, roughly half against six in ten, on the same ending against
+/// the same declarer. So "double dummy" names how this defender computes, not
+/// a ceiling on how well the defence can do.
+///
+/// (The grid's exact figures for this defender are not themselves a bridge
+/// quantity to cite precisely: `spread()` divides probability over tied-best
+/// candidates, so the number depends on which of several equally good cards
+/// `solve_board` happens to name first. `examples/test_guess_6nt_belief_space.py`
+/// records this and asserts the *ordering* rather than the figure. The
+/// direction of the gap above is robust to that; a specific decimal would
+/// not be.)
 class DoubleDummyDefender
 {
 public:
