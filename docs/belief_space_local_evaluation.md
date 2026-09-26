@@ -143,7 +143,10 @@ blocks are not run by that test.
 
 - **`bsle.Card(suit, rank)`** — `suit` is `0=♠ 1=♥ 2=♦ 3=♣`; `rank` is
   **absolute**, `2..14`, never relative to a node's outstanding pool. This
-  is the type π returns and δ's weighted cards carry.
+  is the type π returns and δ's weighted cards carry. Hashable and
+  compares by value, so it can be a `dict` key or `set` member — mutable,
+  though, so the hash follows the fields and mutating a `Card` already
+  used as a key loses it.
 - **A deal** crosses as a plain `dict`, the same shape `dds3` already
   documents: `trump`, `first`, `remain_cards` (a 4×4 array of bitmasks,
   `[hand][suit]`), `current_trick_suit`, `current_trick_rank`.
@@ -159,6 +162,17 @@ blocks are not run by that test.
   with `to_absolute` before returning one). `play` and `state_key` share
   this same type, but `state_key` is not itself called yet — see
   obligation 1 above.
+
+  Seven more are **derived**, computed on access rather than stored, so a
+  strategy that reads none of them pays nothing: `seat_on_play` (the seat
+  this call is for — not otherwise told); `trick_leader` (the trick *in
+  progress*'s leader — not `first`, which is the root's and never moves,
+  so a strategy reading `first` here is right at the root and wrong from
+  the second trick on); `current_trick` (list of `Card` already played to
+  it, empty when leading); `position_in_trick` (0 = leading); `legal_cards`
+  (`Card`s, follow-suit already applied, suit-then-rank ascending);
+  `can_follow_led_suit` (false when leading, there being no suit to
+  follow); `is_declaring_side` (true for declarer *or* dummy).
 - **`bsle.BeliefView`** — what π reasons over: `entries` (a sequence of
   `BeliefEntry`, each with `.layout`, a deal dict, and `.posterior`),
   `is_sample`, `space_size`. **Valid only for the duration of the call it
@@ -184,8 +198,15 @@ A rejected history (one that does not belong to `root`, or belongs but
 leaves no legal split) raises immediately, from the constructor — see
 "Where Python is stricter than C++" below.
 
-Subclass `bsle.LayoutSource` and override `size()`/`at(i)` to supply a
-narrower space than the root alone implies:
+`bsle.SingleLayoutSource(layout)` is a ready-made source over exactly one
+layout — `size()` is 1, `at(0)` is `layout` — for evaluating one candidate
+on its own, which is how `P_make` over a belief space gets cross-checked
+against the mean of `P_make` over each layout alone. One element having
+only one order, it is also exempt from the randomised-order obligation
+below.
+
+For anything else, subclass `bsle.LayoutSource` and override
+`size()`/`at(i)` to supply a narrower space than the root alone implies:
 
 ```python
 class MySource(bsle.LayoutSource):
@@ -195,6 +216,31 @@ class MySource(bsle.LayoutSource):
     def at(self, index):
         return self._deals[index]  # must already be in a randomised order
 ```
+
+### Playing a hand out
+
+Four free functions, bound from `src/belief_evaluation/trick.hpp` — the same
+ones the evaluator itself uses to walk a position, so a caller reaching a
+mid-play root applies the identical follow-suit and trick-winner rules the
+evaluator will apply to whatever root it is handed:
+
+```python
+seat = bsle.seat_on_play(deal)              # int, 0..3
+legal = bsle.legal_cards(deal, seat)        # [Card, ...], follow-suit applied
+winner = bsle.trick_complete_winner(deal, card)  # deal must carry 3 played cards
+after = bsle.play(deal, card)               # a new deal; the one passed in is unchanged
+```
+
+`bsle.play_out(deal, history, opening_leader, declarer)` replays a whole
+history in one call and returns `(root, tricks_won_by_declarer)` together —
+deliberately, since the two disagreeing is the hazard: an off-by-one in a
+caller's own trick count evaluates a different contract from the one
+`tricks_needed` was meant to describe, and does so with no diagnostic.
+Dummy's tricks count for declarer's side. A trailing incomplete trick is
+replayed but counts for nobody, having no winner yet. A card that is not a
+legal play at the point it is reached raises `ValueError` naming its index
+in `history` — the check that catches a transcribed hand record with a card
+in the wrong place, or an `opening_leader` inconsistent with the history.
 
 ### π and δ
 
@@ -461,9 +507,10 @@ from the same result, not the score.
 
 ### Never exercised by any example
 
-`state_key` (never called — there is no cache), sampling and replenishment
-(`sample_size` / `replenish_below`), and any `LayoutSource` narrower than
-`ExhaustiveLayoutSource`.
+`state_key` (never called — there is no cache), and sampling and replenishment
+(`sample_size` / `replenish_below`). `SingleLayoutSource` no longer belongs on
+this list: `examples/test_guess_6nt_belief_space.py` uses it to cross-check
+`P_make` against a per-layout average, which is the property it exists for.
 
 ### Python surface: candidates
 

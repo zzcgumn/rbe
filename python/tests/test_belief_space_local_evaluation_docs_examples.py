@@ -112,6 +112,60 @@ class TestALayoutSource(unittest.TestCase):
         self.assertEqual(source.at(0), deals[0])
 
 
+class TestPlayingAHandOut(unittest.TestCase):
+    def test_the_four_free_functions(self) -> None:
+        # North (declarer) holds a single card; East/West hold one each --
+        # small enough to hand-derive every step. East leads.
+        deal = {
+            "trump": DDS_NOTRUMP,
+            "first": East,
+            "remain_cards": [[0, 0, 0, 0] for _ in range(4)],
+            "current_trick_suit": (0, 0, 0),
+            "current_trick_rank": (0, 0, 0),
+        }
+        deal["remain_cards"][North][Spades] = holding(9)
+        deal["remain_cards"][South][Spades] = holding(8)
+        deal["remain_cards"][East][Spades] = holding(2)
+        deal["remain_cards"][West][Spades] = holding(3)
+
+        seat = bsle.seat_on_play(deal)
+        self.assertEqual(seat, East)
+
+        legal = bsle.legal_cards(deal, seat)
+        self.assertEqual(legal, [bsle.Card(Spades, 2)])
+
+        after_east = bsle.play(deal, legal[0])
+        after_south = bsle.play(after_east, bsle.Card(Spades, 8))
+        after_west = bsle.play(after_south, bsle.Card(Spades, 3))
+
+        winner = bsle.trick_complete_winner(after_west, bsle.Card(Spades, 9))
+        self.assertEqual(winner, North)  # the nine is the highest card played
+
+        after = bsle.play(after_west, bsle.Card(Spades, 9))
+        self.assertEqual(after["first"], North)  # first reassigned to the winner
+        self.assertEqual(deal["first"], East)    # the original deal is unchanged
+
+    def test_play_out(self) -> None:
+        deal = {
+            "trump": DDS_NOTRUMP,
+            "first": East,
+            "remain_cards": [[0, 0, 0, 0] for _ in range(4)],
+            "current_trick_suit": (0, 0, 0),
+            "current_trick_rank": (0, 0, 0),
+        }
+        deal["remain_cards"][North][Spades] = holding(9)
+        deal["remain_cards"][South][Spades] = holding(8)
+        deal["remain_cards"][East][Spades] = holding(2)
+        deal["remain_cards"][West][Spades] = holding(3)
+        history = [bsle.Card(Spades, 2), bsle.Card(Spades, 8),
+                   bsle.Card(Spades, 3), bsle.Card(Spades, 9)]
+
+        root, tricks_won_by_declarer = bsle.play_out(deal, history, East, North)
+
+        self.assertEqual(tricks_won_by_declarer, 1)
+        self.assertEqual(root["first"], North)
+
+
 def lowest_card_in(remain_cards_row):
     for suit in range(4):
         mask = remain_cards_row[suit]
