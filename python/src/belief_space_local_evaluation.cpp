@@ -177,6 +177,22 @@ auto register_card_bindings(py::module_& module) -> void
             [](be::Card const& self, be::Card const& other) {
                 return self.suit == other.suit && self.rank == other.rank;
             })
+        // Defining __eq__ alone makes a type unhashable -- a Python language
+        // rule, not a pybind11 quirk -- so a Card could not be a dict key or a
+        // set member, and a caller memoising by played card had to convert to
+        // (suit, rank) first. Hashing that same tuple rather than combining the
+        // fields by hand keeps "equal cards hash equal" true by construction
+        // and stops the two drifting apart.
+        //
+        // Card is mutable, so this is a hashable mutable type: the hash follows
+        // the fields, and mutating a Card already used as a key loses it. The
+        // alternative -- an immutable Card -- would break the field assignment
+        // this binding has always allowed.
+        .def(
+            "__hash__",
+            [](be::Card const& self) {
+                return py::hash(py::make_tuple(self.suit, self.rank));
+            })
         .def("__repr__", [](be::Card const& self) {
             return "Card(suit=" + std::to_string(self.suit) +
                 ", rank=" + std::to_string(self.rank) + ")";

@@ -453,13 +453,6 @@ and a forced play does not.
 `DoubleDummyDefender` was never affected: it reads card identity and `equals`
 from the same result, not the score.
 
-### `Card` is unhashable
-
-`bsle.Card` compares by value but has no `__hash__`, so it cannot be a set
-member or a dict key. A caller memoising by played card, deduplicating a δ
-distribution, or keying a transposition table has to convert to
-`(suit, rank)` first.
-
 ### Never exercised by any example
 
 `state_key` (never called — there is no cache), sampling and replenishment
@@ -487,9 +480,8 @@ summing it is meaningful in exactly one of the two cases. The result knows which
 the caller has to be told, and both this document and the example currently tell
 them in prose.
 
-**`Card.__hash__`, and bridge notation on `Card`.** The unhashability above is
-one `def` away. Separately, turning a `Card` or a deal into `♠Q` or PBN text is
-something every caller invents for itself — `examples/bridge_notation.py` is
+**Bridge notation on `Card`.** Turning a `Card` or a deal into `♠Q` or PBN text
+is something every caller invents for itself — `examples/bridge_notation.py` is
 mostly that — and a `__str__` plus a parse/format pair would stop the
 reinvention.
 

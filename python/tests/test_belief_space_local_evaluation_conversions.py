@@ -45,6 +45,33 @@ class TestCard(unittest.TestCase):
     def test_repr(self) -> None:
         self.assertEqual(repr(Card(1, 10)), "Card(suit=1, rank=10)")
 
+    def test_is_hashable(self) -> None:
+        self.assertIsInstance(hash(Card(0, 14)), int)
+
+    def test_equal_cards_hash_equal(self) -> None:
+        # The invariant that makes it usable, and the one a hand-rolled
+        # __hash__ gets wrong by hashing identity instead of the fields
+        # __eq__ compares.
+        self.assertEqual(hash(Card(0, 14)), hash(Card(0, 14)))
+
+    def test_works_as_a_dict_key_and_a_set_member(self) -> None:
+        # Why it matters: memoising by played card, deduplicating a delta
+        # distribution, or keying a transposition table all need this, and
+        # without it every caller converts to (suit, rank) tuples first.
+        self.assertEqual({Card(0, 14): "ace"}[Card(0, 14)], "ace")
+        self.assertEqual(len({Card(0, 14), Card(0, 14)}), 1)
+        self.assertEqual(len({Card(0, 14), Card(0, 13)}), 2)
+
+    def test_a_mutated_card_hashes_as_its_new_value(self) -> None:
+        # Card is mutable (test_write above), so it is hashable-but-mutable:
+        # the hash follows the fields. Stated here rather than left to be
+        # discovered, because it means mutating a Card already used as a dict
+        # key loses it -- the same hazard as a mutated list, if lists were
+        # hashable.
+        card = Card(0, 2)
+        card.rank = 14
+        self.assertEqual(hash(card), hash(Card(0, 14)))
+
 
 class TestDealRoundTrip(unittest.TestCase):
     def test_round_trips_every_field(self) -> None:
