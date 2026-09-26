@@ -19,26 +19,6 @@ namespace
         return seat == state.declarer || seat == dummy;
     }
 
-    /// Every card `seat` may legally play first at `deal`, expanded from
-    /// legal_cards()'s per-suit bitmasks into a flat list — the shape
-    /// make_declarer_children() and the root-child-value loop both want.
-    auto enumerate_legal_cards(Deal const& deal, int seat) -> std::vector<Card>
-    {
-        std::array<unsigned, DDS_SUITS> const legal = legal_cards(deal, seat);
-        std::vector<Card> cards;
-        for (int suit = 0; suit < DDS_SUITS; ++suit)
-        {
-            for (int rank = 2; rank <= 14; ++rank)
-            {
-                if ((legal[suit] & (1u << rank)) != 0)
-                {
-                    cards.push_back(Card{suit, rank});
-                }
-            }
-        }
-        return cards;
-    }
-
     /// The card whose history entry a defender child just recorded — the
     /// trailing entry advance_state() (expand.cpp) appended when building
     /// it. BeliefNode itself does not track "which card led here" any more

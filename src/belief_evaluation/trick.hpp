@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <vector>
 
 #include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>
@@ -41,6 +42,16 @@ auto seat_on_play(Deal const& deal) -> int;
 /// trick in progress if `seat` holds any card of it. Delegates to
 /// `legal_plays()` rather than re-deriving the follow-suit rule.
 auto legal_cards(Deal const& deal, int seat) -> std::array<unsigned, DDS_SUITS>;
+
+/// Every card `seat` may legally play at `deal`, as `legal_cards()`'s per-suit
+/// bitmasks expanded into a flat list — the shape a caller choosing a card
+/// wants, and the shape make_declarer_children() and evaluate()'s
+/// root-child-value loop both consume.
+///
+/// **Order is part of the contract**: suit ascending, then rank ascending
+/// within a suit. `EvaluationValue::root_children` is built by indexing into
+/// this list, so that key's order is this order.
+auto enumerate_legal_cards(Deal const& deal, int seat) -> std::vector<Card>;
 
 /// The hand (0..3) that wins the trick in progress in `deal` once `card` is
 /// played as its fourth card. `deal` must already carry exactly three played

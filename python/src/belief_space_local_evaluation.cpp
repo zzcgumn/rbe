@@ -20,6 +20,7 @@
 #include <belief_evaluation/double_dummy_bound.hpp>
 #include <belief_evaluation/double_dummy_defender.hpp>
 #include <belief_evaluation/evaluate.hpp>
+#include <belief_evaluation/trick.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
 #include <belief_evaluation/layout_source.hpp>
 #include <belief_evaluation/node.hpp>
@@ -1505,6 +1506,73 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
         "document for the option coupling this binding validates that "
         "the C++ type's own doxygen states but a Python caller cannot "
         "read on the field.");
+
+    // The trick primitives, bound from trick.hpp rather than reimplemented.
+    // These are the four the evaluator itself uses to walk a position
+    // (evaluate.cpp, expand.cpp), exposed so a Python caller reaching a
+    // mid-play root uses the *same* follow-suit and trick-winner rules the
+    // evaluator will apply to the root they hand it. A caller's own copy that
+    // disagrees produces a wrong root, and every number computed from it is
+    // confidently about a different position, with nothing raised anywhere.
+    //
+    // All four take and return `deal` dicts, the same shape
+    // ObservationState.known_holdings hands out, so they compose with what a
+    // strategy is already given.
+    module.def(
+        "seat_on_play",
+        [](py::dict const& deal) { return be::seat_on_play(dds3_python::dict_to_deal(deal)); },
+        py::arg("deal"),
+        "The seat (0..3) on play at deal: its `first` advanced by however\n"
+        "many cards have been played to the trick in progress.\n\n"
+        "Note this is deal['first'], the *current trick's* leader, advanced --\n"
+        "not ObservationState.first, which is the root's leader and never\n"
+        "moves. A strategy given an ObservationState should pass\n"
+        "state.known_holdings here.");
+
+    module.def(
+        "legal_cards",
+        [](py::dict const& deal, int seat) {
+            return be::enumerate_legal_cards(dds3_python::dict_to_deal(deal), seat);
+        },
+        py::arg("deal"),
+        py::arg("seat"),
+        "Every Card seat may legally play at deal, honouring the suit led to\n"
+        "the trick in progress when seat holds any card of it.\n\n"
+        "Ordered suit ascending, then rank ascending within a suit -- the same\n"
+        "order evaluate()'s root_children key uses, since that key is built by\n"
+        "indexing into this list.\n\n"
+        "Returns Cards, not the per-suit bitmasks the C++ legal_cards()\n"
+        "returns: a strategy has to return a Card, so the bitmask form only\n"
+        "ever gets expanded again by the caller.");
+
+    module.def(
+        "trick_complete_winner",
+        [](py::dict const& deal, be::Card const& card) {
+            return be::trick_complete_winner(dds3_python::dict_to_deal(deal), card);
+        },
+        py::arg("deal"),
+        py::arg("card"),
+        "The seat that wins the trick in progress once card is played as its\n"
+        "fourth card. deal must already carry exactly three played cards in\n"
+        "current_trick_suit / current_trick_rank.\n\n"
+        "Highest trump if any were played, else highest card of the led suit:\n"
+        "a discard never wins, however high, and a ruff beats any card of the\n"
+        "suit led.");
+
+    module.def(
+        "play",
+        [](py::dict const& deal, be::Card const& card) {
+            return dds3_python::deal_to_dict(be::play(dds3_python::dict_to_deal(deal), card));
+        },
+        py::arg("deal"),
+        py::arg("card"),
+        "The deal after the seat on play plays card: removed from that seat's\n"
+        "remain_cards, and either appended to the trick in progress or -- when\n"
+        "card completes the trick -- the trick resolved, current_trick_*\n"
+        "cleared and 'first' reassigned to the winner.\n\n"
+        "Pure: the deal passed in is not modified, a new dict is returned.\n"
+        "Carries no trick counter -- who won, and what that makes the running\n"
+        "total, is the caller's business.");
 
     module.def("module_name", []() {
         return "_belief_space_local_evaluation";
