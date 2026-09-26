@@ -38,7 +38,7 @@ namespace dds::belief_evaluation
 /// reasoning over a belief space, a defence tailored to *that* declarer can do
 /// strictly better. Visible in `examples/`' own grid, where this defender
 /// concedes a contract that a simple "cover when it wins" rule defeats: a
-/// wide margin, roughly half against six in ten, on the same ending against
+/// wide margin, roughly half against six in seven, on the same ending against
 /// the same declarer. So "double dummy" names how this defender computes, not
 /// a ceiling on how well the defence can do.
 ///

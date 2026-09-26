@@ -748,23 +748,6 @@ rename or include-ordering trick anywhere in the module.
 
 ## Known gaps / non-goals
 
-- **`solve_board` can decline to score a position, and `DoubleDummyBound`
-  treats that as the absence of an answer rather than as a number.** At
-  `solutions = 1` it can return `score[0] == -2`, meaning "not evaluated", with
-  a successful status. `as_bound()` range-checks the raw score against
-  `[0, tricks_remaining]`, retries at `solutions = 3`, and substitutes its
-  deliberately too-high `SolverFailureSentinel` only if that declines too — so
-  the cut can never fire on a live node through this path, and the pruning is
-  kept. Which positions decline is **not** established; the obvious
-  explanations are refuted by a parameterised table in
-  `tests/belief_evaluation/double_dummy_bound_test.cpp`, and the retry
-  sidesteps the question rather than answering it. See "Known gaps" in
-  `docs/belief_space_local_evaluation.md`.
-
-  Historical note, because the spec asserted otherwise for two commits: the
-  range check did not exist at first, the −2 was returned as a bound, and the
-  pairing reported `P_make = 0.0` for a contract that makes.
-
 - `is_consistent()` does not compare defender hand sizes, so it accepts a
   strictly larger set of candidates than the set of legal bridge positions
   consistent with the root. `ExhaustiveLayoutSource` does not rely on it
