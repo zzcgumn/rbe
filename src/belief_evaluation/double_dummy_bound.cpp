@@ -53,22 +53,38 @@ auto DoubleDummyBound::as_bound() -> LayoutBound
         // "not evaluated" rather than a trick count -- carrying
         // RETURN_NO_FAULT, and on the declarer-on-lead branch that -2 would
         // be returned as a bound directly: negative, hence below any
-        // tricks_needed, firing the caller's cut on a live node. Treat any
-        // score outside the range as the sentinel instead, which restores
-        // the "too high, never too low" property the sentinel exists for --
-        // the cost of a spurious sentinel is pruning, never soundness.
+        // tricks_needed, firing the caller's cut on a live node.
         //
-        // Deliberately not a clamp: clamping -2 into range gives 0, and 0
+        // Deliberately never a clamp: clamping -2 into range gives 0, and 0
         // is below every tricks_needed >= 1, so the cut would still fire
-        // while the bug looked fixed. The replacement has to be too high.
+        // while the bug looked fixed. An out-of-range score is not a number
+        // to repair; it is the absence of an answer.
         //
-        // Which positions answer this way is not established -- this guard
-        // does not need to know, which is why it can land ahead of that.
-        // See double_dummy_bound_test.cpp's no_search_cases() for the
-        // measured table and what it refutes.
+        // Which positions answer this way is still not established, and the
+        // retry below sidesteps that question rather than answering it. See
+        // double_dummy_bound_test.cpp's no_search_cases() for the measured
+        // table and what it refutes.
         if (fut.score[0] < 0 || fut.score[0] > remaining)
         {
-            return SolverFailureSentinel;
+            // solutions = 3 scores every position measured to decline at
+            // solutions = 1, so ask again before giving up: the sentinel is
+            // sound but prunes nothing, and on a position the cut would
+            // otherwise catch that is a real loss. Costs a second solve on
+            // exactly the positions that would otherwise contribute no
+            // pruning at all.
+            FutureTricks retry{};
+            int const retry_status =
+                solve_board(ctx_, layout, /*target=*/-1, /*solutions=*/3, /*mode=*/0, &retry);
+            if (retry_status != RETURN_NO_FAULT || retry.score[0] < 0 ||
+                retry.score[0] > remaining)
+            {
+                // Both solves declined. The sentinel is the floor of the
+                // design and stays for this case, even though nothing
+                // measured reaches it: a bound that cannot be computed must
+                // read as too high, never too low.
+                return SolverFailureSentinel;
+            }
+            fut.score[0] = retry.score[0];
         }
 
         // score is tricks for whichever side is on lead at `layout` --

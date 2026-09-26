@@ -28,10 +28,9 @@ namespace dds::belief_evaluation
 /// satisfies it under either `SpreadPolicy`, and pairing the two is the
 /// intended configuration.
 ///
-/// One caveat that is a matter of strength, not soundness: on positions the
-/// solver answers "not evaluated" for, this bound gives up rather than
-/// guessing and prunes nothing — see `as_bound()`'s own
-/// "Unscorable positions".
+/// On positions the solver answers "not evaluated" for it asks again rather
+/// than guessing, and reports a deliberately too-high sentinel only if that
+/// also declines — see `as_bound()`'s own "Unscorable positions".
 class DoubleDummyBound
 {
 public:
@@ -69,13 +68,17 @@ public:
     /// so the cut would still fire on every affected node while the bug
     /// looked fixed. The replacement value has to be too high.
     ///
-    /// The cost is pruning, and it is real: on an unscorable position this
-    /// bound contributes nothing, and tier 2 visits as many nodes as tier 1
-    /// alone. **Which positions the solver answers this way is not
-    /// established**, and recovering the lost pruning needs that, or a retry
-    /// at `solutions = 3` (which scores every affected position correctly).
-    /// Do not trust a trigger story, including the narrower one this header
-    /// used to give and the one in `double_dummy_bound_test.cpp`'s own
+    /// Before giving up, it asks again at `solutions = 3`, which scores every
+    /// position measured to decline at `solutions = 1`. So the sentinel is now
+    /// the floor rather than the usual answer, and the pruning is not lost:
+    /// measured on a four-card ending, tier 2 takes nodes visited from 6283 to
+    /// 3159 with 197 cuts, and a retry on the positions that need one is
+    /// cheaper than searching the subtrees they cut.
+    ///
+    /// **Which positions the solver answers this way is still not
+    /// established.** The retry sidesteps the question rather than answering
+    /// it. Do not trust a trigger story, including the narrower one this
+    /// header used to give and the one in `double_dummy_bound_test.cpp`'s own
     /// fixture note: a parameterised table in that file refutes both, showing
     /// `nodes == 0` coinciding with a correct score, the same holdings
     /// scoring correctly when only `first` changes, a two-suit position

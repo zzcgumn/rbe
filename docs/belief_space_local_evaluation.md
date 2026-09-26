@@ -398,20 +398,24 @@ Found by writing `examples/`, and recorded here rather than left in an
 example's docstring. Each is a property of this implementation, not of the
 approach.
 
-### `DoubleDummyBound` prunes nothing on positions the solver will not score
+### `DoubleDummyBound` asks twice on positions the solver will not score
 
 `DoubleDummyBound` asks the solver for `solutions = 1`. On some positions this
 evaluator reaches, `solve_board` answers `score[0] == -2` — *not evaluated*,
 rather than a trick count — and pairs it with a **success** status, so the
 status check cannot catch it. `as_bound()` therefore range-checks the raw score
-against `[0, tricks_remaining(layout)]` before converting it, and returns
-`SolverFailureSentinel` (14, deliberately higher than any deal's trick count)
-for anything outside. A bound is read as an upper limit, so too high costs
-pruning and nothing else.
+against `[0, tricks_remaining(layout)]` before converting it. Anything outside
+it is not a number to repair but the absence of an answer, so the bound asks
+again at `solutions = 3` — which scores every position measured to decline at
+`solutions = 1` — and falls back to `SolverFailureSentinel` (14, deliberately
+higher than any deal's trick count) only if that declines too. A bound is read
+as an upper limit, so too high costs pruning and nothing else.
 
-The cost is real: on such a position the bound contributes nothing and tier 2
-visits as many nodes as tier 1 alone. Correctness is unaffected, and pairing
-`DoubleDummyBound` with `DoubleDummyDefender` is sound.
+Correctness is unaffected either way, and pairing `DoubleDummyBound` with
+`DoubleDummyDefender` is sound. Measured on the four-card ending in
+`examples/`, the pair takes nodes visited from 6283 to 3159 with 197 tier-2
+cuts, and is faster in wall-clock terms than tier 1 alone — the retry costs
+less than searching the subtrees it lets the cut remove.
 
 Measured on a four-card ending, declarer playing low, over 70 layouts:
 
@@ -442,9 +446,8 @@ score is already declarer's own. With a defender on lead the conversion is
 therefore harmless. Both conversions read the same raw score and one check now
 covers both.
 
-**Which positions the solver answers this way is not established**, and
-recovering the lost pruning needs that, or a retry at `solutions = 3` (which
-scores every affected position correctly). An earlier revision of this section
+**Which positions the solver answers this way is not established.** The retry
+sidesteps the question rather than answering it. An earlier revision of this section
 asserted a trigger that turned out to be wrong; do not trust a trigger story,
 including that one. What is pinned, by
 `tests/belief_evaluation/double_dummy_bound_test.cpp`, is the solver's

@@ -748,18 +748,17 @@ rename or include-ordering trick anywhere in the module.
 
 ## Known gaps / non-goals
 
-- **`DoubleDummyBound` delivers a *weaker* `DD` than it could on positions
-  the solver will not score.** `solve_board` at `solutions = 1` can return
-  `score[0] == -2`, meaning "not evaluated", with a successful status.
-  `as_bound()` range-checks the raw score against `[0, tricks_remaining]`
-  before converting it and substitutes its too-high `SolverFailureSentinel`,
-  so the cut cannot fire on a live node: soundness is preserved and pruning is
-  lost on those positions. Which positions they are is **not** established —
-  the obvious explanations are refuted by a parameterised table in
-  `tests/belief_evaluation/double_dummy_bound_test.cpp` — and recovering the
-  pruning needs that, or a retry at `solutions = 3`. Deliberately not closed
-  further; the sound-but-weak behaviour is the correct default, and the
-  strength is an optimisation. See "Known gaps" in
+- **`solve_board` can decline to score a position, and `DoubleDummyBound`
+  treats that as the absence of an answer rather than as a number.** At
+  `solutions = 1` it can return `score[0] == -2`, meaning "not evaluated", with
+  a successful status. `as_bound()` range-checks the raw score against
+  `[0, tricks_remaining]`, retries at `solutions = 3`, and substitutes its
+  deliberately too-high `SolverFailureSentinel` only if that declines too — so
+  the cut can never fire on a live node through this path, and the pruning is
+  kept. Which positions decline is **not** established; the obvious
+  explanations are refuted by a parameterised table in
+  `tests/belief_evaluation/double_dummy_bound_test.cpp`, and the retry
+  sidesteps the question rather than answering it. See "Known gaps" in
   `docs/belief_space_local_evaluation.md`.
 
   Historical note, because the spec asserted otherwise for two commits: the
