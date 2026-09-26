@@ -467,13 +467,6 @@ Each says what a caller writes today, because that is the evidence: every one of
 them is something `examples/` had to write by hand, and in two cases wrote wrong
 first.
 
-**A single-layout `LayoutSource`.** `P_make` over a belief space must equal the
-mean of `P_make` over each layout evaluated alone, which is the natural check on
-any strategy pair — and the one that caught the bound defect above. Writing it
-means subclassing `LayoutSource` correctly, which is more ceremony than the check
-deserves; it is also the one source trivially exempt from the randomised-order
-obligation, since one element has one order.
-
 **Say whether a root is a declarer root in the result.** `root_children` is
 *alternatives* at a declarer root and a *partition* at a defender root, and
 summing it is meaningful in exactly one of the two cases. The result knows which;

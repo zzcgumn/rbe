@@ -1082,6 +1082,33 @@ auto register_history_error_bindings(py::module_& module) -> void
     throw py::error_already_set();
 }
 
+// A LayoutSource holding one layout -- see the binding below for why it is
+// worth shipping rather than left to each caller.
+class SingleLayoutSource final : public be::LayoutSource
+{
+public:
+    explicit SingleLayoutSource(Deal layout) : layout_(layout)
+    {
+    }
+
+    auto size() const -> std::optional<std::uint64_t> override
+    {
+        return 1u;
+    }
+
+    auto at(std::uint64_t index) const -> Deal override
+    {
+        // The binding range-checks before reaching here; this is the C++-side
+        // contract, for the evaluator calling through LayoutSource&.
+        assert(index == 0);
+        (void)index;
+        return layout_;
+    }
+
+private:
+    Deal layout_;
+};
+
 // The trampoline: LayoutSource is not a callable, it is an abstract class,
 // so a Python subclass needs one. Every override acquires the GIL --
 // PYBIND11_OVERRIDE's own mechanism does this already, which is exactly
@@ -1194,6 +1221,56 @@ auto register_layout_source_bindings(py::module_& module) -> void
         "self._deals[i] from a list built in assembly order is the most\n"
         "likely way to get this wrong.")
         .def(py::init<>());
+
+    // A source over exactly one layout. Defined here rather than in
+    // src/belief_evaluation/ because its whole purpose is to save a *Python*
+    // caller from writing a trampoline subclass; a C++ caller can write the
+    // three lines directly, and the module's test support already does.
+    //
+    // It is also the one LayoutSource trivially exempt from the randomised
+    // order obligation LayoutSource's own docstring describes, one element
+    // having only one order -- so it doubles as a correct-by-construction
+    // starting point, where the pattern that obligation warns against
+    // (returning self._deals[i] from a list in assembly order) is the most
+    // likely thing a caller writes instead.
+    py::class_<SingleLayoutSource, be::LayoutSource>(
+        module,
+        "SingleLayoutSource",
+        "A LayoutSource over exactly one layout: size() is 1 and at(0) is\n"
+        "that layout.\n\n"
+        "For evaluating one layout on its own -- which is how P_make over a\n"
+        "belief space gets cross-checked against the mean of P_make over\n"
+        "each layout alone, the check that is worth making about any strategy\n"
+        "pair and that has already caught one library defect.\n\n"
+        "Exempt from the randomised-order obligation in LayoutSource's own\n"
+        "docstring, since one element has only one order. Sampling a\n"
+        "one-layout space is a no-op rather than a biased draw.")
+        .def(py::init([](py::dict const& layout) {
+                 return SingleLayoutSource(dds3_python::dict_to_deal(layout));
+             }),
+             py::arg("layout"))
+        .def("size", [](SingleLayoutSource const& self) { return self.size().value(); })
+        .def(
+            "at",
+            [](SingleLayoutSource const& self, py::object const& index_obj) {
+                // Same contract, and the same reasoning, as
+                // ExhaustiveLayoutSource::at below: an out-of-range index is a
+                // Python IndexError on every build, and the index is compared
+                // as a Python int so a negative or oversized one never has to
+                // be represented as uint64_t at all.
+                py::object const index_int =
+                    py::reinterpret_steal<py::object>(PyNumber_Index(index_obj.ptr()));
+                if (! index_int) {
+                    throw py::error_already_set();
+                }
+                if (index_int < py::int_(0) || index_int >= py::int_(1)) {
+                    throw py::index_error(
+                        "index " + std::string(py::repr(index_obj)) +
+                        " is out of range for a source of size 1");
+                }
+                return dds3_python::deal_to_dict(self.at(0));
+            },
+            py::arg("index"));
 
     py::class_<be::ExhaustiveLayoutSource, be::LayoutSource>(
         module,

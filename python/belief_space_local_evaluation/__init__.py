@@ -46,6 +46,7 @@ try:
     from ._belief_space_local_evaluation import RootFailureError
     from ._belief_space_local_evaluation import SampleSizeZeroError
     from ._belief_space_local_evaluation import ScanBudgetExhaustedError
+    from ._belief_space_local_evaluation import SingleLayoutSource
     from ._belief_space_local_evaluation import seat_on_play
     from ._belief_space_local_evaluation import SourceNotEnumerableError
     from ._belief_space_local_evaluation import SpreadPolicy
@@ -96,6 +97,7 @@ except ImportError:
     from _belief_space_local_evaluation import RootFailureError
     from _belief_space_local_evaluation import SampleSizeZeroError
     from _belief_space_local_evaluation import ScanBudgetExhaustedError
+    from _belief_space_local_evaluation import SingleLayoutSource
     from _belief_space_local_evaluation import seat_on_play
     from _belief_space_local_evaluation import SourceNotEnumerableError
     from _belief_space_local_evaluation import SpreadPolicy
@@ -145,6 +147,7 @@ __all__ = [
     "RootFailureError",
     "SampleSizeZeroError",
     "ScanBudgetExhaustedError",
+    "SingleLayoutSource",
     "seat_on_play",
     "SourceNotEnumerableError",
     "SpreadPolicy",
