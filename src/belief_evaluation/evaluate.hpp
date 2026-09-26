@@ -250,6 +250,18 @@ struct EvaluationValue
     double p_make = 0.0;
     std::vector<RootChildValue> root_children;
 
+    /// Which of the two shapes above `root_children` has: true when declarer
+    /// **or dummy** is on lead at the root (alternatives), false when a
+    /// defender is (a partition that sums to `p_make`).
+    ///
+    /// Reported rather than left to the caller to derive, because the
+    /// derivation is `seat == declarer || seat == dummy` and the obvious
+    /// reading — `root.first == declarer` — is wrong exactly when dummy is on
+    /// lead. Set on every path, including the cut and terminal ones where
+    /// `root_children` is empty: a caller branching on it should not have to
+    /// special-case emptiness.
+    bool root_is_declaring_side = false;
+
     /// The root BeliefNode, populated only when EvaluateOptions::retain_root
     /// is set. The root alone, never a tree.
     std::optional<BeliefNode> retained_root;

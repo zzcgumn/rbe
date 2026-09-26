@@ -20,7 +20,7 @@ The measurements behind the defaults are
 | Path | What is there |
 | --- | --- |
 | `src/belief_evaluation/` | the evaluator. Solver-free, except `double_dummy_defender` and `double_dummy_bound`, which are separate targets for that reason |
-| `tests/belief_evaluation/` | 355 C++ cases across four targets |
+| `tests/belief_evaluation/` | 356 C++ cases across four targets |
 | `benchmarks/` | the measuring instruments and their correctness guards |
 | `python/` | the `belief_space_local_evaluation` extension and its tests |
 | `examples/` | runnable examples of the Python surface, and the small amount of bridge plumbing they need |

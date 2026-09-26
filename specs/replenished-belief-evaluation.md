@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-09-12
+last-updated: 2026-09-26
 ---
 
 # Replenished Belief Evaluation
@@ -473,6 +473,15 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   equals whichever entry the strategy actually chose, not their sum); for a
   defender-node root, exactly the children defender-node expansion already
   produces, which do sum to the root value (mass conservation).
+- **Which of those two the root-child values are is reported, not left to be
+  inferred.** Summing them is meaningful at a defender root and meaningless at
+  a declarer root, and a consumer cannot tell the two apart from the values
+  alone — the caller knows the root's seat, but "declarer root" means declarer
+  *or dummy* is on lead, which is one derivation away and wrong in the obvious
+  reading. The result therefore carries the flag alongside the values. A flag
+  rather than two differently-named keys: splitting the key would break every
+  existing consumer to express the same thing, and a consumer that ignores the
+  flag keeps the behaviour it has today.
 - **A user callback's contract violation is reported in the result, never
   thrown.** A callback is user input, not an internal, so a card or
   distribution that fails validation surfaces as an error value carrying

@@ -459,6 +459,14 @@ auto evaluate(
     count_node(counters_ptr);
     record_sample_size(counters_ptr, root, /*depth=*/0);
 
+    // Set before the dispatch below rather than in the one branch that fills
+    // root_children: every cut path leaves root_children empty, and a caller
+    // branching on the shape of a result should get an answer there too. The
+    // seat on play is common knowledge, so this costs nothing and is true
+    // whether or not a first-card decision remains.
+    value.root_is_declaring_side =
+        is_declarer_side(root.state, seat_on_play(root.state.known_holdings));
+
     if (already_made(root.state))
     {
         // Tier 1's already-made cut. pi is never even asked which seat is

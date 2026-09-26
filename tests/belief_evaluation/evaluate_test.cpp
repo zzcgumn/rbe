@@ -219,6 +219,44 @@ TEST_F(EvaluateTest, DeclarerRootChildrenAreAlternativesNotAPartition)
     // the spade ace; pin that identity directly.
     EXPECT_EQ(value.root_children[0].card.suit, Spades);
     EXPECT_EQ(value.root_children[0].card.rank, Ace);
+
+    // Which kind of root this is, reported rather than left to the consumer
+    // to derive. The flag is only worth having if it predicts the property
+    // above, so it is asserted here beside it and not on its own.
+    EXPECT_TRUE(value.root_is_declaring_side);
+}
+
+TEST_F(EvaluateTest, RootIsDeclaringSideIsTrueWithDummyOnLeadNotOnlyDeclarer)
+{
+    // The whole reason this is a flag and not `root.first == declarer`.
+    // South is dummy to North's declarer, and a root led by dummy is a
+    // *declarer* root: pi chooses the card, the children are alternatives,
+    // and they do not sum. A consumer deriving "declarer root" as
+    // `first == declarer` gets this position exactly backwards.
+    Deal root_layout{};
+    root_layout.trump = DDS_NOTRUMP;
+    root_layout.first = South;  // dummy, with North as declarer
+    root_layout.remainCards[South][Spades] = be::holding({Ace});
+    root_layout.remainCards[South][Hearts] = be::holding({Ace});
+    root_layout.remainCards[West][Spades] = be::holding({Two});
+    root_layout.remainCards[West][Hearts] = be::holding({Two});
+    root_layout.remainCards[North][Spades] = be::holding({Three});
+    root_layout.remainCards[North][Hearts] = be::holding({Three});
+    root_layout.remainCards[East][Spades] = be::holding({Jack});
+    root_layout.remainCards[East][Hearts] = be::holding({Jack});
+    be::VectorLayoutSource source({root_layout});
+
+    be::EvaluationResult const result = be::evaluate(
+        root_layout, North, /*tricks_needed=*/2, source, strategy(1), be::single_card_defender);
+
+    ASSERT_FALSE(result.error.has_value());
+    be::EvaluationValue const& value = result.by_strategy.at(1u);
+    EXPECT_TRUE(value.root_is_declaring_side);
+    // And the property the flag predicts: alternatives, so the sum exceeds
+    // p_make rather than matching it.
+    ASSERT_EQ(value.root_children.size(), 2u);
+    EXPECT_DOUBLE_EQ(value.root_children[0].value + value.root_children[1].value,
+                     2.0 * value.p_make);
 }
 
 TEST_F(EvaluateTest, DefenderRootChildrenSumToPMake)
@@ -276,6 +314,9 @@ TEST_F(EvaluateTest, DefenderRootChildrenSumToPMake)
     EXPECT_DOUBLE_EQ(value.p_make, 1.0);
     EXPECT_DOUBLE_EQ(
         value.root_children[0].value + value.root_children[1].value, value.p_make);
+
+    // The flag's other value, beside the property it predicts here.
+    EXPECT_FALSE(value.root_is_declaring_side);
 }
 
 // --- retention is opt-in --------------------------------------------------

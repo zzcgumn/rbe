@@ -243,17 +243,20 @@ result = bsle.evaluate(
     sample_size=200, replenish_below=20)
 
 value = result["by_strategy"][1]  # keyed by pi's strategy id, always 1 here
-value["p_make"]           # float
-value["root_children"]    # [(Card, float), ...] -- see below
+value["p_make"]                  # float
+value["root_children"]           # [(Card, float), ...] -- see below
+value["root_is_declaring_side"]  # bool -- which shape root_children has
 ```
 
 `root_children` is alternatives at a declarer root (`p_make` equals
 whichever entry π actually chose, not their sum) and a genuine partition
 at a defender root (the entries *do* sum to `p_make`, since defender
 children partition mass by construction); empty at a terminal root.
-Summing them and comparing to `p_make` agrees sometimes and not others —
-know which kind of root you are looking at before drawing a conclusion
-from a mismatch.
+Summing them and comparing to `p_make` therefore agrees sometimes and not
+others — **branch on `root_is_declaring_side` rather than working out which
+kind of root you have.** It is true when declarer *or dummy* is on lead, which
+is the part a caller deriving it from the root's seat gets wrong, and it is
+present even where `root_children` is empty.
 
 `counters` (present only with `collect_counters=True`) and `retained_root`
 (present only with `retain_root=True`, and **the root node alone, never a
@@ -466,12 +469,6 @@ recorded so the next contributor sees what to do and not only what goes wrong.
 Each says what a caller writes today, because that is the evidence: every one of
 them is something `examples/` had to write by hand, and in two cases wrote wrong
 first.
-
-**Say whether a root is a declarer root in the result.** `root_children` is
-*alternatives* at a declarer root and a *partition* at a defender root, and
-summing it is meaningful in exactly one of the two cases. The result knows which;
-the caller has to be told, and both this document and the example currently tell
-them in prose.
 
 **Bridge notation on `Card`.** Turning a `Card` or a deal into `♠Q` or PBN text
 is something every caller invents for itself — `examples/bridge_notation.py` is

@@ -26,7 +26,7 @@ dds is built from source as a dependency, using this repository's Bazel, not
 its own.
 
 **Size**: 46 C++ files in `src/belief_evaluation`, 38 test files, 26 Bazel test
-targets, 355 C++ test cases.
+targets, 356 C++ test cases.
 
 **History**: extracted from dds, where it was `library/src/belief_evaluation`.
 The commit history predates the split and refers to paths that no longer exist.
@@ -77,7 +77,7 @@ again after.
 │   ├── instructions/                # Path-specific instructions
 │   └── workflows/                   # ci_linux.yml, ci_macos.yml
 ├── src/belief_evaluation/           # The evaluator
-├── tests/belief_evaluation/         # 355 C++ cases across 4 targets
+├── tests/belief_evaluation/         # 356 C++ cases across 4 targets
 ├── benchmarks/
 │   ├── belief_evaluation/           # Fixture ladder, instrument, sweeps
 │   └── python_cost/                 # Python-vs-C++ per-callback cost

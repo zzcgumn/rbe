@@ -273,10 +273,12 @@ def evaluate(sequence, source, pi, delta, **options) -> dict:
 def report_root_children(heading: str, value: dict) -> None:
     print(f"{heading}: P_make = {value['p_make']:.4f}")
 
-    # At a declarer root these are *alternatives*, not a partition: each is
-    # what the contract is worth if declarer plays that card now and follows
-    # the same pi afterwards -- whichever pi was passed, not a lowest-card
-    # rule. They do not sum to P_make, and P_make is whichever one pi chose.
+    # value["root_is_declaring_side"] says which shape these have; it is True
+    # here, so they are *alternatives*, not a partition. Each is what the
+    # contract is worth if declarer plays that card now and follows the same pi
+    # afterwards -- whichever pi was passed, not a lowest-card rule. They do
+    # not sum to P_make, and P_make is whichever one pi chose.
+    assert value["root_is_declaring_side"], "a defender root would partition"
     for card, p_make in sorted(value["root_children"], key=lambda entry: -entry[1]):
         print(f"    lead {format_card(card)}   {p_make:.4f}")
     print()
