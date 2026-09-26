@@ -1758,6 +1758,85 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
         "Carries no trick counter -- who won, and what that makes the running\n"
         "total, is the caller's business.");
 
+    // The one piece of arithmetic evaluate() takes on trust. The evaluator
+    // carries no trick counter (trick.hpp says so), so tricks_needed is
+    // caller-written -- and an off-by-one there does not fail, it evaluates a
+    // different contract and reports a confident number for it.
+    //
+    // The root and the count come back together because the hazard is the two
+    // disagreeing: there is deliberately no way to obtain one without the
+    // other. Implemented over the bound primitives rather than as a new C++
+    // function because the defect class is caller-written arithmetic *in
+    // Python*; a C++ caller reaches a root by constructing one, not by
+    // replaying a hand.
+    module.def(
+        "play_out",
+        [](py::dict const& deal, py::sequence const& history, int opening_leader,
+           int declarer) {
+            if (opening_leader < 0 || opening_leader >= DDS_HANDS) {
+                throw py::value_error(
+                    "opening_leader has invalid value " + std::to_string(opening_leader) +
+                    " (expected range 0.." + std::to_string(DDS_HANDS - 1) + ")");
+            }
+            if (declarer < 0 || declarer >= DDS_HANDS) {
+                throw py::value_error(
+                    "declarer has invalid value " + std::to_string(declarer) +
+                    " (expected range 0.." + std::to_string(DDS_HANDS - 1) + ")");
+            }
+
+            Deal current = dds3_python::dict_to_deal(deal);
+            current.first = opening_leader;
+            int const dummy = (declarer + 2) % DDS_HANDS;
+            int won = 0;
+
+            std::size_t index = 0;
+            for (py::handle const item : history) {
+                be::Card const card = py::cast<be::Card>(item);
+                int const seat = be::seat_on_play(current);
+
+                // be::play has a precondition, not a check: an illegal card
+                // would yield a nonsense position rather than an error. A
+                // history is caller data -- usually a transcribed hand record
+                // -- so it is validated here, naming the card and the index
+                // that a reader can find in their own source.
+                std::array<unsigned, DDS_SUITS> const legal = be::legal_cards(current, seat);
+                if (card.suit < 0 || card.suit >= DDS_SUITS || card.rank < 2 || card.rank > 14 ||
+                    (legal[static_cast<std::size_t>(card.suit)] & (1u << card.rank)) == 0) {
+                    throw py::value_error(
+                        "history[" + std::to_string(index) + "] is not a legal play for seat " +
+                        std::to_string(seat) + ": " + std::string(py::repr(py::cast(card))));
+                }
+
+                bool const completes_the_trick = current.currentTrickRank[2] != 0;
+                current = be::play(current, card);
+                // A completed trick is the only one with a winner, and
+                // be::play has just reassigned `first` to it. A trailing
+                // incomplete trick therefore counts for nobody, which is
+                // right: it has no winner yet.
+                if (completes_the_trick && (current.first == declarer || current.first == dummy)) {
+                    ++won;
+                }
+                ++index;
+            }
+
+            return py::make_tuple(dds3_python::deal_to_dict(current), won);
+        },
+        py::arg("deal"),
+        py::arg("history"),
+        py::arg("opening_leader"),
+        py::arg("declarer"),
+        "Replay `history` onto `deal` from `opening_leader`, and return\n"
+        "`(root, tricks_won_by_declarer)`.\n\n"
+        "`root` is the position after the last card, ready to hand to\n"
+        "evaluate(); the count is what evaluate()'s `tricks_needed` has to be\n"
+        "measured against -- `level + 6 - tricks_won_by_declarer`. Tricks won\n"
+        "by **dummy** count for declarer.\n\n"
+        "A trailing incomplete trick is replayed and counts for nobody: it has\n"
+        "no winner yet. Its cards are on `root`'s trick in progress.\n\n"
+        "Raises ValueError naming the index if a card is not a legal play at\n"
+        "the point it is reached -- which is what catches a transcription\n"
+        "mistake, or an `opening_leader` that does not match the history.");
+
     module.def("module_name", []() {
         return "_belief_space_local_evaluation";
     });

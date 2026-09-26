@@ -13,7 +13,7 @@ layouts in which a defender holds a suit they have already shown out of. See
 docs/belief_space_local_evaluation.md -- omitting it does not fail, it
 quietly answers a different question.
 
-The trick mechanics themselves are **not** here any more. `bsle.seat_on_play`,
+The trick mechanics and the trick *counting* are **not** here any more. `bsle.seat_on_play`,
 `bsle.legal_cards`, `bsle.play` and `bsle.trick_complete_winner` are the
 library's own, the same four the evaluator applies to the root you hand it, so
 this module no longer carries a second copy of the follow-suit and trick-winner
@@ -89,9 +89,9 @@ class PlaySequence:
         self.level = level
         self.opening_leader = (declarer + 1) % 4
         self.history = []
-        self.tricks_won_by_declarer = 0
         self.completed_tricks = []
-        self.current_deal = dict(deal, trump=trump, first=self.opening_leader)
+        self._initial_deal = dict(deal, trump=trump, first=self.opening_leader)
+        self.current_deal = self._initial_deal
 
     @property
     def dummy(self) -> int:
@@ -101,6 +101,19 @@ class PlaySequence:
     def tricks_to_make(self) -> int:
         """What the contract needs in total: six plus the level."""
         return self.level + 6
+
+    @property
+    def tricks_won_by_declarer(self) -> int:
+        """Tricks to declarer's side so far, dummy's included.
+
+        Derived by the library rather than counted here. It is the same number
+        `evaluate()`'s `tricks_needed` is measured against, and an off-by-one in
+        it does not fail -- it evaluates a different contract and reports a
+        confident number for it. Not somewhere to keep a hand-written counter.
+        """
+        _root, won = bsle.play_out(
+            self._initial_deal, self.history, self.opening_leader, self.declarer)
+        return won
 
     @property
     def tricks_needed(self) -> int:
@@ -122,10 +135,10 @@ class PlaySequence:
         self.current_deal = play_card(self.current_deal, card)
         self.history.append(card)
         if before == 3:
-            winner = self.current_deal["first"]
-            self.completed_tricks.append((leader, self.history[-4:], winner))
-            if winner in (self.declarer, self.dummy):
-                self.tricks_won_by_declarer += 1
+            # For `format_tricks` only. Who won a trick is worth printing; what
+            # that makes the running total is `tricks_won_by_declarer`, which
+            # the library derives -- this loop deliberately does not add up.
+            self.completed_tricks.append((leader, self.history[-4:], self.current_deal["first"]))
 
     def play_trick(self, cards) -> "PlaySequence":
         """Play four cards, checking they really are a whole trick. Worth

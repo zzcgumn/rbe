@@ -464,22 +464,19 @@ from the same result, not the score.
 
 ### Python surface: candidates
 
-The gaps above are symptoms. These are the changes that would close them,
-recorded so the next contributor sees what to do and not only what goes wrong.
-Each says what a caller writes today, because that is the evidence: every one of
-them is something `examples/` had to write by hand, and in two cases wrote wrong
-first.
+What is still missing from the Python surface, recorded so the next contributor
+sees what to do and not only what goes wrong. Each says what a caller writes
+today, because that is the evidence: both are things `examples/` writes by hand.
+
+The list was longer. The trick primitives, the derived `ObservationState`
+properties, `Card.__hash__`, `SingleLayoutSource`, `root_is_declaring_side` and
+deriving declarer's trick count were all on it and have landed; each was removed
+as it did, along with the gap above that it closed.
 
 **Bridge notation on `Card`.** Turning a `Card` or a deal into `♠Q` or PBN text
 is something every caller invents for itself — `examples/bridge_notation.py` is
 mostly that — and a `__str__` plus a parse/format pair would stop the
 reinvention.
-
-**Derive `tricks_needed`.** `evaluate()` takes it, and the evaluator carries no
-trick counter, so the caller writes the arithmetic that decides what "make"
-means. An off-by-one there evaluates a different contract and reports a
-confident number for it. A helper that plays a history out and hands back the
-root together with declarer's trick count removes the chance.
 
 **Let the play history arrive as one object.** `ExhaustiveLayoutSource` wants
 `history` and `opening_leader` as separate arguments, and omitting the pair does
