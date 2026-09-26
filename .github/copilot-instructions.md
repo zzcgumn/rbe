@@ -25,8 +25,8 @@ The Bazel pin is 9.2.0 here and 9.1.0 in dds. They are independent pins —
 dds is built from source as a dependency, using this repository's Bazel, not
 its own.
 
-**Size**: 46 C++ files in `src/belief_evaluation`, 38 test files, 23 Bazel test
-targets, 347 C++ test cases.
+**Size**: 46 C++ files in `src/belief_evaluation`, 38 test files, 25 Bazel test
+targets, 350 C++ test cases.
 
 **History**: extracted from dds, where it was `library/src/belief_evaluation`.
 The commit history predates the split and refers to paths that no longer exist.
@@ -39,7 +39,7 @@ The commit history predates the split and refers to paths that no longer exist.
 # Build everything
 bazelisk build //...
 
-# Run all tests (23 targets)
+# Run all tests (25 targets)
 bazelisk test //...
 
 # The core library, and its tests
@@ -77,11 +77,12 @@ again after.
 │   ├── instructions/                # Path-specific instructions
 │   └── workflows/                   # ci_linux.yml, ci_macos.yml
 ├── src/belief_evaluation/           # The evaluator
-├── tests/belief_evaluation/         # 347 C++ cases across 4 targets
+├── tests/belief_evaluation/         # 350 C++ cases across 4 targets
 ├── benchmarks/
 │   ├── belief_evaluation/           # Fixture ladder, instrument, sweeps
 │   └── python_cost/                 # Python-vs-C++ per-callback cost
 ├── python/
+├── examples/                        # runnable examples of the Python surface
 │   ├── src/                         # The pybind extension
 │   ├── belief_space_local_evaluation/  # The Python package
 │   └── tests/                       # 14 test modules

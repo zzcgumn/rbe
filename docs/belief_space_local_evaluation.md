@@ -61,7 +61,9 @@ plausible-looking number rather than a crash or an exception.
    layout, to let the evaluator skip subtrees that are provably dead. A
    bound that is too *low* makes that cut fire when it should not,
    silently reporting zero for a contract that in fact makes; a bound
-   that is too high only loses pruning, never soundness.
+   that is too high only loses pruning, never soundness. **The
+   `DoubleDummyBound` shipped here currently violates this** — see "Known
+   gaps" below.
 3. **The declaration that δ is double-dummy optimal for trick count.**
    Separate from the bound above, deliberately: a caller may want a bound
    for instrumentation while δ does not actually qualify, and collapsing
@@ -126,6 +128,16 @@ signal that they have done so.
 ```python
 import belief_space_local_evaluation as bsle
 ```
+
+A complete worked example — playing a hand out to a mid-play root, building
+the belief space from the play history, and evaluating one declarer line
+against three defences — is `examples/guess_6nt_belief_space.py`, runnable
+with `bazelisk run //examples:guess_6nt_belief_space`. Every **Python** code
+block below is exercised by
+`python/tests/test_belief_space_local_evaluation_docs_examples.py`, with the
+doc's placeholder names (`root`, `declarer`, `seed`, `tricks_needed`) bound to
+concrete values there -- so "exercised", not literally verbatim. The two C++
+blocks are not run by that test.
 
 ### The building blocks
 
@@ -275,7 +287,8 @@ bound = bsle.DoubleDummyBound(ctx, declarer)              # usable directly as b
 ```
 
 A `SolverContext` built through `dds3` works here directly — the two
-modules share one type. `DoubleDummyBound` **fixes `declarer` at
+modules share one type. **`DoubleDummyBound` is currently unsound — see
+"Known gaps" below before using it.** It also **fixes `declarer` at
 construction and is not reusable across declarers**; reusing one across
 two declarers produces a silently wrong bound, which then feeds the
 bound-gated cut, whose soundness depends on the bound being right for the
@@ -375,6 +388,82 @@ reporting is not.
 not owned — create, configure and outlive it yourself — and carry the same
 two caveats as their Python counterparts above (fixed `declarer`;
 trick-maximising, not contract-aware).
+
+## Known gaps
+
+Found by writing `examples/`, and recorded here rather than left in an
+example's docstring. Each is a property of this implementation, not of the
+approach.
+
+### `DoubleDummyBound` can report a bound of −2, and the cut believes it
+
+`DoubleDummyBound` asks the solver for `solutions = 1`. When the solver can
+name the best card without searching it returns `nodes == 0` and
+`score == -2`, meaning *not evaluated* rather than a trick count, with a
+success status — so the bound returns −2 as though it were a real bound.
+Being negative it is below any `tricks_needed`, so the bound-gated cut fires
+on a live node.
+
+Measured on a four-card ending, declarer playing low, over 70 layouts:
+
+| configuration | `P_make` |
+| --- | --- |
+| no options | 0.2000 |
+| `bound=` alone | 0.2000 |
+| `delta_is_double_dummy_optimal=True` alone | 0.2000 |
+| **both** | **0.0000** |
+| the 70 layouts evaluated one at a time, averaged | 0.2000 |
+
+So **pairing `DoubleDummyBound` with `DoubleDummyDefender` — the
+configuration this document and `double_dummy_bound.hpp` both describe as
+the intended one — can report 0.0 for a contract that makes.** Until it is
+fixed, run without `bound`; the cost is pruning only, never soundness.
+
+**Which positions trigger it is not established**, and an earlier version of
+this section asserted a trigger that turned out to be wrong. What is pinned,
+by `tests/belief_evaluation/double_dummy_bound_test.cpp`'s `KnownUnsoundness*`
+tests, is the symptom and a refutation of the obvious explanations: a
+no-search solve can also return a *correct* score, the same holdings score
+correctly when only the seat on lead changes, a two-suit position also fails,
+and a forced play does not. `solutions = 3` scores every affected position
+correctly.
+
+`DoubleDummyDefender` is unaffected: it reads card identity and `equals`
+from the same result, not the score.
+
+### Trick mechanics are not exposed to Python
+
+`seat_on_play`, `legal_cards`, `play` and the trick-winner rule exist in
+`src/belief_evaluation/trick.hpp` and are used by the evaluator, but are not
+bound. A Python caller who needs to reach a mid-play root has to
+re-implement all four — `examples/play_sequence.py` does exactly that. The
+risk is not the duplication: a copy that disagrees with the evaluator's own
+follow-suit or trick-winner rule produces a wrong *root*, and every number
+computed from it is confidently about a different position.
+
+### `ObservationState.first` is the root's leader, not the current trick's
+
+`first` on `ObservationState` is the seat on lead at the root and never
+moves. The leader of the trick in progress is
+`state.known_holdings["first"]`, which is reassigned to the winner as each
+trick resolves. They agree at the root, so a strategy that reaches for
+`state.first` is right in testing and wrong in play. Related: an empty trick
+has `current_trick_suit == (0, 0, 0)`, and spades are suit 0 — the rank
+array, where 0 is the empty-slot sentinel, is what distinguishes "spades
+were led" from "nobody has led".
+
+### `Card` is unhashable
+
+`bsle.Card` compares by value but has no `__hash__`, so it cannot be a set
+member or a dict key. A caller memoising by played card, deduplicating a δ
+distribution, or keying a transposition table has to convert to
+`(suit, rank)` first.
+
+### Never exercised by any example
+
+`state_key` (never called — there is no cache), sampling and replenishment
+(`sample_size` / `replenish_below`), and any `LayoutSource` narrower than
+`ExhaustiveLayoutSource`.
 
 ## See also
 

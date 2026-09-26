@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <array>
+#include <initializer_list>
 #include <vector>
 
 #include <api/dds_constants.hpp>
@@ -396,4 +398,213 @@ TEST_F(DoubleDummyBoundTest, TierTwoCutRateUnderSamplingIsExactlyZeroBecauseOfTh
     // that reaches a plausible-looking wrong number is worse than one
     // that visibly fails.
     EXPECT_EQ(sampled.by_strategy.at(1u).p_make, 0.0);
+}
+
+// --- known unsoundness: solve_board can report "not evaluated" as a score
+//
+// **The tests below assert behaviour that is wrong.** They exist so it cannot
+// change silently. When the bound is fixed they fail; update them and the
+// doxygen on `DoubleDummyBound::as_bound()` together.
+//
+// What is established. `as_bound()` asks solve_board for `solutions = 1` and
+// reads `score[0]` as declarer's trick count. On positions this evaluator
+// reaches, solve_board can return `score[0] == -2` with
+// `status == RETURN_NO_FAULT` -- "not evaluated" rather than a trick count.
+// The status guard therefore never fires, the -2 is returned as a bound, and
+// being negative it is below any `tricks_needed`, so `tier2_dead()` fires on a
+// live node and `evaluate()` reports 0.0 for a contract that makes.
+// `solutions = 3` scores every affected position correctly.
+//
+// **What is NOT established: which positions trigger it.** An earlier version
+// of this comment claimed two triggers (a single-suit position with more than
+// one card per hand, and a forced or all-equals play) reaching one mechanism,
+// `nodes == 0`. That was wrong, and the parameterised test below is the
+// refutation rather than a demonstration:
+//
+//   - `nodes == 0` occurs with a *correct* score (SingleSuitOneCardEach), so
+//     it is a correlate and not the mechanism.
+//   - Changing only `first` on the failing fixture makes the same holdings
+//     score correctly (SameHoldingsLedFromNorth), so the holdings alone are
+//     not the trigger.
+//   - A two-suit position also fails (TwoSuitsOneHeartInWest), so a single
+//     suit is not necessary.
+//   - A forced play scores correctly (TwoSuitsForcedFollow), so being forced
+//     is not sufficient.
+//
+// So: the symptom is pinned, the trigger is open. Anyone fixing this should
+// not trust a trigger story, including this one. Note that this file's own
+// fixture note (see make_declarer_wins_exactly_half_the_tricks) records a
+// narrower observation -- single suit, more than one card per hand -- which
+// the second bullet above also contradicts as a complete account.
+//
+// The safe fix does not depend on knowing the trigger: *treat* a score outside
+// `[0, tricks_remaining(layout)]` **as SolverFailureSentinel** (14), which
+// restores the "too high, never too low" property the sentinel already
+// promises. Recovering the lost pruning does need the trigger, or a retry with
+// `solutions = 3`.
+//
+// That is deliberately not a clamp, and a clamp would not do: clamping -2 into
+// the range gives 0, and 0 is below every tricks_needed >= 1, so the cut would
+// still fire on every affected node while looking fixed. The replacement value
+// has to be too high, not merely in range. (An earlier commit message on this
+// branch says "one clamp to [0, tricks_remaining]" -- that phrasing is wrong
+// for this reason.)
+//
+// One asymmetry the symptom description above glosses over. A negative score
+// only becomes a *low* bound on the declarer-on-lead branch, where as_bound()
+// returns score[0] directly. On the defender-on-lead branch it returns
+// `tricks_remaining - score[0]`, so -2 becomes tricks_remaining + 2 -- too
+// high, and therefore harmless. Probing a defender-on-lead node shows an
+// implausibly large bound rather than a negative one.
+
+namespace
+{
+    // Every position below is fully specified here, so the table is
+    // re-derivable from this file alone. An earlier version of this comment
+    // carried measurements whose positions were not recorded, which made them
+    // unverifiable -- the filler ranks turned out to be load-bearing.
+    struct NoSearchCase
+    {
+        char const* name;
+        Deal deal;
+        bool score_is_negative;  ///< what solutions = 1 does today
+    };
+
+    auto spades(std::initializer_list<int> ranks) -> unsigned
+    {
+        unsigned holding = 0;
+        for (int const rank : ranks)
+        {
+            holding |= 1u << rank;
+        }
+        return holding;
+    }
+
+    auto make_deal(int first, std::array<unsigned, 4> const& spade_holdings,
+                   std::array<unsigned, 4> const& heart_holdings) -> Deal
+    {
+        Deal deal{};
+        deal.trump = DDS_NOTRUMP;
+        deal.first = first;
+        for (int hand = 0; hand < 4; ++hand)
+        {
+            deal.remainCards[hand][Spades] = spade_holdings[static_cast<std::size_t>(hand)];
+            deal.remainCards[hand][1] = heart_holdings[static_cast<std::size_t>(hand)];
+        }
+        return deal;
+    }
+
+    auto no_search_cases() -> std::vector<NoSearchCase>
+    {
+        constexpr unsigned None = 0u;
+        // North/East/South/West order throughout.
+        return {
+            {"TheFailingFixture",
+             make_deal(South, {spades({King, Jack}), spades({6, Five}), spades({10, 9}),
+                               spades({Queen, Four})},
+                       {None, None, None, None}),
+             true},
+            {"SameHoldingsLedFromNorth",
+             make_deal(North, {spades({King, Jack}), spades({6, Five}), spades({10, 9}),
+                               spades({Queen, Four})},
+                       {None, None, None, None}),
+             false},
+            {"SingleSuitOneCardEach",
+             make_deal(South, {spades({King}), spades({6}), spades({10}), spades({Queen})},
+                       {None, None, None, None}),
+             false},
+            {"TwoSuitsOneHeartInWest",
+             make_deal(South, {spades({King, Jack}), spades({6, Five}), spades({10, 9}),
+                               spades({Queen})},
+                       {None, None, None, 1u << 9}),
+             true},
+            {"TwoSuitsForcedFollow",
+             make_deal(South, {spades({King}), spades({6}), spades({10}), spades({Queen})},
+                       {1u << Queen, 1u << Two, 1u << Ace, 1u << 9}),
+             false},
+        };
+    }
+}
+
+// Each row asserts what solve_board does today, at both solutions = 1 and
+// solutions = 3, so the table above is a measurement a reader can re-run
+// rather than a claim they have to take.
+TEST_F(DoubleDummyBoundTest, KnownUnsoundnessSolutionsOneCanReportNotEvaluated)
+{
+    SolverContext ctx;
+    bool any_negative = false;
+    bool any_zero_nodes_with_a_correct_score = false;
+
+    for (NoSearchCase const& one : no_search_cases())
+    {
+        FutureTricks one_solution{};
+        int const status_one =
+            solve_board(ctx, one.deal, /*target=*/-1, /*solutions=*/1, /*mode=*/0, &one_solution);
+        FutureTricks three_solutions{};
+        int const status_three =
+            solve_board(ctx, one.deal, /*target=*/-1, /*solutions=*/3, /*mode=*/0, &three_solutions);
+
+        // The heart of it: a *successful* status carrying a negative score.
+        EXPECT_EQ(status_one, RETURN_NO_FAULT) << one.name;
+        EXPECT_EQ(status_three, RETURN_NO_FAULT) << one.name;
+        EXPECT_EQ(one_solution.score[0] < 0, one.score_is_negative) << one.name;
+        EXPECT_GE(three_solutions.score[0], 0) << one.name << ": solutions = 3 always scores";
+
+        if (one_solution.score[0] < 0)
+        {
+            any_negative = true;
+            EXPECT_EQ(one_solution.score[0], -2) << one.name;
+            EXPECT_EQ(one_solution.cards, 1) << one.name;
+            EXPECT_EQ(one_solution.nodes, 0) << one.name;
+        }
+        else if (one_solution.nodes == 0)
+        {
+            // Why `nodes == 0` is not the mechanism: here it coincides with a
+            // correct score.
+            any_zero_nodes_with_a_correct_score = true;
+            EXPECT_EQ(one_solution.score[0], three_solutions.score[0]) << one.name;
+        }
+    }
+
+    EXPECT_TRUE(any_negative) << "no position still reproduces the negative score -- "
+                                 "the unsoundness may be fixed; see this section's comment";
+    EXPECT_TRUE(any_zero_nodes_with_a_correct_score)
+        << "nodes == 0 no longer coincides with a correct score anywhere here, so the "
+           "refutation this table exists for no longer holds -- re-derive it";
+}
+
+TEST_F(DoubleDummyBoundTest, KnownUnsoundnessANegativeScoreBecomesANegativeBound)
+{
+    // The step that makes the solver's sentinel a soundness problem rather
+    // than a curiosity: as_bound() passes it straight through.
+    Deal const layout = no_search_cases().front().deal;
+    SolverContext ctx;
+    be::DoubleDummyBound provider(ctx, North);
+    be::LayoutBound const bound = provider.as_bound();
+
+    EXPECT_LT(bound(layout), 0) << "the bound no longer leaks solve_board's \"not "
+                                  "evaluated\" score -- if it now returns a value in "
+                                  "[0, 4], the unsoundness is fixed: delete these tests "
+                                  "and update double_dummy_bound.hpp's doxygen";
+}
+
+TEST_F(DoubleDummyBoundTest, KnownUnsoundnessANegativeBoundIsBelowAnyTricksNeeded)
+{
+    // Why the negative matters: it is not merely a wrong number, it is a
+    // number that fires the cut. Any tricks_needed a caller could ask for is
+    // above it, so tier2_dead() concludes "every layout here is dead" at a
+    // node where declarer in fact takes tricks.
+    Deal const layout = no_search_cases().front().deal;
+    SolverContext ctx;
+    be::DoubleDummyBound provider(ctx, North);
+    be::LayoutBound const bound = provider.as_bound();
+
+    // Bounded by the tricks the position actually has: every hand holds two
+    // cards, so there are two tricks and declarer's side takes both of them
+    // (score 2 at solutions = 3). Looping to 4 would assert about
+    // tricks_needed values this position could never be asked for.
+    for (int tricks_needed = 1; tricks_needed <= 2; ++tricks_needed)
+    {
+        EXPECT_LT(bound(layout), tricks_needed) << "at tricks_needed = " << tricks_needed;
+    }
 }

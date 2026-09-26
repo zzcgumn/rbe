@@ -26,7 +26,13 @@ namespace dds::belief_evaluation
 /// double-dummy optimal for trick count — see
 /// `EvaluateOptions::delta_is_double_dummy_optimal`. `DoubleDummyDefender`
 /// satisfies it under either `SpreadPolicy`, and pairing the two is the
-/// intended sound configuration.
+/// intended configuration.
+///
+/// **It is not currently a sound one — see `as_bound()`'s own "Known
+/// unsoundness".** Until that is fixed, this bound can fire the cut on a
+/// live node, so an evaluation using it may report 0.0 for a contract that
+/// makes. Prefer running without `bound` (which costs pruning only) unless
+/// you have checked the positions your search reaches.
 class DoubleDummyBound
 {
 public:
@@ -47,6 +53,30 @@ public:
     /// reads a bound as an upper limit, so a high sentinel merely fails to
     /// prune, where a low one would fire the cut and silently report zero
     /// for a contract that makes.
+    ///
+    /// **Known unsoundness: that guard is bypassed on the success path.**
+    /// `solutions = 1` asks the solver for the best card, and on positions
+    /// this evaluator reaches it can return `score[0] == -2` — "not
+    /// evaluated", not a trick count — with `status == RETURN_NO_FAULT`. The
+    /// sentinel above therefore never applies and the −2 is returned as if it
+    /// were a bound. Being negative it is below any `tricks_needed`, so
+    /// `tier2_dead()` fires on a live node and `evaluate()` reports 0.0 for a
+    /// contract that makes. Measured; `solutions = 3` scores every affected
+    /// position correctly.
+    ///
+    /// **Which positions trigger it is not established.** Do not trust a
+    /// trigger story, including the narrower one this header used to give and
+    /// the one in `double_dummy_bound_test.cpp`'s own fixture note: a
+    /// parameterised table in that file refutes both, showing `nodes == 0`
+    /// coinciding with a correct score, the same holdings scoring correctly
+    /// when only `first` changes, a two-suit position failing, and a forced
+    /// play succeeding.
+    ///
+    /// The safe fix does not need the trigger: treat a score outside
+    /// `[0, tricks_remaining(layout)]` as `SolverFailureSentinel`, restoring
+    /// the "too high, never too low" property the paragraph above promises.
+    /// Recovering the lost pruning does need it, or a retry at
+    /// `solutions = 3`.
     auto as_bound() -> LayoutBound;
 
 private:

@@ -1,0 +1,15 @@
+# Tripwire, not a home.
+#
+# Working notes for this repository live in ../rbe-notes, a PRIVATE sibling
+# repository. Nothing should be written here on purpose -- see CLAUDE.md.
+#
+# This directory survives only so that a tool which still writes to the old
+# location cannot leak into a push: this repository's remote is PUBLIC, and
+# notes quote whatever was discussed, which can include material from private
+# repositories.
+#
+# So: everything here is ignored, and this file is tracked so the rule arrives
+# with a fresh clone. Do not add an exception below -- move the file to
+# ../rbe-notes instead, or to docs/ if it is meant to be read by others.
+*
+!.gitignore

@@ -8,8 +8,8 @@ dist/
 # Python
 __pycache__/
 *.py[cod]
-venv/
-.venv/
+venv*/
+.venv*/
 
 # Local agent/editor working artifacts.
 .claude/settings.local.json
