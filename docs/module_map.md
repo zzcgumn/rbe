@@ -122,7 +122,13 @@ which has not moved since the root.
 
 Every layout in one node shares trump, the trick in progress, declarer's and
 dummy's exact holdings, and the same outstanding pool per suit. Layouts
-differ only in how that pool splits between the two defenders. Three things
+differ only in how that pool splits between the two defenders.
+
+**"Outstanding pool" names two different sets in this codebase**, and the
+difference matters when reading either. `RankMap::aggr` is every card still in
+any of the four hands; `DefenderPool` (`defender_split.hpp`) is the defenders'
+cards alone. Both are invariant across a node. `aggr` also uses bit `r - 2`
+where `Deal::remainCards` uses bit `r`. Three things
 follow, relied on throughout:
 
 - one renumbering is valid for a whole node, not one layout;

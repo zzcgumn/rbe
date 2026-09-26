@@ -31,6 +31,16 @@ namespace dds::belief_evaluation
 /// concede the contract to hold the trick count down** — and is an instance
 /// of the gap between maximising tricks and minimising `P_make` that this
 /// capability exists to quantify, not a defect to work around.
+///
+/// **It also presumes a double-dummy declarer**, which is the half that
+/// surprises people. Double-dummy defence is optimal against a declarer who
+/// also plays double dummy; against a declarer following a fixed line, or one
+/// reasoning over a belief space, a defence tailored to *that* declarer can do
+/// strictly better. Visible in `examples/`' own grid, where this defender
+/// concedes a contract that a simple "cover when it wins" rule defeats:
+/// 0.4488 against 0.8571 on the same ending, against the same declarer. So
+/// "double dummy" names how this defender computes, not a ceiling on how well
+/// the defence can do.
 class DoubleDummyDefender
 {
 public:

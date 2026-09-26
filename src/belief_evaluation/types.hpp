@@ -54,7 +54,17 @@ using SampleWeight = double;
 /// method bodies and how `aggr` is built from a Deal.
 struct RankMap
 {
-    std::array<unsigned, DDS_SUITS> aggr;  ///< outstanding pool per suit
+    /// Every card still in **any** of the four hands, per suit — declarer's
+    /// and dummy's included, and excluding the trick in progress. Not the
+    /// defenders' cards: `DefenderPool` (defender_split.hpp) uses
+    /// "outstanding" for those alone, so the same word names two different
+    /// sets a few headers apart. Measured at one root, spades: `aggr` gave
+    /// 8125, all four hands, against the defenders' own pool of 5149.
+    ///
+    /// Bit `r - 2` for absolute rank `r`, which is the *other* convention
+    /// from `Deal::remainCards`'s bit `r`. `trick.hpp`'s `to_compacted` is
+    /// where that boundary is crossed; a stray `>> 2` elsewhere is a bug.
+    std::array<unsigned, DDS_SUITS> aggr;
 
     /// Absolute rank -> relative, 1 = highest, 0 if not outstanding. Also 0,
     /// rather than undefined behaviour, for a `suit` outside `0..DDS_SUITS`
