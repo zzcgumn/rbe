@@ -12,26 +12,23 @@ layouts in which a defender holds a suit they have already shown out of. See
 "The play history: needed, not merely optional" in
 docs/belief_space_local_evaluation.md -- omitting it does not fail, it
 quietly answers a different question.
+
+The trick mechanics themselves are **not** here any more. `bsle.seat_on_play`,
+`bsle.legal_cards`, `bsle.play` and `bsle.trick_complete_winner` are the
+library's own, the same four the evaluator applies to the root you hand it, so
+this module no longer carries a second copy of the follow-suit and trick-winner
+rules that could disagree with them. What is left is the bookkeeping the library
+genuinely does not do: counting tricks, collecting the history, and turning hand
+records into cards.
 """
 
+import belief_space_local_evaluation as bsle
+
 from bridge_notation import (
-    NOTRUMP,
     SEAT_NAMES,
     format_card,
     parse_cards,
-    ranks_in,
 )
-
-
-def seat_on_play(deal: dict) -> int:
-    """The seat to play next: the trick's leader, advanced by the number of
-    cards already played to the trick in progress."""
-    played = 0
-    for rank in deal["current_trick_rank"]:
-        if rank == 0:
-            break
-        played += 1
-    return (deal["first"] + played) % 4
 
 
 def trick_leader(deal: dict) -> int:
@@ -54,10 +51,8 @@ def cards_on_trick(deal: dict) -> list:
     hand that played it as it is played. The trick in progress lives only
     here.
     """
-    from belief_space_local_evaluation import Card
-
     return [
-        Card(suit, rank)
+        bsle.Card(suit, rank)
         for suit, rank in zip(deal["current_trick_suit"], deal["current_trick_rank"])
         if rank != 0
     ]
@@ -70,73 +65,25 @@ def suit_led(deal: dict) -> int:
     return deal["current_trick_suit"][0]
 
 
-def legal_cards(deal: dict, seat: int) -> list:
-    """Every card `seat` may legally play next, highest first within a suit.
-
-    The whole rule: follow the suit led if you hold any of it, otherwise play
-    anything.
-    """
-    from belief_space_local_evaluation import Card
-
-    remain_cards = deal["remain_cards"][seat]
-    led = suit_led(deal)
-    suits = [led] if led >= 0 and remain_cards[led] != 0 else range(4)
-    return [Card(suit, rank) for suit in suits for rank in ranks_in(remain_cards[suit])]
-
-
-def _trick_winner(trump: int, first: int, cards: list) -> int:
-    """Which seat wins a complete trick: highest trump if any was played,
-    otherwise highest card of the suit led."""
-    led = cards[0].suit
-    contest = trump if trump != NOTRUMP and any(c.suit == trump for c in cards) else led
-    best = max(
-        (i for i, card in enumerate(cards) if card.suit == contest),
-        key=lambda i: cards[i].rank)
-    return (first + best) % 4
-
-
 def play_card(deal: dict, card) -> dict:
-    """The deal after the seat on play plays `card` -- the card removed from
-    their holding and either appended to the trick in progress or, when it
-    completes the trick, the trick resolved and `first` set to the winner.
+    """The deal after the seat on play plays `card`, via `bsle.play`.
 
-    Pure: `deal` is not modified. This mirrors `play()` in
-    src/belief_evaluation/trick.hpp, which is the library's own version of
-    the same mechanics but is not exposed to Python.
+    The play itself is the library's. What is added here is a diagnostic:
+    `bsle.play` has a precondition rather than a check, so a hand record with
+    a card in the wrong place would otherwise produce a nonsense position
+    instead of an error naming the card. Transcription mistakes are the
+    common case for this module's callers, so they are worth catching by name.
     """
-    from belief_space_local_evaluation import Card
-
-    seat = seat_on_play(deal)
+    seat = bsle.seat_on_play(deal)
     if deal["remain_cards"][seat][card.suit] & (1 << card.rank) == 0:
         raise ValueError(
             f"{SEAT_NAMES[seat]} does not hold {format_card(card, symbols=False)}")
-    if card not in legal_cards(deal, seat):
+    if card not in bsle.legal_cards(deal, seat):
         raise ValueError(
             f"{SEAT_NAMES[seat]} must follow suit and cannot play "
             f"{format_card(card, symbols=False)}")
 
-    remain_cards = [list(row) for row in deal["remain_cards"]]
-    remain_cards[seat][card.suit] &= ~(1 << card.rank)
-
-    suits = list(deal["current_trick_suit"])
-    ranks = list(deal["current_trick_rank"])
-    played = sum(1 for rank in ranks if rank != 0)
-
-    if played < 3:
-        suits[played], ranks[played] = card.suit, card.rank
-        first = deal["first"]
-    else:
-        trick = [Card(suits[i], ranks[i]) for i in range(3)] + [card]
-        first = _trick_winner(deal["trump"], deal["first"], trick)
-        suits, ranks = [0, 0, 0], [0, 0, 0]
-
-    return {
-        "trump": deal["trump"],
-        "first": first,
-        "remain_cards": remain_cards,
-        "current_trick_suit": tuple(suits),
-        "current_trick_rank": tuple(ranks),
-    }
+    return bsle.play(deal, card)
 
 
 class PlaySequence:

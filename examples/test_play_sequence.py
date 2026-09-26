@@ -1,15 +1,17 @@
 """Tests for the bridge plumbing in play_sequence.py and bridge_notation.py.
 
-These matter more than example plumbing usually would. `play_sequence` is a
-Python re-implementation of `src/belief_evaluation/trick.hpp` -- the library
-does not expose those mechanics to Python, so a caller reaching a mid-play root
-has to write them again. If this copy disagrees with the evaluator's own
-follow-suit or trick-winner rule, the result is a wrong *root*, and every
-number computed from it is confidently about a different position. Nothing
-raises.
+`play_sequence` used to re-implement `src/belief_evaluation/trick.hpp`, because
+those mechanics were not bound to Python. They are bound now, so the cases here
+that exercise `legal_cards` and `seat_on_play` are testing the library through
+its own bindings, and the hand-derived assertions on them live in
+`python/tests/test_belief_space_local_evaluation_trick.py`.
 
-The trump branch of `_trick_winner` is the clearest case: the only example here
-is 6NT, so no example exercises it at all.
+What is left to test here is what this module still owns, and it is the part
+worth the most care: the trick *counting*. `evaluate()` is handed
+`tricks_needed` and takes it on trust, so an off-by-one in
+`tricks_won_by_declarer` silently evaluates a different contract -- which is
+why a defence-won trick is asserted explicitly below, that branch having once
+had no test at all.
 """
 
 import unittest
@@ -30,12 +32,12 @@ from bridge_notation import (
     parse_deal,
     ranks_in,
 )
+from belief_space_local_evaluation import legal_cards, seat_on_play
+
 from play_sequence import (
     PlaySequence,
     cards_on_trick,
-    legal_cards,
     play_card,
-    seat_on_play,
     suit_led,
     trick_leader,
 )
@@ -141,10 +143,15 @@ class TestLegalCards(unittest.TestCase):
 
         self.assertEqual({c.suit for c in legal}, {HEARTS, CLUBS})
 
-    def test_ranks_come_back_highest_first_within_a_suit(self) -> None:
+    def test_ranks_come_back_lowest_first_within_a_suit(self) -> None:
+        # This module used to return them highest first. The library's own
+        # order is ascending -- and it is contract, not incidental, because
+        # root_children is built by indexing into this list. Nothing depended
+        # on the old order: every strategy here reaches for min() or searches
+        # by rank, which is why the switch moved no P_make.
         deal = deal_with(NOTRUMP, SOUTH, {SOUTH: {SPADES: [2, 10, 14]}})
 
-        self.assertEqual([c.rank for c in legal_cards(deal, SOUTH)], [14, 10, 2])
+        self.assertEqual([c.rank for c in legal_cards(deal, SOUTH)], [2, 10, 14])
 
 
 class TestPlayCard(unittest.TestCase):
@@ -433,83 +440,6 @@ class TestAgainstTheLibrary(unittest.TestCase):
             source, pi, lowest_eligible_defender)
 
         self.assertNotIn("error", result)
-
-
-class TestTheBindingsAgreeWithThisModule(unittest.TestCase):
-    """The differential check, which exists only while both implementations do.
-
-    `play_sequence` re-implements `trick.hpp`; the library now also binds it.
-    Two implementations of one rule have agreed on this example's numbers only
-    because nothing had ever compared them. This compares them, card by card,
-    over a whole hand -- including a trump hand with a ruff, which 6NT never
-    reaches.
-
-    It lives here rather than in `python/tests/` because `examples/` is
-    package-private: nothing under `python/` may depend on it, so the
-    comparison belongs on the side that already has both. It goes away when
-    this module delegates to the bindings, at which point it would be
-    comparing the bindings against themselves -- the hand-derived assertions
-    in `python/tests/test_belief_space_local_evaluation_trick.py` are what
-    survive that.
-    """
-
-    def _agree_over(self, sequence: PlaySequence, tricks: list) -> None:
-        deal = sequence.current_deal
-        for trick in tricks:
-            for text in trick.split():
-                card = parse_card(text)
-                seat = seat_on_play(deal)
-
-                self.assertEqual(
-                    bsle.seat_on_play(deal), seat,
-                    f"seat_on_play disagrees before {text}")
-                mine = sorted((c.suit, c.rank) for c in legal_cards(deal, seat))
-                theirs = sorted((c.suit, c.rank) for c in bsle.legal_cards(deal, seat))
-                self.assertEqual(theirs, mine, f"legal_cards disagrees before {text}")
-
-                if len(cards_on_trick(deal)) == 3:
-                    self.assertEqual(
-                        bsle.trick_complete_winner(deal, card),
-                        # This module has no public winner function; play_card
-                        # reassigns `first` to the winner, which is the same
-                        # claim read off the result.
-                        play_card(deal, card)["first"],
-                        f"trick_complete_winner disagrees on {text}")
-
-                after_mine = play_card(deal, card)
-                after_theirs = bsle.play(deal, card)
-                self.assertEqual(after_theirs["first"], after_mine["first"],
-                                 f"play disagrees on the leader after {text}")
-                self.assertEqual(after_theirs["remain_cards"], after_mine["remain_cards"],
-                                 f"play disagrees on the holdings after {text}")
-                self.assertEqual(after_theirs["current_trick_suit"],
-                                 after_mine["current_trick_suit"],
-                                 f"play disagrees on the trick after {text}")
-                self.assertEqual(after_theirs["current_trick_rank"],
-                                 after_mine["current_trick_rank"],
-                                 f"play disagrees on the trick after {text}")
-                deal = after_mine
-
-    def test_they_agree_over_the_whole_notrump_hand(self) -> None:
-        # The example's own nine tricks, verbatim -- the sequence every number
-        # in guess_6nt_belief_space.py is computed from. Two of them are
-        # discards, which is where a follow-suit disagreement would show.
-        sequence = PlaySequence(parse_deal(DEAL), declarer=SOUTH, trump=NOTRUMP, level=6)
-        self._agree_over(sequence, [
-            "C6 C4 C9 CQ", "CK C8 C2 CT", "C7 C5 CA H8", "CJ S3 C3 S8",
-            "D6 D2 DK D3", "DA D4 D5 DJ", "D9 D7 DQ H4", "DT H3 D8 H5",
-            "HJ H6 HK H7",
-        ])
-
-    def test_they_agree_over_a_trump_hand_including_a_ruff(self) -> None:
-        # Hearts are trumps and East holds all thirteen diamonds, so North
-        # (declarer) is void in the suit East must lead and ruffs it -- the
-        # branch of _trick_winner no example reaches, since the only example
-        # is 6NT. The second trick is a plain one for contrast, with a discard.
-        deal = parse_deal("N: AKQJ.AK32..AKQJT ..AKQJT98765432."
-                          " T9876.QJT9..9876 5432.87654..5432")
-        sequence = PlaySequence(deal, declarer=NORTH, trump=HEARTS, level=4)
-        self._agree_over(sequence, ["DA S6 S2 H2", "SA D2 S7 S3"])
 
 
 if __name__ == "__main__":

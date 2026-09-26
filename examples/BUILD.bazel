@@ -6,10 +6,11 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 # reason to carry.
 #
 # No target here is visible outside this package, deliberately. The plumbing
-# is not reusable API: play_sequence re-implements
-# src/belief_evaluation/trick.hpp because those mechanics are not bound to
-# Python, and a second caller depending on this copy would make that
-# duplication permanent rather than a gap waiting to be closed.
+# is not reusable API: it is bridge notation and the trick bookkeeping one
+# example needs, and a second caller depending on it would turn a convenience
+# into a contract. The trick *mechanics* used to be here too, re-implemented
+# from src/belief_evaluation/trick.hpp because they were not bound to Python;
+# they are bound now, and play_sequence calls them.
 
 py_library(
     name = "example_support",
@@ -52,8 +53,8 @@ py_test(
 )
 
 # The bridge plumbing, tested directly rather than only through the one deal.
-# It re-implements trick.hpp's mechanics, so a divergence produces a wrong
-# root rather than an error -- see the file's own docstring.
+# It no longer re-implements trick.hpp -- see the file's own docstring for what
+# it still owns, and why that part is worth testing on its own.
 py_test(
     name = "play_sequence_test",
     size = "small",

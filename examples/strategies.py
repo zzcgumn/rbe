@@ -22,7 +22,9 @@ and is called once per layout.
 """
 
 from bridge_notation import HEARTS, SPADES
-from play_sequence import cards_on_trick, legal_cards, seat_on_play, trick_leader
+from belief_space_local_evaluation import legal_cards, seat_on_play
+
+from play_sequence import cards_on_trick, trick_leader
 
 
 def lowest_eligible_card(deal: dict, seat: int):

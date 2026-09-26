@@ -453,16 +453,6 @@ and a forced play does not.
 `DoubleDummyDefender` was never affected: it reads card identity and `equals`
 from the same result, not the score.
 
-### Trick mechanics are not exposed to Python
-
-`seat_on_play`, `legal_cards`, `play` and the trick-winner rule exist in
-`src/belief_evaluation/trick.hpp` and are used by the evaluator, but are not
-bound. A Python caller who needs to reach a mid-play root has to
-re-implement all four — `examples/play_sequence.py` does exactly that. The
-risk is not the duplication: a copy that disagrees with the evaluator's own
-follow-suit or trick-winner rule produces a wrong *root*, and every number
-computed from it is confidently about a different position.
-
 ### `ObservationState.first` is the root's leader, not the current trick's
 
 `first` on `ObservationState` is the seat on lead at the root and never
@@ -494,20 +484,6 @@ recorded so the next contributor sees what to do and not only what goes wrong.
 Each says what a caller writes today, because that is the evidence: every one of
 them is something `examples/` had to write by hand, and in two cases wrote wrong
 first.
-
-**Bind `trick.hpp`.** `seat_on_play(deal)`, `legal_cards(deal, seat)`,
-`play(deal, card)` and the trick-winner rule exist in C++ and the evaluator uses
-them, but no Python caller can reach them, so anyone needing a mid-play root
-re-implements all four — `examples/play_sequence.py` does. The risk is not the
-duplication. A copy that disagrees with the evaluator's own follow-suit or
-trick-winner rule produces a wrong *root*, and every number computed from it is
-confidently about a different position, with no error anywhere.
-
-**Bind the `Card`-list form of `legal_cards`.** The C++ function returns four
-per-suit bitmasks, which is what `RankMap` speaks; every strategy wants a list of
-`Card`. The evaluator already has the conversion internally. Without it a caller
-writes a bit loop, and a caller who writes it over `RankMap.aggr` instead of
-`remain_cards` gets the other bit convention and a silently different set.
 
 **Derived properties on `ObservationState`.** A strategy is handed the state and
 must work out, itself: which seat is on play, who led the trick in progress, what
