@@ -453,17 +453,6 @@ and a forced play does not.
 `DoubleDummyDefender` was never affected: it reads card identity and `equals`
 from the same result, not the score.
 
-### `ObservationState.first` is the root's leader, not the current trick's
-
-`first` on `ObservationState` is the seat on lead at the root and never
-moves. The leader of the trick in progress is
-`state.known_holdings["first"]`, which is reassigned to the winner as each
-trick resolves. They agree at the root, so a strategy that reaches for
-`state.first` is right in testing and wrong in play. Related: an empty trick
-has `current_trick_suit == (0, 0, 0)`, and spades are suit 0 — the rank
-array, where 0 is the empty-slot sentinel, is what distinguishes "spades
-were led" from "nobody has led".
-
 ### `Card` is unhashable
 
 `bsle.Card` compares by value but has no `__hash__`, so it cannot be a set
@@ -484,13 +473,6 @@ recorded so the next contributor sees what to do and not only what goes wrong.
 Each says what a caller writes today, because that is the evidence: every one of
 them is something `examples/` had to write by hand, and in two cases wrote wrong
 first.
-
-**Derived properties on `ObservationState`.** A strategy is handed the state and
-must work out, itself: which seat is on play, who led the trick in progress, what
-has been played to it, whether it can follow suit, and which cards are legal.
-Two of those derivations are the traps listed above — `first` being the root's
-leader, and suit 0 versus an empty trick. A property computed inside the library
-cannot be got wrong by a caller.
 
 **A single-layout `LayoutSource`.** `P_make` over a belief space must equal the
 mean of `P_make` over each layout evaluated alone, which is the natural check on

@@ -39,7 +39,6 @@ from play_sequence import (
     cards_on_trick,
     play_card,
     suit_led,
-    trick_leader,
 )
 
 DEAL = "N: KJ7.QJ.QT65.AJ42 A653.86432.J2.T9 T9.AKT.AK98.KQ73 Q842.975.743.865"
@@ -98,7 +97,7 @@ class TestTrickPosition(unittest.TestCase):
         deal = deal_with(NOTRUMP, SOUTH, {s: {SPADES: [2 + s]} for s in range(4)})
 
         self.assertEqual(cards_on_trick(deal), [])
-        self.assertEqual(trick_leader(deal), SOUTH)
+        self.assertEqual(deal["first"], SOUTH)  # the trick in progress
         self.assertEqual(seat_on_play(deal), SOUTH)
         self.assertEqual(suit_led(deal), -1)
 
@@ -117,7 +116,7 @@ class TestTrickPosition(unittest.TestCase):
                           SOUTH: {SPADES: [10]}, WEST: {SPADES: [12]}},
                          ((SPADES, 0, 0), (4, 11, 0)))
 
-        self.assertEqual(trick_leader(deal), WEST)
+        self.assertEqual(deal["first"], WEST)  # the trick in progress
         self.assertEqual(seat_on_play(deal), (WEST + 2) % 4)
         self.assertEqual([c.rank for c in cards_on_trick(deal)], [4, 11])
 

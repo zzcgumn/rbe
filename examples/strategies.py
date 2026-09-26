@@ -24,7 +24,10 @@ and is called once per layout.
 from bridge_notation import HEARTS, SPADES
 from belief_space_local_evaluation import legal_cards, seat_on_play
 
-from play_sequence import cards_on_trick, trick_leader
+# The defender below works from its own `layout`, not from `state`, so it needs
+# the trick read off a deal rather than off an ObservationState. Declarer's
+# strategies read state.current_trick instead.
+from play_sequence import cards_on_trick
 
 
 def lowest_eligible_card(deal: dict, seat: int):
@@ -57,7 +60,7 @@ def lowest_eligible_declarer(state, view):
     classic way to write a pi that quietly cheats.
     """
     del view  # A lowest-card rule conditions on the position, not the beliefs.
-    return lowest_eligible_card(state.known_holdings, seat_on_play(state.known_holdings))
+    return lowest_eligible_card(state.known_holdings, state.seat_on_play)
 
 
 def lowest_eligible_defender(layout, seat, state):
@@ -162,10 +165,8 @@ def finesse_the_queen_from_the_beliefs(state, view):
     `ExpiredBeliefViewError`. A `layout` dict already read stays usable, but
     there is no reason to keep one here.
     """
-    deal = state.known_holdings
-    seat = seat_on_play(deal)
-    legal = legal_cards(deal, seat)
-    on_trick = cards_on_trick(deal)
+    legal = state.legal_cards
+    on_trick = state.current_trick
 
     if not on_trick:
         lead = pick(legal, HEARTS, ACE) or pick(legal, HEARTS, TEN)
@@ -186,7 +187,11 @@ def finesse_the_queen_from_the_beliefs(state, view):
     # there it is already committed and the jack is safe, so play low --
     # otherwise the king is the card that cannot be beaten by it.
     if on_trick[0].suit == SPADES:
-        rho = (trick_leader(deal) + len(on_trick) - 1) % 4
+        # `trick_leader`, not `first`: `first` is the root's leader and does
+        # not move, so it would name the wrong defender from the second trick
+        # on. The library derives both, which is why this reads as a fact
+        # about the position rather than as arithmetic to get right.
+        rho = (state.trick_leader + state.position_in_trick - 1) % 4
         queen_with_rho = sum(
             entry.posterior for entry in view.entries
             if entry.layout["remain_cards"][rho][SPADES] & (1 << QUEEN))

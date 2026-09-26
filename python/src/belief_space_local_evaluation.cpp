@@ -253,6 +253,97 @@ auto register_observation_state_bindings(py::module_& module) -> void
             "A deal dict. declarer's and dummy's entries are exact; a\n"
             "defender's entry is the **union pool** of both defenders'\n"
             "outstanding cards, not that defender's own actual holding.")
+        // --- derived, not stored: computed on access from known_holdings.
+        //
+        // Every one of these is something a strategy would otherwise work out
+        // for itself on every call, and two of them are the derivations that
+        // are wrong in the obvious way. Computed here rather than eagerly in
+        // the binding because pi is called thousands of times for even a small
+        // ending (3487 for a four-card one, measured) and most calls read one
+        // or two of these, not all seven.
+        .def_property_readonly(
+            "seat_on_play",
+            [](be::ObservationState const& self) { return be::seat_on_play(self.known_holdings); },
+            "The seat (0..3) whose card this call is being asked for.\n\n"
+            "A strategy is not told its seat any other way.")
+        .def_property_readonly(
+            "trick_leader",
+            [](be::ObservationState const& self) { return self.known_holdings.first; },
+            "The seat that led to the trick **in progress**.\n\n"
+            "Not `first`, which is the seat on lead at the *root* and never\n"
+            "moves for the whole evaluation. This one is reassigned to the\n"
+            "winner every time a trick resolves. They agree at the root and\n"
+            "diverge from the second trick on, so a strategy that reaches for\n"
+            "`first` is right in testing and wrong in play.")
+        .def_property_readonly(
+            "current_trick",
+            [](be::ObservationState const& self) {
+                py::list cards;
+                for (int i = 0; i < 3; ++i) {
+                    // Rank 0 is the empty-slot sentinel. It is the *rank*
+                    // array that says whether a slot is filled: suit 0 is
+                    // spades, so a zeroed suit array is indistinguishable
+                    // from a spade lead.
+                    if (self.known_holdings.currentTrickRank[i] == 0) {
+                        break;
+                    }
+                    cards.append(be::Card{self.known_holdings.currentTrickSuit[i],
+                                          self.known_holdings.currentTrickRank[i]});
+                }
+                return cards;
+            },
+            "The cards already played to the trick in progress, in play\n"
+            "order. **Empty means this seat is leading.**\n\n"
+            "These are in nobody's known_holdings: a card leaves the hand\n"
+            "that played it as it is played, and the trick in progress lives\n"
+            "only here.")
+        .def_property_readonly(
+            "position_in_trick",
+            [](be::ObservationState const& self) {
+                int played = 0;
+                while (played < 3 && self.known_holdings.currentTrickRank[played] != 0) {
+                    ++played;
+                }
+                return played;
+            },
+            "0 when leading, 1..3 otherwise -- how many cards are already on\n"
+            "the trick.")
+        .def_property_readonly(
+            "legal_cards",
+            [](be::ObservationState const& self) {
+                return be::enumerate_legal_cards(self.known_holdings,
+                                                 be::seat_on_play(self.known_holdings));
+            },
+            "Every Card the seat on play may legally return, follow-suit rule\n"
+            "already applied. Ordered suit ascending, then rank within a\n"
+            "suit.\n\n"
+            "A card from this list is legal in every layout of the node, not\n"
+            "merely this one: the follow-suit rule reads only the seat's own\n"
+            "holding, which is common knowledge for declarer and dummy.")
+        .def_property_readonly(
+            "can_follow_led_suit",
+            [](be::ObservationState const& self) {
+                if (self.known_holdings.currentTrickRank[0] == 0) {
+                    return false;  // nothing led: there is no suit to follow
+                }
+                int const led = self.known_holdings.currentTrickSuit[0];
+                int const seat = be::seat_on_play(self.known_holdings);
+                return self.known_holdings.remainCards[seat][led] != 0;
+            },
+            "Whether the seat on play holds any card of the suit led.\n\n"
+            "**False when leading**, there being no suit to follow -- so\n"
+            "`if not state.can_follow_led_suit` reads as \"I am free to play\n"
+            "anything\", which is true both when leading and when void.")
+        .def_property_readonly(
+            "is_declaring_side",
+            [](be::ObservationState const& self) {
+                int const seat = be::seat_on_play(self.known_holdings);
+                int const dummy = (self.declarer + 2) % DDS_HANDS;
+                return seat == self.declarer || seat == dummy;
+            },
+            "Whether the seat on play is declarer **or dummy**. A declarer\n"
+            "strategy plays for both, so this is true at every play() call;\n"
+            "it is meaningful for a strategy shared between the two sides.")
         .def_property_readonly(
             "ranks", [](be::ObservationState const& self) { return self.ranks; },
             "A RankMap -- the precomputed absolute/relative rank mapping\n"

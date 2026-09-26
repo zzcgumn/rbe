@@ -17,9 +17,11 @@ The trick mechanics themselves are **not** here any more. `bsle.seat_on_play`,
 `bsle.legal_cards`, `bsle.play` and `bsle.trick_complete_winner` are the
 library's own, the same four the evaluator applies to the root you hand it, so
 this module no longer carries a second copy of the follow-suit and trick-winner
-rules that could disagree with them. What is left is the bookkeeping the library
-genuinely does not do: counting tricks, collecting the history, and turning hand
-records into cards.
+rules that could disagree with them. Nor the derivations a strategy needs: a
+declarer strategy reads `state.seat_on_play`, `state.trick_leader`,
+`state.current_trick` and `state.legal_cards` off the ObservationState it is
+handed. What is left is the bookkeeping the library genuinely does not do:
+counting tricks, collecting the history, and turning hand records into cards.
 """
 
 import belief_space_local_evaluation as bsle
@@ -29,18 +31,6 @@ from bridge_notation import (
     format_card,
     parse_cards,
 )
-
-
-def trick_leader(deal: dict) -> int:
-    """The seat that led to the trick *in progress*.
-
-    Not `ObservationState.first`, which is the seat on lead at the **root**
-    and never moves for the whole evaluation. A deal's own `first` is
-    reassigned to the winner every time a trick resolves. The two agree at
-    the root and diverge from the second trick on, so a strategy that reaches
-    for `state.first` here is right in testing and wrong in play.
-    """
-    return deal["first"]
 
 
 def cards_on_trick(deal: dict) -> list:

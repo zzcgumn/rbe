@@ -131,6 +131,37 @@ class TestHistoryRoundTrip(unittest.TestCase):
         self.assertIn("history[0].rank", str(ctx.exception))
 
 
+class TestObservationStateExposesTheDerivedProperties(unittest.TestCase):
+    # The values are asserted mid-play in
+    # test_belief_space_local_evaluation_strategies.py, which is the only place
+    # they can be: nothing constructs an ObservationState from Python, and two
+    # of these are indistinguishable from `first` and 0 at a root. What is
+    # checked here is that each one is present on the type, which is what
+    # catches a property bound to the extension but missing from the package's
+    # own re-export -- the failure mode every other bound name here has.
+    DERIVED = (
+        "seat_on_play",
+        "trick_leader",
+        "current_trick",
+        "position_in_trick",
+        "legal_cards",
+        "can_follow_led_suit",
+        "is_declaring_side",
+    )
+
+    def test_every_derived_property_is_present(self) -> None:
+        for name in self.DERIVED:
+            with self.subTest(name=name):
+                self.assertTrue(hasattr(ObservationState, name))
+
+    def test_each_one_is_read_only(self) -> None:
+        # Same contract as every other field: a strategy receives a state, it
+        # does not edit one.
+        for name in self.DERIVED:
+            with self.subTest(name=name):
+                self.assertIsNone(getattr(ObservationState, name).fset)
+
+
 class TestObservationStateIsReadOnly(unittest.TestCase):
     def test_not_constructible_from_python(self) -> None:
         # A strategy receives an ObservationState; nothing builds one from
