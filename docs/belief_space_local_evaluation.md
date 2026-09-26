@@ -487,6 +487,67 @@ distribution, or keying a transposition table has to convert to
 (`sample_size` / `replenish_below`), and any `LayoutSource` narrower than
 `ExhaustiveLayoutSource`.
 
+### Python surface: candidates
+
+The gaps above are symptoms. These are the changes that would close them,
+recorded so the next contributor sees what to do and not only what goes wrong.
+Each says what a caller writes today, because that is the evidence: every one of
+them is something `examples/` had to write by hand, and in two cases wrote wrong
+first.
+
+**Bind `trick.hpp`.** `seat_on_play(deal)`, `legal_cards(deal, seat)`,
+`play(deal, card)` and the trick-winner rule exist in C++ and the evaluator uses
+them, but no Python caller can reach them, so anyone needing a mid-play root
+re-implements all four — `examples/play_sequence.py` does. The risk is not the
+duplication. A copy that disagrees with the evaluator's own follow-suit or
+trick-winner rule produces a wrong *root*, and every number computed from it is
+confidently about a different position, with no error anywhere.
+
+**Bind the `Card`-list form of `legal_cards`.** The C++ function returns four
+per-suit bitmasks, which is what `RankMap` speaks; every strategy wants a list of
+`Card`. The evaluator already has the conversion internally. Without it a caller
+writes a bit loop, and a caller who writes it over `RankMap.aggr` instead of
+`remain_cards` gets the other bit convention and a silently different set.
+
+**Derived properties on `ObservationState`.** A strategy is handed the state and
+must work out, itself: which seat is on play, who led the trick in progress, what
+has been played to it, whether it can follow suit, and which cards are legal.
+Two of those derivations are the traps listed above — `first` being the root's
+leader, and suit 0 versus an empty trick. A property computed inside the library
+cannot be got wrong by a caller.
+
+**A single-layout `LayoutSource`.** `P_make` over a belief space must equal the
+mean of `P_make` over each layout evaluated alone, which is the natural check on
+any strategy pair — and the one that caught the bound defect above. Writing it
+means subclassing `LayoutSource` correctly, which is more ceremony than the check
+deserves; it is also the one source trivially exempt from the randomised-order
+obligation, since one element has one order.
+
+**Say whether a root is a declarer root in the result.** `root_children` is
+*alternatives* at a declarer root and a *partition* at a defender root, and
+summing it is meaningful in exactly one of the two cases. The result knows which;
+the caller has to be told, and both this document and the example currently tell
+them in prose.
+
+**`Card.__hash__`, and bridge notation on `Card`.** The unhashability above is
+one `def` away. Separately, turning a `Card` or a deal into `♠Q` or PBN text is
+something every caller invents for itself — `examples/bridge_notation.py` is
+mostly that — and a `__str__` plus a parse/format pair would stop the
+reinvention.
+
+**Derive `tricks_needed`.** `evaluate()` takes it, and the evaluator carries no
+trick counter, so the caller writes the arithmetic that decides what "make"
+means. An off-by-one there evaluates a different contract and reports a
+confident number for it. A helper that plays a history out and hands back the
+root together with declarer's trick count removes the chance.
+
+**Let the play history arrive as one object.** `ExhaustiveLayoutSource` wants
+`history` and `opening_leader` as separate arguments, and omitting the pair does
+not fail — it quietly answers a different question, which is why this document
+gives it a section of its own. A caller who has played the hand out holds both in
+one place; accepting that, or deriving the leader from a trick-one deal, makes
+them impossible to pass inconsistently.
+
 ## See also
 
 - [`docs/replenished_belief_evaluation/algorithm.md`](replenished_belief_evaluation/algorithm.md) —
