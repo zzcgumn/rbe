@@ -38,6 +38,7 @@ from bridge_notation import (
 from belief_space_local_evaluation import legal_cards, seat_on_play
 
 from belief_space_local_evaluation.play_sequence import (
+    DeclarerView,  # noqa: F401 (not yet constructed directly in this file)
     PlaySequence,
     cards_on_trick,
     play_card,
@@ -334,6 +335,17 @@ class TestTheHistoryConstrainsTheBeliefSpace(unittest.TestCase):
             history=sequence.history, opening_leader=sequence.opening_leader)
 
         self.assertEqual(source.history_verdict(), bsle.HistoryVerdict.Consistent)
+
+
+class TestDeclarerView(unittest.TestCase):
+    def test_it_refuses_when_a_defender_is_on_play(self) -> None:
+        sequence = PlaySequence(parse_deal(DEAL), declarer=SOUTH, trump=NOTRUMP, level=6)
+
+        with self.assertRaises(ValueError) as caught:
+            sequence.declarer_view()
+
+        self.assertIn("West", str(caught.exception))
+        self.assertIn("declarer's or dummy's turn", str(caught.exception))
 
 
 if __name__ == "__main__":
