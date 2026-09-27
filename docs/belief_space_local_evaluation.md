@@ -62,8 +62,9 @@ plausible-looking number rather than a crash or an exception.
    bound that is too *low* makes that cut fire when it should not,
    silently reporting zero for a contract that in fact makes; a bound
    that is too high only loses pruning, never soundness. **The
-   `DoubleDummyBound` shipped here currently violates this** — see "Known
-   gaps" below.
+   `DoubleDummyBound` shipped here satisfies this**: on a position the
+   solver declines to score, it answers too high rather than guessing —
+   see "Known gaps" below for what that costs in pruning, not soundness.
 3. **The declaration that δ is double-dummy optimal for trick count.**
    Separate from the bound above, deliberately: a caller may want a bound
    for instrumentation while δ does not actually qualify, and collapsing
