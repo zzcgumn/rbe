@@ -305,6 +305,7 @@ py_wheel(
     deps = [
         ":belief_space_local_evaluation_lib",
         ":_belief_space_local_evaluation_in_package",
+        ":bridge_notation_lib",
         "@dds//python:dds3_lib",
         ":_dds3_in_package",
     ],
