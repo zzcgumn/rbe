@@ -39,7 +39,7 @@ from bridge_notation import (
 from belief_space_local_evaluation import legal_cards, seat_on_play
 
 from belief_space_local_evaluation.play_sequence import (
-    DeclarerView,  # noqa: F401 (not yet constructed directly in this file)
+    DeclarerView,
     PlaySequence,
     cards_on_trick,
     play_card,
@@ -354,6 +354,7 @@ class TestDeclarerView(unittest.TestCase):
 
         view = sequence.declarer_view()
 
+        self.assertIsInstance(view, DeclarerView)
         self.assertEqual(view.seat_on_play, SOUTH)
         self.assertEqual(view.position_in_trick, 0)
         self.assertEqual(view.current_trick, [])
