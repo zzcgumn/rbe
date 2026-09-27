@@ -679,16 +679,19 @@ rename or include-ordering trick anywhere in the module.
   `validate_declarer_card()`, `validate_defender_distribution()`.
 - `src/belief_evaluation/kahan.hpp` — `KahanAccumulator`.
 - `src/belief_evaluation/trick.hpp` — `seat_on_play()`,
-  `legal_cards()`, `trick_complete_winner()`, `play()`, and the module's one
-  boundary between `Deal`'s absolute-rank bit convention and the compacted
-  convention `RankMap`, `renumber()` and every lookup table use. Bound to
-  Python (`bsle.seat_on_play`, `bsle.legal_cards`, `bsle.play`,
-  `bsle.trick_complete_winner`, plus `bsle.play_out()` composing them to
-  replay a whole history) — no new logic, the same functions the evaluator
-  itself calls. A Python caller reaching a mid-play root previously had no
-  choice but to reimplement these, and a reimplementation that disagreed
-  with the evaluator's own follow-suit or trick-winner rule produced a wrong
-  *root*, silently.
+  `legal_cards()`, `enumerate_legal_cards()` (the `Card`-list expansion of
+  `legal_cards()`'s per-suit bitmasks), `trick_complete_winner()`, `play()`,
+  and the module's one boundary between `Deal`'s absolute-rank bit
+  convention and the compacted convention `RankMap`, `renumber()` and every
+  lookup table use. Bound to Python — `bsle.seat_on_play`, `bsle.play`,
+  `bsle.trick_complete_winner` from their like-named C++ functions,
+  `bsle.legal_cards` from `enumerate_legal_cards()` (the `Card` list, not
+  `legal_cards()`'s bitmasks — a strategy has to return a `Card`), plus
+  `bsle.play_out()` composing them to replay a whole history — no new logic,
+  the same functions the evaluator itself calls. A Python caller reaching a
+  mid-play root previously had no choice but to reimplement these, and a
+  reimplementation that disagreed with the evaluator's own follow-suit or
+  trick-winner rule produced a wrong *root*, silently.
 - `src/belief_evaluation/node.hpp` — `BeliefNode`, `RootOptions`,
   `RootConstructionResult`, `RootFailure`, `ScanOutcome`, `make_root()`,
   `root_observation_state()`, `history_for()`, `is_consistent()`,
