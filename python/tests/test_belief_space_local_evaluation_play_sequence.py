@@ -422,6 +422,61 @@ class TestDeclarerView(unittest.TestCase):
         with self.assertRaises(dataclasses.FrozenInstanceError):
             view.declarer_hand = []
 
+    def test_play_history_is_the_full_record_while_observation_state_history_is_root_relative(self) -> None:
+        # The nine tricks that reach the four-card ending this project's own
+        # examples already use (examples/guess_6nt_belief_space.py's
+        # guess_6nt()) -- duplicated here, not imported: python/ may not
+        # depend on examples/. A small hand-built deck doesn't work for this
+        # test the way it did for the earlier ones in this class:
+        # ExhaustiveLayoutSource requires history and root together to
+        # account for all 52 cards, which only a real deal satisfies.
+        sequence = PlaySequence(parse_deal(DEAL), declarer=SOUTH, trump=NOTRUMP, level=6)
+        sequence.play_trick("C6 C4 C9 CQ")
+        sequence.play_trick("CK C8 C2 CT")
+        sequence.play_trick("C7 C5 CA H8")
+        sequence.play_trick("CJ S3 C3 S8")
+        sequence.play_trick("D6 D2 DK D3")
+        sequence.play_trick("DA D4 D5 DJ")
+        sequence.play_trick("D9 D7 DQ H4")
+        sequence.play_trick("DT H3 D8 H5")
+        sequence.play_trick("HJ H6 HK H7")
+        # South is on lead for trick 10. Lead a spade and let West follow,
+        # landing on dummy's turn mid-trick.
+        sequence.play("S9")
+        sequence.play("S4")
+
+        view = sequence.declarer_view()
+        self.assertEqual(view.seat_on_play, NORTH)
+        self.assertEqual(view.position_in_trick, 2)
+        self.assertEqual(len(view.play_history), 38)
+
+        source = bsle.ExhaustiveLayoutSource(
+            sequence.current_deal, sequence.declarer, 1,
+            history=sequence.history, opening_leader=sequence.opening_leader)
+
+        captured = []
+
+        def pi(state, belief_view):
+            del belief_view
+            captured.append(len(state.history))
+            deal = state.known_holdings
+            return min(legal_cards(deal, seat_on_play(deal)),
+                       key=lambda c: (c.rank, c.suit))
+
+        def delta(layout, seat, state):
+            del state
+            card = min(legal_cards(layout, seat), key=lambda c: (c.rank, c.suit))
+            return [(card, 1.0)]
+
+        result = bsle.evaluate(
+            sequence.current_deal, sequence.declarer, sequence.tricks_needed,
+            source, pi, delta)
+
+        self.assertNotIn("error", result)
+        self.assertTrue(captured)
+        self.assertEqual(captured[0], 2)  # the root's own trick-in-progress, not 0
+        self.assertLess(captured[0], len(view.play_history))
+
 
 if __name__ == "__main__":
     unittest.main()
