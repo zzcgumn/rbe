@@ -1,29 +1,27 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# Runnable examples. Nothing here is part of the library: these are the
-# scripts a new caller reads first, and the small amount of bridge plumbing
-# (notation, trick mechanics) they need that the library itself has no
-# reason to carry.
+# Runnable examples. `bridge_notation` and `PlaySequence`
+# (`belief_space_local_evaluation.play_sequence`) used to live here too, but
+# neither is example-specific: both are general bridge plumbing, reusable by
+# anyone who installs this library, so both were promoted to the installed
+# package -- see python/BUILD.bazel's `bridge_notation_lib` and
+# `belief_space_local_evaluation_lib`.
 #
-# No target here is visible outside this package, deliberately. The plumbing
-# is not reusable API: it is bridge notation and the trick bookkeeping one
-# example needs, and a second caller depending on it would turn a convenience
-# into a contract. The trick *mechanics* used to be here too, re-implemented
-# from src/belief_evaluation/trick.hpp because they were not bound to Python;
-# they are bound now, and play_sequence calls them.
+# `strategies.py` is the one thing left deliberately private to this package.
+# It is this one example's own declarer/defender heuristics
+# (`lowest_eligible_declarer`, the belief-finesse declarer,
+# `queen_of_spades_when_it_wins`), not general bridge plumbing -- a second
+# caller depending on it would turn a one-example convenience into a
+# contract this package never intended to support.
 
 py_library(
     name = "example_support",
     srcs = [
-        "play_sequence.py",
         "strategies.py",
     ],
     imports = ["."],
     deps = [
         "//python:belief_space_local_evaluation_lib",
-        # bridge_notation was promoted to its own installed package (zero
-        # dependency on belief_space_local_evaluation) -- see
-        # python/BUILD.bazel's bridge_notation_lib.
         "//python:bridge_notation_lib",
         # The solver seam: double_dummy_defender() constructs a
         # DoubleDummyDefender, which takes a dds3.SolverContext.
@@ -55,13 +53,14 @@ py_test(
     deps = [":guess_6nt_belief_space_lib"],
 )
 
-# The bridge plumbing, tested directly rather than only through the one deal.
-# It no longer re-implements trick.hpp -- see the file's own docstring for what
-# it still owns, and why that part is worth testing on its own.
+# strategies.py's templates and its cross-check against the evaluator's own
+# follow-suit rule -- the two things this package still tests directly,
+# now that play_sequence.py and bridge_notation.py's own tests moved with
+# them to python/tests/.
 py_test(
-    name = "play_sequence_test",
+    name = "strategies_test",
     size = "small",
-    srcs = ["test_play_sequence.py"],
-    main = "test_play_sequence.py",
+    srcs = ["test_strategies.py"],
+    main = "test_strategies.py",
     deps = [":guess_6nt_belief_space_lib"],
 )

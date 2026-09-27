@@ -109,6 +109,16 @@ except ImportError:
     from _belief_space_local_evaluation import ValidationError
     from _belief_space_local_evaluation import VoidContradictionError
 
+# Not from the compiled extension, so not part of either branch above:
+# play_sequence.py is plain Python with no compiled-extension dependency of
+# its own. It does `import belief_space_local_evaluation` (this package,
+# still initialising at this point), but only inside function bodies -- no
+# module-level code in play_sequence.py calls back into this package eagerly,
+# so the partially-initialised module object already in sys.modules is
+# sufficient, and by the time any caller actually invokes a PlaySequence
+# method, this __init__ has long finished running.
+from .play_sequence import PlaySequence  # noqa: E402
+
 __all__ = [
     "BeliefEntry",
     "BeliefSpaceLocalEvaluationError",
@@ -143,6 +153,7 @@ __all__ = [
     "ObservationState",
     "play",
     "play_out",
+    "PlaySequence",
     "ProbabilitiesDoNotSumToOneError",
     "ProbabilityNonPositiveError",
     "RankMap",

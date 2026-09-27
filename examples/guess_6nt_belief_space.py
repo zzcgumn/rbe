@@ -63,9 +63,9 @@ from bridge_notation import (
     format_hand,
     parse_deal,
 )
-from belief_space_local_evaluation import legal_cards, seat_on_play
+from belief_space_local_evaluation import legal_cards, seat_on_play, PlaySequence
 
-from play_sequence import PlaySequence, cards_on_trick
+from belief_space_local_evaluation.play_sequence import cards_on_trick
 from strategies import (
     ACE,
     KING,
