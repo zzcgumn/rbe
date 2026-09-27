@@ -4,11 +4,6 @@ Every expectation here is hand-derived from the position written above it, not
 recorded from a run: this file is what stops a Python caller's mental model of
 the follow-suit and trick-winner rules drifting from the evaluator's own, which
 is the divergence that produces a wrong *root* and no error anywhere.
-
-The differential check against examples/play_sequence.py lives in
-examples/test_play_sequence.py, not here. examples/ is package-private and
-python/ must not depend on it -- the dependency runs the other way -- so the
-comparison belongs on the side that already has both.
 """
 
 import unittest
