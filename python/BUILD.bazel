@@ -67,14 +67,31 @@ alias(
 
 py_library(
     name = "belief_space_local_evaluation_lib",
-    srcs = ["belief_space_local_evaluation/__init__.py"],
+    srcs = [
+        "belief_space_local_evaluation/__init__.py",
+        "belief_space_local_evaluation/play_sequence.py",
+    ],
     data = [":_belief_space_local_evaluation_in_package"],
     imports = ["."],
     # __init__.py imports dds3 before this module's own extension, so that
     # SolverContext's pybind registration is in place first. Both extensions
     # resolve one pybind11 through the module graph, so the interpreter-level
     # type registry is shared exactly as it was inside dds.
-    deps = ["@dds//python:dds3_lib"],
+    deps = [
+        "@dds//python:dds3_lib",
+        # play_sequence.py's own bridge-notation imports.
+        ":bridge_notation_lib",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Zero dependencies -- own top-level package rather than a submodule of
+# belief_space_local_evaluation, so a caller who only wants to format a dds3
+# result does not have to import through a package they don't otherwise need.
+py_library(
+    name = "bridge_notation_lib",
+    srcs = ["bridge_notation/__init__.py"],
+    imports = ["."],
     visibility = ["//visibility:public"],
 )
 
@@ -215,6 +232,28 @@ py_test(
     deps = [":belief_space_local_evaluation_lib"],
 )
 
+py_test(
+    name = "belief_space_local_evaluation_bridge_notation_test",
+    size = "small",
+    main = "tests/test_bridge_notation.py",
+    srcs = ["tests/test_bridge_notation.py"],
+    deps = [
+        ":bridge_notation_lib",
+        ":belief_space_local_evaluation_lib",
+    ],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_play_sequence_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_play_sequence.py",
+    srcs = ["tests/test_belief_space_local_evaluation_play_sequence.py"],
+    deps = [
+        ":belief_space_local_evaluation_lib",
+        ":bridge_notation_lib",
+    ],
+)
+
 # dds3's extension, staged into its package directory here rather than
 # depended on through dds's own :_dds3_in_package -- that alias is
 # package-private, while the extension itself is public. Without this the
@@ -266,6 +305,7 @@ py_wheel(
     deps = [
         ":belief_space_local_evaluation_lib",
         ":_belief_space_local_evaluation_in_package",
+        ":bridge_notation_lib",
         "@dds//python:dds3_lib",
         ":_dds3_in_package",
     ],

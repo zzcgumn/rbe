@@ -243,6 +243,25 @@ legal play at the point it is reached raises `ValueError` naming its index
 in `history` — the check that catches a transcribed hand record with a card
 in the wrong place, or an `opening_leader` inconsistent with the history.
 
+`PlaySequence` is the convenience wrapper built on top of these:
+
+```python
+from belief_space_local_evaluation import PlaySequence
+
+sequence = PlaySequence(deal, declarer=2, trump=4, level=6)  # South, notrump
+sequence.play_trick("C6 C4 C9 CQ")
+root, tricks_needed = sequence.current_deal, sequence.tricks_needed
+```
+
+It plays cards via `seat_on_play`, `legal_cards` and `play` above, derives
+`tricks_needed` via `play_out` rather than asking the caller to track it, and
+collects the history and `opening_leader` pair an `ExhaustiveLayoutSource`
+needs — the three things `evaluate()` wants, from one object instead of
+separately hand-derived inputs that can silently disagree with each other. See
+`belief_space_local_evaluation/play_sequence.py`'s own docstring for the
+full surface (`play`, `play_trick`, `history`, `tricks_won_by_declarer`,
+`format_tricks`).
+
 ### π and δ
 
 The shape, not a working strategy -- `Card(0, 14)`/`Card(0, 2)` here are
@@ -525,9 +544,9 @@ deriving declarer's trick count were all on it and have landed; each was removed
 as it did, along with the gap above that it closed.
 
 **Bridge notation on `Card`.** Turning a `Card` or a deal into `♠Q` or PBN text
-is something every caller invents for itself — `examples/bridge_notation.py` is
-mostly that — and a `__str__` plus a parse/format pair would stop the
-reinvention.
+is something every caller invents for itself — `bridge_notation` is mostly
+that — and a `__str__` plus a parse/format pair on `Card` itself would stop
+each caller reinventing it independently.
 
 **Let the play history arrive as one object.** `ExhaustiveLayoutSource` wants
 `history` and `opening_leader` as separate arguments, and omitting the pair does

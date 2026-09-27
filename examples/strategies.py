@@ -27,7 +27,7 @@ from belief_space_local_evaluation import legal_cards, seat_on_play
 # The defender below works from its own `layout`, not from `state`, so it needs
 # the trick read off a deal rather than off an ObservationState. Declarer's
 # strategies read state.current_trick instead.
-from play_sequence import cards_on_trick
+from belief_space_local_evaluation.play_sequence import cards_on_trick
 
 
 def lowest_eligible_card(deal: dict, seat: int):

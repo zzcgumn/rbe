@@ -20,6 +20,8 @@ _EXTENSION_SUFFIXES = (".so", ".pyd")
 
 _REQUIRED_MODULES = (
     "belief_space_local_evaluation/__init__.py",
+    "belief_space_local_evaluation/play_sequence.py",
+    "bridge_notation/__init__.py",
     "dds3/__init__.py",
 )
 
