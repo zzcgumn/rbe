@@ -243,7 +243,7 @@ legal play at the point it is reached raises `ValueError` naming its index
 in `history` — the check that catches a transcribed hand record with a card
 in the wrong place, or an `opening_leader` inconsistent with the history.
 
-`bsle.PlaySequence` is the convenience wrapper built on top of these:
+`PlaySequence` is the convenience wrapper built on top of these:
 
 ```python
 from belief_space_local_evaluation import PlaySequence
