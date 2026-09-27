@@ -78,6 +78,16 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
+# Zero dependencies -- own top-level package rather than a submodule of
+# belief_space_local_evaluation, so a caller who only wants to format a dds3
+# result does not have to import through a package they don't otherwise need.
+py_library(
+    name = "bridge_notation_lib",
+    srcs = ["bridge_notation/__init__.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
 # Guard: CI builds and tests this tree under -c opt on every platform that
 # carries a different build config from the default (Linux and macOS; macOS
 # additionally carries ThinLTO).
@@ -213,6 +223,17 @@ py_test(
         "//benchmarks/belief_evaluation:ladder_reference",
     ],
     deps = [":belief_space_local_evaluation_lib"],
+)
+
+py_test(
+    name = "belief_space_local_evaluation_bridge_notation_test",
+    size = "small",
+    main = "tests/test_bridge_notation.py",
+    srcs = ["tests/test_bridge_notation.py"],
+    deps = [
+        ":bridge_notation_lib",
+        ":belief_space_local_evaluation_lib",
+    ],
 )
 
 # dds3's extension, staged into its package directory here rather than

@@ -15,13 +15,16 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 py_library(
     name = "example_support",
     srcs = [
-        "bridge_notation.py",
         "play_sequence.py",
         "strategies.py",
     ],
     imports = ["."],
     deps = [
         "//python:belief_space_local_evaluation_lib",
+        # bridge_notation was promoted to its own installed package (zero
+        # dependency on belief_space_local_evaluation) -- see
+        # python/BUILD.bazel's bridge_notation_lib.
+        "//python:bridge_notation_lib",
         # The solver seam: double_dummy_defender() constructs a
         # DoubleDummyDefender, which takes a dds3.SolverContext.
         "@dds//python:dds3_lib",

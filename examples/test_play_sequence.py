@@ -28,9 +28,7 @@ from bridge_notation import (
     SPADES,
     WEST,
     holding,
-    parse_card,
     parse_deal,
-    ranks_in,
 )
 from belief_space_local_evaluation import legal_cards, seat_on_play
 
@@ -56,40 +54,6 @@ def deal_with(trump, first, hands, trick=((0, 0, 0), (0, 0, 0))):
         "current_trick_suit": trick[0],
         "current_trick_rank": trick[1],
     }
-
-
-class TestParseDeal(unittest.TestCase):
-    def test_all_52_cards_round_trip(self) -> None:
-        remain_cards = parse_deal(DEAL)["remain_cards"]
-
-        seen = {(suit, rank)
-                for seat in range(4) for suit in range(4)
-                for rank in ranks_in(remain_cards[seat][suit])}
-        self.assertEqual(len(seen), 52)
-        for seat in range(4):
-            self.assertEqual(
-                sum(len(ranks_in(remain_cards[seat][suit])) for suit in range(4)), 13)
-
-    def test_a_duplicated_card_is_named(self) -> None:
-        # Two spade kings: North's KJ7 and East's K653.
-        with self.assertRaises(ValueError) as caught:
-            parse_deal("N: KJ7.QJ.QT65.AJ42 K653.86432.J2.T9 T9.AKT.AK98.KQ73 Q842.975.743.865")
-        self.assertIn("SK", str(caught.exception))
-
-    def test_a_missing_card_is_named(self) -> None:
-        # East's spade ace dropped.
-        with self.assertRaises(ValueError) as caught:
-            parse_deal("N: KJ7.QJ.QT65.AJ42 653.86432.J2.T9 T9.AKT.AK98.KQ73 Q842.975.743.865")
-        self.assertIn("incomplete", str(caught.exception))
-        self.assertIn("SA", str(caught.exception))
-
-    def test_a_deal_without_a_leading_seat_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
-            parse_deal("KJ7.QJ.QT65.AJ42 A653.86432.J2.T9 T9.AKT.AK98.KQ73 Q842.975.743.865")
-
-    def test_rank_first_and_suit_first_card_notation_agree(self) -> None:
-        self.assertEqual(parse_card("SQ"), parse_card("QS"))
-        self.assertEqual(parse_card("SQ"), bsle.Card(SPADES, 12))
 
 
 class TestTrickPosition(unittest.TestCase):
