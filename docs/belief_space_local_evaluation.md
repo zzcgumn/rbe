@@ -262,6 +262,18 @@ separately hand-derived inputs that can silently disagree with each other. See
 full surface (`play`, `play_trick`, `history`, `tricks_won_by_declarer`,
 `format_tricks`).
 
+`sequence.declarer_view()` is the safe way to inspect a position outside a
+real `evaluate()` call — for a quick declarer heuristic tried against a
+`PlaySequence` directly, or for printing what declarer would know before
+running the search. It returns a small, frozen snapshot (own and dummy's
+remaining cards, the current trick, legal cards, the full play history, and
+more) built entirely from what declarer legitimately knows — never from
+`sequence.current_deal`, which holds all four real hands including the
+defenders'. **It raises `ValueError` when a defender is on play**, rather
+than answering from the wrong hand: `legal_cards` and the hand-in-turn can
+only be derived from a hand the caller may see, and a defender's remaining
+cards are not one.
+
 ### π and δ
 
 The shape, not a working strategy -- `Card(0, 14)`/`Card(0, 2)` here are
