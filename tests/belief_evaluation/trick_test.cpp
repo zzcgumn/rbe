@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>
 
@@ -113,6 +115,92 @@ TEST_F(TrickTest, LegalCardsAreEveryHeldCardWhenVoidInTheLedSuit)
 //
 // Concrete bridge facts, asserted directly rather than by re-deriving
 // trick_winner()'s comparison logic in the test.
+
+// --- enumerate_legal_cards ------------------------------------------------
+//
+// The Card-list form of legal_cards, for callers that want cards rather than
+// bitmasks. Order is part of the contract, not an accident of the loop: suit
+// ascending, then rank ascending within a suit. make_declarer_children() and
+// the root-child-value loop in evaluate.cpp both index into this, so
+// root_children's own order is this order -- a caller comparing two runs, or a
+// test asserting a particular child first, depends on it.
+
+TEST_F(TrickTest, EnumerateLegalCardsWhenLeadingIsEveryHeldCardSuitThenRank)
+{
+    Deal deal{};
+    deal.trump = DDS_NOTRUMP;
+    deal.first = North;
+    // North to lead: two spades, void in hearts, one diamond, one club --
+    // chosen so the expected order exercises both axes at once.
+    deal.remainCards[North][Spades] = (1u << Queen) | (1u << Three);
+    deal.remainCards[North][Hearts] = 0;
+    deal.remainCards[North][Diamonds] = 1u << King;
+    deal.remainCards[North][Clubs] = 1u << Two;
+
+    std::vector<be::Card> const legal = be::enumerate_legal_cards(deal, North);
+
+    ASSERT_EQ(legal.size(), 4u);
+    EXPECT_EQ(legal[0].suit, Spades);
+    EXPECT_EQ(legal[0].rank, Three);  // rank ascending within the suit
+    EXPECT_EQ(legal[1].suit, Spades);
+    EXPECT_EQ(legal[1].rank, Queen);
+    EXPECT_EQ(legal[2].suit, Diamonds);  // hearts skipped, not emitted empty
+    EXPECT_EQ(legal[2].rank, King);
+    EXPECT_EQ(legal[3].suit, Clubs);
+    EXPECT_EQ(legal[3].rank, Two);
+}
+
+TEST_F(TrickTest, EnumerateLegalCardsMustFollowTheLedSuitWhenHoldingIt)
+{
+    Deal deal{};
+    deal.trump = DDS_NOTRUMP;
+    deal.first = North;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = King;  // North led the king of spades
+
+    deal.remainCards[East][Spades] = (1u << Queen) | (1u << Three);
+    deal.remainCards[East][Hearts] = 1u << Ace;
+
+    std::vector<be::Card> const legal = be::enumerate_legal_cards(deal, East);
+
+    // The heart is held and is not enumerated: the list carries the
+    // follow-suit rule, it does not merely list the hand.
+    ASSERT_EQ(legal.size(), 2u);
+    EXPECT_EQ(legal[0].suit, Spades);
+    EXPECT_EQ(legal[0].rank, Three);
+    EXPECT_EQ(legal[1].suit, Spades);
+    EXPECT_EQ(legal[1].rank, Queen);
+}
+
+TEST_F(TrickTest, EnumerateLegalCardsAreEveryHeldCardWhenVoidInTheLedSuit)
+{
+    Deal deal{};
+    deal.trump = DDS_NOTRUMP;
+    deal.first = North;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = King;
+
+    deal.remainCards[East][Spades] = 0;  // void in the led suit
+    deal.remainCards[East][Hearts] = 1u << Ace;
+    deal.remainCards[East][Clubs] = 1u << Two;
+
+    std::vector<be::Card> const legal = be::enumerate_legal_cards(deal, East);
+
+    ASSERT_EQ(legal.size(), 2u);
+    EXPECT_EQ(legal[0].suit, Hearts);
+    EXPECT_EQ(legal[0].rank, Ace);
+    EXPECT_EQ(legal[1].suit, Clubs);
+    EXPECT_EQ(legal[1].rank, Two);
+}
+
+TEST_F(TrickTest, EnumerateLegalCardsIsEmptyForASeatWithNoCards)
+{
+    Deal deal{};
+    deal.trump = DDS_NOTRUMP;
+    deal.first = North;
+
+    EXPECT_TRUE(be::enumerate_legal_cards(deal, North).empty());
+}
 
 TEST_F(TrickTest, HighestCardOfTheLedSuitWinsInNotrump)
 {

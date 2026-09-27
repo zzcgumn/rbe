@@ -110,6 +110,35 @@ class TestRootChildren(unittest.TestCase):
         self.assertNotEqual(total, entry["p_make"])  # 2.0 != 1.0 -- not a partition here
         self.assertEqual(entry["p_make"], 1.0)
 
+    def test_root_is_declaring_side_says_which_of_the_two_shapes_it_is(self) -> None:
+        # The two tests above each know which shape they built. A consumer does
+        # not, and cannot tell from the values: summing is meaningful at one
+        # root and meaningless at the other. The flag is what makes that
+        # readable, so it is asserted against the two roots those tests use.
+        defender_root = make_one_card_finesse_root()  # East leads
+        declarer_root = make_declarer_choice_root()   # North leads
+
+        at_defender = evaluate(
+            defender_root, North, 1, ExhaustiveLayoutSource(defender_root, North, 5),
+            declarer_play, defender_play)["by_strategy"][1]
+        at_declarer = evaluate(
+            declarer_root, North, 1, ExhaustiveLayoutSource(declarer_root, North, 1),
+            declarer_play, defender_play)["by_strategy"][1]
+
+        self.assertIs(at_defender["root_is_declaring_side"], False)
+        self.assertIs(at_declarer["root_is_declaring_side"], True)
+
+    def test_root_is_declaring_side_is_present_at_a_terminal_root_too(self) -> None:
+        # root_children is empty there, and the flag still describes the root:
+        # a consumer branching on it must not have to special-case emptiness.
+        root = make_one_card_finesse_root()
+        result = evaluate(root, North, 0, ExhaustiveLayoutSource(root, North, 5),
+                          declarer_play, defender_play)
+        entry = result["by_strategy"][1]
+
+        self.assertEqual(entry["root_children"], [])
+        self.assertIs(entry["root_is_declaring_side"], False)
+
     def test_root_children_is_empty_at_a_terminal_root(self) -> None:
         # tricks_needed=0: already_made() fires before any card is chosen.
         root = make_one_card_finesse_root()

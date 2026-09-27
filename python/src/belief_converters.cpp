@@ -131,6 +131,10 @@ auto evaluation_result_to_dict(const be::EvaluationResult& result) -> py::dict
             root_children.append(py::make_tuple(child.card, child.value));
         }
         entry["root_children"] = root_children;
+        // Which of the two shapes root_children has -- see
+        // EvaluationValue::root_is_declaring_side. Present on every result,
+        // including those where root_children is empty.
+        entry["root_is_declaring_side"] = value.root_is_declaring_side;
 
         if (value.retained_root.has_value()) {
             entry["retained_root"] = belief_node_to_dict(*value.retained_root);

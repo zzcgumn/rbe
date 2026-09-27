@@ -62,8 +62,9 @@ plausible-looking number rather than a crash or an exception.
    bound that is too *low* makes that cut fire when it should not,
    silently reporting zero for a contract that in fact makes; a bound
    that is too high only loses pruning, never soundness. **The
-   `DoubleDummyBound` shipped here currently violates this** — see "Known
-   gaps" below.
+   `DoubleDummyBound` shipped here satisfies this**: on a position the
+   solver declines to score, it answers too high rather than guessing —
+   see "Known gaps" below for what that costs in pruning, not soundness.
 3. **The declaration that δ is double-dummy optimal for trick count.**
    Separate from the bound above, deliberately: a caller may want a bound
    for instrumentation while δ does not actually qualify, and collapsing
@@ -143,7 +144,10 @@ blocks are not run by that test.
 
 - **`bsle.Card(suit, rank)`** — `suit` is `0=♠ 1=♥ 2=♦ 3=♣`; `rank` is
   **absolute**, `2..14`, never relative to a node's outstanding pool. This
-  is the type π returns and δ's weighted cards carry.
+  is the type π returns and δ's weighted cards carry. Hashable and
+  compares by value, so it can be a `dict` key or `set` member — mutable,
+  though, so the hash follows the fields and mutating a `Card` already
+  used as a key loses it.
 - **A deal** crosses as a plain `dict`, the same shape `dds3` already
   documents: `trump`, `first`, `remain_cards` (a 4×4 array of bitmasks,
   `[hand][suit]`), `current_trick_suit`, `current_trick_rank`.
@@ -159,6 +163,17 @@ blocks are not run by that test.
   with `to_absolute` before returning one). `play` and `state_key` share
   this same type, but `state_key` is not itself called yet — see
   obligation 1 above.
+
+  Seven more are **derived**, computed on access rather than stored, so a
+  strategy that reads none of them pays nothing: `seat_on_play` (the seat
+  this call is for — not otherwise told); `trick_leader` (the trick *in
+  progress*'s leader — not `first`, which is the root's and never moves,
+  so a strategy reading `first` here is right at the root and wrong from
+  the second trick on); `current_trick` (list of `Card` already played to
+  it, empty when leading); `position_in_trick` (0 = leading); `legal_cards`
+  (`Card`s, follow-suit already applied, suit-then-rank ascending);
+  `can_follow_led_suit` (false when leading, there being no suit to
+  follow); `is_declaring_side` (true for declarer *or* dummy).
 - **`bsle.BeliefView`** — what π reasons over: `entries` (a sequence of
   `BeliefEntry`, each with `.layout`, a deal dict, and `.posterior`),
   `is_sample`, `space_size`. **Valid only for the duration of the call it
@@ -184,8 +199,15 @@ A rejected history (one that does not belong to `root`, or belongs but
 leaves no legal split) raises immediately, from the constructor — see
 "Where Python is stricter than C++" below.
 
-Subclass `bsle.LayoutSource` and override `size()`/`at(i)` to supply a
-narrower space than the root alone implies:
+`bsle.SingleLayoutSource(layout)` is a ready-made source over exactly one
+layout — `size()` is 1, `at(0)` is `layout` — for evaluating one candidate
+on its own, which is how `P_make` over a belief space gets cross-checked
+against the mean of `P_make` over each layout alone. One element having
+only one order, it is also exempt from the randomised-order obligation
+below.
+
+For anything else, subclass `bsle.LayoutSource` and override
+`size()`/`at(i)` to supply a narrower space than the root alone implies:
 
 ```python
 class MySource(bsle.LayoutSource):
@@ -195,6 +217,31 @@ class MySource(bsle.LayoutSource):
     def at(self, index):
         return self._deals[index]  # must already be in a randomised order
 ```
+
+### Playing a hand out
+
+Four free functions, bound from `src/belief_evaluation/trick.hpp` — the same
+ones the evaluator itself uses to walk a position, so a caller reaching a
+mid-play root applies the identical follow-suit and trick-winner rules the
+evaluator will apply to whatever root it is handed:
+
+```python
+seat = bsle.seat_on_play(deal)              # int, 0..3
+legal = bsle.legal_cards(deal, seat)        # [Card, ...], follow-suit applied
+winner = bsle.trick_complete_winner(deal, card)  # deal must carry 3 played cards
+after = bsle.play(deal, card)               # a new deal; the one passed in is unchanged
+```
+
+`bsle.play_out(deal, history, opening_leader, declarer)` replays a whole
+history in one call and returns `(root, tricks_won_by_declarer)` together —
+deliberately, since the two disagreeing is the hazard: an off-by-one in a
+caller's own trick count evaluates a different contract from the one
+`tricks_needed` was meant to describe, and does so with no diagnostic.
+Dummy's tricks count for declarer's side. A trailing incomplete trick is
+replayed but counts for nobody, having no winner yet. A card that is not a
+legal play at the point it is reached raises `ValueError` naming its index
+in `history` — the check that catches a transcribed hand record with a card
+in the wrong place, or an `opening_leader` inconsistent with the history.
 
 ### π and δ
 
@@ -243,17 +290,20 @@ result = bsle.evaluate(
     sample_size=200, replenish_below=20)
 
 value = result["by_strategy"][1]  # keyed by pi's strategy id, always 1 here
-value["p_make"]           # float
-value["root_children"]    # [(Card, float), ...] -- see below
+value["p_make"]                  # float
+value["root_children"]           # [(Card, float), ...] -- see below
+value["root_is_declaring_side"]  # bool -- which shape root_children has
 ```
 
 `root_children` is alternatives at a declarer root (`p_make` equals
 whichever entry π actually chose, not their sum) and a genuine partition
 at a defender root (the entries *do* sum to `p_make`, since defender
 children partition mass by construction); empty at a terminal root.
-Summing them and comparing to `p_make` agrees sometimes and not others —
-know which kind of root you are looking at before drawing a conclusion
-from a mismatch.
+Summing them and comparing to `p_make` therefore agrees sometimes and not
+others — **branch on `root_is_declaring_side` rather than working out which
+kind of root you have.** It is true when declarer *or dummy* is on lead, which
+is the part a caller deriving it from the root's seat gets wrong, and it is
+present even where `root_children` is empty.
 
 `counters` (present only with `collect_counters=True`) and `retained_root`
 (present only with `retain_root=True`, and **the root node alone, never a
@@ -287,9 +337,9 @@ bound = bsle.DoubleDummyBound(ctx, declarer)              # usable directly as b
 ```
 
 A `SolverContext` built through `dds3` works here directly — the two
-modules share one type. **`DoubleDummyBound` is currently unsound — see
-"Known gaps" below before using it.** It also **fixes `declarer` at
-construction and is not reusable across declarers**; reusing one across
+modules share one type. `DoubleDummyBound` **prunes nothing on positions the
+solver will not score** — sound, but weaker than it looks; see "Known gaps"
+below. It also **fixes `declarer` at construction and is not reusable across declarers**; reusing one across
 two declarers produces a silently wrong bound, which then feeds the
 bound-gated cut, whose soundness depends on the bound being right for the
 declarer actually being evaluated. `DoubleDummyDefender` **maximises
@@ -395,14 +445,24 @@ Found by writing `examples/`, and recorded here rather than left in an
 example's docstring. Each is a property of this implementation, not of the
 approach.
 
-### `DoubleDummyBound` can report a bound of −2, and the cut believes it
+### `DoubleDummyBound` asks twice on positions the solver will not score
 
-`DoubleDummyBound` asks the solver for `solutions = 1`. When the solver can
-name the best card without searching it returns `nodes == 0` and
-`score == -2`, meaning *not evaluated* rather than a trick count, with a
-success status — so the bound returns −2 as though it were a real bound.
-Being negative it is below any `tricks_needed`, so the bound-gated cut fires
-on a live node.
+`DoubleDummyBound` asks the solver for `solutions = 1`. On some positions this
+evaluator reaches, `solve_board` answers `score[0] == -2` — *not evaluated*,
+rather than a trick count — and pairs it with a **success** status, so the
+status check cannot catch it. `as_bound()` therefore range-checks the raw score
+against `[0, tricks_remaining(layout)]` before converting it. Anything outside
+it is not a number to repair but the absence of an answer, so the bound asks
+again at `solutions = 3` — which scores every position measured to decline at
+`solutions = 1` — and falls back to `SolverFailureSentinel` (14, deliberately
+higher than any deal's trick count) only if that declines too. A bound is read
+as an upper limit, so too high costs pruning and nothing else.
+
+Correctness is unaffected either way, and pairing `DoubleDummyBound` with
+`DoubleDummyDefender` is sound. Measured on the four-card ending in
+`examples/`, the pair takes nodes visited from 6283 to 3159 with 197 tier-2
+cuts, and is faster in wall-clock terms than tier 1 alone — the retry costs
+less than searching the subtrees it lets the cut remove.
 
 Measured on a four-card ending, declarer playing low, over 70 layouts:
 
@@ -411,59 +471,70 @@ Measured on a four-card ending, declarer playing low, over 70 layouts:
 | no options | 0.2000 |
 | `bound=` alone | 0.2000 |
 | `delta_is_double_dummy_optimal=True` alone | 0.2000 |
-| **both** | **0.0000** |
+| both | 0.2000 |
 | the 70 layouts evaluated one at a time, averaged | 0.2000 |
 
-So **pairing `DoubleDummyBound` with `DoubleDummyDefender` — the
-configuration this document and `double_dummy_bound.hpp` both describe as
-the intended one — can report 0.0 for a contract that makes.** Until it is
-fixed, run without `bound`; the cost is pruning only, never soundness.
+**The `both` row read 0.0000 before the range check existed** — a contract that
+makes, reported as certain to fail. The −2 went straight through as a bound,
+and being negative it was below any `tricks_needed`, so the bound-gated cut
+fired on a live node. Worth knowing if you are reading an older revision, and
+worth knowing as the shape of the failure a bound can produce: a wrong bound
+does not raise, it silently answers a different question.
 
-**Which positions trigger it is not established**, and an earlier version of
-this section asserted a trigger that turned out to be wrong. What is pinned,
-by `tests/belief_evaluation/double_dummy_bound_test.cpp`'s `KnownUnsoundness*`
-tests, is the symptom and a refutation of the obvious explanations: a
+Note that a clamp into the range would **not** have fixed it: clamping −2 gives
+0, which is still below every `tricks_needed >= 1`, so the cut would have kept
+firing while the bug looked fixed. The replacement value has to be too high,
+not merely in range.
+
+One asymmetry, since it decides what you see when probing an older revision:
+the −2 only became a *low* bound with declarer or dummy on lead, where the raw
+score is already declarer's own. With a defender on lead the conversion is
+`tricks_remaining - score`, so −2 became `tricks_remaining + 2` — too high, and
+therefore harmless. Both conversions read the same raw score and one check now
+covers both.
+
+**Which positions the solver answers this way is not established.** The retry
+sidesteps the question rather than answering it. An earlier revision of this section
+asserted a trigger that turned out to be wrong; do not trust a trigger story,
+including that one. What is pinned, by
+`tests/belief_evaluation/double_dummy_bound_test.cpp`, is the solver's
+behaviour, the guard, and a refutation of the obvious explanations: a
 no-search solve can also return a *correct* score, the same holdings score
 correctly when only the seat on lead changes, a two-suit position also fails,
-and a forced play does not. `solutions = 3` scores every affected position
-correctly.
+and a forced play does not.
 
-`DoubleDummyDefender` is unaffected: it reads card identity and `equals`
+`DoubleDummyDefender` was never affected: it reads card identity and `equals`
 from the same result, not the score.
-
-### Trick mechanics are not exposed to Python
-
-`seat_on_play`, `legal_cards`, `play` and the trick-winner rule exist in
-`src/belief_evaluation/trick.hpp` and are used by the evaluator, but are not
-bound. A Python caller who needs to reach a mid-play root has to
-re-implement all four — `examples/play_sequence.py` does exactly that. The
-risk is not the duplication: a copy that disagrees with the evaluator's own
-follow-suit or trick-winner rule produces a wrong *root*, and every number
-computed from it is confidently about a different position.
-
-### `ObservationState.first` is the root's leader, not the current trick's
-
-`first` on `ObservationState` is the seat on lead at the root and never
-moves. The leader of the trick in progress is
-`state.known_holdings["first"]`, which is reassigned to the winner as each
-trick resolves. They agree at the root, so a strategy that reaches for
-`state.first` is right in testing and wrong in play. Related: an empty trick
-has `current_trick_suit == (0, 0, 0)`, and spades are suit 0 — the rank
-array, where 0 is the empty-slot sentinel, is what distinguishes "spades
-were led" from "nobody has led".
-
-### `Card` is unhashable
-
-`bsle.Card` compares by value but has no `__hash__`, so it cannot be a set
-member or a dict key. A caller memoising by played card, deduplicating a δ
-distribution, or keying a transposition table has to convert to
-`(suit, rank)` first.
 
 ### Never exercised by any example
 
-`state_key` (never called — there is no cache), sampling and replenishment
-(`sample_size` / `replenish_below`), and any `LayoutSource` narrower than
-`ExhaustiveLayoutSource`.
+`state_key` (never called — there is no cache), and sampling and replenishment
+(`sample_size` / `replenish_below`). `SingleLayoutSource` no longer belongs on
+this list: `examples/test_guess_6nt_belief_space.py` uses it to cross-check
+`P_make` against a per-layout average, which is the property it exists for.
+
+### Python surface: candidates
+
+What is still missing from the Python surface, recorded so the next contributor
+sees what to do and not only what goes wrong. Each says what a caller writes
+today, because that is the evidence: both are things `examples/` writes by hand.
+
+The list was longer. The trick primitives, the derived `ObservationState`
+properties, `Card.__hash__`, `SingleLayoutSource`, `root_is_declaring_side` and
+deriving declarer's trick count were all on it and have landed; each was removed
+as it did, along with the gap above that it closed.
+
+**Bridge notation on `Card`.** Turning a `Card` or a deal into `♠Q` or PBN text
+is something every caller invents for itself — `examples/bridge_notation.py` is
+mostly that — and a `__str__` plus a parse/format pair would stop the
+reinvention.
+
+**Let the play history arrive as one object.** `ExhaustiveLayoutSource` wants
+`history` and `opening_leader` as separate arguments, and omitting the pair does
+not fail — it quietly answers a different question, which is why this document
+gives it a section of its own. A caller who has played the hand out holds both in
+one place; accepting that, or deriving the leader from a trick-one deal, makes
+them impossible to pass inconsistently.
 
 ## See also
 

@@ -3,9 +3,11 @@ import unittest
 from belief_space_local_evaluation import Card
 from belief_space_local_evaluation import CardNotHeldError
 from belief_space_local_evaluation import evaluate
+from belief_space_local_evaluation import legal_cards
 from belief_space_local_evaluation import ExhaustiveLayoutSource
 from belief_space_local_evaluation import ProbabilitiesDoNotSumToOneError
 from belief_space_local_evaluation import RankMap
+from belief_space_local_evaluation import seat_on_play
 
 Spades, Hearts, Diamonds, Clubs = 0, 1, 2, 3
 North, East, South, West = 0, 1, 2, 3
@@ -202,6 +204,138 @@ class TestObservationStateExposesRanks(unittest.TestCase):
         self.assertEqual(ranks.to_relative(-1, 5), 0)
         self.assertEqual(ranks.to_relative(Spades, 1), 0)
         self.assertEqual(ranks.to_absolute(Spades, 0), 0)
+
+
+def make_two_cards_each_root() -> dict:
+    # Two cards per hand, so the search plays two tricks and the second one is
+    # led by whoever won the first. That is the only way `trick_leader` can be
+    # seen differing from `first`, which never moves off the root's leader.
+    # North (declarer) holds spades K J, South (dummy) T 9, and the defenders
+    # share the pool {Q, 6, 5, 4}. East leads.
+    remain_cards = [[0, 0, 0, 0] for _ in range(4)]
+    remain_cards[North][Spades] = holding(13, 11)
+    remain_cards[South][Spades] = holding(10, 9)
+    remain_cards[East][Spades] = holding(12, 4)
+    remain_cards[West][Spades] = holding(6, 5)
+    return {
+        "trump": DDS_NOTRUMP,
+        "first": East,
+        "remain_cards": remain_cards,
+        "current_trick_suit": (0, 0, 0),
+        "current_trick_rank": (0, 0, 0),
+    }
+
+
+class TestObservationStateDerivedProperties(unittest.TestCase):
+    """The seven properties a strategy would otherwise derive by hand.
+
+    Captured from real pi calls rather than hand-built, because nothing
+    constructs an ObservationState from Python -- and because two of these
+    cannot be caught at a root at all. `trick_leader` equals `first` there, and
+    `position_in_trick` is 0 there, so a root-only test would pass against an
+    implementation that simply returned `first` and 0.
+    """
+
+    def _observe(self, root: dict) -> list:
+        seen = []
+
+        def pi(state, view):
+            del view
+            seen.append({
+                "seat_on_play": state.seat_on_play,
+                "trick_leader": state.trick_leader,
+                "first": state.first,
+                "current_trick": [(c.suit, c.rank) for c in state.current_trick],
+                "position_in_trick": state.position_in_trick,
+                "legal_cards": [(c.suit, c.rank) for c in state.legal_cards],
+                "can_follow_led_suit": state.can_follow_led_suit,
+                "is_declaring_side": state.is_declaring_side,
+                "known_holdings": state.known_holdings,
+            })
+            return min(state.legal_cards, key=lambda card: (card.rank, card.suit))
+
+        # tricks_needed = 2, not 1: North's king always wins a trick, so with
+        # 1 the contract is already made after trick one and the search never
+        # reaches a second -- leaving trick_leader equal to first at every call
+        # and no pi call on a lead. Both guards below caught exactly that.
+        source = ExhaustiveLayoutSource(root, North, 5)
+        result = evaluate(root, North, 2, source, pi, defender_play)
+        self.assertNotIn("error", result)
+        return seen
+
+    def test_seat_on_play_and_legal_cards_agree_with_the_free_functions(self) -> None:
+        # The same two primitives, reached two ways: through the state a
+        # strategy is handed, and through the module-level functions over that
+        # state's own known_holdings. They must not diverge -- one of them
+        # being wrong is exactly the class of defect this API removes.
+        for call in self._observe(make_two_cards_each_root()):
+            deal = call["known_holdings"]
+            self.assertEqual(call["seat_on_play"], seat_on_play(deal))
+            self.assertEqual(
+                call["legal_cards"],
+                [(c.suit, c.rank) for c in legal_cards(deal, call["seat_on_play"])])
+
+    def test_trick_leader_is_not_first_once_a_trick_has_been_won(self) -> None:
+        # The trap, asserted as behaviour. `first` is the root's leader and
+        # never moves; the trick in progress is led by whoever won the last
+        # one. A strategy reaching for `first` is right at the root and wrong
+        # from the second trick on.
+        calls = self._observe(make_two_cards_each_root())
+
+        diverged = [c for c in calls if c["trick_leader"] != c["first"]]
+        self.assertTrue(
+            diverged,
+            "no call saw trick_leader differ from first, so this test cannot "
+            "catch an implementation that just returns first -- the fixture "
+            "needs to play more than one trick")
+        for call in calls:
+            self.assertEqual(call["first"], East)  # the root's leader, always
+
+    def test_current_trick_is_empty_exactly_when_leading(self) -> None:
+        calls = self._observe(make_two_cards_each_root())
+
+        self.assertTrue(any(c["position_in_trick"] == 0 for c in calls))
+        self.assertTrue(any(c["position_in_trick"] != 0 for c in calls))
+        for call in calls:
+            self.assertEqual(len(call["current_trick"]), call["position_in_trick"])
+            self.assertEqual(call["current_trick"] == [], call["position_in_trick"] == 0)
+
+    def test_current_trick_is_empty_when_leading_even_though_spades_is_suit_zero(self) -> None:
+        # The second half of the same trap. An empty trick has
+        # current_trick_suit == (0, 0, 0), and spades *are* suit 0, so a
+        # property reading the suit array cannot tell "spades were led" from
+        # "nobody has led". Only current_trick_rank's 0 sentinel distinguishes
+        # them -- and every card in this fixture is a spade, so a property
+        # that got this wrong would report a led spade at every lead.
+        for call in self._observe(make_two_cards_each_root()):
+            if call["position_in_trick"] == 0:
+                self.assertEqual(call["current_trick"], [])
+            else:
+                self.assertEqual(call["current_trick"][0][0], Spades)
+
+    def test_can_follow_led_suit_matches_the_holding(self) -> None:
+        for call in self._observe(make_two_cards_each_root()):
+            deal = call["known_holdings"]
+            if call["position_in_trick"] == 0:
+                # Nothing led: there is no suit to follow. False rather than
+                # vacuously true, which is the reading that lets a strategy
+                # write `if not can_follow_led_suit` and discard on a lead.
+                self.assertFalse(call["can_follow_led_suit"])
+            else:
+                led = call["current_trick"][0][0]
+                held = deal["remain_cards"][call["seat_on_play"]][led] != 0
+                self.assertEqual(call["can_follow_led_suit"], held)
+
+    def test_is_declaring_side_is_true_for_dummy_as_well_as_declarer(self) -> None:
+        # pi plays for both, so this must be true at every pi call -- and it
+        # must be derived from declarer *or dummy*, not from `seat == declarer`.
+        calls = self._observe(make_two_cards_each_root())
+
+        for call in calls:
+            self.assertTrue(call["is_declaring_side"])
+        seats = {c["seat_on_play"] for c in calls}
+        self.assertIn(South, seats, "dummy never played, so the dummy half is untested")
+        self.assertIn(North, seats)
 
 
 class TestStateKey(unittest.TestCase):

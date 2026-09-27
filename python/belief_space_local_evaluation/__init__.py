@@ -33,10 +33,13 @@ try:
     from ._belief_space_local_evaluation import InvalidHistoryInputError
     from ._belief_space_local_evaluation import LayoutSource
     from ._belief_space_local_evaluation import LeaderMismatchError
+    from ._belief_space_local_evaluation import legal_cards
     from ._belief_space_local_evaluation import MissingCardError
     from ._belief_space_local_evaluation import module_name
     from ._belief_space_local_evaluation import NoLayoutSurvivedError
     from ._belief_space_local_evaluation import ObservationState
+    from ._belief_space_local_evaluation import play
+    from ._belief_space_local_evaluation import play_out
     from ._belief_space_local_evaluation import ProbabilitiesDoNotSumToOneError
     from ._belief_space_local_evaluation import ProbabilityNonPositiveError
     from ._belief_space_local_evaluation import RankMap
@@ -44,9 +47,12 @@ try:
     from ._belief_space_local_evaluation import RootFailureError
     from ._belief_space_local_evaluation import SampleSizeZeroError
     from ._belief_space_local_evaluation import ScanBudgetExhaustedError
+    from ._belief_space_local_evaluation import SingleLayoutSource
+    from ._belief_space_local_evaluation import seat_on_play
     from ._belief_space_local_evaluation import SourceNotEnumerableError
     from ._belief_space_local_evaluation import SpreadPolicy
     from ._belief_space_local_evaluation import TrailingTrickMismatchError
+    from ._belief_space_local_evaluation import trick_complete_winner
     from ._belief_space_local_evaluation import TrickLengthMismatchError
     from ._belief_space_local_evaluation import ValidationError
     from ._belief_space_local_evaluation import VoidContradictionError
@@ -79,10 +85,13 @@ except ImportError:
     from _belief_space_local_evaluation import InvalidHistoryInputError
     from _belief_space_local_evaluation import LayoutSource
     from _belief_space_local_evaluation import LeaderMismatchError
+    from _belief_space_local_evaluation import legal_cards
     from _belief_space_local_evaluation import MissingCardError
     from _belief_space_local_evaluation import module_name
     from _belief_space_local_evaluation import NoLayoutSurvivedError
     from _belief_space_local_evaluation import ObservationState
+    from _belief_space_local_evaluation import play
+    from _belief_space_local_evaluation import play_out
     from _belief_space_local_evaluation import ProbabilitiesDoNotSumToOneError
     from _belief_space_local_evaluation import ProbabilityNonPositiveError
     from _belief_space_local_evaluation import RankMap
@@ -90,9 +99,12 @@ except ImportError:
     from _belief_space_local_evaluation import RootFailureError
     from _belief_space_local_evaluation import SampleSizeZeroError
     from _belief_space_local_evaluation import ScanBudgetExhaustedError
+    from _belief_space_local_evaluation import SingleLayoutSource
+    from _belief_space_local_evaluation import seat_on_play
     from _belief_space_local_evaluation import SourceNotEnumerableError
     from _belief_space_local_evaluation import SpreadPolicy
     from _belief_space_local_evaluation import TrailingTrickMismatchError
+    from _belief_space_local_evaluation import trick_complete_winner
     from _belief_space_local_evaluation import TrickLengthMismatchError
     from _belief_space_local_evaluation import ValidationError
     from _belief_space_local_evaluation import VoidContradictionError
@@ -124,10 +136,13 @@ __all__ = [
     "InvalidHistoryInputError",
     "LayoutSource",
     "LeaderMismatchError",
+    "legal_cards",
     "MissingCardError",
     "module_name",
     "NoLayoutSurvivedError",
     "ObservationState",
+    "play",
+    "play_out",
     "ProbabilitiesDoNotSumToOneError",
     "ProbabilityNonPositiveError",
     "RankMap",
@@ -135,9 +150,12 @@ __all__ = [
     "RootFailureError",
     "SampleSizeZeroError",
     "ScanBudgetExhaustedError",
+    "SingleLayoutSource",
+    "seat_on_play",
     "SourceNotEnumerableError",
     "SpreadPolicy",
     "TrailingTrickMismatchError",
+    "trick_complete_winner",
     "TrickLengthMismatchError",
     "ValidationError",
     "VoidContradictionError",

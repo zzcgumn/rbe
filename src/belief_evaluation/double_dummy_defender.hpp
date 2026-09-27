@@ -31,6 +31,27 @@ namespace dds::belief_evaluation
 /// concede the contract to hold the trick count down** — and is an instance
 /// of the gap between maximising tricks and minimising `P_make` that this
 /// capability exists to quantify, not a defect to work around.
+///
+/// **It also presumes a double-dummy declarer**, which is the half that
+/// surprises people. Double-dummy defence is optimal against a declarer who
+/// also plays double dummy; against a declarer following a fixed line, or one
+/// reasoning over a belief space, a defence tailored to *that* declarer can do
+/// strictly better. Visible in `examples/`' own grid: against the **fixed
+/// line** (`cash_two_hearts_and_play_a_spade`), this defender concedes a
+/// contract that a simple "cover when it wins" rule defeats — `55/70` against
+/// `35/70`, eleven in fourteen against exactly half, on the same ending
+/// against the same declarer. So "double dummy" names how this defender
+/// computes, not a ceiling on how well the defence can do.
+///
+/// (Both figures are settled independently of any solver tie-break: `55/70`
+/// by set equality against `DoubleDummyBound`'s own per-layout ceiling, and
+/// `35/70` by exhaustive minimax over the fixed line — see
+/// `examples/test_guess_6nt_belief_space.py`. Not every cell of the grid is
+/// this robust: against the *other* declarer here,
+/// `finesse_the_queen_from_the_beliefs`, this defender's own figure depends
+/// on which of several equally good cards `solve_board` names first, which
+/// is why that comparison is asserted by ordering rather than by decimal —
+/// see that test file's docstring.)
 class DoubleDummyDefender
 {
 public:

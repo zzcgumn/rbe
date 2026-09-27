@@ -70,23 +70,6 @@ class TestTheEnding(unittest.TestCase):
             self.assertEqual(sum(bin(mask).count("1") for mask in remain_cards[seat]), 4)
 
 
-class OneLayout(bsle.LayoutSource):
-    """A source holding a single layout -- exempt from obligation 4 (a
-    randomised order) because one element has only one order. Used to check
-    P_make against a per-layout average and against the double-dummy bound."""
-
-    def __init__(self, layout):
-        super().__init__()
-        self._layout = layout
-
-    def size(self):
-        return 1
-
-    def at(self, index):
-        del index
-        return self._layout
-
-
 def _source(sequence):
     return bsle.ExhaustiveLayoutSource(
         sequence.current_deal, sequence.declarer, example.SEED,
@@ -152,7 +135,9 @@ class TestDoubleDummyDefence(unittest.TestCase):
         # must equal the mean of P_make over each layout evaluated alone.
         # This is what caught DoubleDummyBound returning dds's "not
         # evaluated" sentinel as though it were a trick count: the bounded
-        # run reported 0.0 while this average stayed at 0.2.
+        # run reported 0.0 while this average stayed at 0.2. The bound now
+        # range-checks the score, so the two agree; the cross-check is worth
+        # keeping for the next bound, not only for that one.
         sequence = example.guess_6nt()
         ctx = dds3.SolverContext()
         delta = double_dummy_defender(ctx)
@@ -162,7 +147,7 @@ class TestDoubleDummyDefence(unittest.TestCase):
         for index in range(source.size()):
             one = bsle.evaluate(
                 sequence.current_deal, sequence.declarer, sequence.tricks_needed,
-                OneLayout(source.at(index)), lowest_eligible_declarer, delta)
+                bsle.SingleLayoutSource(source.at(index)), lowest_eligible_declarer, delta)
             self.assertNotIn("error", one)
             total += one["by_strategy"][1]["p_make"]
 
@@ -203,7 +188,7 @@ class TestTheDeclarerLine(unittest.TestCase):
             layout = source.at(index)
             one = bsle.evaluate(
                 sequence.current_deal, sequence.declarer, sequence.tricks_needed,
-                OneLayout(layout), example.cash_two_hearts_and_play_a_spade, delta)
+                bsle.SingleLayoutSource(layout), example.cash_two_hearts_and_play_a_spade, delta)
             self.assertNotIn("error", one)
             if one["by_strategy"][1]["p_make"] > 0.999:
                 brings_home.add(index)

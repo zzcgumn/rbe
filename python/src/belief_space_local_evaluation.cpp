@@ -20,6 +20,7 @@
 #include <belief_evaluation/double_dummy_bound.hpp>
 #include <belief_evaluation/double_dummy_defender.hpp>
 #include <belief_evaluation/evaluate.hpp>
+#include <belief_evaluation/trick.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
 #include <belief_evaluation/layout_source.hpp>
 #include <belief_evaluation/node.hpp>
@@ -176,6 +177,22 @@ auto register_card_bindings(py::module_& module) -> void
             [](be::Card const& self, be::Card const& other) {
                 return self.suit == other.suit && self.rank == other.rank;
             })
+        // Defining __eq__ alone makes a type unhashable -- a Python language
+        // rule, not a pybind11 quirk -- so a Card could not be a dict key or a
+        // set member, and a caller memoising by played card had to convert to
+        // (suit, rank) first. Hashing that same tuple rather than combining the
+        // fields by hand keeps "equal cards hash equal" true by construction
+        // and stops the two drifting apart.
+        //
+        // Card is mutable, so this is a hashable mutable type: the hash follows
+        // the fields, and mutating a Card already used as a key loses it. The
+        // alternative -- an immutable Card -- would break the field assignment
+        // this binding has always allowed.
+        .def(
+            "__hash__",
+            [](be::Card const& self) {
+                return py::hash(py::make_tuple(self.suit, self.rank));
+            })
         .def("__repr__", [](be::Card const& self) {
             return "Card(suit=" + std::to_string(self.suit) +
                 ", rank=" + std::to_string(self.rank) + ")";
@@ -252,6 +269,97 @@ auto register_observation_state_bindings(py::module_& module) -> void
             "A deal dict. declarer's and dummy's entries are exact; a\n"
             "defender's entry is the **union pool** of both defenders'\n"
             "outstanding cards, not that defender's own actual holding.")
+        // --- derived, not stored: computed on access from known_holdings.
+        //
+        // Every one of these is something a strategy would otherwise work out
+        // for itself on every call, and two of them are the derivations that
+        // are wrong in the obvious way. Computed here rather than eagerly in
+        // the binding because pi is called thousands of times for even a small
+        // ending (3487 for a four-card one, measured) and most calls read one
+        // or two of these, not all seven.
+        .def_property_readonly(
+            "seat_on_play",
+            [](be::ObservationState const& self) { return be::seat_on_play(self.known_holdings); },
+            "The seat (0..3) whose card this call is being asked for.\n\n"
+            "A strategy is not told its seat any other way.")
+        .def_property_readonly(
+            "trick_leader",
+            [](be::ObservationState const& self) { return self.known_holdings.first; },
+            "The seat that led to the trick **in progress**.\n\n"
+            "Not `first`, which is the seat on lead at the *root* and never\n"
+            "moves for the whole evaluation. This one is reassigned to the\n"
+            "winner every time a trick resolves. They agree at the root and\n"
+            "diverge from the second trick on, so a strategy that reaches for\n"
+            "`first` is right in testing and wrong in play.")
+        .def_property_readonly(
+            "current_trick",
+            [](be::ObservationState const& self) {
+                py::list cards;
+                for (int i = 0; i < 3; ++i) {
+                    // Rank 0 is the empty-slot sentinel. It is the *rank*
+                    // array that says whether a slot is filled: suit 0 is
+                    // spades, so a zeroed suit array is indistinguishable
+                    // from a spade lead.
+                    if (self.known_holdings.currentTrickRank[i] == 0) {
+                        break;
+                    }
+                    cards.append(be::Card{self.known_holdings.currentTrickSuit[i],
+                                          self.known_holdings.currentTrickRank[i]});
+                }
+                return cards;
+            },
+            "The cards already played to the trick in progress, in play\n"
+            "order. **Empty means this seat is leading.**\n\n"
+            "These are in nobody's known_holdings: a card leaves the hand\n"
+            "that played it as it is played, and the trick in progress lives\n"
+            "only here.")
+        .def_property_readonly(
+            "position_in_trick",
+            [](be::ObservationState const& self) {
+                int played = 0;
+                while (played < 3 && self.known_holdings.currentTrickRank[played] != 0) {
+                    ++played;
+                }
+                return played;
+            },
+            "0 when leading, 1..3 otherwise -- how many cards are already on\n"
+            "the trick.")
+        .def_property_readonly(
+            "legal_cards",
+            [](be::ObservationState const& self) {
+                return be::enumerate_legal_cards(self.known_holdings,
+                                                 be::seat_on_play(self.known_holdings));
+            },
+            "Every Card the seat on play may legally return, follow-suit rule\n"
+            "already applied. Ordered suit ascending, then rank within a\n"
+            "suit.\n\n"
+            "A card from this list is legal in every layout of the node, not\n"
+            "merely this one: the follow-suit rule reads only the seat's own\n"
+            "holding, which is common knowledge for declarer and dummy.")
+        .def_property_readonly(
+            "can_follow_led_suit",
+            [](be::ObservationState const& self) {
+                if (self.known_holdings.currentTrickRank[0] == 0) {
+                    return false;  // nothing led: there is no suit to follow
+                }
+                int const led = self.known_holdings.currentTrickSuit[0];
+                int const seat = be::seat_on_play(self.known_holdings);
+                return self.known_holdings.remainCards[seat][led] != 0;
+            },
+            "Whether the seat on play holds any card of the suit led.\n\n"
+            "**False when leading**, there being no suit to follow -- so\n"
+            "`if not state.can_follow_led_suit` reads as \"I am free to play\n"
+            "anything\", which is true both when leading and when void.")
+        .def_property_readonly(
+            "is_declaring_side",
+            [](be::ObservationState const& self) {
+                int const seat = be::seat_on_play(self.known_holdings);
+                int const dummy = (self.declarer + 2) % DDS_HANDS;
+                return seat == self.declarer || seat == dummy;
+            },
+            "Whether the seat on play is declarer **or dummy**. A declarer\n"
+            "strategy plays for both, so this is true at every play() call;\n"
+            "it is meaningful for a strategy shared between the two sides.")
         .def_property_readonly(
             "ranks", [](be::ObservationState const& self) { return self.ranks; },
             "A RankMap -- the precomputed absolute/relative rank mapping\n"
@@ -974,6 +1082,33 @@ auto register_history_error_bindings(py::module_& module) -> void
     throw py::error_already_set();
 }
 
+// A LayoutSource holding one layout -- see the binding below for why it is
+// worth shipping rather than left to each caller.
+class SingleLayoutSource final : public be::LayoutSource
+{
+public:
+    explicit SingleLayoutSource(Deal layout) : layout_(layout)
+    {
+    }
+
+    auto size() const -> std::optional<std::uint64_t> override
+    {
+        return 1u;
+    }
+
+    auto at(std::uint64_t index) const -> Deal override
+    {
+        // The binding range-checks before reaching here; this is the C++-side
+        // contract, for the evaluator calling through LayoutSource&.
+        assert(index == 0);
+        (void)index;
+        return layout_;
+    }
+
+private:
+    Deal layout_;
+};
+
 // The trampoline: LayoutSource is not a callable, it is an abstract class,
 // so a Python subclass needs one. Every override acquires the GIL --
 // PYBIND11_OVERRIDE's own mechanism does this already, which is exactly
@@ -1086,6 +1221,56 @@ auto register_layout_source_bindings(py::module_& module) -> void
         "self._deals[i] from a list built in assembly order is the most\n"
         "likely way to get this wrong.")
         .def(py::init<>());
+
+    // A source over exactly one layout. Defined here rather than in
+    // src/belief_evaluation/ because its whole purpose is to save a *Python*
+    // caller from writing a trampoline subclass; a C++ caller can write the
+    // three lines directly, and the module's test support already does.
+    //
+    // It is also the one LayoutSource trivially exempt from the randomised
+    // order obligation LayoutSource's own docstring describes, one element
+    // having only one order -- so it doubles as a correct-by-construction
+    // starting point, where the pattern that obligation warns against
+    // (returning self._deals[i] from a list in assembly order) is the most
+    // likely thing a caller writes instead.
+    py::class_<SingleLayoutSource, be::LayoutSource>(
+        module,
+        "SingleLayoutSource",
+        "A LayoutSource over exactly one layout: size() is 1 and at(0) is\n"
+        "that layout.\n\n"
+        "For evaluating one layout on its own -- which is how P_make over a\n"
+        "belief space gets cross-checked against the mean of P_make over\n"
+        "each layout alone, the check that is worth making about any strategy\n"
+        "pair and that has already caught one library defect.\n\n"
+        "Exempt from the randomised-order obligation in LayoutSource's own\n"
+        "docstring, since one element has only one order. Sampling a\n"
+        "one-layout space is a no-op rather than a biased draw.")
+        .def(py::init([](py::dict const& layout) {
+                 return SingleLayoutSource(dds3_python::dict_to_deal(layout));
+             }),
+             py::arg("layout"))
+        .def("size", [](SingleLayoutSource const& self) { return self.size().value(); })
+        .def(
+            "at",
+            [](SingleLayoutSource const& self, py::object const& index_obj) {
+                // Same contract, and the same reasoning, as
+                // ExhaustiveLayoutSource::at below: an out-of-range index is a
+                // Python IndexError on every build, and the index is compared
+                // as a Python int so a negative or oversized one never has to
+                // be represented as uint64_t at all.
+                py::object const index_int =
+                    py::reinterpret_steal<py::object>(PyNumber_Index(index_obj.ptr()));
+                if (! index_int) {
+                    throw py::error_already_set();
+                }
+                if (index_int < py::int_(0) || index_int >= py::int_(1)) {
+                    throw py::index_error(
+                        "index " + std::string(py::repr(index_obj)) +
+                        " is out of range for a source of size 1");
+                }
+                return dds3_python::deal_to_dict(self.at(0));
+            },
+            py::arg("index"));
 
     py::class_<be::ExhaustiveLayoutSource, be::LayoutSource>(
         module,
@@ -1505,6 +1690,152 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
         "document for the option coupling this binding validates that "
         "the C++ type's own doxygen states but a Python caller cannot "
         "read on the field.");
+
+    // The trick primitives, bound from trick.hpp rather than reimplemented.
+    // These are the four the evaluator itself uses to walk a position
+    // (evaluate.cpp, expand.cpp), exposed so a Python caller reaching a
+    // mid-play root uses the *same* follow-suit and trick-winner rules the
+    // evaluator will apply to the root they hand it. A caller's own copy that
+    // disagrees produces a wrong root, and every number computed from it is
+    // confidently about a different position, with nothing raised anywhere.
+    //
+    // All four take and return `deal` dicts, the same shape
+    // ObservationState.known_holdings hands out, so they compose with what a
+    // strategy is already given.
+    module.def(
+        "seat_on_play",
+        [](py::dict const& deal) { return be::seat_on_play(dds3_python::dict_to_deal(deal)); },
+        py::arg("deal"),
+        "The seat (0..3) on play at deal: its `first` advanced by however\n"
+        "many cards have been played to the trick in progress.\n\n"
+        "Note this is deal['first'], the *current trick's* leader, advanced --\n"
+        "not ObservationState.first, which is the root's leader and never\n"
+        "moves. A strategy given an ObservationState should pass\n"
+        "state.known_holdings here.");
+
+    module.def(
+        "legal_cards",
+        [](py::dict const& deal, int seat) {
+            return be::enumerate_legal_cards(dds3_python::dict_to_deal(deal), seat);
+        },
+        py::arg("deal"),
+        py::arg("seat"),
+        "Every Card seat may legally play at deal, honouring the suit led to\n"
+        "the trick in progress when seat holds any card of it.\n\n"
+        "Ordered suit ascending, then rank ascending within a suit -- the same\n"
+        "order evaluate()'s root_children key uses, since that key is built by\n"
+        "indexing into this list.\n\n"
+        "Returns Cards, not the per-suit bitmasks the C++ legal_cards()\n"
+        "returns: a strategy has to return a Card, so the bitmask form only\n"
+        "ever gets expanded again by the caller.");
+
+    module.def(
+        "trick_complete_winner",
+        [](py::dict const& deal, be::Card const& card) {
+            return be::trick_complete_winner(dds3_python::dict_to_deal(deal), card);
+        },
+        py::arg("deal"),
+        py::arg("card"),
+        "The seat that wins the trick in progress once card is played as its\n"
+        "fourth card. deal must already carry exactly three played cards in\n"
+        "current_trick_suit / current_trick_rank.\n\n"
+        "Highest trump if any were played, else highest card of the led suit:\n"
+        "a discard never wins, however high, and a ruff beats any card of the\n"
+        "suit led.");
+
+    module.def(
+        "play",
+        [](py::dict const& deal, be::Card const& card) {
+            return dds3_python::deal_to_dict(be::play(dds3_python::dict_to_deal(deal), card));
+        },
+        py::arg("deal"),
+        py::arg("card"),
+        "The deal after the seat on play plays card: removed from that seat's\n"
+        "remain_cards, and either appended to the trick in progress or -- when\n"
+        "card completes the trick -- the trick resolved, current_trick_*\n"
+        "cleared and 'first' reassigned to the winner.\n\n"
+        "Pure: the deal passed in is not modified, a new dict is returned.\n"
+        "Carries no trick counter -- who won, and what that makes the running\n"
+        "total, is the caller's business.");
+
+    // The one piece of arithmetic evaluate() takes on trust. The evaluator
+    // carries no trick counter (trick.hpp says so), so tricks_needed is
+    // caller-written -- and an off-by-one there does not fail, it evaluates a
+    // different contract and reports a confident number for it.
+    //
+    // The root and the count come back together because the hazard is the two
+    // disagreeing: there is deliberately no way to obtain one without the
+    // other. Implemented over the bound primitives rather than as a new C++
+    // function because the defect class is caller-written arithmetic *in
+    // Python*; a C++ caller reaches a root by constructing one, not by
+    // replaying a hand.
+    module.def(
+        "play_out",
+        [](py::dict const& deal, py::sequence const& history, int opening_leader,
+           int declarer) {
+            if (opening_leader < 0 || opening_leader >= DDS_HANDS) {
+                throw py::value_error(
+                    "opening_leader has invalid value " + std::to_string(opening_leader) +
+                    " (expected range 0.." + std::to_string(DDS_HANDS - 1) + ")");
+            }
+            if (declarer < 0 || declarer >= DDS_HANDS) {
+                throw py::value_error(
+                    "declarer has invalid value " + std::to_string(declarer) +
+                    " (expected range 0.." + std::to_string(DDS_HANDS - 1) + ")");
+            }
+
+            Deal current = dds3_python::dict_to_deal(deal);
+            current.first = opening_leader;
+            int const dummy = (declarer + 2) % DDS_HANDS;
+            int won = 0;
+
+            std::size_t index = 0;
+            for (py::handle const item : history) {
+                be::Card const card = py::cast<be::Card>(item);
+                int const seat = be::seat_on_play(current);
+
+                // be::play has a precondition, not a check: an illegal card
+                // would yield a nonsense position rather than an error. A
+                // history is caller data -- usually a transcribed hand record
+                // -- so it is validated here, naming the card and the index
+                // that a reader can find in their own source.
+                std::array<unsigned, DDS_SUITS> const legal = be::legal_cards(current, seat);
+                if (card.suit < 0 || card.suit >= DDS_SUITS || card.rank < 2 || card.rank > 14 ||
+                    (legal[static_cast<std::size_t>(card.suit)] & (1u << card.rank)) == 0) {
+                    throw py::value_error(
+                        "history[" + std::to_string(index) + "] is not a legal play for seat " +
+                        std::to_string(seat) + ": " + std::string(py::repr(py::cast(card))));
+                }
+
+                bool const completes_the_trick = current.currentTrickRank[2] != 0;
+                current = be::play(current, card);
+                // A completed trick is the only one with a winner, and
+                // be::play has just reassigned `first` to it. A trailing
+                // incomplete trick therefore counts for nobody, which is
+                // right: it has no winner yet.
+                if (completes_the_trick && (current.first == declarer || current.first == dummy)) {
+                    ++won;
+                }
+                ++index;
+            }
+
+            return py::make_tuple(dds3_python::deal_to_dict(current), won);
+        },
+        py::arg("deal"),
+        py::arg("history"),
+        py::arg("opening_leader"),
+        py::arg("declarer"),
+        "Replay `history` onto `deal` from `opening_leader`, and return\n"
+        "`(root, tricks_won_by_declarer)`.\n\n"
+        "`root` is the position after the last card, ready to hand to\n"
+        "evaluate(); the count is what evaluate()'s `tricks_needed` has to be\n"
+        "measured against -- `level + 6 - tricks_won_by_declarer`. Tricks won\n"
+        "by **dummy** count for declarer.\n\n"
+        "A trailing incomplete trick is replayed and counts for nobody: it has\n"
+        "no winner yet. Its cards are on `root`'s trick in progress.\n\n"
+        "Raises ValueError naming the index if a card is not a legal play at\n"
+        "the point it is reached -- which is what catches a transcription\n"
+        "mistake, or an `opening_leader` that does not match the history.");
 
     module.def("module_name", []() {
         return "_belief_space_local_evaluation";

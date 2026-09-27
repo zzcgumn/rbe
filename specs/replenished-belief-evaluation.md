@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-09-12
+last-updated: 2026-09-27
 ---
 
 # Replenished Belief Evaluation
@@ -473,6 +473,15 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   equals whichever entry the strategy actually chose, not their sum); for a
   defender-node root, exactly the children defender-node expansion already
   produces, which do sum to the root value (mass conservation).
+- **Which of those two the root-child values are is reported, not left to be
+  inferred.** Summing them is meaningful at a defender root and meaningless at
+  a declarer root, and a consumer cannot tell the two apart from the values
+  alone — the caller knows the root's seat, but "declarer root" means declarer
+  *or dummy* is on lead, which is one derivation away and wrong in the obvious
+  reading. The result therefore carries the flag alongside the values. A flag
+  rather than two differently-named keys: splitting the key would break every
+  existing consumer to express the same thing, and a consumer that ignores the
+  flag keeps the behaviour it has today.
 - **A user callback's contract violation is reported in the result, never
   thrown.** A callback is user input, not an internal, so a card or
   distribution that fails validation surfaces as an error value carrying
@@ -517,9 +526,7 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   and a cut on `DD < ρ` then reports zero for a contract that in fact makes.
   `DoubleDummyDefender` (either `SpreadPolicy`) satisfies the precondition —
   trick-maximising for both sides at every node — and pairing it with
-  `DoubleDummyBound` is the intended sound configuration — **as a design;
-  the shipped `DoubleDummyBound` does not currently deliver it, see Known
-  gaps below.** The other
+  `DoubleDummyBound` is the intended sound configuration. The other
   direction is equally load-bearing and easy to miss precisely because it
   looks free once the bound is already computed: `DD ≥ ρ` implies **nothing**
   about `R`, since π may play worse than double dummy, so the single solve
@@ -672,9 +679,19 @@ rename or include-ordering trick anywhere in the module.
   `validate_declarer_card()`, `validate_defender_distribution()`.
 - `src/belief_evaluation/kahan.hpp` — `KahanAccumulator`.
 - `src/belief_evaluation/trick.hpp` — `seat_on_play()`,
-  `legal_cards()`, `trick_complete_winner()`, `play()`, and the module's one
-  boundary between `Deal`'s absolute-rank bit convention and the compacted
-  convention `RankMap`, `renumber()` and every lookup table use.
+  `legal_cards()`, `enumerate_legal_cards()` (the `Card`-list expansion of
+  `legal_cards()`'s per-suit bitmasks), `trick_complete_winner()`, `play()`,
+  and the module's one boundary between `Deal`'s absolute-rank bit
+  convention and the compacted convention `RankMap`, `renumber()` and every
+  lookup table use. Bound to Python — `bsle.seat_on_play`, `bsle.play`,
+  `bsle.trick_complete_winner` from their like-named C++ functions,
+  `bsle.legal_cards` from `enumerate_legal_cards()` (the `Card` list, not
+  `legal_cards()`'s bitmasks — a strategy has to return a `Card`), plus
+  `bsle.play_out()` composing them to replay a whole history — no new logic,
+  the same functions the evaluator itself calls. A Python caller reaching a
+  mid-play root previously had no choice but to reimplement these, and a
+  reimplementation that disagreed with the evaluator's own follow-suit or
+  trick-winner rule produced a wrong *root*, silently.
 - `src/belief_evaluation/node.hpp` — `BeliefNode`, `RootOptions`,
   `RootConstructionResult`, `RootFailure`, `ScanOutcome`, `make_root()`,
   `root_observation_state()`, `history_for()`, `is_consistent()`,
@@ -737,26 +754,9 @@ rename or include-ordering trick anywhere in the module.
   separate, solver-linked Bazel target**
   (`//src/belief_evaluation:double_dummy_bound`), sibling to
   `double_dummy_defender` above and paired with it for the intended sound
-  tier-2 configuration — which it does not currently achieve; see Known
-  gaps.
+  tier-2 configuration.
 
 ## Known gaps / non-goals
-
-- **`DoubleDummyBound` does not deliver the `DD` it promises, so the tier-2
-  configuration this document calls "the intended sound configuration" is not
-  currently sound.** The design claim is unaffected: `R ≤ DD` does hold when
-  the paired δ is double-dummy optimal for trick count. The implementation is
-  the problem — `solve_board` at `solutions = 1` can return `score[0] == -2`,
-  meaning "not evaluated", with a successful status, and `as_bound()` returns
-  it as a bound. A negative bound is below any `tricks_needed`, so
-  `tier2_dead()` fires on a live node and `evaluate()` reports 0.0 for a
-  contract that makes. Which positions trigger it is **not** established; the
-  obvious explanations are refuted by a parameterised table in
-  `tests/belief_evaluation/double_dummy_bound_test.cpp`, whose
-  `KnownUnsoundness*` tests pin the symptom. Callers should omit `bound`,
-  which costs pruning only. See "Known gaps" in
-  `docs/belief_space_local_evaluation.md`. Recorded here rather than fixed
-  here; the fix is a separate change.
 
 - `is_consistent()` does not compare defender hand sizes, so it accepts a
   strictly larger set of candidates than the set of legal bridge positions

@@ -12,38 +12,25 @@ layouts in which a defender holds a suit they have already shown out of. See
 "The play history: needed, not merely optional" in
 docs/belief_space_local_evaluation.md -- omitting it does not fail, it
 quietly answers a different question.
+
+The trick mechanics and the trick *counting* are **not** here any more. `bsle.seat_on_play`,
+`bsle.legal_cards`, `bsle.play` and `bsle.trick_complete_winner` are the
+library's own, the same four the evaluator applies to the root you hand it, so
+this module no longer carries a second copy of the follow-suit and trick-winner
+rules that could disagree with them. Nor the derivations a strategy needs: a
+declarer strategy reads `state.seat_on_play`, `state.trick_leader`,
+`state.current_trick` and `state.legal_cards` off the ObservationState it is
+handed. What is left is the bookkeeping the library genuinely does not do:
+counting tricks, collecting the history, and turning hand records into cards.
 """
 
+import belief_space_local_evaluation as bsle
+
 from bridge_notation import (
-    NOTRUMP,
     SEAT_NAMES,
     format_card,
     parse_cards,
-    ranks_in,
 )
-
-
-def seat_on_play(deal: dict) -> int:
-    """The seat to play next: the trick's leader, advanced by the number of
-    cards already played to the trick in progress."""
-    played = 0
-    for rank in deal["current_trick_rank"]:
-        if rank == 0:
-            break
-        played += 1
-    return (deal["first"] + played) % 4
-
-
-def trick_leader(deal: dict) -> int:
-    """The seat that led to the trick *in progress*.
-
-    Not `ObservationState.first`, which is the seat on lead at the **root**
-    and never moves for the whole evaluation. A deal's own `first` is
-    reassigned to the winner every time a trick resolves. The two agree at
-    the root and diverge from the second trick on, so a strategy that reaches
-    for `state.first` here is right in testing and wrong in play.
-    """
-    return deal["first"]
 
 
 def cards_on_trick(deal: dict) -> list:
@@ -54,10 +41,8 @@ def cards_on_trick(deal: dict) -> list:
     hand that played it as it is played. The trick in progress lives only
     here.
     """
-    from belief_space_local_evaluation import Card
-
     return [
-        Card(suit, rank)
+        bsle.Card(suit, rank)
         for suit, rank in zip(deal["current_trick_suit"], deal["current_trick_rank"])
         if rank != 0
     ]
@@ -70,73 +55,25 @@ def suit_led(deal: dict) -> int:
     return deal["current_trick_suit"][0]
 
 
-def legal_cards(deal: dict, seat: int) -> list:
-    """Every card `seat` may legally play next, highest first within a suit.
-
-    The whole rule: follow the suit led if you hold any of it, otherwise play
-    anything.
-    """
-    from belief_space_local_evaluation import Card
-
-    remain_cards = deal["remain_cards"][seat]
-    led = suit_led(deal)
-    suits = [led] if led >= 0 and remain_cards[led] != 0 else range(4)
-    return [Card(suit, rank) for suit in suits for rank in ranks_in(remain_cards[suit])]
-
-
-def _trick_winner(trump: int, first: int, cards: list) -> int:
-    """Which seat wins a complete trick: highest trump if any was played,
-    otherwise highest card of the suit led."""
-    led = cards[0].suit
-    contest = trump if trump != NOTRUMP and any(c.suit == trump for c in cards) else led
-    best = max(
-        (i for i, card in enumerate(cards) if card.suit == contest),
-        key=lambda i: cards[i].rank)
-    return (first + best) % 4
-
-
 def play_card(deal: dict, card) -> dict:
-    """The deal after the seat on play plays `card` -- the card removed from
-    their holding and either appended to the trick in progress or, when it
-    completes the trick, the trick resolved and `first` set to the winner.
+    """The deal after the seat on play plays `card`, via `bsle.play`.
 
-    Pure: `deal` is not modified. This mirrors `play()` in
-    src/belief_evaluation/trick.hpp, which is the library's own version of
-    the same mechanics but is not exposed to Python.
+    The play itself is the library's. What is added here is a diagnostic:
+    `bsle.play` has a precondition rather than a check, so a hand record with
+    a card in the wrong place would otherwise produce a nonsense position
+    instead of an error naming the card. Transcription mistakes are the
+    common case for this module's callers, so they are worth catching by name.
     """
-    from belief_space_local_evaluation import Card
-
-    seat = seat_on_play(deal)
+    seat = bsle.seat_on_play(deal)
     if deal["remain_cards"][seat][card.suit] & (1 << card.rank) == 0:
         raise ValueError(
             f"{SEAT_NAMES[seat]} does not hold {format_card(card, symbols=False)}")
-    if card not in legal_cards(deal, seat):
+    if card not in bsle.legal_cards(deal, seat):
         raise ValueError(
             f"{SEAT_NAMES[seat]} must follow suit and cannot play "
             f"{format_card(card, symbols=False)}")
 
-    remain_cards = [list(row) for row in deal["remain_cards"]]
-    remain_cards[seat][card.suit] &= ~(1 << card.rank)
-
-    suits = list(deal["current_trick_suit"])
-    ranks = list(deal["current_trick_rank"])
-    played = sum(1 for rank in ranks if rank != 0)
-
-    if played < 3:
-        suits[played], ranks[played] = card.suit, card.rank
-        first = deal["first"]
-    else:
-        trick = [Card(suits[i], ranks[i]) for i in range(3)] + [card]
-        first = _trick_winner(deal["trump"], deal["first"], trick)
-        suits, ranks = [0, 0, 0], [0, 0, 0]
-
-    return {
-        "trump": deal["trump"],
-        "first": first,
-        "remain_cards": remain_cards,
-        "current_trick_suit": tuple(suits),
-        "current_trick_rank": tuple(ranks),
-    }
+    return bsle.play(deal, card)
 
 
 class PlaySequence:
@@ -152,9 +89,9 @@ class PlaySequence:
         self.level = level
         self.opening_leader = (declarer + 1) % 4
         self.history = []
-        self.tricks_won_by_declarer = 0
         self.completed_tricks = []
-        self.current_deal = dict(deal, trump=trump, first=self.opening_leader)
+        self._initial_deal = dict(deal, trump=trump, first=self.opening_leader)
+        self.current_deal = self._initial_deal
 
     @property
     def dummy(self) -> int:
@@ -164,6 +101,19 @@ class PlaySequence:
     def tricks_to_make(self) -> int:
         """What the contract needs in total: six plus the level."""
         return self.level + 6
+
+    @property
+    def tricks_won_by_declarer(self) -> int:
+        """Tricks to declarer's side so far, dummy's included.
+
+        Derived by the library rather than counted here. It is the same number
+        `evaluate()`'s `tricks_needed` is measured against, and an off-by-one in
+        it does not fail -- it evaluates a different contract and reports a
+        confident number for it. Not somewhere to keep a hand-written counter.
+        """
+        _root, won = bsle.play_out(
+            self._initial_deal, self.history, self.opening_leader, self.declarer)
+        return won
 
     @property
     def tricks_needed(self) -> int:
@@ -185,10 +135,10 @@ class PlaySequence:
         self.current_deal = play_card(self.current_deal, card)
         self.history.append(card)
         if before == 3:
-            winner = self.current_deal["first"]
-            self.completed_tricks.append((leader, self.history[-4:], winner))
-            if winner in (self.declarer, self.dummy):
-                self.tricks_won_by_declarer += 1
+            # For `format_tricks` only. Who won a trick is worth printing; what
+            # that makes the running total is `tricks_won_by_declarer`, which
+            # the library derives -- this loop deliberately does not add up.
+            self.completed_tricks.append((leader, self.history[-4:], self.current_deal["first"]))
 
     def play_trick(self, cards) -> "PlaySequence":
         """Play four cards, checking they really are a whole trick. Worth

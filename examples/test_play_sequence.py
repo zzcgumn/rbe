@@ -1,15 +1,17 @@
 """Tests for the bridge plumbing in play_sequence.py and bridge_notation.py.
 
-These matter more than example plumbing usually would. `play_sequence` is a
-Python re-implementation of `src/belief_evaluation/trick.hpp` -- the library
-does not expose those mechanics to Python, so a caller reaching a mid-play root
-has to write them again. If this copy disagrees with the evaluator's own
-follow-suit or trick-winner rule, the result is a wrong *root*, and every
-number computed from it is confidently about a different position. Nothing
-raises.
+`play_sequence` used to re-implement `src/belief_evaluation/trick.hpp`, because
+those mechanics were not bound to Python. They are bound now, so the cases here
+that exercise `legal_cards` and `seat_on_play` are testing the library through
+its own bindings, and the hand-derived assertions on them live in
+`python/tests/test_belief_space_local_evaluation_trick.py`.
 
-The trump branch of `_trick_winner` is the clearest case: the only example here
-is 6NT, so no example exercises it at all.
+What is left to test here is what this module still owns, and it is the part
+worth the most care: the trick *counting*. `evaluate()` is handed
+`tricks_needed` and takes it on trust, so an off-by-one in
+`tricks_won_by_declarer` silently evaluates a different contract -- which is
+why a defence-won trick is asserted explicitly below, that branch having once
+had no test at all.
 """
 
 import unittest
@@ -30,14 +32,13 @@ from bridge_notation import (
     parse_deal,
     ranks_in,
 )
+from belief_space_local_evaluation import legal_cards, seat_on_play
+
 from play_sequence import (
     PlaySequence,
     cards_on_trick,
-    legal_cards,
     play_card,
-    seat_on_play,
     suit_led,
-    trick_leader,
 )
 
 DEAL = "N: KJ7.QJ.QT65.AJ42 A653.86432.J2.T9 T9.AKT.AK98.KQ73 Q842.975.743.865"
@@ -96,7 +97,7 @@ class TestTrickPosition(unittest.TestCase):
         deal = deal_with(NOTRUMP, SOUTH, {s: {SPADES: [2 + s]} for s in range(4)})
 
         self.assertEqual(cards_on_trick(deal), [])
-        self.assertEqual(trick_leader(deal), SOUTH)
+        self.assertEqual(deal["first"], SOUTH)  # the trick in progress
         self.assertEqual(seat_on_play(deal), SOUTH)
         self.assertEqual(suit_led(deal), -1)
 
@@ -115,7 +116,7 @@ class TestTrickPosition(unittest.TestCase):
                           SOUTH: {SPADES: [10]}, WEST: {SPADES: [12]}},
                          ((SPADES, 0, 0), (4, 11, 0)))
 
-        self.assertEqual(trick_leader(deal), WEST)
+        self.assertEqual(deal["first"], WEST)  # the trick in progress
         self.assertEqual(seat_on_play(deal), (WEST + 2) % 4)
         self.assertEqual([c.rank for c in cards_on_trick(deal)], [4, 11])
 
@@ -141,10 +142,15 @@ class TestLegalCards(unittest.TestCase):
 
         self.assertEqual({c.suit for c in legal}, {HEARTS, CLUBS})
 
-    def test_ranks_come_back_highest_first_within_a_suit(self) -> None:
+    def test_ranks_come_back_lowest_first_within_a_suit(self) -> None:
+        # This module used to return them highest first. The library's own
+        # order is ascending -- and it is contract, not incidental, because
+        # root_children is built by indexing into this list. Nothing depended
+        # on the old order: every strategy here reaches for min() or searches
+        # by rank, which is why the switch moved no P_make.
         deal = deal_with(NOTRUMP, SOUTH, {SOUTH: {SPADES: [2, 10, 14]}})
 
-        self.assertEqual([c.rank for c in legal_cards(deal, SOUTH)], [14, 10, 2])
+        self.assertEqual([c.rank for c in legal_cards(deal, SOUTH)], [2, 10, 14])
 
 
 class TestPlayCard(unittest.TestCase):

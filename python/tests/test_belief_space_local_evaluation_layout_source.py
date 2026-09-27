@@ -5,6 +5,7 @@ from belief_space_local_evaluation import CardPlayedAndHeldError
 from belief_space_local_evaluation import ConstrainedSpaceStatus
 from belief_space_local_evaluation import ContradictoryVoidError
 from belief_space_local_evaluation import DuplicatedCardError
+from belief_space_local_evaluation import evaluate
 from belief_space_local_evaluation import ExhaustiveLayoutSource
 from belief_space_local_evaluation import ForcedExceedsFixedSeatCountError
 from belief_space_local_evaluation import HistoryVerdict
@@ -12,6 +13,7 @@ from belief_space_local_evaluation import InsufficientFreeCardsError
 from belief_space_local_evaluation import InvalidHistoryInputError
 from belief_space_local_evaluation import LayoutSource
 from belief_space_local_evaluation import LeaderMismatchError
+from belief_space_local_evaluation import SingleLayoutSource
 from belief_space_local_evaluation import MissingCardError
 from belief_space_local_evaluation import TrailingTrickMismatchError
 from belief_space_local_evaluation import TrickLengthMismatchError
@@ -93,6 +95,136 @@ def make_void_ending():
         return North
 
     return build_deal(played, hand_for)
+
+
+def make_two_card_pool_root() -> dict:
+    """North and South a card each, the defenders sharing a two-card pool -- so
+    the belief space is the two ways of splitting it, which is the smallest
+    space in which a per-layout mean is not the same thing as the whole."""
+    remain_cards = [[0, 0, 0, 0] for _ in range(4)]
+    remain_cards[North][Spades] = 1 << 13
+    remain_cards[South][Spades] = 1 << 12
+    remain_cards[East][Spades] = 1 << 3
+    remain_cards[West][Spades] = 1 << 2
+    return {
+        "trump": 4,
+        "first": North,
+        "remain_cards": remain_cards,
+        "current_trick_suit": (0, 0, 0),
+        "current_trick_rank": (0, 0, 0),
+    }
+
+
+def _lowest_card(remain_cards_row) -> Card:
+    for suit in range(4):
+        for rank in range(2, 15):
+            if remain_cards_row[suit] & (1 << rank):
+                return Card(suit, rank)
+    raise AssertionError("no card held")
+
+
+def lowest_declarer_play(state, view):
+    del view
+    return min(state.legal_cards, key=lambda card: (card.rank, card.suit))
+
+
+def lowest_defender_play(layout, seat, state):
+    del state
+    return [(_lowest_card(layout["remain_cards"][seat]), 1.0)]
+
+
+class TestSingleLayoutSource(unittest.TestCase):
+    """A source over exactly one layout.
+
+    Worth shipping for a reason beyond convenience: P_make over a belief space
+    must equal the mean of P_make over each layout evaluated alone, which is the
+    natural check on any strategy pair -- and the check that caught
+    DoubleDummyBound returning a "not evaluated" sentinel as a trick count.
+    Writing it by hand means subclassing LayoutSource, which is more ceremony
+    than the check deserves and is also where the randomised-order obligation is
+    most often got wrong.
+    """
+
+    def test_size_is_one(self) -> None:
+        self.assertEqual(SingleLayoutSource(make_ten_card_pool_root()).size(), 1)
+
+    def test_at_zero_is_the_layout(self) -> None:
+        layout = make_ten_card_pool_root()
+        source = SingleLayoutSource(layout)
+
+        self.assertEqual(source.at(0)["remain_cards"], layout["remain_cards"])
+        self.assertEqual(source.at(0)["first"], layout["first"])
+        self.assertEqual(source.at(0)["trump"], layout["trump"])
+
+    def test_at_is_repeatable(self) -> None:
+        # LayoutSource's own contract: repeated calls with the same index must
+        # return the same layout.
+        source = SingleLayoutSource(make_ten_card_pool_root())
+        self.assertEqual(source.at(0), source.at(0))
+
+    def test_at_one_past_the_end_raises_index_error(self) -> None:
+        # Same contract as ExhaustiveLayoutSource, which the tests below pin:
+        # out of range is IndexError on every build, not an assert.
+        with self.assertRaises(IndexError):
+            SingleLayoutSource(make_ten_card_pool_root()).at(1)
+
+    def test_a_negative_index_raises_index_error_not_overflow_error(self) -> None:
+        with self.assertRaises(IndexError):
+            SingleLayoutSource(make_ten_card_pool_root()).at(-1)
+
+    def test_is_a_layout_source(self) -> None:
+        self.assertIsInstance(SingleLayoutSource(make_ten_card_pool_root()), LayoutSource)
+
+    def test_it_agrees_with_a_hand_written_one_layout_source(self) -> None:
+        # A container with no evidence it reaches the evaluator correctly would
+        # pass every test above. This runs the same layout through both: the
+        # bound type, and the Python subclass a caller writes today.
+        root = make_two_card_pool_root()
+        layout = ExhaustiveLayoutSource(root, North, 1).at(0)
+
+        class HandWritten(LayoutSource):
+            def __init__(self, one):
+                super().__init__()
+                self._one = one
+
+            def size(self):
+                return 1
+
+            def at(self, index):
+                del index
+                return self._one
+
+        bound = evaluate(root, North, 1, SingleLayoutSource(layout),
+                         lowest_declarer_play, lowest_defender_play)
+        by_hand = evaluate(root, North, 1, HandWritten(layout),
+                           lowest_declarer_play, lowest_defender_play)
+
+        self.assertNotIn("error", bound)
+        self.assertNotIn("error", by_hand)
+        self.assertEqual(bound["by_strategy"][1]["p_make"],
+                         by_hand["by_strategy"][1]["p_make"])
+
+    def test_the_mean_over_layouts_equals_p_make_over_the_space(self) -> None:
+        # The property this type exists to make cheap, and the one that caught
+        # DoubleDummyBound: pi here ignores the view, so P_make over the belief
+        # space must be the mean of P_make over each layout evaluated alone.
+        root = make_two_card_pool_root()
+        space = ExhaustiveLayoutSource(root, North, 1)
+        size = space.size()
+        self.assertGreater(size, 1, "a one-layout space would make this vacuous")
+
+        whole = evaluate(root, North, 1, space,
+                         lowest_declarer_play, lowest_defender_play)
+        self.assertNotIn("error", whole)
+
+        total = 0.0
+        for index in range(size):
+            one = evaluate(root, North, 1, SingleLayoutSource(space.at(index)),
+                           lowest_declarer_play, lowest_defender_play)
+            self.assertNotIn("error", one)
+            total += one["by_strategy"][1]["p_make"]
+
+        self.assertAlmostEqual(total / size, whole["by_strategy"][1]["p_make"], places=12)
 
 
 class TestConstruction(unittest.TestCase):

@@ -39,6 +39,23 @@ auto seat_on_play(Deal const& deal) -> int
     return (deal.first + played_count(deal)) % DDS_HANDS;
 }
 
+auto enumerate_legal_cards(Deal const& deal, int seat) -> std::vector<Card>
+{
+    std::array<unsigned, DDS_SUITS> const legal = legal_cards(deal, seat);
+    std::vector<Card> cards;
+    for (int suit = 0; suit < DDS_SUITS; ++suit)
+    {
+        for (int rank = 2; rank <= 14; ++rank)
+        {
+            if ((legal[suit] & (1u << rank)) != 0)
+            {
+                cards.push_back(Card{suit, rank});
+            }
+        }
+    }
+    return cards;
+}
+
 auto legal_cards(Deal const& deal, int seat) -> std::array<unsigned, DDS_SUITS>
 {
     Position position{};
