@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-09-26
+last-updated: 2026-09-27
 ---
 
 # Replenished Belief Evaluation
@@ -681,7 +681,14 @@ rename or include-ordering trick anywhere in the module.
 - `src/belief_evaluation/trick.hpp` — `seat_on_play()`,
   `legal_cards()`, `trick_complete_winner()`, `play()`, and the module's one
   boundary between `Deal`'s absolute-rank bit convention and the compacted
-  convention `RankMap`, `renumber()` and every lookup table use.
+  convention `RankMap`, `renumber()` and every lookup table use. Bound to
+  Python (`bsle.seat_on_play`, `bsle.legal_cards`, `bsle.play`,
+  `bsle.trick_complete_winner`, plus `bsle.play_out()` composing them to
+  replay a whole history) — no new logic, the same functions the evaluator
+  itself calls. A Python caller reaching a mid-play root previously had no
+  choice but to reimplement these, and a reimplementation that disagreed
+  with the evaluator's own follow-suit or trick-winner rule produced a wrong
+  *root*, silently.
 - `src/belief_evaluation/node.hpp` — `BeliefNode`, `RootOptions`,
   `RootConstructionResult`, `RootFailure`, `ScanOutcome`, `make_root()`,
   `root_observation_state()`, `history_for()`, `is_consistent()`,

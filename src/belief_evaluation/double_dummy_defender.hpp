@@ -36,19 +36,22 @@ namespace dds::belief_evaluation
 /// surprises people. Double-dummy defence is optimal against a declarer who
 /// also plays double dummy; against a declarer following a fixed line, or one
 /// reasoning over a belief space, a defence tailored to *that* declarer can do
-/// strictly better. Visible in `examples/`' own grid, where this defender
-/// concedes a contract that a simple "cover when it wins" rule defeats: a
-/// wide margin, roughly half against six in seven, on the same ending against
-/// the same declarer. So "double dummy" names how this defender computes, not
-/// a ceiling on how well the defence can do.
+/// strictly better. Visible in `examples/`' own grid: against the **fixed
+/// line** (`cash_two_hearts_and_play_a_spade`), this defender concedes a
+/// contract that a simple "cover when it wins" rule defeats — `55/70` against
+/// `35/70`, eleven in fourteen against exactly half, on the same ending
+/// against the same declarer. So "double dummy" names how this defender
+/// computes, not a ceiling on how well the defence can do.
 ///
-/// (The grid's exact figures for this defender are not themselves a bridge
-/// quantity to cite precisely: `spread()` divides probability over tied-best
-/// candidates, so the number depends on which of several equally good cards
-/// `solve_board` happens to name first. `examples/test_guess_6nt_belief_space.py`
-/// records this and asserts the *ordering* rather than the figure. The
-/// direction of the gap above is robust to that; a specific decimal would
-/// not be.)
+/// (Both figures are settled independently of any solver tie-break: `55/70`
+/// by set equality against `DoubleDummyBound`'s own per-layout ceiling, and
+/// `35/70` by exhaustive minimax over the fixed line — see
+/// `examples/test_guess_6nt_belief_space.py`. Not every cell of the grid is
+/// this robust: against the *other* declarer here,
+/// `finesse_the_queen_from_the_beliefs`, this defender's own figure depends
+/// on which of several equally good cards `solve_board` names first, which
+/// is why that comparison is asserted by ordering rather than by decimal —
+/// see that test file's docstring.)
 class DoubleDummyDefender
 {
 public:
