@@ -347,6 +347,57 @@ class TestDeclarerView(unittest.TestCase):
         self.assertIn("West", str(caught.exception))
         self.assertIn("declarer's or dummy's turn", str(caught.exception))
 
+    def test_it_reports_a_lead_position_correctly(self) -> None:
+        sequence = PlaySequence(parse_deal(DEAL), declarer=SOUTH, trump=NOTRUMP, level=6)
+        sequence.play_trick("C6 C4 C9 CQ")  # South wins with the queen
+
+        view = sequence.declarer_view()
+
+        self.assertEqual(view.seat_on_play, SOUTH)
+        self.assertEqual(view.position_in_trick, 0)
+        self.assertEqual(view.current_trick, [])
+        self.assertEqual(view.trick_leader, SOUTH)
+        self.assertFalse(view.can_follow_led_suit)
+        self.assertEqual(len(view.declarer_hand), 12)
+        self.assertNotIn(bsle.Card(CLUBS, 12), view.declarer_hand)
+        self.assertIn(bsle.Card(CLUBS, 13), view.declarer_hand)
+        self.assertEqual(set(view.legal_cards), set(view.declarer_hand))
+        self.assertEqual(
+            view.play_history,
+            [bsle.Card(CLUBS, 6), bsle.Card(CLUBS, 4), bsle.Card(CLUBS, 9), bsle.Card(CLUBS, 12)])
+        self.assertEqual(view.tricks_won_by_declarer, 1)
+        self.assertEqual(view.tricks_needed, 11)
+
+    def test_it_reports_a_mid_trick_dummy_position_correctly(self) -> None:
+        deal = deal_with(NOTRUMP, WEST, {
+            WEST: {SPADES: [6, 7], HEARTS: [2]},
+            NORTH: {SPADES: [8, 9], HEARTS: [3]},
+            EAST: {SPADES: [3, 4], HEARTS: [4]},
+            SOUTH: {SPADES: [14, 5], HEARTS: [5]},
+        })
+        sequence = PlaySequence(deal, declarer=SOUTH, trump=NOTRUMP, level=1)
+        sequence.play_trick("S6 S9 S4 SA")  # W, N, E, S -- South's ace wins
+        sequence.play("S5")                 # South leads trick 2
+        sequence.play("S7")                 # West follows
+
+        view = sequence.declarer_view()
+
+        self.assertEqual(view.seat_on_play, NORTH)
+        self.assertEqual(view.trick_leader, SOUTH)
+        self.assertEqual(view.current_trick, [bsle.Card(SPADES, 5), bsle.Card(SPADES, 7)])
+        self.assertEqual(view.position_in_trick, 2)
+        self.assertEqual(view.legal_cards, [bsle.Card(SPADES, 8)])
+        self.assertTrue(view.can_follow_led_suit)
+        self.assertTrue(view.is_declaring_side)
+        self.assertEqual(view.declarer_hand, [bsle.Card(HEARTS, 5)])
+        self.assertEqual(view.dummy_hand, [bsle.Card(SPADES, 8), bsle.Card(HEARTS, 3)])
+        self.assertEqual(
+            view.play_history,
+            [bsle.Card(SPADES, 6), bsle.Card(SPADES, 9), bsle.Card(SPADES, 4),
+             bsle.Card(SPADES, 14), bsle.Card(SPADES, 5), bsle.Card(SPADES, 7)])
+        self.assertEqual(view.tricks_won_by_declarer, 1)
+        self.assertEqual(view.tricks_needed, 6)
+
 
 if __name__ == "__main__":
     unittest.main()

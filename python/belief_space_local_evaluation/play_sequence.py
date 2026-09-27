@@ -62,6 +62,21 @@ class DeclarerView:
     tricks_needed: int
 
 
+def _hand(remain_cards_row: list) -> list:
+    """A seat's remaining cards as a list of Card, suit ascending then rank
+    ascending within a suit -- matching `legal_cards`' own order, not
+    `bridge_notation.ranks_in`'s highest-first order. `legal_cards` is a
+    subset of whichever of `declarer_hand`/`dummy_hand` owns the seat on
+    play; having a subset and its superset printed in different orders
+    inside the same DeclarerView would be worth avoiding on sight."""
+    return [
+        bsle.Card(suit, rank)
+        for suit in range(4)
+        for rank in range(2, 15)
+        if remain_cards_row[suit] & (1 << rank)
+    ]
+
+
 def cards_on_trick(deal: dict) -> list:
     """The cards already played to the trick in progress, in play order --
     empty when the seat on play is leading.
@@ -200,4 +215,23 @@ class PlaySequence:
                 f"{SEAT_NAMES[seat]} does not have the turn to play; "
                 "declarer_view() is only meaningful when it is declarer's "
                 "or dummy's turn")
-        raise NotImplementedError
+
+        remain_cards = self.current_deal["remain_cards"]
+        current_trick = cards_on_trick(self.current_deal)
+        led_suit = self.current_deal["current_trick_suit"][0]
+        can_follow_led_suit = bool(current_trick) and remain_cards[seat][led_suit] != 0
+
+        return DeclarerView(
+            declarer_hand=_hand(remain_cards[self.declarer]),
+            dummy_hand=_hand(remain_cards[self.dummy]),
+            seat_on_play=seat,
+            trick_leader=self.current_deal["first"],
+            current_trick=current_trick,
+            position_in_trick=len(current_trick),
+            legal_cards=bsle.legal_cards(self.current_deal, seat),
+            can_follow_led_suit=can_follow_led_suit,
+            is_declaring_side=True,
+            play_history=list(self.history),
+            tricks_won_by_declarer=self.tricks_won_by_declarer,
+            tricks_needed=self.tricks_needed,
+        )
