@@ -19,6 +19,7 @@ why a defence-won trick is asserted explicitly below, that branch having once
 had no test at all.
 """
 
+import dataclasses
 import unittest
 
 import belief_space_local_evaluation as bsle
@@ -397,6 +398,29 @@ class TestDeclarerView(unittest.TestCase):
              bsle.Card(SPADES, 14), bsle.Card(SPADES, 5), bsle.Card(SPADES, 7)])
         self.assertEqual(view.tricks_won_by_declarer, 1)
         self.assertEqual(view.tricks_needed, 6)
+
+    def test_it_does_not_carry_a_reference_to_the_real_deal(self) -> None:
+        # Attribute-absence, not e.g. a check on dataclasses.fields()'s
+        # length: a fixed-length check breaks the moment a legitimate new
+        # field is added, which is not the failure this test is for. What
+        # matters is that the specific escape hatch -- the real deal, with
+        # every hand including the defenders' -- is unreachable from the
+        # object handed back, however many fields it ends up with.
+        sequence = PlaySequence(parse_deal(DEAL), declarer=SOUTH, trump=NOTRUMP, level=6)
+        sequence.play_trick("C6 C4 C9 CQ")
+
+        view = sequence.declarer_view()
+
+        self.assertFalse(hasattr(view, "current_deal"))
+
+    def test_it_is_frozen(self) -> None:
+        sequence = PlaySequence(parse_deal(DEAL), declarer=SOUTH, trump=NOTRUMP, level=6)
+        sequence.play_trick("C6 C4 C9 CQ")
+
+        view = sequence.declarer_view()
+
+        with self.assertRaises(dataclasses.FrozenInstanceError):
+            view.declarer_hand = []
 
 
 if __name__ == "__main__":
