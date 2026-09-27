@@ -10,6 +10,7 @@ import unittest
 
 import dds3
 import belief_space_local_evaluation as bsle
+from belief_space_local_evaluation import PlaySequence
 
 Spades, Hearts, Diamonds, Clubs = 0, 1, 2, 3
 North, East, South, West = 0, 1, 2, 3
@@ -164,6 +165,29 @@ class TestPlayingAHandOut(unittest.TestCase):
 
         self.assertEqual(tricks_won_by_declarer, 1)
         self.assertEqual(root["first"], North)
+
+    def test_play_sequence(self) -> None:
+        # West holds C6, North C4, East C9, South CQ -- South (declarer)
+        # wins the trick with the queen.
+        deal = {
+            "trump": DDS_NOTRUMP,
+            "first": East,  # overridden by PlaySequence's own opening_leader
+            "remain_cards": [[0, 0, 0, 0] for _ in range(4)],
+            "current_trick_suit": (0, 0, 0),
+            "current_trick_rank": (0, 0, 0),
+        }
+        deal["remain_cards"][West][Clubs] = holding(6)
+        deal["remain_cards"][North][Clubs] = holding(4)
+        deal["remain_cards"][East][Clubs] = holding(9)
+        deal["remain_cards"][South][Clubs] = holding(12)  # queen
+
+        sequence = PlaySequence(deal, declarer=South, trump=DDS_NOTRUMP, level=6)
+        sequence.play_trick("C6 C4 C9 CQ")
+        root, tricks_needed = sequence.current_deal, sequence.tricks_needed
+
+        self.assertEqual(sequence.tricks_won_by_declarer, 1)
+        self.assertEqual(tricks_needed, 11)  # 6 + 6 - 1
+        self.assertEqual(root["first"], South)  # the queen's seat, on lead next
 
 
 def lowest_card_in(remain_cards_row):

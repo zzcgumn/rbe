@@ -243,6 +243,25 @@ legal play at the point it is reached raises `ValueError` naming its index
 in `history` — the check that catches a transcribed hand record with a card
 in the wrong place, or an `opening_leader` inconsistent with the history.
 
+`bsle.PlaySequence` is the convenience wrapper built on top of these:
+
+```python
+from belief_space_local_evaluation import PlaySequence
+
+sequence = PlaySequence(deal, declarer=2, trump=4, level=6)  # South, notrump
+sequence.play_trick("C6 C4 C9 CQ")
+root, tricks_needed = sequence.current_deal, sequence.tricks_needed
+```
+
+It plays cards via the same four functions above, derives `tricks_needed`
+rather than asking the caller to track it, and collects the history and
+`opening_leader` pair an `ExhaustiveLayoutSource` needs — the three things
+`evaluate()` wants, from one object instead of separately hand-derived
+inputs that can silently disagree with each other. See
+`belief_space_local_evaluation/play_sequence.py`'s own docstring for the
+full surface (`play`, `play_trick`, `history`, `tricks_won_by_declarer`,
+`format_tricks`).
+
 ### π and δ
 
 The shape, not a working strategy -- `Card(0, 14)`/`Card(0, 2)` here are
