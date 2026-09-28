@@ -1,6 +1,6 @@
 """Tests for `PlayRecord` and its Python-visible reach: `state.play_record`,
 `evaluate(..., play_record=...)`, and `ExhaustiveLayoutSource(..., record=...)`
-as an alternative to the existing `history=`/`opening_leader=` pair.
+-- the sole way either entry point accepts a play history.
 """
 
 import unittest
@@ -9,6 +9,7 @@ from belief_space_local_evaluation import Card
 from belief_space_local_evaluation import DuplicatedCardError
 from belief_space_local_evaluation import evaluate
 from belief_space_local_evaluation import ExhaustiveLayoutSource
+from belief_space_local_evaluation import HistoryVerdict
 from belief_space_local_evaluation import InvalidHistoryInputError
 from belief_space_local_evaluation import PlayRecord
 
@@ -75,8 +76,9 @@ class TestPlayRecordConstruction(unittest.TestCase):
         self.assertEqual(record.opening_leader, North)
 
     def test_an_out_of_range_opening_leader_is_rejected(self) -> None:
-        # The same exception type ExhaustiveLayoutSource's own history=
-        # already raises for the identical malformation.
+        # The same exception type ExhaustiveLayoutSource's own record=
+        # argument raises when its own root-consistency check catches a
+        # malformed pair that reaches it some other way.
         with self.assertRaises(InvalidHistoryInputError):
             PlayRecord([], 99)
 
@@ -124,17 +126,21 @@ class TestEvaluatePlayRecord(unittest.TestCase):
 
 
 class TestExhaustiveLayoutSourceRecordArgument(unittest.TestCase):
-    def test_a_record_gives_the_identical_space_to_the_equivalent_pair(self) -> None:
+    def test_a_supplied_record_is_consistent_and_reaches_the_source(self) -> None:
         # ExhaustiveLayoutSource requires history and root together to
-        # account for all 52 cards once a non-empty history is supplied --
+        # account for all 52 cards once a non-empty record is supplied --
         # and, mechanically, a real sequence of complete tricks always
         # leaves all four hands at the same remaining count (each trick
         # removes exactly one card from each hand), so a genuinely small
         # defender pool needs many tricks played, not one. One trick played
         # here instead (giving every hand 12 cards, a real but large
-        # C(24, 12) space) -- the point of this test is that the two
-        # constructor forms agree, not that the space itself is small, so
-        # only size() and a few at() samples are checked, not every index.
+        # C(24, 12) space) -- all four played cards are clubs, so no
+        # defender is void in anything, and the record does not narrow the
+        # space at all: the point of this test is that a record reaches
+        # ExhaustiveLayoutSource and is accepted as Consistent, not that it
+        # shrinks anything here. Genuine narrowing is
+        # TestTheHistoryConstrainsTheBeliefSpace's own, in
+        # test_belief_space_local_evaluation_play_sequence.py.
         history = [Card(Clubs, 2), Card(Clubs, 3), Card(Clubs, 4), Card(Clubs, 5)]  # W, N, E, S
         played = {(c.suit, c.rank) for c in history}
         remaining = [
@@ -155,23 +161,13 @@ class TestExhaustiveLayoutSourceRecordArgument(unittest.TestCase):
             "current_trick_rank": (0, 0, 0),
         }
 
-        from_pair = ExhaustiveLayoutSource(root, North, 1, history=history, opening_leader=West)
+        without_record = ExhaustiveLayoutSource(root, North, 1)
         record = PlayRecord(history, West)
-        from_record = ExhaustiveLayoutSource(root, North, 1, record=record)
+        with_record = ExhaustiveLayoutSource(root, North, 1, record=record)
 
-        self.assertEqual(from_pair.size(), from_record.size())
-        size = from_pair.size()
-        for index in (0, 1, size // 2, size - 1):
-            self.assertEqual(from_pair.at(index), from_record.at(index))
-
-    def test_three_positional_arguments_still_construct_the_legacy_overload(self) -> None:
-        # The overload-ambiguity check: record has no default, so this
-        # must keep resolving to the (history, opening_leader) overload.
-        root = make_one_card_finesse_root()
-
-        source = ExhaustiveLayoutSource(root, North, 5)
-
-        self.assertIsNotNone(source.size())
+        self.assertEqual(with_record.history_verdict(), HistoryVerdict.Consistent)
+        self.assertEqual(with_record.size(), without_record.size())
+        self.assertEqual(with_record.size(), 2704156)  # C(24, 12)
 
 
 if __name__ == "__main__":

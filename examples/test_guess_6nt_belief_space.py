@@ -71,9 +71,9 @@ class TestTheEnding(unittest.TestCase):
 
 
 def _source(sequence):
+    record = bsle.PlayRecord(sequence.history, sequence.opening_leader)
     return bsle.ExhaustiveLayoutSource(
-        sequence.current_deal, sequence.declarer, example.SEED,
-        history=sequence.history, opening_leader=sequence.opening_leader)
+        sequence.current_deal, sequence.declarer, example.SEED, record=record)
 
 
 class TestTheBeliefSpace(unittest.TestCase):
@@ -93,13 +93,15 @@ class TestTheBeliefSpace(unittest.TestCase):
         # in C++ a non-Consistent verdict is an accessor a caller may ignore;
         # here it raises, so a caller who never thinks to check still finds
         # out. This is what makes the verdict assertion above redundant.
+        # A duplicated card is caught by PlayRecord's own construction,
+        # before ever reaching ExhaustiveLayoutSource -- see PlayRecord's
+        # own doxygen for which causes need no root to detect.
         sequence = example.guess_6nt()
 
         with self.assertRaises(bsle.BeliefSpaceLocalEvaluationError):
-            bsle.ExhaustiveLayoutSource(
-                sequence.current_deal, sequence.declarer, example.SEED,
-                history=[bsle.Card(0, 14), bsle.Card(0, 14)],  # the same card twice
-                opening_leader=sequence.opening_leader)
+            bsle.PlayRecord(
+                [bsle.Card(0, 14), bsle.Card(0, 14)],  # the same card twice
+                sequence.opening_leader)
 
 
 class TestPMake(unittest.TestCase):

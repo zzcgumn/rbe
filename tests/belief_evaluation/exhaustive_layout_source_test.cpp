@@ -340,37 +340,40 @@ TEST(ExhaustiveLayoutSourceTest, OutOfRangeIndexIsAnAssertedCallerError)
     EXPECT_DEBUG_DEATH({ source.at(2); }, "");
 }
 
-// --- an empty history is bit-identical to the pre-history constructor -----
+// --- an empty PlayRecord is bit-identical to no record at all -------------
 
-TEST(ExhaustiveLayoutSourceTest, AnEmptyHistoryIsBitIdenticalOverTheWholeSpace)
+TEST(ExhaustiveLayoutSourceTest, AnEmptyPlayRecordIsBitIdenticalToNoRecordAtAllOverTheWholeSpace)
 {
     // Prove it, not assume it: construct the same root two ways -- the
-    // original three-argument call every existing call site still makes,
-    // and the new five-argument form with an explicit empty history -- and
-    // compare size() and every single at(i), not a sample of them.
+    // three-argument call every no-record call site makes, and an
+    // explicit, empty PlayRecord -- and compare size() and every single
+    // at(i), not a sample of them.
     Deal const root = make_ten_card_pool_root();
     ExhaustiveLayoutSource const original(root, North, /*seed=*/1u);
-    ExhaustiveLayoutSource const explicit_empty_history(
-        root, North, /*seed=*/1u, PlayTraceBin{}, /*opening_leader=*/North);
+    auto [empty_record, empty_verdict] = PlayRecord::create(PlayTraceBin{}, /*opening_leader=*/North);
+    ASSERT_EQ(empty_verdict, HistoryVerdict::Consistent);
+    ExhaustiveLayoutSource const with_empty_record(root, North, /*seed=*/1u, empty_record);
 
-    ASSERT_EQ(original.size(), explicit_empty_history.size());
+    ASSERT_EQ(original.size(), with_empty_record.size());
     ASSERT_EQ(original.size(), 252u);  // C(10, 5), same as SizeMatchesTheHandDerivedCountOnATenCardPool
     EXPECT_EQ(original.history_verdict(), HistoryVerdict::Consistent);
     EXPECT_EQ(original.constrained_space_status(), ConstrainedSpaceStatus::Ok);
 
     for (std::uint64_t index = 0; index < *original.size(); ++index)
     {
-        EXPECT_EQ(layout_key(original.at(index), East), layout_key(explicit_empty_history.at(index), East))
+        EXPECT_EQ(layout_key(original.at(index), East), layout_key(with_empty_record.at(index), East))
             << "index=" << index;
     }
 }
 
-// --- a supplied history narrows the space, whole space verified -----------
+// --- a supplied record narrows the space, whole space verified ------------
 
-TEST(ExhaustiveLayoutSourceTest, AHistoryShrinksSizeToTheConstrainedCountAndNoLayoutLeaksTheVoidedSuit)
+TEST(ExhaustiveLayoutSourceTest, ARecordShrinksSizeToTheConstrainedCountAndNoLayoutLeaksTheVoidedSuit)
 {
     auto const [root, history] = make_void_ending();
-    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
+    auto [record, verdict] = PlayRecord::create(history, /*opening_leader=*/North);
+    ASSERT_EQ(verdict, HistoryVerdict::Consistent);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u, record);
 
     ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent);
     ASSERT_EQ(source.constrained_space_status(), ConstrainedSpaceStatus::Ok);
@@ -392,13 +395,15 @@ TEST(ExhaustiveLayoutSourceTest, AHistoryShrinksSizeToTheConstrainedCountAndNoLa
     EXPECT_EQ(keys.size(), 3u);  // at() is a bijection over the constrained space
 }
 
-// --- determinism holds with a history too ----------------------------------
+// --- determinism holds with a record too ------------------------------------
 
-TEST(ExhaustiveLayoutSourceTest, AtIsDeterministicWithAHistoryAcrossTwoSeparatelyConstructedSources)
+TEST(ExhaustiveLayoutSourceTest, AtIsDeterministicWithARecordAcrossTwoSeparatelyConstructedSources)
 {
     auto const [root, history] = make_void_ending();
-    ExhaustiveLayoutSource const a(root, North, /*seed=*/7u, history, /*opening_leader=*/North);
-    ExhaustiveLayoutSource const b(root, North, /*seed=*/7u, history, /*opening_leader=*/North);
+    auto [record, verdict] = PlayRecord::create(history, /*opening_leader=*/North);
+    ASSERT_EQ(verdict, HistoryVerdict::Consistent);
+    ExhaustiveLayoutSource const a(root, North, /*seed=*/7u, record);
+    ExhaustiveLayoutSource const b(root, North, /*seed=*/7u, record);
     ASSERT_EQ(a.size(), b.size());
     for (std::uint64_t index = 0; index < *a.size(); ++index)
     {
@@ -412,15 +417,26 @@ TEST(ExhaustiveLayoutSourceTest, AtIsDeterministicWithAHistoryAcrossTwoSeparatel
 TEST(ExhaustiveLayoutSourceTest, ARejectedHistoryIsReportedAndTheSpaceIsEmptyButDistinguishable)
 {
     auto [root, history] = make_void_ending();
-    // Duplicate a played card -- the same shape history_verification_test.cpp
-    // uses to pin DuplicatedCard -- so verify_history rejects this history
-    // outright.
-    history.suit[3] = history.suit[0];
-    history.rank[3] = history.rank[0];
+    // West's last played card (D12) is swapped for a card North still
+    // holds (H2) -- a card-partition violation (CardPlayedAndHeld) that
+    // needs root's own holdings to detect, unlike a duplicate within the
+    // history alone: PlayRecord::create() catches the latter at
+    // construction (see play_record_test.cpp), but not this one, so it is
+    // ExhaustiveLayoutSource's own verify_history call, against root, that
+    // must still catch it. Compensate root so D12 stays accounted for (as
+    // if it had never been played), isolating exactly this one violation
+    // rather than trading it for a second (MissingCard).
+    root.remainCards[North][Diamonds] |= (1u << 12);
+    history.suit[3] = Hearts;
+    history.rank[3] = 2;
 
-    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
+    auto [record, verdict] = PlayRecord::create(history, /*opening_leader=*/North);
+    ASSERT_TRUE(record.has_value());
+    ASSERT_EQ(verdict, HistoryVerdict::Consistent);  // shape-valid; the contradiction needs root to see
 
-    EXPECT_EQ(source.history_verdict(), HistoryVerdict::DuplicatedCard);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u, record);
+
+    EXPECT_EQ(source.history_verdict(), HistoryVerdict::CardPlayedAndHeld);
     // Not meaningful -- the decomposition was never attempted -- but still
     // the harmless default, not some other value a caller might mistake for
     // a real diagnosis.
@@ -451,52 +467,11 @@ TEST(ExhaustiveLayoutSourceTest, AContradictoryHistoryIsAcceptedButLeavesAnEmpty
     root.trump = DDS_NOTRUMP;
     root.first = North;  // North's ace was highest; neither discard could win
 
-    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
+    auto [record, verdict] = PlayRecord::create(history, /*opening_leader=*/North);
+    ASSERT_EQ(verdict, HistoryVerdict::Consistent);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u, record);
 
     ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent);
     EXPECT_EQ(source.constrained_space_status(), ConstrainedSpaceStatus::ContradictoryVoid);
     EXPECT_EQ(source.size(), 0u);
-}
-
-// --- the PlayRecord constructor is byte-identical to the legacy pair ------
-
-TEST(ExhaustiveLayoutSourceTest, APlayRecordGivesTheByteIdenticalSpaceToTheEquivalentPair)
-{
-    auto const [root, history] = make_void_ending();
-    auto [record, verdict] = PlayRecord::create(history, /*opening_leader=*/North);
-    ASSERT_EQ(verdict, HistoryVerdict::Consistent);
-
-    ExhaustiveLayoutSource const from_pair(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
-    ExhaustiveLayoutSource const from_record(root, North, /*seed=*/1u, *record);
-
-    ASSERT_EQ(from_pair.history_verdict(), from_record.history_verdict());
-    ASSERT_EQ(from_pair.constrained_space_status(), from_record.constrained_space_status());
-    ASSERT_EQ(from_pair.size(), from_record.size());
-    ASSERT_TRUE(from_pair.size().has_value());
-    for (std::uint64_t index = 0; index < *from_pair.size(); ++index)
-    {
-        Deal const a = from_pair.at(index);
-        Deal const b = from_record.at(index);
-        EXPECT_EQ(layout_key(a, East), layout_key(b, East))
-            << "differs at index " << index;
-    }
-}
-
-// --- a malformed pair is unconstructible as a PlayRecord, but still merely
-// rejected through the legacy path ------------------------------------------
-
-TEST(ExhaustiveLayoutSourceTest, AMalformedLeaderIsUnconstructibleAsAPlayRecordButMerelyRejectedThroughThePair)
-{
-    auto const [root, history] = make_void_ending();
-    constexpr int BadLeader = 99;
-
-    auto [record, verdict] = PlayRecord::create(history, BadLeader);
-    EXPECT_FALSE(record.has_value());
-    EXPECT_EQ(verdict, HistoryVerdict::InvalidInput);
-
-    // The same malformed leader, through the legacy pair, still
-    // constructs: the source itself never rejects at construction, only
-    // reports via history_verdict() -- unchanged by this task.
-    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u, history, BadLeader);
-    EXPECT_EQ(source.history_verdict(), HistoryVerdict::InvalidInput);
 }

@@ -70,9 +70,9 @@ class TestAgainstTheLibrary(unittest.TestCase):
         from strategies import lowest_eligible_defender
 
         sequence = example.guess_6nt()
+        record = bsle.PlayRecord(sequence.history, sequence.opening_leader)
         source = bsle.ExhaustiveLayoutSource(
-            sequence.current_deal, sequence.declarer, example.SEED,
-            history=sequence.history, opening_leader=sequence.opening_leader)
+            sequence.current_deal, sequence.declarer, example.SEED, record=record)
 
         def pi(state, view):
             del view
@@ -103,9 +103,9 @@ class TestPlayRecordChangesTheAnswer(unittest.TestCase):
         from strategies import lowest_eligible_defender, remembers_whether_a_heart_was_already_pitched
 
         sequence = example.guess_6nt()
+        layout_record = bsle.PlayRecord(sequence.history, sequence.opening_leader)
         source = bsle.ExhaustiveLayoutSource(
-            sequence.current_deal, sequence.declarer, example.SEED,
-            history=sequence.history, opening_leader=sequence.opening_leader)
+            sequence.current_deal, sequence.declarer, example.SEED, record=layout_record)
 
         def recording_pi(captured):
             def pi(state, view):

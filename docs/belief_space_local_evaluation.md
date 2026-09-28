@@ -90,9 +90,9 @@ plausible-looking number rather than a crash or an exception.
 
 ## The play history: needed, not merely optional
 
-Both `ExhaustiveLayoutSource` constructors take an optional play history —
-a card sequence and the opening leader. It is optional in the sense that
-the type accepts its absence. **That is not the same claim as "not
+`ExhaustiveLayoutSource`'s constructor takes an optional `PlayRecord` — a
+card sequence paired with the opening leader. It is optional in the sense
+that the type accepts its absence. **That is not the same claim as "not
 needed", and only the first is true.**
 
 At a root built after trick one, omitting the history gives an answer
@@ -114,7 +114,7 @@ this is a limitation of the input, not a gap awaiting future work.
 their own information falls on:
 
 - **fact, applied automatically by `ExhaustiveLayoutSource` given a
-  history**: a defender showed out of a suit, so holds none of it.
+  `PlayRecord`**: a defender showed out of a suit, so holds none of it.
 - **inference, still the caller's own to apply**: the auction suggests a
   defender is short in a suit. Nothing here infers this — a caller with
   bidding-derived information supplies their own, narrower layout source
@@ -200,14 +200,14 @@ source = bsle.ExhaustiveLayoutSource(root, declarer, seed)
 ```
 
 `size()` and `at(i)` enumerate every layout consistent with `root`. Pass a
-play history to narrow the space to what it establishes as fact:
+`PlayRecord` to narrow the space to what it establishes as fact:
 
 ```python
-source = bsle.ExhaustiveLayoutSource(
-    root, declarer, seed, history=[bsle.Card(0, 14), bsle.Card(1, 2)], opening_leader=0)
+record = bsle.PlayRecord([bsle.Card(0, 14), bsle.Card(1, 2)], opening_leader=0)
+source = bsle.ExhaustiveLayoutSource(root, declarer, seed, record=record)
 ```
 
-A rejected history (one that does not belong to `root`, or belongs but
+A rejected record (one that does not belong to `root`, or belongs but
 leaves no legal split) raises immediately, from the constructor — see
 "Where Python is stricter than C++" below.
 
@@ -358,7 +358,8 @@ tree**) are documented on the returned dict's own keys; see
 
 Every `RootFailure` and every `ValidationError` cause raises a
 distinguishable exception, all rooted at
-`bsle.BeliefSpaceLocalEvaluationError`. A rejected play history raises
+`bsle.BeliefSpaceLocalEvaluationError`. A rejected record raises from
+`PlayRecord`'s own constructor for a shape/duplicate cause, and otherwise
 from `ExhaustiveLayoutSource`'s own constructor, under a **separate**
 family (`HistoryRejectedError`/`ConstrainedSpaceEmptyError`, still under
 the same root) — never catchable as the same thing as an ordinary

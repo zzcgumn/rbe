@@ -27,6 +27,7 @@
 
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
+#include <belief_evaluation/play_record.hpp>
 
 #include "fixtures.hpp"
 #include "strategies.hpp"
@@ -36,13 +37,18 @@ namespace be = dds::belief_evaluation;
 namespace bench = dds::belief_evaluation::benchmarks;
 
 using be::ExhaustiveLayoutSource;
+using be::PlayRecord;
 
 namespace
 {
+    auto record_of(bench::RungFixture const& fixture) -> PlayRecord
+    {
+        return *PlayRecord::create(fixture.history, fixture.opening_leader).first;
+    }
+
     auto cut_nodes_visited(bench::RungFixture const& fixture, std::uint64_t seed) -> std::uint64_t
     {
-        ExhaustiveLayoutSource const source(
-            fixture.root, fixture.declarer, seed, fixture.history, fixture.opening_leader);
+        ExhaustiveLayoutSource const source(fixture.root, fixture.declarer, seed, record_of(fixture));
         be::EvaluateOptions options{};
         options.collect_counters = true;
         be::EvaluationResult const result = be::evaluate(
@@ -59,8 +65,7 @@ class UncutTreeIsAtLeastAsLargeAsTheCutOneTest : public testing::TestWithParam<b
 TEST_P(UncutTreeIsAtLeastAsLargeAsTheCutOneTest, Holds)
 {
     bench::RungFixture const fixture = GetParam();
-    ExhaustiveLayoutSource const source(
-        fixture.root, fixture.declarer, /*seed=*/1u, fixture.history, fixture.opening_leader);
+    ExhaustiveLayoutSource const source(fixture.root, fixture.declarer, /*seed=*/1u, record_of(fixture));
 
     std::optional<std::uint64_t> const uncut = bench::count_uncut_nodes(
         fixture.root, fixture.declarer, fixture.tricks_needed, source, bench::scripted_strategy(),
@@ -85,8 +90,7 @@ class UncutTreeIsAtLeastAsLargeAsTheCutOneSolverLadderTest
 TEST_P(UncutTreeIsAtLeastAsLargeAsTheCutOneSolverLadderTest, Holds)
 {
     bench::RungFixture const fixture = GetParam();
-    ExhaustiveLayoutSource const source(
-        fixture.root, fixture.declarer, /*seed=*/1u, fixture.history, fixture.opening_leader);
+    ExhaustiveLayoutSource const source(fixture.root, fixture.declarer, /*seed=*/1u, record_of(fixture));
 
     std::optional<std::uint64_t> const uncut = bench::count_uncut_nodes(
         fixture.root, fixture.declarer, fixture.tricks_needed, source, bench::scripted_strategy(),

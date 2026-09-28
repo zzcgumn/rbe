@@ -264,24 +264,22 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   ships as library surface.
 - **A supplied play history narrows the enumeration to the splits its voids
   leave possible, and voids are the complete residual constraint — nothing
-  else about the history is used.** The input is a `PlayTraceBin` (the same
-  type `ObservationState::history` and `analyse_play` already use) plus the
-  opening leader — passed either as that pair directly, or as a `PlayRecord`
-  pairing them. A `PlayRecord` validates its own shape (a well-formed card
-  count, an in-range opening leader, no card repeated) at construction,
-  independent of any particular root — unconstructible from malformed
-  input, rather than merely rejected once handed somewhere that checks. The
-  pair form defers that same check to wherever it is first used. Neither
-  form is checked against a *root* at construction; the checks below run
-  only once the pair or record reaches `ExhaustiveLayoutSource`, the sole
-  site that performs them, unchanged by which of the two supplied it.
+  else about the history is used.** The input is a `PlayRecord`, pairing a
+  `PlayTraceBin` (the same type `ObservationState::history` and
+  `analyse_play` already use) with the opening leader. A `PlayRecord`
+  validates its own shape (a well-formed card count, an in-range opening
+  leader, no card repeated) at construction, independent of any particular
+  root — unconstructible from malformed input, rather than merely rejected
+  once handed somewhere that checks. It is not checked against a *root* at
+  construction; the checks below run only once it reaches
+  `ExhaustiveLayoutSource`, the sole site that performs them.
   `evaluate()`'s own `EvaluateOptions::play_record` is a separate input,
   threaded to `ObservationState::play_record` with no root-consistency
   check of any kind — keeping it consistent with whatever `LayoutSource`
   `evaluate()` is given (including one built from the same `PlayRecord`, if
   the caller routes it through `ExhaustiveLayoutSource` too) is the
-  caller's own obligation, not something either entry point enforces. From
-  either, every seat's voids follow
+  caller's own obligation, not something either entry point enforces. Every
+  seat's voids follow
   by trick arithmetic alone: a seat that plays off the suit led — a discard
   or a ruff, treated
   identically — is void in it from that point, including from the trailing,

@@ -15,6 +15,7 @@ from belief_space_local_evaluation import LayoutSource
 from belief_space_local_evaluation import LeaderMismatchError
 from belief_space_local_evaluation import SingleLayoutSource
 from belief_space_local_evaluation import MissingCardError
+from belief_space_local_evaluation import PlayRecord
 from belief_space_local_evaluation import TrailingTrickMismatchError
 from belief_space_local_evaluation import TrickLengthMismatchError
 from belief_space_local_evaluation import VoidContradictionError
@@ -316,21 +317,6 @@ class TestConstruction(unittest.TestCase):
         with self.assertRaises(TypeError):
             source.at("1")
 
-    def test_out_of_range_opening_leader_raises_even_with_no_history(self) -> None:
-        # The C++ constructor skips verify_history entirely when history is
-        # empty (its own doxygen: "not checked against root at all"), so
-        # opening_leader reaches derive_voids completely unvalidated in
-        # that branch and trips its assert. This binding checks
-        # declarer/opening_leader itself, unconditionally, before ever
-        # constructing the C++ source -- so this must raise the same clean
-        # exception an out-of-range declarer does, not abort the process.
-        with self.assertRaises(InvalidHistoryInputError):
-            ExhaustiveLayoutSource(
-                make_ten_card_pool_root(), North, 1, [], opening_leader=DDS_HANDS_OUT_OF_RANGE)
-        with self.assertRaises(InvalidHistoryInputError):
-            ExhaustiveLayoutSource(make_ten_card_pool_root(), North, 1, [], opening_leader=-1)
-
-
 class TestDeterminism(unittest.TestCase):
     def test_same_seed_and_root_give_the_same_order(self) -> None:
         root = make_ten_card_pool_root()
@@ -358,7 +344,8 @@ class TestDeterminism(unittest.TestCase):
 class TestHistoryConstrainsTheSpace(unittest.TestCase):
     def test_a_history_shrinks_size_to_the_constrained_count(self) -> None:
         root, history = make_void_ending()
-        source = ExhaustiveLayoutSource(root, North, 1, history, North)
+        record = PlayRecord(history, North)
+        source = ExhaustiveLayoutSource(root, North, 1, record=record)
         self.assertEqual(source.history_verdict(), HistoryVerdict.Consistent)
         self.assertEqual(source.constrained_space_status(), ConstrainedSpaceStatus.Ok)
         self.assertEqual(source.size(), 3)  # C(3, 1)
@@ -386,43 +373,45 @@ class TestEveryHistoryVerdictCauseRaises(unittest.TestCase):
         # InvalidInput -- ever runs. Same exception either way; this pins
         # that a non-empty history does not change that.
         root, history = make_void_ending()
+        record = PlayRecord(history, North)
         with self.assertRaises(InvalidHistoryInputError):
-            ExhaustiveLayoutSource(root, DDS_HANDS_OUT_OF_RANGE, 1, history, North)
+            ExhaustiveLayoutSource(root, DDS_HANDS_OUT_OF_RANGE, 1, record=record)
 
     def test_invalid_input_out_of_range_suit_in_a_history_card(self) -> None:
-        # A malformed card inside history itself (as opposed to a bad
-        # declarer/opening_leader, above) is caught by list_to_history's
-        # own conversion, before ExhaustiveLayoutSource's constructor ever
-        # runs -- this must raise the same InvalidHistoryInputError a
-        # verify_history-derived InvalidInput does, not a bare ValueError
-        # with no relation to this type's own exception hierarchy.
-        root, _ = make_void_ending()
+        # A malformed card inside history itself is caught by
+        # list_to_history's own conversion, inside PlayRecord's
+        # constructor, before a record capable of reaching
+        # ExhaustiveLayoutSource can even exist -- this must raise the
+        # same InvalidHistoryInputError a verify_history-derived
+        # InvalidInput does, not a bare ValueError with no relation to
+        # this type's own exception hierarchy.
         history = [Card(4, 2)]  # suit 4 is out of range (0..3)
         with self.assertRaises(InvalidHistoryInputError):
-            ExhaustiveLayoutSource(root, North, 1, history, North)
+            PlayRecord(history, North)
 
     def test_invalid_input_out_of_range_rank_in_a_history_card(self) -> None:
-        root, _ = make_void_ending()
         history = [Card(Spades, 15)]  # rank 15 is out of range (2..14)
         with self.assertRaises(InvalidHistoryInputError):
-            ExhaustiveLayoutSource(root, North, 1, history, North)
+            PlayRecord(history, North)
 
     def test_duplicated_card(self) -> None:
         history = [Card(Spades, 14), Card(Spades, 14)]
         with self.assertRaises(DuplicatedCardError):
-            ExhaustiveLayoutSource(empty_root(), North, 1, history, North)
+            PlayRecord(history, North)
 
     def test_card_played_and_held(self) -> None:
         root = empty_root()
         root["remain_cards"][North][Spades] = 1 << 14
         history = [Card(Spades, 14)]
+        record = PlayRecord(history, North)
         with self.assertRaises(CardPlayedAndHeldError):
-            ExhaustiveLayoutSource(root, North, 1, history, North)
+            ExhaustiveLayoutSource(root, North, 1, record=record)
 
     def test_missing_card(self) -> None:
         history = [Card(Spades, 14)]
+        record = PlayRecord(history, North)
         with self.assertRaises(MissingCardError):
-            ExhaustiveLayoutSource(empty_root(), North, 1, history, North)
+            ExhaustiveLayoutSource(empty_root(), North, 1, record=record)
 
     def test_trick_length_mismatch(self) -> None:
         played = [
@@ -436,8 +425,9 @@ class TestEveryHistoryVerdictCauseRaises(unittest.TestCase):
         root, history = build_deal(played, everything_to_west)
         root["current_trick_suit"] = (Spades, 0, 0)
         root["current_trick_rank"] = (13, 0, 0)
+        record = PlayRecord(history, North)
         with self.assertRaises(TrickLengthMismatchError):
-            ExhaustiveLayoutSource(root, North, 1, history, North)
+            ExhaustiveLayoutSource(root, North, 1, record=record)
 
     def test_trailing_trick_mismatch(self) -> None:
         played = [
@@ -451,14 +441,16 @@ class TestEveryHistoryVerdictCauseRaises(unittest.TestCase):
         root, history = build_deal(played, everything_to_west)
         root["current_trick_suit"] = (Spades, Spades, 0)
         root["current_trick_rank"] = (13, 3, 0)  # history actually played the deuce here
+        record = PlayRecord(history, North)
         with self.assertRaises(TrailingTrickMismatchError):
-            ExhaustiveLayoutSource(root, North, 1, history, North)
+            ExhaustiveLayoutSource(root, North, 1, record=record)
 
     def test_leader_mismatch(self) -> None:
         played = [(Diamonds, 14), (Clubs, 2), (Diamonds, 3), (Diamonds, 12)]
         root, history = build_deal(played, lambda _s, _r: North)
+        record = PlayRecord(history, South)
         with self.assertRaises(LeaderMismatchError):
-            ExhaustiveLayoutSource(root, North, 1, history, South)
+            ExhaustiveLayoutSource(root, North, 1, record=record)
 
     def test_void_contradiction(self) -> None:
         def hand_for(suit: int, rank: int) -> int:
@@ -468,8 +460,9 @@ class TestEveryHistoryVerdictCauseRaises(unittest.TestCase):
 
         played = [(Diamonds, 14), (Diamonds, 2), (Spades, 3), (Diamonds, 12)]
         root, history = build_deal(played, hand_for)
+        record = PlayRecord(history, North)
         with self.assertRaises(VoidContradictionError):
-            ExhaustiveLayoutSource(root, North, 1, history, North)
+            ExhaustiveLayoutSource(root, North, 1, record=record)
 
 
 class TestEveryConstrainedSpaceStatusCauseRaises(unittest.TestCase):
@@ -486,8 +479,9 @@ class TestEveryConstrainedSpaceStatusCauseRaises(unittest.TestCase):
 
         played = [(Diamonds, 14), (Spades, 2), (Diamonds, 13), (Clubs, 3)]
         root, history = build_deal(played, hand_for)
+        record = PlayRecord(history, North)
         with self.assertRaises(ContradictoryVoidError):
-            ExhaustiveLayoutSource(root, North, 1, history, North)
+            ExhaustiveLayoutSource(root, North, 1, record=record)
 
     def test_forced_exceeds_fixed_seat_count(self) -> None:
         # West (the other seat) is void in diamonds, forcing all three
@@ -506,8 +500,9 @@ class TestEveryConstrainedSpaceStatusCauseRaises(unittest.TestCase):
 
         played = [(Diamonds, 14), (Diamonds, 13), (Diamonds, 4), (Spades, 2)]
         root, history = build_deal(played, hand_for)
+        record = PlayRecord(history, North)
         with self.assertRaises(ForcedExceedsFixedSeatCountError):
-            ExhaustiveLayoutSource(root, North, 1, history, North)
+            ExhaustiveLayoutSource(root, North, 1, record=record)
 
     def test_insufficient_free_cards(self) -> None:
         # East (the fixed seat) is void in diamonds, forcing all four
@@ -526,8 +521,9 @@ class TestEveryConstrainedSpaceStatusCauseRaises(unittest.TestCase):
 
         played = [(Diamonds, 14), (Spades, 2), (Diamonds, 13), (Diamonds, 12)]
         root, history = build_deal(played, hand_for)
+        record = PlayRecord(history, North)
         with self.assertRaises(InsufficientFreeCardsError):
-            ExhaustiveLayoutSource(root, North, 1, history, North)
+            ExhaustiveLayoutSource(root, North, 1, record=record)
 
 
 class TestRejectedHistoryIsDistinguishableFromNoLayoutSurvived(unittest.TestCase):
@@ -537,10 +533,14 @@ class TestRejectedHistoryIsDistinguishableFromNoLayoutSurvived(unittest.TestCase
         # they are different faults (fix the history vs. fix the source)
         # and the exception types must never be confused. NoLayoutSurvived
         # itself is a later task's to bind; this only pins that a rejected
-        # history raises something distinct from it.
+        # history raises something distinct from it. Raised here from
+        # PlayRecord's own construction -- a duplicated card needs no root
+        # to detect -- rather than from ExhaustiveLayoutSource, but the
+        # same exception class either way, so the distinction this test
+        # exists to pin is unaffected by which of the two raised it.
         history = [Card(Spades, 14), Card(Spades, 14)]
         with self.assertRaises(DuplicatedCardError) as ctx:
-            ExhaustiveLayoutSource(empty_root(), North, 1, history, North)
+            PlayRecord(history, North)
         self.assertNotIsInstance(ctx.exception, ValueError)
 
 

@@ -332,7 +332,7 @@ class TestExceptionsPropagateThroughTheRecursionUnchanged(unittest.TestCase):
             return lowest_card_in(holdings[seat])
 
         root = make_two_card_finesse_root()
-        source = ExhaustiveLayoutSource(root, North, 1, [], East)
+        source = ExhaustiveLayoutSource(root, North, 1)
         with self.assertRaises(Boom) as ctx:
             evaluate(
                 root, North, 1, source, raising_declarer_play, defender_play,
@@ -349,7 +349,7 @@ class TestExceptionsPropagateThroughTheRecursionUnchanged(unittest.TestCase):
             return [(lowest_card_in(layout["remain_cards"][seat]), 1.0)]
 
         root = make_two_card_finesse_root()
-        source = ExhaustiveLayoutSource(root, North, 1, [], East)
+        source = ExhaustiveLayoutSource(root, North, 1)
         with self.assertRaises(Boom) as ctx:
             evaluate(
                 root, North, 1, source, declarer_play, raising_defender_play,

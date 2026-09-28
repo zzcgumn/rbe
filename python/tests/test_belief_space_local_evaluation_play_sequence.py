@@ -281,7 +281,7 @@ class TestPlaySequence(unittest.TestCase):
 
 
 class TestTheHistoryConstrainsTheBeliefSpace(unittest.TestCase):
-    """That passing `history=` actually changes the answer.
+    """That passing a `PlayRecord` actually changes the answer.
 
     The guide gives a whole section to this ("omitting it does not fail, it
     quietly answers a different question"), and `PlaySequence` exists largely
@@ -317,9 +317,9 @@ class TestTheHistoryConstrainsTheBeliefSpace(unittest.TestCase):
 
         without = bsle.ExhaustiveLayoutSource(
             sequence.current_deal, sequence.declarer, 1)
+        record = bsle.PlayRecord(sequence.history, sequence.opening_leader)
         with_history = bsle.ExhaustiveLayoutSource(
-            sequence.current_deal, sequence.declarer, 1,
-            history=sequence.history, opening_leader=sequence.opening_leader)
+            sequence.current_deal, sequence.declarer, 1, record=record)
 
         # C(24, 12): twelve of the defenders' twenty-four outstanding cards.
         self.assertEqual(without.size(), 2704156)
@@ -331,9 +331,9 @@ class TestTheHistoryConstrainsTheBeliefSpace(unittest.TestCase):
     def test_the_history_is_consistent(self) -> None:
         sequence = self._after_one_spade_trick()
 
+        record = bsle.PlayRecord(sequence.history, sequence.opening_leader)
         source = bsle.ExhaustiveLayoutSource(
-            sequence.current_deal, sequence.declarer, 1,
-            history=sequence.history, opening_leader=sequence.opening_leader)
+            sequence.current_deal, sequence.declarer, 1, record=record)
 
         self.assertEqual(source.history_verdict(), bsle.HistoryVerdict.Consistent)
 
@@ -451,9 +451,9 @@ class TestDeclarerView(unittest.TestCase):
         self.assertEqual(view.position_in_trick, 2)
         self.assertEqual(len(view.play_history), 38)
 
+        record = bsle.PlayRecord(sequence.history, sequence.opening_leader)
         source = bsle.ExhaustiveLayoutSource(
-            sequence.current_deal, sequence.declarer, 1,
-            history=sequence.history, opening_leader=sequence.opening_leader)
+            sequence.current_deal, sequence.declarer, 1, record=record)
 
         captured = []
 

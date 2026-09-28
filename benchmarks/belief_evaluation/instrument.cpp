@@ -79,6 +79,7 @@
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
 #include <belief_evaluation/node.hpp>
+#include <belief_evaluation/play_record.hpp>
 #include <belief_evaluation/spread.hpp>
 #include <belief_evaluation/validation.hpp>
 #include <solver_context/solver_context.hpp>
@@ -631,10 +632,15 @@ namespace
         }
     }
 
+    auto record_of(bench::RungFixture const& fixture) -> be::PlayRecord
+    {
+        return *be::PlayRecord::create(fixture.history, fixture.opening_leader).first;
+    }
+
     auto run_count_mode(Options const& options, bench::RungFixture const& fixture) -> int
     {
         be::ExhaustiveLayoutSource const source(
-            fixture.root, fixture.declarer, *options.seed, fixture.history, fixture.opening_leader);
+            fixture.root, fixture.declarer, *options.seed, record_of(fixture));
 
         SolverBacked backed{};
         populate_solver_backed(options, fixture, backed);
@@ -730,7 +736,7 @@ namespace
             apply_tier2(options, backed, eval_options, bound_calls);
 
             be::ExhaustiveLayoutSource const source(
-                fixture.root, fixture.declarer, *options.seed, fixture.history, fixture.opening_leader);
+                fixture.root, fixture.declarer, *options.seed, record_of(fixture));
             std::uint64_t delta_calls = 0;
             auto const start = std::chrono::steady_clock::now();
             be::EvaluationResult const result = be::evaluate(
@@ -761,7 +767,7 @@ namespace
         SolverBacked backed{};
         populate_solver_backed(options, fixture, backed);
         be::ExhaustiveLayoutSource const source(
-            fixture.root, fixture.declarer, *options.seed, fixture.history, fixture.opening_leader);
+            fixture.root, fixture.declarer, *options.seed, record_of(fixture));
         std::optional<std::uint64_t> const uncut_nodes = bench::count_uncut_nodes(
             fixture.root, fixture.declarer, fixture.tricks_needed, source, bench::scripted_strategy(),
             raw_delta(options, backed));
@@ -784,7 +790,7 @@ namespace
         // through DoubleDummyDefender's own single-policy DefenderStrategy.
         SolverBacked backed{};
         be::ExhaustiveLayoutSource const source(
-            fixture.root, fixture.declarer, *options.seed, fixture.history, fixture.opening_leader);
+            fixture.root, fixture.declarer, *options.seed, record_of(fixture));
         be::EvaluateOptions const eval_options = build_options(options);
 
         std::uint64_t calls = 0;

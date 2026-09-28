@@ -80,25 +80,27 @@ namespace
 }
 
 ExhaustiveLayoutSource::ExhaustiveLayoutSource(
-    Deal const& root, int declarer, std::uint64_t seed, PlayTraceBin const& history, int opening_leader)
+    Deal const& root, int declarer, std::uint64_t seed, std::optional<PlayRecord> const& record)
     : root_(root)
     , seed_(seed)
     , fixed_seat_((declarer + 1) % DDS_HANDS)
     , other_seat_((declarer + 3) % DDS_HANDS)
     , pool_(defender_pool_decomposition(root, declarer))
 {
-    // An empty history applies no constraint and is not checked against
-    // root at all -- see this constructor's own doxygen for why: a caller
-    // supplying no play record is not making a claim verify_history could
-    // reject, and every call site written before this parameter existed
-    // must keep compiling into exactly this branch.
+    // Absent record and an empty one behave identically -- both apply no
+    // constraint and are not checked against root at all -- see this
+    // constructor's own doxygen for why: a caller supplying no play record
+    // is not making a claim verify_history could reject.
+    PlayTraceBin const history = record.has_value() ? record->cards() : PlayTraceBin{};
+    int const opening_leader = record.has_value() ? record->opening_leader() : 0;
+
     verdict_ =
         history.number == 0 ? HistoryVerdict::Consistent : verify_history(root, declarer, history, opening_leader);
 
     if (verdict_ == HistoryVerdict::Consistent)
     {
         // derive_voids on an empty history returns no voids for anybody, so
-        // this branch also covers the no-history case: decompose_constrained
+        // this branch also covers the no-record case: decompose_constrained
         // then forces nothing, free_cards is the whole pool in its own
         // order, and fixed_seat_needed is pool_.fixed_seat_count -- the same
         // values the original, pre-history implementation used directly,
@@ -110,12 +112,6 @@ ExhaustiveLayoutSource::ExhaustiveLayoutSource(
     // empty). That status is not meaningful here -- see
     // constrained_space_status()'s own doxygen -- a caller must consult
     // verdict_ (via history_verdict()) first.
-}
-
-ExhaustiveLayoutSource::ExhaustiveLayoutSource(
-    Deal const& root, int declarer, std::uint64_t seed, PlayRecord const& record)
-    : ExhaustiveLayoutSource(root, declarer, seed, record.cards(), record.opening_leader())
-{
 }
 
 auto ExhaustiveLayoutSource::size() const -> std::optional<std::uint64_t>

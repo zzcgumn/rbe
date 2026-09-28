@@ -16,6 +16,7 @@
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
 #include <belief_evaluation/history_verification.hpp>
+#include <belief_evaluation/play_record.hpp>
 #include <belief_evaluation/validation.hpp>
 #include <solver_context/solver_context.hpp>
 
@@ -27,13 +28,14 @@ namespace bench = dds::belief_evaluation::benchmarks;
 
 using be::ExhaustiveLayoutSource;
 using be::HistoryVerdict;
+using be::PlayRecord;
 
 namespace
 {
     auto size_of(bench::RungFixture const& fixture, std::uint64_t seed) -> std::optional<std::uint64_t>
     {
-        ExhaustiveLayoutSource const source(
-            fixture.root, fixture.declarer, seed, fixture.history, fixture.opening_leader);
+        PlayRecord const record = *PlayRecord::create(fixture.history, fixture.opening_leader).first;
+        ExhaustiveLayoutSource const source(fixture.root, fixture.declarer, seed, record);
         return source.size();
     }
 }  // namespace
@@ -54,9 +56,10 @@ TEST_P(FixtureLadderTest, WithoutHistorySizeMatchesExpected)
 TEST_P(FixtureLadderTest, WithHistorySizeMatchesExpected)
 {
     bench::Rung const rung = GetParam();
+    PlayRecord const record =
+        *PlayRecord::create(rung.with_history.history, rung.with_history.opening_leader).first;
     ExhaustiveLayoutSource const source(
-        rung.with_history.root, rung.with_history.declarer, /*seed=*/1u, rung.with_history.history,
-        rung.with_history.opening_leader);
+        rung.with_history.root, rung.with_history.declarer, /*seed=*/1u, record);
     ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent) << rung.name << " with history";
     EXPECT_EQ(source.size(), rung.with_history.expected_size) << rung.name << " with history";
 }
@@ -130,8 +133,8 @@ namespace
 {
     auto exhaustively_evaluate(bench::RungFixture const& fixture) -> be::EvaluationResult
     {
-        ExhaustiveLayoutSource const source(
-            fixture.root, fixture.declarer, /*seed=*/1u, fixture.history, fixture.opening_leader);
+        PlayRecord const record = *PlayRecord::create(fixture.history, fixture.opening_leader).first;
+        ExhaustiveLayoutSource const source(fixture.root, fixture.declarer, /*seed=*/1u, record);
         return be::evaluate(
             fixture.root, fixture.declarer, fixture.tricks_needed, source, bench::scripted_strategy(),
             bench::scripted_defender_play);

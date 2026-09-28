@@ -213,9 +213,8 @@ def main() -> None:
     # and raises nothing -- it silently answers a different question. See "The
     # play history: needed, not merely optional" in
     # docs/belief_space_local_evaluation.md.
-    source = bsle.ExhaustiveLayoutSource(
-        root, declarer, SEED,
-        history=sequence.history, opening_leader=sequence.opening_leader)
+    record = bsle.PlayRecord(sequence.history, sequence.opening_leader)
+    source = bsle.ExhaustiveLayoutSource(root, declarer, SEED, record=record)
     unconstrained = bsle.ExhaustiveLayoutSource(root, declarer, SEED)
 
     print(f"Belief space, with history: {source.size()} layouts")
