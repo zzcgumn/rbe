@@ -366,7 +366,19 @@ auto register_observation_state_bindings(py::module_& module) -> void
             "over this node's outstanding pool, the same one a C++ strategy\n"
             "conditions on directly. A fresh copy per access, like every\n"
             "other property here; RankMap is a plain value with no\n"
-            "lifetime of its own to protect.");
+            "lifetime of its own to protect.")
+        .def_property_readonly(
+            "play_record",
+            [](be::ObservationState const& self) -> py::object {
+                if (self.play_record == nullptr) {
+                    return py::none();
+                }
+                return py::cast(*self.play_record);
+            },
+            "Every card played before this evaluation's root, or None if\n"
+            "the caller supplied no PlayRecord. Distinct from history:\n"
+            "play_record is invariant for the whole evaluation, history is\n"
+            "root-relative and grows during the search.");
 }
 
 // BeliefView holds a std::span into caller-owned scratch and node.layouts,
@@ -855,7 +867,8 @@ auto evaluate(
     std::optional<std::uint64_t> const& sample_size,
     std::optional<std::uint64_t> const& scan_budget,
     std::optional<std::uint64_t> const& replenish_below,
-    py::object const& state_key) -> py::dict
+    py::object const& state_key,
+    py::object const& play_record) -> py::dict
 {
     // Checked here, unconditionally, before declarer ever reaches the C++
     // evaluator: make_root() indexes remainCards[declarer] (and, via
@@ -915,6 +928,8 @@ auto evaluate(
     options.sampling.sample_size = sample_size;
     options.sampling.scan_budget = scan_budget;
     options.sampling.replenish_below = replenish_below;
+    options.play_record =
+        play_record.is_none() ? std::nullopt : std::make_optional(py::cast<be::PlayRecord>(play_record));
 
     be::EvaluationResult result;
     {
@@ -1181,6 +1196,38 @@ auto defender_pool_card_count(Deal const& root, int declarer) -> int
     return count;
 }
 
+// PlayRecord reuses list_to_history/history_to_list (the same
+// sequence<->PlayTraceBin conversion ExhaustiveLayoutSource's own history
+// argument already uses) and raise_history_rejected (the same
+// verdict-to-exception mapping ExhaustiveLayoutSource's constructor already
+// raises through) -- not a second copy of either for a type carrying the
+// identical shape of input.
+auto register_play_record_bindings(py::module_& module) -> void
+{
+    py::class_<be::PlayRecord>(
+        module,
+        "PlayRecord",
+        "Every card played before an evaluation's root, and the seat that\n"
+        "opened it -- common knowledge, immutable, and cannot be\n"
+        "constructed inconsistent with itself (raises on a malformed pair,\n"
+        "the same exception types ExhaustiveLayoutSource's own history\n"
+        "argument already raises).")
+        .def(
+            py::init([](py::sequence const& cards, int opening_leader) {
+                PlayTraceBin const trace = list_to_history(cards);
+                auto [record, verdict] = be::PlayRecord::create(trace, opening_leader);
+                if (verdict != be::HistoryVerdict::Consistent) {
+                    raise_history_rejected(verdict);
+                }
+                return *record;
+            }),
+            py::arg("cards"),
+            py::arg("opening_leader"))
+        .def_property_readonly(
+            "cards", [](be::PlayRecord const& self) { return history_to_list(self.cards()); })
+        .def_property_readonly("opening_leader", &be::PlayRecord::opening_leader);
+}
+
 auto register_layout_source_bindings(py::module_& module) -> void
 {
     py::enum_<be::HistoryVerdict>(module, "HistoryVerdict")
@@ -1348,6 +1395,44 @@ auto register_layout_source_bindings(py::module_& module) -> void
             py::arg("seed"),
             py::arg("history") = py::list(),
             py::arg("opening_leader") = 0)
+        .def(
+            py::init([](py::dict const& root, int declarer, std::uint64_t seed, be::PlayRecord const& record) {
+                // Same checks as the (history, opening_leader) overload
+                // above, in the same order -- this constructor differs
+                // only in where its two inputs come from.
+                if (declarer < 0 || declarer >= DDS_HANDS) {
+                    raise_history_rejected(be::HistoryVerdict::InvalidInput);
+                }
+                Deal const root_deal = dds3_python::dict_to_deal(root);
+                be::ExhaustiveLayoutSource source(root_deal, declarer, seed, record);
+                be::HistoryVerdict const verdict = source.history_verdict();
+                if (verdict != be::HistoryVerdict::Consistent) {
+                    raise_history_rejected(verdict);
+                }
+                be::ConstrainedSpaceStatus const status = source.constrained_space_status();
+                if (status != be::ConstrainedSpaceStatus::Ok) {
+                    raise_constrained_space_empty(status);
+                }
+                constexpr int MaxOutstandingCards = 26;
+                int const pool_count = defender_pool_card_count(root_deal, declarer);
+                if (pool_count > MaxOutstandingCards) {
+                    throw py::value_error(
+                        "root has " + std::to_string(pool_count) +
+                        " cards between the two defender hands (maximum " +
+                        std::to_string(MaxOutstandingCards) + ")");
+                }
+                return source;
+            }),
+            py::arg("root"),
+            py::arg("declarer"),
+            py::arg("seed"),
+            // No default for `record`, deliberately: the overload above's
+            // `history`/`opening_leader` both have one, so a bare
+            // ExhaustiveLayoutSource(root, declarer, seed) call must keep
+            // resolving to that overload unambiguously. Giving `record` a
+            // default too (even None) risks pybind11 treating a
+            // no-fourth-argument call as ambiguous between the two.
+            py::arg("record"))
         .def(
             "size",
             [](be::ExhaustiveLayoutSource const& self) -> py::object {
@@ -1663,6 +1748,9 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
     register_root_failure_error_bindings(module);
     register_validation_error_bindings(module);
     register_history_error_bindings(module);
+    // After register_history_error_bindings: raise_history_rejected reads
+    // the exception-map that call populates.
+    register_play_record_bindings(module);
     register_layout_source_bindings(module);
     register_solver_seam_bindings(module);
     register_converter_probes(module);
@@ -1685,6 +1773,7 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
         py::arg("scan_budget") = std::nullopt,
         py::arg("replenish_below") = std::nullopt,
         py::arg("state_key") = py::none(),
+        py::arg("play_record") = py::none(),
         "Evaluates P_make for pi against delta over the belief space "
         "source enumerates from root. See the module's own capability "
         "document for the option coupling this binding validates that "

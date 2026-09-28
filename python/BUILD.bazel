@@ -147,6 +147,14 @@ py_test(
 )
 
 py_test(
+    name = "belief_space_local_evaluation_play_record_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_play_record.py",
+    srcs = ["tests/test_belief_space_local_evaluation_play_record.py"],
+    deps = [":belief_space_local_evaluation_lib"],
+)
+
+py_test(
     name = "belief_space_local_evaluation_strategies_test",
     size = "small",
     main = "tests/test_belief_space_local_evaluation_strategies.py",
