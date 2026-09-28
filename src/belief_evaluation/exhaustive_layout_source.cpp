@@ -112,6 +112,12 @@ ExhaustiveLayoutSource::ExhaustiveLayoutSource(
     // verdict_ (via history_verdict()) first.
 }
 
+ExhaustiveLayoutSource::ExhaustiveLayoutSource(
+    Deal const& root, int declarer, std::uint64_t seed, PlayRecord const& record)
+    : ExhaustiveLayoutSource(root, declarer, seed, record.cards(), record.opening_leader())
+{
+}
+
 auto ExhaustiveLayoutSource::size() const -> std::optional<std::uint64_t>
 {
     if (verdict_ != HistoryVerdict::Consistent)

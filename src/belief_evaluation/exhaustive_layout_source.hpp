@@ -10,6 +10,7 @@
 #include <belief_evaluation/defender_split.hpp>
 #include <belief_evaluation/history_verification.hpp>
 #include <belief_evaluation/layout_source.hpp>
+#include <belief_evaluation/play_record.hpp>
 
 namespace dds::belief_evaluation
 {
@@ -52,12 +53,23 @@ public:
     /// it. `root` is copied, so this source outlives no caller-owned
     /// `Deal`. An empty `history` is not checked against `root` at all — a
     /// caller with no play record is making no claim to reject.
+    ///
+    /// Prefer the `PlayRecord` overload below for new code: a `PlayRecord`'s
+    /// cards and leader cannot disagree by construction, closing exactly
+    /// the caller obligation this pair still carries.
     ExhaustiveLayoutSource(
         Deal const& root,
         int declarer,
         std::uint64_t seed,
         PlayTraceBin const& history = PlayTraceBin{},
         int opening_leader = 0);
+
+    /// Preferred over the `(history, opening_leader)` pair above: a
+    /// `PlayRecord`'s cards and leader cannot disagree by construction,
+    /// closing exactly the caller obligation the pair still carries.
+    /// Delegates to the constructor above — the space this produces is
+    /// computed once, not twice.
+    ExhaustiveLayoutSource(Deal const& root, int declarer, std::uint64_t seed, PlayRecord const& record);
 
     /// `C(n, k)`: the pooled card count choose the fixed seat's own count,
     /// or — once a history's voids are applied — the free-card count choose

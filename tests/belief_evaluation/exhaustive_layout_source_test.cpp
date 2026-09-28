@@ -13,6 +13,7 @@
 #include <belief_evaluation/history_verification.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
 #include <belief_evaluation/node.hpp>
+#include <belief_evaluation/play_record.hpp>
 
 #include "test_support.hpp"
 
@@ -21,6 +22,7 @@ namespace be = dds::belief_evaluation;
 using be::ConstrainedSpaceStatus;
 using be::HistoryVerdict;
 using be::ExhaustiveLayoutSource;
+using be::PlayRecord;
 using be::holding;
 using be::is_consistent;
 using be::layout_key;
@@ -454,4 +456,47 @@ TEST(ExhaustiveLayoutSourceTest, AContradictoryHistoryIsAcceptedButLeavesAnEmpty
     ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent);
     EXPECT_EQ(source.constrained_space_status(), ConstrainedSpaceStatus::ContradictoryVoid);
     EXPECT_EQ(source.size(), 0u);
+}
+
+// --- the PlayRecord constructor is byte-identical to the legacy pair ------
+
+TEST(ExhaustiveLayoutSourceTest, APlayRecordGivesTheByteIdenticalSpaceToTheEquivalentPair)
+{
+    auto const [root, history] = make_void_ending();
+    auto [record, verdict] = PlayRecord::create(history, /*opening_leader=*/North);
+    ASSERT_EQ(verdict, HistoryVerdict::Consistent);
+
+    ExhaustiveLayoutSource const from_pair(root, North, /*seed=*/1u, history, /*opening_leader=*/North);
+    ExhaustiveLayoutSource const from_record(root, North, /*seed=*/1u, *record);
+
+    ASSERT_EQ(from_pair.history_verdict(), from_record.history_verdict());
+    ASSERT_EQ(from_pair.constrained_space_status(), from_record.constrained_space_status());
+    ASSERT_EQ(from_pair.size(), from_record.size());
+    ASSERT_TRUE(from_pair.size().has_value());
+    for (std::uint64_t index = 0; index < *from_pair.size(); ++index)
+    {
+        Deal const a = from_pair.at(index);
+        Deal const b = from_record.at(index);
+        EXPECT_EQ(layout_key(a, East), layout_key(b, East))
+            << "differs at index " << index;
+    }
+}
+
+// --- a malformed pair is unconstructible as a PlayRecord, but still merely
+// rejected through the legacy path ------------------------------------------
+
+TEST(ExhaustiveLayoutSourceTest, AMalformedLeaderIsUnconstructibleAsAPlayRecordButMerelyRejectedThroughThePair)
+{
+    auto const [root, history] = make_void_ending();
+    constexpr int BadLeader = 99;
+
+    auto [record, verdict] = PlayRecord::create(history, BadLeader);
+    EXPECT_FALSE(record.has_value());
+    EXPECT_EQ(verdict, HistoryVerdict::InvalidInput);
+
+    // The same malformed leader, through the legacy pair, still
+    // constructs: the source itself never rejects at construction, only
+    // reports via history_verdict() -- unchanged by this task.
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/1u, history, BadLeader);
+    EXPECT_EQ(source.history_verdict(), HistoryVerdict::InvalidInput);
 }
