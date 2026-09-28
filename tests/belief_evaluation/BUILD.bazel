@@ -25,6 +25,7 @@ cc_test(
         "layout_key_test.cpp",
         "node_test.cpp",
         "oracle_test.cpp",
+        "play_record_test.cpp",
         "position_test.cpp",
         "rank_map_test.cpp",
         "renumber_test.cpp",
