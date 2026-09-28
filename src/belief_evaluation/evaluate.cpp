@@ -426,12 +426,14 @@ auto evaluate(
     DefenderStrategy const& delta,
     EvaluateOptions const& options) -> EvaluationResult
 {
+    PlayRecord const* const record = options.play_record.has_value() ? &*options.play_record : nullptr;
     RootConstructionResult const root_result = make_root(
         root_layout,
         declarer,
         tricks_needed,
         source,
-        RootOptions{.sample_size = options.sampling.sample_size, .scan_budget = options.sampling.scan_budget});
+        RootOptions{.sample_size = options.sampling.sample_size, .scan_budget = options.sampling.scan_budget},
+        record);
     if (! root_result.node.has_value())
     {
         EvaluationError const error{

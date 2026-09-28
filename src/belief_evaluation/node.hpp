@@ -152,14 +152,19 @@ auto history_for(Deal const& root_layout) -> PlayTraceBin;
 /// The `ObservationState` `make_root` builds before any layout is scanned:
 /// `trump`/`first` from `root_layout`, `history` from `history_for()`,
 /// `declarer`/`tricks_needed` from the caller, `tricks_won_by_declarer = 0`
-/// (a trick in progress is not a trick already won), and `known_holdings`
-/// and `ranks` as `make_root` describes.
+/// (a trick in progress is not a trick already won), `known_holdings` and
+/// `ranks` as `make_root` describes, and `play_record` from `record`
+/// (null when the caller supplies none — no change to `history`, which
+/// stays exactly `history_for()`'s own result whether or not a record is
+/// supplied).
 ///
 /// Exposed so a node-local replay can rebuild the intermediate states the
 /// original expansion queried δ with, by advancing from here one recorded
 /// card at a time (`advance_state`). The recursion retains none of them, so
 /// this is the only way to recover them.
-auto root_observation_state(Deal const& root_layout, int declarer, int tricks_needed) -> ObservationState;
+auto root_observation_state(
+    Deal const& root_layout, int declarer, int tricks_needed, PlayRecord const* record = nullptr)
+    -> ObservationState;
 
 /// Whether `candidate` belongs in the same belief space as `root` — see
 /// `make_root` for the rule. Both the root-level scan and every node-local
@@ -200,12 +205,17 @@ auto is_consistent(Deal const& candidate, Deal const& root, int declarer, int du
 /// in the whole source; or the budget exhausted before a single layout
 /// survived. A budget that ran out having found at least one layout is not
 /// a failure — the node is returned, degraded, with `BudgetExhausted`.
+///
+/// `record`, when supplied, reaches `node.state.play_record` via
+/// `root_observation_state` — independent of `options`: sampling and a
+/// supplied play record do not interact.
 auto make_root(
     Deal const& root_layout,
     int declarer,
     int tricks_needed,
     LayoutSource const& source,
-    RootOptions const& options = {}) -> RootConstructionResult;
+    RootOptions const& options = {},
+    PlayRecord const* record = nullptr) -> RootConstructionResult;
 
 /// kappa * Sigma_i p_i, accumulated through KahanAccumulator. The node's
 /// total probability mass, independent of what tricks_won_by_declarer says

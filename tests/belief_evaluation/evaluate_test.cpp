@@ -1,9 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>
 
 #include <belief_evaluation/evaluate.hpp>
+#include <belief_evaluation/play_record.hpp>
 #include <belief_evaluation/validation.hpp>
 
 #include "test_support.hpp"
@@ -19,6 +22,8 @@ namespace be = dds::belief_evaluation;
 // without rewriting a single pre-existing line.
 using be::EvaluateOptions;
 using be::EvaluationResult;
+using be::HistoryVerdict;
+using be::PlayRecord;
 using be::VectorLayoutSource;
 using be::evaluate;
 using be::single_card_defender;
@@ -390,4 +395,113 @@ TEST_F(EvaluateTest, ADefaultConstructedSamplingOptionsMeansExactlyWhatAbsentFie
     EXPECT_FALSE(options.sampling.sample_size.has_value());
     EXPECT_FALSE(options.sampling.scan_budget.has_value());
     EXPECT_FALSE(options.sampling.replenish_below.has_value());
+}
+
+// --- EvaluateOptions::play_record: reaches every node unchanged, disturbs
+// nothing else -----------------------------------------------------------
+
+TEST_F(EvaluateTest, SuppliedPlayRecordDoesNotDisturbHistory)
+{
+    Deal const root_layout = make_one_trick_certain_win();  // no trick in progress
+    VectorLayoutSource source({root_layout});
+
+    PlayTraceBin cards{};
+    cards.number = 1;
+    cards.suit[0] = Diamonds;
+    cards.rank[0] = 2;
+    auto [record, verdict] = PlayRecord::create(cards, /*opening_leader=*/West);
+    ASSERT_EQ(verdict, HistoryVerdict::Consistent);
+
+    // Not RecordingDeclarerStrategy: its single scripted card is North's
+    // only legal one, but pi is also asked for South (dummy)'s turn, where
+    // that same card is illegal (already played, and not South's own
+    // holding). single_card_declarer_play's own rule -- lowest_legal_card,
+    // seat-derived -- is correct for whichever of the two is asked.
+    std::vector<be::ObservationState> pi_states;
+    be::DeclarerStrategy const pi{
+        .id = 0,
+        .play =
+            [&pi_states](be::ObservationState const& state, be::BeliefView const&) -> be::Card
+        {
+            pi_states.push_back(state);
+            return be::lowest_legal_card(state.known_holdings, be::seat_on_play(state.known_holdings));
+        },
+        .state_key = nullptr,
+    };
+    EvaluateOptions options{};
+    options.play_record = record;
+
+    EvaluationResult const result =
+        evaluate(root_layout, North, /*tricks_needed=*/1, source, pi, single_card_defender, options);
+
+    ASSERT_FALSE(result.error.has_value());
+    ASSERT_FALSE(pi_states.empty());
+    EXPECT_EQ(pi_states.front().history.number, 0);
+}
+
+TEST_F(EvaluateTest, SuppliedPlayRecordReachesTheRootStateUnchanged)
+{
+    Deal const root_layout = make_one_trick_certain_win();
+    VectorLayoutSource source({root_layout});
+
+    PlayTraceBin cards{};
+    cards.number = 1;
+    cards.suit[0] = Diamonds;
+    cards.rank[0] = 2;
+    auto [record, verdict] = PlayRecord::create(cards, /*opening_leader=*/West);
+    ASSERT_EQ(verdict, HistoryVerdict::Consistent);
+
+    std::vector<be::ObservationState> pi_states;
+    be::DeclarerStrategy const pi{
+        .id = 0,
+        .play =
+            [&pi_states](be::ObservationState const& state, be::BeliefView const&) -> be::Card
+        {
+            pi_states.push_back(state);
+            return be::lowest_legal_card(state.known_holdings, be::seat_on_play(state.known_holdings));
+        },
+        .state_key = nullptr,
+    };
+    EvaluateOptions options{};
+    options.play_record = record;
+
+    EvaluationResult const result =
+        evaluate(root_layout, North, /*tricks_needed=*/1, source, pi, single_card_defender, options);
+
+    ASSERT_FALSE(result.error.has_value());
+    ASSERT_FALSE(pi_states.empty());
+    for (auto const& state : pi_states)
+    {
+        ASSERT_NE(state.play_record, nullptr);
+        EXPECT_EQ(state.play_record->cards().number, record->cards().number);
+    }
+}
+
+TEST_F(EvaluateTest, ASampledRootWithAPlayRecordSupplied)
+{
+    // The plan's own "What does NOT change": sampling and play_record are
+    // independent inputs. This fixture's whole source is one layout, so
+    // sample_size=1 is not a meaningful narrowing -- it's the same
+    // lightweight shape SampleSizeScanBudgetAndReplenishBelowLiveOnANestedSamplingType
+    // above already uses, proving no crash and no interaction, not a
+    // statistical claim about sampling itself.
+    Deal const root_layout = make_one_trick_certain_win();
+    VectorLayoutSource source({root_layout});
+
+    PlayTraceBin cards{};
+    cards.number = 1;
+    cards.suit[0] = Diamonds;
+    cards.rank[0] = 2;
+    auto [record, verdict] = PlayRecord::create(cards, /*opening_leader=*/West);
+    ASSERT_EQ(verdict, HistoryVerdict::Consistent);
+
+    EvaluateOptions options{};
+    options.play_record = record;
+    options.sampling.sample_size = 1u;
+
+    EvaluationResult const result =
+        evaluate(root_layout, North, /*tricks_needed=*/1, source, strategy(1), single_card_defender, options);
+
+    ASSERT_FALSE(result.error.has_value());
+    EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);
 }

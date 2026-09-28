@@ -151,6 +151,12 @@ struct EvaluateOptions
     /// `SamplingOptions`. Default-constructed: exhaustive enumeration, no
     /// scan budget, no replenishment.
     SamplingOptions sampling;
+
+    /// Common knowledge: every card played before `root_layout`, face up
+    /// to every seat. Absent by default. Not the same thing as `history` --
+    /// see `ObservationState::play_record`'s own doxygen for the
+    /// distinction.
+    std::optional<PlayRecord> play_record;
 };
 
 /// Per-depth aggregate of `node.layouts.size()` across every node reached

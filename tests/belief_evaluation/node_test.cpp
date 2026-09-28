@@ -5,8 +5,10 @@
 #include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>
 
+#include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/node.hpp>
+#include <belief_evaluation/play_record.hpp>
 
 #include "test_support.hpp"
 
@@ -18,15 +20,19 @@
 // which one was meant.
 namespace be = dds::belief_evaluation;
 using be::BeliefNode;
+using be::HistoryVerdict;
 using be::KahanAccumulator;
 using be::ObservationState;
+using be::PlayRecord;
 using be::Probability;
 using be::UnboundedLayoutSource;
 using be::VectorLayoutSource;
+using be::advance_state;
 using be::card_count;
 using be::holding;
 using be::layout_key;
 using be::make_root;
+using be::root_observation_state;
 using be::RootFailure;
 using be::tricks_remaining;
 
@@ -406,4 +412,56 @@ TEST_F(NodeTest, TricksRemainingMidTrickIsNotShortForAHandThatHasNotPlayedYet)
     south_view.declarer = South;
     ASSERT_EQ(card_count(south_view.known_holdings, South), 2);
     EXPECT_EQ(tricks_remaining(south_view), 2);
+}
+
+// --- play_record: threaded through root_observation_state, invariant across
+// advance_state ---------------------------------------------------------
+
+TEST_F(NodeTest, RootObservationStateCarriesTheSuppliedPlayRecord)
+{
+    Deal const root_layout = make_root_layout();
+
+    PlayTraceBin cards{};
+    cards.number = 2;
+    cards.suit[0] = 0;  // spades
+    cards.rank[0] = 6;
+    cards.suit[1] = 0;  // spades
+    cards.rank[1] = 4;
+    auto [record, verdict] = PlayRecord::create(cards, /*opening_leader=*/West);
+    ASSERT_EQ(verdict, HistoryVerdict::Consistent);
+
+    ObservationState const state = root_observation_state(root_layout, North, /*tricks_needed=*/2, &*record);
+
+    EXPECT_EQ(state.play_record, &*record);
+}
+
+TEST_F(NodeTest, RootObservationStateDefaultsPlayRecordToNull)
+{
+    Deal const root_layout = make_root_layout();
+
+    ObservationState const state = root_observation_state(root_layout, North, /*tricks_needed=*/2);
+
+    EXPECT_EQ(state.play_record, nullptr);
+}
+
+TEST_F(NodeTest, PlayRecordSurvivesAdvanceStateUnchanged)
+{
+    Deal const root_layout = make_root_layout();
+
+    PlayTraceBin cards{};
+    cards.number = 1;
+    cards.suit[0] = 2;  // diamonds
+    cards.rank[0] = 11;
+    auto [record, verdict] = PlayRecord::create(cards, /*opening_leader=*/West);
+    ASSERT_EQ(verdict, HistoryVerdict::Consistent);
+
+    ObservationState const root_state =
+        root_observation_state(root_layout, North, /*tricks_needed=*/2, &*record);
+
+    // North (declarer) is on lead in make_root_layout() and holds spades
+    // A/K -- the ace is a legal lead.
+    ObservationState const child = advance_state(root_state, be::Card{0, Ace});
+
+    EXPECT_EQ(child.play_record, root_state.play_record);  // same address
+    EXPECT_EQ(child.history.number, root_state.history.number + 1);
 }
