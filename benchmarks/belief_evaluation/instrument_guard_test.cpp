@@ -30,6 +30,7 @@
 
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
+#include <belief_evaluation/play_record.hpp>
 #include <belief_evaluation/validation.hpp>
 
 #include "fixtures.hpp"
@@ -39,6 +40,7 @@ namespace be = dds::belief_evaluation;
 namespace bench = dds::belief_evaluation::benchmarks;
 
 using be::ExhaustiveLayoutSource;
+using be::PlayRecord;
 
 namespace
 {
@@ -46,8 +48,8 @@ namespace
         bench::RungFixture const& fixture, std::uint64_t seed, be::EvaluateOptions const& options)
         -> be::EvaluationResult
     {
-        ExhaustiveLayoutSource const source(
-            fixture.root, fixture.declarer, seed, fixture.history, fixture.opening_leader);
+        PlayRecord const record = *PlayRecord::create(fixture.history, fixture.opening_leader).first;
+        ExhaustiveLayoutSource const source(fixture.root, fixture.declarer, seed, record);
         return be::evaluate(
             fixture.root, fixture.declarer, fixture.tricks_needed, source, bench::scripted_strategy(),
             bench::scripted_defender_play, options);

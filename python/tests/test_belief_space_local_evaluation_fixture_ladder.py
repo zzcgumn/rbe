@@ -17,6 +17,7 @@ from pathlib import Path
 
 from belief_space_local_evaluation import Card
 from belief_space_local_evaluation import ExhaustiveLayoutSource
+from belief_space_local_evaluation import PlayRecord
 
 
 def _repo_root(start: Path | None = None) -> Path:
@@ -77,8 +78,8 @@ class TestFixtureLadderIsReachableFromPython(unittest.TestCase):
         for rung in REFERENCE["RUNGS"]:
             with self.subTest(rung=rung["constrained_size"]):
                 history = [Card(suit, rank) for suit, rank in rung["history"]]
-                source = ExhaustiveLayoutSource(
-                    rung, rung["declarer"], 1, history, rung["opening_leader"])
+                record = PlayRecord(history, rung["opening_leader"])
+                source = ExhaustiveLayoutSource(rung, rung["declarer"], 1, record=record)
                 self.assertEqual(source.size(), rung["constrained_size"])
 
     def test_at_least_five_rungs_spanning_two_orders_of_magnitude(self) -> None:

@@ -89,7 +89,7 @@ auto register_root_exception_bindings(py::module_& module) -> void
 
 // The history representation used both ways: ObservationState::history comes
 // out through history_to_list, and a caller-supplied history
-// (ExhaustiveLayoutSource's constructor) goes in through list_to_history.
+// (PlayRecord's constructor) goes in through list_to_history.
 // Same representation both directions, so sequence -> PlayTraceBin ->
 // sequence round-trips.
 
@@ -121,8 +121,8 @@ auto history_to_list(PlayTraceBin const& history) -> py::list
 // Raises InvalidHistoryInputError, not a bare ValueError: this is exactly
 // the shape of thing verify_history's own HistoryVerdict::InvalidInput
 // names ("history is malformed... or some card's own suit/rank is out of
-// range") when reached from ExhaustiveLayoutSource's constructor, and a
-// caller catching that type around construction must not have a malformed
+// range") when reached from PlayRecord's constructor, and a caller
+// catching that type around construction must not have a malformed
 // *card* slip past it just because this earlier check caught it first
 // instead of verify_history. InvalidHistoryInputError is itself a
 // ValueError (see register_history_error_bindings), so this is a strict
@@ -366,7 +366,19 @@ auto register_observation_state_bindings(py::module_& module) -> void
             "over this node's outstanding pool, the same one a C++ strategy\n"
             "conditions on directly. A fresh copy per access, like every\n"
             "other property here; RankMap is a plain value with no\n"
-            "lifetime of its own to protect.");
+            "lifetime of its own to protect.")
+        .def_property_readonly(
+            "play_record",
+            [](be::ObservationState const& self) -> py::object {
+                if (self.play_record == nullptr) {
+                    return py::none();
+                }
+                return py::cast(*self.play_record);
+            },
+            "Every card played before this evaluation's root, or None if\n"
+            "the caller supplied no PlayRecord. Distinct from history:\n"
+            "play_record is invariant for the whole evaluation, history is\n"
+            "root-relative and grows during the search.");
 }
 
 // BeliefView holds a std::span into caller-owned scratch and node.layouts,
@@ -855,7 +867,8 @@ auto evaluate(
     std::optional<std::uint64_t> const& sample_size,
     std::optional<std::uint64_t> const& scan_budget,
     std::optional<std::uint64_t> const& replenish_below,
-    py::object const& state_key) -> py::dict
+    py::object const& state_key,
+    py::object const& play_record) -> py::dict
 {
     // Checked here, unconditionally, before declarer ever reaches the C++
     // evaluator: make_root() indexes remainCards[declarer] (and, via
@@ -915,6 +928,8 @@ auto evaluate(
     options.sampling.sample_size = sample_size;
     options.sampling.scan_budget = scan_budget;
     options.sampling.replenish_below = replenish_below;
+    options.play_record =
+        play_record.is_none() ? std::nullopt : std::make_optional(py::cast<be::PlayRecord>(play_record));
 
     be::EvaluationResult result;
     {
@@ -1181,6 +1196,41 @@ auto defender_pool_card_count(Deal const& root, int declarer) -> int
     return count;
 }
 
+// PlayRecord reuses list_to_history/history_to_list (the same
+// sequence<->PlayTraceBin conversion ExhaustiveLayoutSource's own history
+// argument already uses) and raise_history_rejected (the same
+// verdict-to-exception mapping ExhaustiveLayoutSource's constructor already
+// raises through) -- not a second copy of either for a type carrying the
+// identical shape of input.
+auto register_play_record_bindings(py::module_& module) -> void
+{
+    py::class_<be::PlayRecord>(
+        module,
+        "PlayRecord",
+        "Every card played before an evaluation's root, and the seat that\n"
+        "opened it -- common knowledge, immutable. Construction guarantees\n"
+        "only that the cards are shape-valid and no card repeats, and that\n"
+        "opening_leader is a seat in range (raises on any of those, the\n"
+        "same exception types ExhaustiveLayoutSource's own history argument\n"
+        "already raises); it does NOT guarantee opening_leader actually led\n"
+        "cards' first trick -- that needs a root to check against, and is\n"
+        "checked only once this record reaches ExhaustiveLayoutSource.")
+        .def(
+            py::init([](py::sequence const& cards, int opening_leader) {
+                PlayTraceBin const trace = list_to_history(cards);
+                auto [record, verdict] = be::PlayRecord::create(trace, opening_leader);
+                if (verdict != be::HistoryVerdict::Consistent) {
+                    raise_history_rejected(verdict);
+                }
+                return *record;
+            }),
+            py::arg("cards"),
+            py::arg("opening_leader"))
+        .def_property_readonly(
+            "cards", [](be::PlayRecord const& self) { return history_to_list(self.cards()); })
+        .def_property_readonly("opening_leader", &be::PlayRecord::opening_leader);
+}
+
 auto register_layout_source_bindings(py::module_& module) -> void
 {
     py::enum_<be::HistoryVerdict>(module, "HistoryVerdict")
@@ -1275,42 +1325,36 @@ auto register_layout_source_bindings(py::module_& module) -> void
     py::class_<be::ExhaustiveLayoutSource, be::LayoutSource>(
         module,
         "ExhaustiveLayoutSource",
-        "Enumerates every layout consistent with root and, when history is\n"
-        "supplied, with the voids that history establishes.\n\n"
-        "history is optional: omitting it applies no void constraint at all,\n"
+        "Enumerates every layout consistent with root and, when a record is\n"
+        "supplied, with the voids that record establishes.\n\n"
+        "record is optional: omitting it applies no void constraint at all,\n"
         "which is correct at trick one and **silently wrong at a mid-play\n"
-        "root** -- there is no way for this type to tell 'no history' from\n"
-        "'declarer chose not to supply one'. A non-empty history is checked\n"
+        "root** -- there is no way for this type to tell 'no record' from\n"
+        "'declarer chose not to supply one'. A supplied record is checked\n"
         "against root: history_verdict() is checked first, and when it is\n"
         "not Consistent the constrained decomposition is never attempted --\n"
         "the raised exception (a HistoryRejectedError subclass) reports only\n"
         "that first failure, never a second one from constrained_space_status(),\n"
         "which reports the meaningless default (Ok) in that case. A\n"
-        "well-formed history that nonetheless leaves no legal split raises a\n"
+        "well-formed record that nonetheless leaves no legal split raises a\n"
         "ConstrainedSpaceEmptyError subclass instead.")
         .def(
-            py::init([](py::dict const& root,
-                        int declarer,
-                        std::uint64_t seed,
-                        py::sequence const& history,
-                        int opening_leader) {
+            py::init([](py::dict const& root, int declarer, std::uint64_t seed, py::object const& record) {
                 // ExhaustiveLayoutSource's own history_verdict() cannot be
-                // trusted to catch an out-of-range declarer/opening_leader
-                // here: verify_history (and so InvalidInput) only runs at
-                // all when history is non-empty -- an empty history is, by
-                // this type's own design, "not checked against root at
-                // all". With an empty history, opening_leader reaches
-                // derive_voids completely unvalidated, which asserts rather
-                // than reports. Checked here instead, unconditionally, so
-                // this binding never depends on whether the caller happened
-                // to also supply a history.
-                if (declarer < 0 || declarer >= DDS_HANDS || opening_leader < 0
-                    || opening_leader >= DDS_HANDS) {
+                // trusted to catch an out-of-range declarer here:
+                // verify_history (and so InvalidInput) only runs at all
+                // when a record is supplied -- an absent one is, by this
+                // type's own design, "not checked against root at all".
+                // Checked here instead, unconditionally, so this binding
+                // never depends on whether the caller happened to also
+                // supply a record.
+                if (declarer < 0 || declarer >= DDS_HANDS) {
                     raise_history_rejected(be::HistoryVerdict::InvalidInput);
                 }
                 Deal const root_deal = dds3_python::dict_to_deal(root);
-                PlayTraceBin const history_bin = list_to_history(history);
-                be::ExhaustiveLayoutSource source(root_deal, declarer, seed, history_bin, opening_leader);
+                std::optional<be::PlayRecord> const cpp_record =
+                    record.is_none() ? std::nullopt : std::make_optional(py::cast<be::PlayRecord>(record));
+                be::ExhaustiveLayoutSource source(root_deal, declarer, seed, cpp_record);
                 be::HistoryVerdict const verdict = source.history_verdict();
                 if (verdict != be::HistoryVerdict::Consistent) {
                     raise_history_rejected(verdict);
@@ -1346,8 +1390,7 @@ auto register_layout_source_bindings(py::module_& module) -> void
             py::arg("root"),
             py::arg("declarer"),
             py::arg("seed"),
-            py::arg("history") = py::list(),
-            py::arg("opening_leader") = 0)
+            py::arg("record") = py::none())
         .def(
             "size",
             [](be::ExhaustiveLayoutSource const& self) -> py::object {
@@ -1663,6 +1706,9 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
     register_root_failure_error_bindings(module);
     register_validation_error_bindings(module);
     register_history_error_bindings(module);
+    // After register_history_error_bindings: raise_history_rejected reads
+    // the exception-map that call populates.
+    register_play_record_bindings(module);
     register_layout_source_bindings(module);
     register_solver_seam_bindings(module);
     register_converter_probes(module);
@@ -1685,6 +1731,7 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
         py::arg("scan_budget") = std::nullopt,
         py::arg("replenish_below") = std::nullopt,
         py::arg("state_key") = py::none(),
+        py::arg("play_record") = py::none(),
         "Evaluates P_make for pi against delta over the belief space "
         "source enumerates from root. See the module's own capability "
         "document for the option coupling this binding validates that "

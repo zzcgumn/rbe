@@ -81,18 +81,15 @@ class TestALayoutSource(unittest.TestCase):
         declarer = North
         seed = 1
         history = [bsle.Card(suit, rank) for suit, rank in played]
+        record = bsle.PlayRecord(history, opening_leader=North)
 
-        source = bsle.ExhaustiveLayoutSource(
-            root, declarer, seed, history=history, opening_leader=North)
+        source = bsle.ExhaustiveLayoutSource(root, declarer, seed, record=record)
 
         self.assertEqual(source.history_verdict(), bsle.HistoryVerdict.Consistent)
 
     def test_a_rejected_history_raises_immediately(self) -> None:
-        root = make_root()
         with self.assertRaises(bsle.HistoryRejectedError):
-            bsle.ExhaustiveLayoutSource(
-                root, North, 1, history=[bsle.Card(Spades, 9), bsle.Card(Spades, 9)],
-                opening_leader=East)
+            bsle.PlayRecord([bsle.Card(Spades, 9), bsle.Card(Spades, 9)], opening_leader=East)
 
     def test_my_source_subclass(self) -> None:
         deals = [make_root(), make_root()]

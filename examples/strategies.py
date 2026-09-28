@@ -270,3 +270,25 @@ def double_dummy_defender(ctx, policy=None):
     if policy is None:
         policy = bsle.SpreadPolicy.TouchingSequence
     return bsle.DoubleDummyDefender(ctx, policy)
+
+
+def remembers_whether_a_heart_was_already_pitched(state, view):
+    """Whether declarer's choice depends on a heart already having been
+    discarded before the root -- something state.history cannot show
+    (root-relative), and state.play_record can (the full record).
+
+    Not a serious bridge rule. A minimal, mechanically checkable
+    demonstration that play_record reaches pi and changes its answer --
+    see examples/test_strategies.py's test using it.
+    """
+    del view
+    deal = state.known_holdings
+    seat = seat_on_play(deal)
+    legal = legal_cards(deal, seat)
+
+    heart_already_gone = state.play_record is not None and any(
+        card.suit == HEARTS for card in state.play_record.cards)
+
+    if heart_already_gone:
+        return max(legal, key=lambda c: (c.rank, -c.suit))
+    return min(legal, key=lambda c: (c.rank, -c.suit))

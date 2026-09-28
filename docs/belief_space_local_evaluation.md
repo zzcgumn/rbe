@@ -90,9 +90,9 @@ plausible-looking number rather than a crash or an exception.
 
 ## The play history: needed, not merely optional
 
-Both `ExhaustiveLayoutSource` constructors take an optional play history —
-a card sequence and the opening leader. It is optional in the sense that
-the type accepts its absence. **That is not the same claim as "not
+`ExhaustiveLayoutSource`'s constructor takes an optional `PlayRecord` — a
+card sequence paired with the opening leader. It is optional in the sense
+that the type accepts its absence. **That is not the same claim as "not
 needed", and only the first is true.**
 
 At a root built after trick one, omitting the history gives an answer
@@ -114,7 +114,7 @@ this is a limitation of the input, not a gap awaiting future work.
 their own information falls on:
 
 - **fact, applied automatically by `ExhaustiveLayoutSource` given a
-  history**: a defender showed out of a suit, so holds none of it.
+  `PlayRecord`**: a defender showed out of a suit, so holds none of it.
 - **inference, still the caller's own to apply**: the auction suggests a
   defender is short in a suit. Nothing here infers this — a caller with
   bidding-derived information supplies their own, narrower layout source
@@ -123,6 +123,18 @@ their own information falls on:
 Supplying a play history does not cover bidding inference, and a reader
 who conflates the two will under-constrain their belief space without any
 signal that they have done so.
+
+Everything above is about what the **layout source** does with a history —
+narrowing the belief space. π itself can read the pre-root record too, via
+`state.play_record`, when the caller supplies one to `evaluate()`: ordinary
+common knowledge (every card already played, face up to every seat), not a
+peek at the hidden split, and a different thing from `state.history`
+(root-relative, growing only as the search plays cards — see that field's
+own doxygen for the distinction). A caller supplying a history to the
+layout source and a `PlayRecord` to `evaluate()` is not supplying the same
+fact twice for two different purposes — one narrows the space every
+strategy searches over, the other lets π itself condition on what happened
+before the root.
 
 ## Python
 
@@ -188,14 +200,14 @@ source = bsle.ExhaustiveLayoutSource(root, declarer, seed)
 ```
 
 `size()` and `at(i)` enumerate every layout consistent with `root`. Pass a
-play history to narrow the space to what it establishes as fact:
+`PlayRecord` to narrow the space to what it establishes as fact:
 
 ```python
-source = bsle.ExhaustiveLayoutSource(
-    root, declarer, seed, history=[bsle.Card(0, 14), bsle.Card(1, 2)], opening_leader=0)
+record = bsle.PlayRecord([bsle.Card(0, 14), bsle.Card(1, 2)], opening_leader=0)
+source = bsle.ExhaustiveLayoutSource(root, declarer, seed, record=record)
 ```
 
-A rejected history (one that does not belong to `root`, or belongs but
+A rejected record (one that does not belong to `root`, or belongs but
 leaves no legal split) raises immediately, from the constructor — see
 "Where Python is stricter than C++" below.
 
@@ -346,7 +358,8 @@ tree**) are documented on the returned dict's own keys; see
 
 Every `RootFailure` and every `ValidationError` cause raises a
 distinguishable exception, all rooted at
-`bsle.BeliefSpaceLocalEvaluationError`. A rejected play history raises
+`bsle.BeliefSpaceLocalEvaluationError`. A rejected record raises from
+`PlayRecord`'s own constructor for a shape/duplicate cause, and otherwise
 from `ExhaustiveLayoutSource`'s own constructor, under a **separate**
 family (`HistoryRejectedError`/`ConstrainedSpaceEmptyError`, still under
 the same root) — never catchable as the same thing as an ordinary
@@ -548,25 +561,21 @@ this list: `examples/test_guess_6nt_belief_space.py` uses it to cross-check
 ### Python surface: candidates
 
 What is still missing from the Python surface, recorded so the next contributor
-sees what to do and not only what goes wrong. Each says what a caller writes
-today, because that is the evidence: both are things `examples/` writes by hand.
+sees what to do and not only what goes wrong. What's left says what a caller
+writes today, because that is the evidence: it is a thing `examples/` writes
+by hand.
 
 The list was longer. The trick primitives, the derived `ObservationState`
-properties, `Card.__hash__`, `SingleLayoutSource`, `root_is_declaring_side` and
-deriving declarer's trick count were all on it and have landed; each was removed
-as it did, along with the gap above that it closed.
+properties, `Card.__hash__`, `SingleLayoutSource`, `root_is_declaring_side`,
+deriving declarer's trick count, and letting the play history arrive as one
+object (`PlayRecord`, accepted by both `ExhaustiveLayoutSource` and
+`evaluate()`) were all on it and have landed; each was removed as it did,
+along with the gap above that it closed.
 
 **Bridge notation on `Card`.** Turning a `Card` or a deal into `♠Q` or PBN text
 is something every caller invents for itself — `bridge_notation` is mostly
 that — and a `__str__` plus a parse/format pair on `Card` itself would stop
 each caller reinventing it independently.
-
-**Let the play history arrive as one object.** `ExhaustiveLayoutSource` wants
-`history` and `opening_leader` as separate arguments, and omitting the pair does
-not fail — it quietly answers a different question, which is why this document
-gives it a section of its own. A caller who has played the hand out holds both in
-one place; accepting that, or deriving the leader from a trick-one deal, makes
-them impossible to pass inconsistently.
 
 ## See also
 

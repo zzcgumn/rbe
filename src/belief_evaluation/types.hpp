@@ -10,6 +10,8 @@
 #include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>
 
+#include <belief_evaluation/play_record.hpp>
+
 namespace dds::belief_evaluation
 {
 
@@ -97,6 +99,18 @@ struct ObservationState
     int tricks_won_by_declarer;
     Deal known_holdings;         ///< declarer + dummy exact; defender entries are the union pool
     RankMap ranks;
+
+    /// Every card played before this evaluation's root, invariant for the
+    /// whole evaluation -- unlike `history` above, which is root-relative
+    /// and grows as the search plays cards. Null when the caller supplied
+    /// no `PlayRecord`. Non-owning: owned by the `EvaluateOptions` the
+    /// caller passed to `evaluate()`, which outlives every
+    /// `ObservationState` this evaluation builds -- the same shape
+    /// `SolverContext&` already has. One exception: the copy embedded in
+    /// `EvaluationValue::retained_root` outlives the call itself, with no
+    /// such guarantee about `options` -- `evaluate()` clears this field
+    /// there rather than leave it dangling; see that field's own doxygen.
+    PlayRecord const* play_record = nullptr;
 };
 
 /// One layout in a belief view, paired with its normalised posterior.

@@ -12,6 +12,7 @@
 #include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/node.hpp>
+#include <belief_evaluation/play_record.hpp>
 #include <belief_evaluation/replenishment.hpp>
 #include <belief_evaluation/trick.hpp>
 
@@ -21,13 +22,17 @@ namespace be = dds::belief_evaluation;
 using be::BeliefNode;
 using be::CountingLayoutSource;
 using be::DeclarerStrategy;
+using be::DefenderQuery;
 using be::EvaluateOptions;
 using be::EvaluationResult;
+using be::HistoryVerdict;
 using be::KahanAccumulator;
 using be::ObservationState;
+using be::PlayRecord;
 using be::Probability;
 using be::ScanResult;
 using be::VectorLayoutSource;
+using be::WeightedCard;
 using be::evaluate;
 using be::holding;
 using be::layout_key;
@@ -158,6 +163,69 @@ TEST_F(ReplenishmentTest, PMakeMovesFromFalseCertaintyToTheHandDerivedTrueValue)
         EvaluateOptions{.sampling = {.sample_size = 6u, .replenish_below = 6u}});
     ASSERT_FALSE(replenished.error.has_value());
     EXPECT_NEAR(replenished.by_strategy.at(1u).p_make, 0.75, 1e-9);
+}
+
+// ===========================================================================
+// A supplied EvaluateOptions::play_record must reach delta's DefenderQuery
+// unchanged during a replenishment scan, not just during ordinary
+// expansion: replay_candidate() (replenishment.cpp) rebuilds its own
+// ObservationState via root_observation_state() rather than reusing the
+// node's, and that rebuild has to carry the record forward like every
+// other root_observation_state() call site does.
+// ===========================================================================
+
+TEST_F(ReplenishmentTest, PlayRecordReachesADefenderQueryMadeDuringAReplenishmentScan)
+{
+    // The same eight-layout fixture and options as
+    // PMakeMovesFromFalseCertaintyToTheHandDerivedTrueValue above, proven
+    // there to actually trigger scan_for_replenishment (sample_size = 6,
+    // replenish_below = 6) -- reused here rather than a new fixture, since
+    // the property under test is "the record reaches this defender query",
+    // not "replenishment fires", which that test already established.
+    std::vector<Deal> const layouts{
+        make_layout(Three, Two),
+        make_layout(Three, Three),
+        make_layout(Three, Four),
+        make_layout(Five, Five),
+        make_layout(Five, Six),
+        make_layout(Five, Seven),
+        make_layout(Three, Ten),
+        make_layout(Five, Ten),
+    };
+    be::assert_pool_matches(layouts);
+    be::assert_forms_one_belief_node(layouts, North);
+    VectorLayoutSource const source(layouts);
+    DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
+
+    PlayTraceBin cards{};
+    cards.number = 1;
+    cards.suit[0] = Spades;
+    cards.rank[0] = Two;
+    auto [record, verdict] = PlayRecord::create(cards, /*opening_leader=*/West);
+    ASSERT_EQ(verdict, HistoryVerdict::Consistent);
+
+    std::vector<ObservationState> defender_states;
+    be::DefenderStrategy const recording_defender =
+        [&defender_states](DefenderQuery const& query) -> std::vector<WeightedCard>
+    {
+        defender_states.push_back(query.state);
+        return single_card_defender(query);
+    };
+
+    EvaluateOptions options{.sampling = {.sample_size = 6u, .replenish_below = 6u}};
+    options.play_record = record;
+
+    EvaluationResult const result =
+        evaluate(layouts.front(), North, /*tricks_needed=*/2, source, pi, recording_defender, options);
+
+    ASSERT_FALSE(result.error.has_value());
+    ASSERT_FALSE(defender_states.empty());
+    for (ObservationState const& state : defender_states)
+    {
+        ASSERT_NE(state.play_record, nullptr);
+        EXPECT_EQ(state.play_record->cards().number, record->cards().number);
+        EXPECT_EQ(state.play_record->opening_leader(), record->opening_leader());
+    }
 }
 
 // ===========================================================================

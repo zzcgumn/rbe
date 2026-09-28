@@ -70,9 +70,9 @@ class TestAgainstTheLibrary(unittest.TestCase):
         from strategies import lowest_eligible_defender
 
         sequence = example.guess_6nt()
+        record = bsle.PlayRecord(sequence.history, sequence.opening_leader)
         source = bsle.ExhaustiveLayoutSource(
-            sequence.current_deal, sequence.declarer, example.SEED,
-            history=sequence.history, opening_leader=sequence.opening_leader)
+            sequence.current_deal, sequence.declarer, example.SEED, record=record)
 
         def pi(state, view):
             del view
@@ -87,6 +87,49 @@ class TestAgainstTheLibrary(unittest.TestCase):
             source, pi, lowest_eligible_defender)
 
         self.assertNotIn("error", result)
+
+
+class TestPlayRecordChangesTheAnswer(unittest.TestCase):
+    """The capability play_record exists for, proven against a real caller
+    rather than left as plumbing nothing reads. Two evaluate() calls
+    against the *same* root, source and delta, differing only in
+    play_record -- legitimate because PlayRecord is never checked against
+    a root at all, so there is no need for two matching deals here, only
+    two calls against the one root."""
+
+    def test_the_first_card_returned_differs_with_and_without_a_pitched_heart(self) -> None:
+        import guess_6nt_belief_space as example
+        from bridge_notation import HEARTS
+        from strategies import lowest_eligible_defender, remembers_whether_a_heart_was_already_pitched
+
+        sequence = example.guess_6nt()
+        layout_record = bsle.PlayRecord(sequence.history, sequence.opening_leader)
+        source = bsle.ExhaustiveLayoutSource(
+            sequence.current_deal, sequence.declarer, example.SEED, record=layout_record)
+
+        def recording_pi(captured):
+            def pi(state, view):
+                captured.append(remembers_whether_a_heart_was_already_pitched(state, view))
+                return captured[-1]
+            return pi
+
+        without_record = []
+        result_without = bsle.evaluate(
+            sequence.current_deal, sequence.declarer, sequence.tricks_needed,
+            source, recording_pi(without_record), lowest_eligible_defender)
+
+        with_record = []
+        record = bsle.PlayRecord([bsle.Card(HEARTS, 8)], sequence.opening_leader)
+        result_with = bsle.evaluate(
+            sequence.current_deal, sequence.declarer, sequence.tricks_needed,
+            source, recording_pi(with_record), lowest_eligible_defender,
+            play_record=record)
+
+        self.assertNotIn("error", result_without)
+        self.assertNotIn("error", result_with)
+        self.assertTrue(without_record)
+        self.assertTrue(with_record)
+        self.assertNotEqual(without_record[0], with_record[0])
 
 
 if __name__ == "__main__":

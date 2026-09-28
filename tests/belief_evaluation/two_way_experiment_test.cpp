@@ -15,6 +15,7 @@
 #include <belief_evaluation/history_verification.hpp>
 #include <belief_evaluation/node.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
+#include <belief_evaluation/play_record.hpp>
 
 #include "test_support.hpp"
 
@@ -36,6 +37,7 @@ using be::HistoryVerdict;
 using be::make_belief_view;
 using be::make_root;
 using be::ObservationState;
+using be::PlayRecord;
 using be::RootConstructionResult;
 using be::ExhaustiveLayoutSource;
 using be::WeightedCard;
@@ -111,6 +113,18 @@ namespace
             history.rank[i] = played[i].second;
         }
         return {root, history};
+    }
+
+    /// A PlayRecord built from a (history, opening_leader) pair this
+    /// file's own fixtures already assert Consistent via
+    /// history_verdict() right after the ExhaustiveLayoutSource call that
+    /// follows -- a thin wrapper so that assertion stays the one place
+    /// each fixture's consistency is actually checked, rather than
+    /// repeating PlayRecord::create()'s own two-step return at every call
+    /// site.
+    auto make_record(PlayTraceBin const& history, int opening_leader) -> PlayRecord
+    {
+        return *PlayRecord::create(history, opening_leader).first;
     }
 }
 
@@ -283,7 +297,7 @@ TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
     before_root.first = North;
 
     ExhaustiveLayoutSource const before_source(
-        before_root, North, /*seed=*/2u, before_history, /*opening_leader=*/North);
+        before_root, North, /*seed=*/2u, make_record(before_history, /*opening_leader=*/North));
     ASSERT_EQ(before_source.history_verdict(), HistoryVerdict::Consistent);
     ASSERT_EQ(before_source.size(), 6u);  // C(6, 1): East's void removes the queen from its pool
 
@@ -384,7 +398,7 @@ TEST_F(TwoWayExperimentTest, BothDefendersVoidInDifferentSuits)
     root.trump = DDS_NOTRUMP;
     root.first = North;
 
-    ExhaustiveLayoutSource const source(root, North, /*seed=*/3u, history, /*opening_leader=*/North);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/3u, make_record(history, /*opening_leader=*/North));
     ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent);
     ASSERT_EQ(source.size(), 4u);  // C(4, 1): the four free spades, one needed
 
@@ -456,7 +470,7 @@ TEST_F(TwoWayExperimentTest, SamplingComposesWithAConstrainedSpace)
     root.trump = DDS_NOTRUMP;
     root.first = North;
 
-    ExhaustiveLayoutSource const source(root, North, /*seed=*/6u, history, /*opening_leader=*/North);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/6u, make_record(history, /*opening_leader=*/North));
     ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent);
     ASSERT_EQ(source.size(), 4u);
 
@@ -539,7 +553,7 @@ TEST_F(TwoWayExperimentTest, TheVoidFlipsWhichDefenderIsFavouriteForTheMissingKi
     };
 
     ExhaustiveLayoutSource const constrained_source(
-        root, North, /*seed=*/5u, history, /*opening_leader=*/North);
+        root, North, /*seed=*/5u, make_record(history, /*opening_leader=*/North));
     ASSERT_EQ(constrained_source.history_verdict(), HistoryVerdict::Consistent);
     ASSERT_EQ(constrained_source.size(), 15u);  // C(6, 4): East's void removes the four hearts
 
@@ -594,7 +608,7 @@ TEST_F(TwoWayExperimentTest, ATrumpContractWhereTheShowOutIsARuff)
     root.trump = Hearts;
     root.first = East;  // East's ruff won trick one
 
-    ExhaustiveLayoutSource const source(root, North, /*seed=*/4u, history, /*opening_leader=*/North);
+    ExhaustiveLayoutSource const source(root, North, /*seed=*/4u, make_record(history, /*opening_leader=*/North));
     ASSERT_EQ(source.history_verdict(), HistoryVerdict::Consistent);
     ASSERT_EQ(source.size(), 4u);  // C(4, 1): East's void removes the spade jack from its pool
 

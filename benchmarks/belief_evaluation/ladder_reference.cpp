@@ -12,6 +12,7 @@
 #include <api/dds_data_types.hpp>
 
 #include <belief_evaluation/exhaustive_layout_source.hpp>
+#include <belief_evaluation/play_record.hpp>
 
 #include "fixtures.hpp"
 
@@ -50,10 +51,10 @@ namespace
             *be::ExhaustiveLayoutSource(
                  rung.without_history.root, rung.without_history.declarer, /*seed=*/1u)
                  .size();
+        be::PlayRecord const record =
+            *be::PlayRecord::create(rung.with_history.history, rung.with_history.opening_leader).first;
         std::uint64_t const constrained =
-            *be::ExhaustiveLayoutSource(
-                 rung.with_history.root, rung.with_history.declarer, /*seed=*/1u, rung.with_history.history,
-                 rung.with_history.opening_leader)
+            *be::ExhaustiveLayoutSource(rung.with_history.root, rung.with_history.declarer, /*seed=*/1u, record)
                  .size();
 
         std::printf("%s = {\n", python_name);

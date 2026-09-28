@@ -10,6 +10,7 @@
 #include <belief_evaluation/defender_split.hpp>
 #include <belief_evaluation/history_verification.hpp>
 #include <belief_evaluation/layout_source.hpp>
+#include <belief_evaluation/play_record.hpp>
 
 namespace dds::belief_evaluation
 {
@@ -25,12 +26,11 @@ namespace dds::belief_evaluation
 /// know which side of that line their information falls on. See the
 /// caller's guide, "The play history: needed, not merely optional".
 ///
-/// `history` and `opening_leader` are defaulted; an empty history applies
-/// no void constraint and reproduces the unconstrained enumeration. A
-/// non-empty one is checked against `root` before anything else — see
-/// `history_verdict()` for a history that does not fit, and
-/// `constrained_space_status()` for one that fits but leaves no legal
-/// split.
+/// `record` is defaulted; its absence applies no void constraint and
+/// reproduces the unconstrained enumeration. A supplied record's cards are
+/// checked against `root` before anything else — see `history_verdict()`
+/// for one that does not fit, and `constrained_space_status()` for one
+/// that fits but leaves no legal split.
 ///
 /// `size()` is exact and never `nullopt`. `at(index)` unranks rather than
 /// materialising the space — a full thirteen-card ending is `C(26, 13)`
@@ -38,26 +38,25 @@ namespace dds::belief_evaluation
 /// call are O(pool size) and allocate nothing proportional to the space.
 ///
 /// **The enumeration order is randomised, keyed on `seed`.** Same `seed`,
-/// `root` and `history` reproduce a run exactly. Two seeds enumerate the
+/// `root` and `record` reproduce a run exactly. Two seeds enumerate the
 /// identical *space* in a different order, so a bounded-`sample_size`
 /// prefix of each gives two different samples — which is how to assess
 /// sampling error, as distinct from raising `sample_size`, which asks a
-/// different question. A supplied history changes the space itself, so the
-/// order differs from the no-history order at the same seed; that is
+/// different question. A supplied record changes the space itself, so the
+/// order differs from the no-record order at the same seed; that is
 /// correct, not a sign the seed stopped working.
 class ExhaustiveLayoutSource final : public LayoutSource
 {
 public:
     /// `root` and `declarer` fix the space, `seed` fixes the order within
     /// it. `root` is copied, so this source outlives no caller-owned
-    /// `Deal`. An empty `history` is not checked against `root` at all — a
-    /// caller with no play record is making no claim to reject.
+    /// `Deal`. Absent `record` (the default) is not checked against `root`
+    /// at all — a caller with no play record is making no claim to reject.
+    /// `record`'s own cards/leader agreement with `root` — the leader
+    /// named really led the cards' first trick — is checked here, since a
+    /// `PlayRecord` does not check that itself (see its own doxygen).
     ExhaustiveLayoutSource(
-        Deal const& root,
-        int declarer,
-        std::uint64_t seed,
-        PlayTraceBin const& history = PlayTraceBin{},
-        int opening_leader = 0);
+        Deal const& root, int declarer, std::uint64_t seed, std::optional<PlayRecord> const& record = std::nullopt);
 
     /// `C(n, k)`: the pooled card count choose the fixed seat's own count,
     /// or — once a history's voids are applied — the free-card count choose

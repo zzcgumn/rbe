@@ -40,6 +40,7 @@ try:
     from ._belief_space_local_evaluation import ObservationState
     from ._belief_space_local_evaluation import play
     from ._belief_space_local_evaluation import play_out
+    from ._belief_space_local_evaluation import PlayRecord
     from ._belief_space_local_evaluation import ProbabilitiesDoNotSumToOneError
     from ._belief_space_local_evaluation import ProbabilityNonPositiveError
     from ._belief_space_local_evaluation import RankMap
@@ -92,6 +93,7 @@ except ImportError:
     from _belief_space_local_evaluation import ObservationState
     from _belief_space_local_evaluation import play
     from _belief_space_local_evaluation import play_out
+    from _belief_space_local_evaluation import PlayRecord
     from _belief_space_local_evaluation import ProbabilitiesDoNotSumToOneError
     from _belief_space_local_evaluation import ProbabilityNonPositiveError
     from _belief_space_local_evaluation import RankMap
@@ -153,6 +155,7 @@ __all__ = [
     "ObservationState",
     "play",
     "play_out",
+    "PlayRecord",
     "PlaySequence",
     "ProbabilitiesDoNotSumToOneError",
     "ProbabilityNonPositiveError",
