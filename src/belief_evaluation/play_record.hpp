@@ -18,8 +18,13 @@ namespace dds::belief_evaluation
 /// cards are shape-valid and no card appears twice, and `opening_leader` is
 /// a seat in range. What it cannot: that `opening_leader` is the seat that
 /// actually led `cards`' first trick -- that check needs a root to replay
-/// against, and is made only once the record reaches
-/// `ExhaustiveLayoutSource` or `evaluate()`.
+/// against, and `ExhaustiveLayoutSource` is the only site that makes it
+/// (via `verify_history`, whether reached through this type or its own
+/// legacy `history`/`opening_leader` pair). `evaluate()`'s own
+/// `EvaluateOptions::play_record` is never checked against a root at
+/// all -- keeping it consistent with whatever `LayoutSource` an
+/// evaluation uses is the caller's own obligation, not something
+/// `evaluate()` enforces.
 ///
 /// Deliberately does not carry a contract or a score -- `evaluate()`
 /// already takes `declarer` and `tricks_needed` separately, and a record

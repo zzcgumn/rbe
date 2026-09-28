@@ -272,9 +272,16 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   independent of any particular root — unconstructible from malformed
   input, rather than merely rejected once handed somewhere that checks. The
   pair form defers that same check to wherever it is first used. Neither
-  form is checked against a *root* until it reaches
-  `ExhaustiveLayoutSource` or `evaluate()` — the checks below are unchanged
-  by which of the two supplied it. From either, every seat's voids follow
+  form is checked against a *root* at construction; the checks below run
+  only once the pair or record reaches `ExhaustiveLayoutSource`, the sole
+  site that performs them, unchanged by which of the two supplied it.
+  `evaluate()`'s own `EvaluateOptions::play_record` is a separate input,
+  threaded to `ObservationState::play_record` with no root-consistency
+  check of any kind — keeping it consistent with whatever `LayoutSource`
+  `evaluate()` is given (including one built from the same `PlayRecord`, if
+  the caller routes it through `ExhaustiveLayoutSource` too) is the
+  caller's own obligation, not something either entry point enforces. From
+  either, every seat's voids follow
   by trick arithmetic alone: a seat that plays off the suit led — a discard
   or a ruff, treated
   identically — is void in it from that point, including from the trailing,
