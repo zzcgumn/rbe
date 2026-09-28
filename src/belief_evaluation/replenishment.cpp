@@ -55,8 +55,8 @@ auto replay_candidate(
     // rebuilt from the root to reproduce the exact query the original
     // expansion made.
     Deal working = candidate;
-    ObservationState state =
-        root_observation_state(root_layout, node_state.declarer, node_state.tricks_needed);
+    ObservationState state = root_observation_state(
+        root_layout, node_state.declarer, node_state.tricks_needed, node_state.play_record);
 
     Probability p_j = 1.0;
     for (int i = skip; i < node_state.history.number; ++i)

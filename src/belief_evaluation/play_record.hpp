@@ -15,7 +15,11 @@ namespace dds::belief_evaluation
 /// root: unlike `ExhaustiveLayoutSource`'s own `history`/`opening_leader`
 /// pair, a `PlayRecord` is never checked against a `Deal` at construction,
 /// since it does not have one. What it *can* guarantee on its own: the
-/// cards are shape-valid and no card appears twice.
+/// cards are shape-valid and no card appears twice, and `opening_leader` is
+/// a seat in range. What it cannot: that `opening_leader` is the seat that
+/// actually led `cards`' first trick -- that check needs a root to replay
+/// against, and is made only once the record reaches
+/// `ExhaustiveLayoutSource` or `evaluate()`.
 ///
 /// Deliberately does not carry a contract or a score -- `evaluate()`
 /// already takes `declarer` and `tricks_needed` separately, and a record
