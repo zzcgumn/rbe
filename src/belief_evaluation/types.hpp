@@ -106,7 +106,10 @@ struct ObservationState
     /// no `PlayRecord`. Non-owning: owned by the `EvaluateOptions` the
     /// caller passed to `evaluate()`, which outlives every
     /// `ObservationState` this evaluation builds -- the same shape
-    /// `SolverContext&` already has.
+    /// `SolverContext&` already has. One exception: the copy embedded in
+    /// `EvaluationValue::retained_root` outlives the call itself, with no
+    /// such guarantee about `options` -- `evaluate()` clears this field
+    /// there rather than leave it dangling; see that field's own doxygen.
     PlayRecord const* play_record = nullptr;
 };
 

@@ -1208,10 +1208,13 @@ auto register_play_record_bindings(py::module_& module) -> void
         module,
         "PlayRecord",
         "Every card played before an evaluation's root, and the seat that\n"
-        "opened it -- common knowledge, immutable, and cannot be\n"
-        "constructed inconsistent with itself (raises on a malformed pair,\n"
-        "the same exception types ExhaustiveLayoutSource's own history\n"
-        "argument already raises).")
+        "opened it -- common knowledge, immutable. Construction guarantees\n"
+        "only that the cards are shape-valid and no card repeats, and that\n"
+        "opening_leader is a seat in range (raises on any of those, the\n"
+        "same exception types ExhaustiveLayoutSource's own history argument\n"
+        "already raises); it does NOT guarantee opening_leader actually led\n"
+        "cards' first trick -- that needs a root to check against, and is\n"
+        "checked only once this record reaches ExhaustiveLayoutSource.")
         .def(
             py::init([](py::sequence const& cards, int opening_leader) {
                 PlayTraceBin const trace = list_to_history(cards);

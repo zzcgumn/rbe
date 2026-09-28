@@ -601,6 +601,16 @@ auto evaluate(
     if (options.retain_root)
     {
         value.retained_root = root;
+        // Unlike every other ObservationState this evaluation builds,
+        // retained_root outlives the call: it survives inside the returned
+        // EvaluationResult, with no guarantee that options (or a PlayRecord
+        // inside it) does too. play_record's usual non-owning contract --
+        // "owned by the EvaluateOptions the caller passed to evaluate()" --
+        // does not extend to a value handed back to the caller, so it is
+        // cleared here rather than left dangling. The retained node is a
+        // diagnostic snapshot of the belief space, not a live query
+        // surface, and has no use for it.
+        value.retained_root->state.play_record = nullptr;
     }
     if (options.collect_counters)
     {

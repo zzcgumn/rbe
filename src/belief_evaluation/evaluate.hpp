@@ -269,7 +269,14 @@ struct EvaluationValue
     bool root_is_declaring_side = false;
 
     /// The root BeliefNode, populated only when EvaluateOptions::retain_root
-    /// is set. The root alone, never a tree.
+    /// is set. The root alone, never a tree. Its ObservationState::play_record
+    /// is always null here, even when EvaluateOptions::play_record was
+    /// supplied: that field's usual non-owning contract assumes the caller's
+    /// options outlive every ObservationState the evaluation builds, which
+    /// holds for every state consumed during the call but not for this one,
+    /// which survives inside the returned EvaluationResult -- evaluate()
+    /// clears it rather than hand back a pointer that can dangle once the
+    /// caller's options go out of scope.
     std::optional<BeliefNode> retained_root;
 
     /// This run's instrumentation, populated only when

@@ -54,9 +54,12 @@ public:
     /// `Deal`. An empty `history` is not checked against `root` at all — a
     /// caller with no play record is making no claim to reject.
     ///
-    /// Prefer the `PlayRecord` overload below for new code: a `PlayRecord`'s
-    /// cards and leader cannot disagree by construction, closing exactly
-    /// the caller obligation this pair still carries.
+    /// Prefer the `PlayRecord` overload below for new code: it pairs the
+    /// cards and leader in one value rather than two arguments a caller
+    /// could pass out of step with each other. Whether the pair actually
+    /// agrees -- the leader named really led the cards' first trick -- is
+    /// checked here, against `root`, exactly the same way either form: a
+    /// `PlayRecord` does not check that itself (see its own doxygen).
     ExhaustiveLayoutSource(
         Deal const& root,
         int declarer,
@@ -64,11 +67,12 @@ public:
         PlayTraceBin const& history = PlayTraceBin{},
         int opening_leader = 0);
 
-    /// Preferred over the `(history, opening_leader)` pair above: a
-    /// `PlayRecord`'s cards and leader cannot disagree by construction,
-    /// closing exactly the caller obligation the pair still carries.
-    /// Delegates to the constructor above — the space this produces is
-    /// computed once, not twice.
+    /// Preferred over the `(history, opening_leader)` pair above: pairs the
+    /// cards and leader in one value, so a caller cannot pass one without
+    /// the other or let the two drift apart across a refactor. Not a
+    /// stronger check than the pair form -- `record` is checked against
+    /// `root` here exactly the same way, by delegating to the constructor
+    /// above, so the space this produces is computed once, not twice.
     ExhaustiveLayoutSource(Deal const& root, int declarer, std::uint64_t seed, PlayRecord const& record);
 
     /// `C(n, k)`: the pooled card count choose the fixed seat's own count,

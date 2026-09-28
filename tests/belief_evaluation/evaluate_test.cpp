@@ -505,3 +505,32 @@ TEST_F(EvaluateTest, ASampledRootWithAPlayRecordSupplied)
     ASSERT_FALSE(result.error.has_value());
     EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);
 }
+
+TEST_F(EvaluateTest, RetainedRootsPlayRecordIsClearedEvenWhenOneWasSupplied)
+{
+    // retained_root survives inside the returned EvaluationResult, with no
+    // guarantee options (or the PlayRecord inside it) does too -- unlike
+    // every ObservationState an evaluation consumes synchronously during
+    // the call. evaluate() clears the copy embedded here rather than hand
+    // back a pointer that can dangle once the caller's options goes out of
+    // scope (a helper function building EvaluateOptions as a local, say).
+    Deal const root_layout = make_one_trick_certain_win();
+    VectorLayoutSource source({root_layout});
+
+    PlayTraceBin cards{};
+    cards.number = 1;
+    cards.suit[0] = Diamonds;
+    cards.rank[0] = 2;
+    auto [record, verdict] = PlayRecord::create(cards, /*opening_leader=*/West);
+    ASSERT_EQ(verdict, HistoryVerdict::Consistent);
+
+    EvaluateOptions options{.retain_root = true};
+    options.play_record = record;
+
+    EvaluationResult const result =
+        evaluate(root_layout, North, /*tricks_needed=*/1, source, strategy(1), single_card_defender, options);
+
+    ASSERT_FALSE(result.error.has_value());
+    ASSERT_TRUE(result.by_strategy.at(1u).retained_root.has_value());
+    EXPECT_EQ(result.by_strategy.at(1u).retained_root->state.play_record, nullptr);
+}
