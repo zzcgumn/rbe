@@ -124,6 +124,18 @@ Supplying a play history does not cover bidding inference, and a reader
 who conflates the two will under-constrain their belief space without any
 signal that they have done so.
 
+Everything above is about what the **layout source** does with a history —
+narrowing the belief space. π itself can read the pre-root record too, via
+`state.play_record`, when the caller supplies one to `evaluate()`: ordinary
+common knowledge (every card already played, face up to every seat), not a
+peek at the hidden split, and a different thing from `state.history`
+(root-relative, growing only as the search plays cards — see that field's
+own doxygen for the distinction). A caller supplying a history to the
+layout source and a `PlayRecord` to `evaluate()` is not supplying the same
+fact twice for two different purposes — one narrows the space every
+strategy searches over, the other lets π itself condition on what happened
+before the root.
+
 ## Python
 
 ```python
@@ -548,25 +560,21 @@ this list: `examples/test_guess_6nt_belief_space.py` uses it to cross-check
 ### Python surface: candidates
 
 What is still missing from the Python surface, recorded so the next contributor
-sees what to do and not only what goes wrong. Each says what a caller writes
-today, because that is the evidence: both are things `examples/` writes by hand.
+sees what to do and not only what goes wrong. What's left says what a caller
+writes today, because that is the evidence: it is a thing `examples/` writes
+by hand.
 
 The list was longer. The trick primitives, the derived `ObservationState`
-properties, `Card.__hash__`, `SingleLayoutSource`, `root_is_declaring_side` and
-deriving declarer's trick count were all on it and have landed; each was removed
-as it did, along with the gap above that it closed.
+properties, `Card.__hash__`, `SingleLayoutSource`, `root_is_declaring_side`,
+deriving declarer's trick count, and letting the play history arrive as one
+object (`PlayRecord`, accepted by both `ExhaustiveLayoutSource` and
+`evaluate()`) were all on it and have landed; each was removed as it did,
+along with the gap above that it closed.
 
 **Bridge notation on `Card`.** Turning a `Card` or a deal into `♠Q` or PBN text
 is something every caller invents for itself — `bridge_notation` is mostly
 that — and a `__str__` plus a parse/format pair on `Card` itself would stop
 each caller reinventing it independently.
-
-**Let the play history arrive as one object.** `ExhaustiveLayoutSource` wants
-`history` and `opening_leader` as separate arguments, and omitting the pair does
-not fail — it quietly answers a different question, which is why this document
-gives it a section of its own. A caller who has played the hand out holds both in
-one place; accepting that, or deriving the leader from a trick-one deal, makes
-them impossible to pass inconsistently.
 
 ## See also
 

@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-09-27
+last-updated: 2026-09-28
 ---
 
 # Replenished Belief Evaluation
@@ -71,6 +71,16 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   reuse. A non-empty key must not be coarser than what `play` actually
   consults — two states mapped to the same key on which `play` would diverge
   produce a wrong probability, not merely a slow one.
+- **π may condition on the full pre-root record, when the caller supplies
+  one, without that being a widening of the information barrier.** A
+  caller-supplied `PlayRecord` reaches `play` via
+  `ObservationState::play_record` — every card played before the root, face
+  up to every seat. This is common knowledge, the same footing every other
+  field `ObservationState` carries is on; the hidden defender split is still
+  reachable only through `BeliefView`, unaffected by whether a record was
+  supplied. Distinct from `ObservationState::history` — see the bullet on
+  that field below for the distinction a caller reading only this spec must
+  not conflate.
 - **Defender strategy (`DefenderStrategy`) returns a distribution, not a
   single card**, so that randomisation between double-dummy-equivalent cards
   (restricted choice, in bridge terms) is expressible. Every returned card
@@ -196,6 +206,15 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   the two are numerically identical but only one is structurally correct,
   since a per-layout form would need a per-layout trick count that does not
   exist anywhere in the node's state.
+- **`ObservationState::history` and `ObservationState::play_record` are not
+  the same thing, and a caller reading only this spec must not assume
+  `history` means everything played.** `history` is root-relative: seeded
+  from `root_layout`'s own trick in progress at the root (at most three
+  cards), and grown only by the cards the search itself plays from there —
+  it never contains anything from before the root. `play_record` is the
+  full record from trick one, invariant for the whole evaluation, present
+  only when the caller supplied one (absent by default, `nullptr`). Neither
+  is derived from the other.
 - **`kappa` and `p` are separate quantities; `w = kappa · p` is never
   stored.** `kappa` is the node's own sample weight, `p` is per-layout, and
   collapsing them into one stored number is tempting wherever nothing yet
@@ -247,8 +266,17 @@ what makes each sound and "Known gaps / non-goals" for what is still absent
   leave possible, and voids are the complete residual constraint — nothing
   else about the history is used.** The input is a `PlayTraceBin` (the same
   type `ObservationState::history` and `analyse_play` already use) plus the
-  opening leader, from which every seat's voids follow by trick arithmetic
-  alone: a seat that plays off the suit led — a discard or a ruff, treated
+  opening leader — passed either as that pair directly, or as a `PlayRecord`
+  pairing them. A `PlayRecord` validates its own shape (a well-formed card
+  count, an in-range opening leader, no card repeated) at construction,
+  independent of any particular root — unconstructible from malformed
+  input, rather than merely rejected once handed somewhere that checks. The
+  pair form defers that same check to wherever it is first used. Neither
+  form is checked against a *root* until it reaches
+  `ExhaustiveLayoutSource` or `evaluate()` — the checks below are unchanged
+  by which of the two supplied it. From either, every seat's voids follow
+  by trick arithmetic alone: a seat that plays off the suit led — a discard
+  or a ruff, treated
   identically — is void in it from that point, including from the trailing,
   possibly-incomplete final trick. Voids are the *only* fact the play
   establishes that is not already captured elsewhere in the root: cards
