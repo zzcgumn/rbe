@@ -24,6 +24,8 @@ handed. What is left is the bookkeeping the library genuinely does not do:
 counting tricks, collecting the history, and turning hand records into cards.
 """
 
+import dataclasses
+
 import belief_space_local_evaluation as bsle
 
 from bridge_notation import (
@@ -31,6 +33,48 @@ from bridge_notation import (
     format_card,
     parse_cards,
 )
+
+
+@dataclasses.dataclass(frozen=True)
+class DeclarerView:
+    """Everything declarer legitimately knows at this point in a
+    PlaySequence, for inspecting a position outside a real evaluate() call.
+
+    Not ObservationState: that type only exists inside a live evaluation and
+    is not constructible from Python. This is PlaySequence's own equivalent,
+    shaped the same way on purpose.
+
+    play_history is the FULL record from trick one, not "from the root" --
+    PlaySequence has no root concept. Deliberately a different name from
+    ObservationState.history (root-relative), not a synonym for it.
+    """
+    declarer_hand: list
+    dummy_hand: list
+    seat_on_play: int
+    trick_leader: int
+    current_trick: list
+    position_in_trick: int
+    legal_cards: list
+    can_follow_led_suit: bool
+    is_declaring_side: bool
+    play_history: list
+    tricks_won_by_declarer: int
+    tricks_needed: int
+
+
+def _hand(remain_cards_row: list) -> list:
+    """A seat's remaining cards as a list of Card, suit ascending then rank
+    ascending within a suit -- matching `legal_cards`' own order, not
+    `bridge_notation.ranks_in`'s highest-first order. `legal_cards` is a
+    subset of whichever of `declarer_hand`/`dummy_hand` owns the seat on
+    play; having a subset and its superset printed in different orders
+    inside the same DeclarerView would be worth avoiding on sight."""
+    return [
+        bsle.Card(suit, rank)
+        for suit in range(4)
+        for rank in range(2, 15)
+        if remain_cards_row[suit] & (1 << rank)
+    ]
 
 
 def cards_on_trick(deal: dict) -> list:
@@ -160,3 +204,34 @@ class PlaySequence:
                 f"{number:>3}. {SEAT_NAMES[leader]:>5} led  {played}   "
                 f"won by {SEAT_NAMES[winner]}")
         return "\n".join(lines)
+
+    def declarer_view(self) -> DeclarerView:
+        """Raises ValueError if a defender is on play: legal_cards and the
+        hand-in-turn can only be answered from a hand the caller may
+        legitimately see, and a defender's remaining cards are not one."""
+        seat = bsle.seat_on_play(self.current_deal)
+        if seat not in (self.declarer, self.dummy):
+            raise ValueError(
+                f"{SEAT_NAMES[seat]} does not have the turn to play; "
+                "declarer_view() is only meaningful when it is declarer's "
+                "or dummy's turn")
+
+        remain_cards = self.current_deal["remain_cards"]
+        current_trick = cards_on_trick(self.current_deal)
+        led_suit = self.current_deal["current_trick_suit"][0]
+        can_follow_led_suit = bool(current_trick) and remain_cards[seat][led_suit] != 0
+
+        return DeclarerView(
+            declarer_hand=_hand(remain_cards[self.declarer]),
+            dummy_hand=_hand(remain_cards[self.dummy]),
+            seat_on_play=seat,
+            trick_leader=self.current_deal["first"],
+            current_trick=current_trick,
+            position_in_trick=len(current_trick),
+            legal_cards=bsle.legal_cards(self.current_deal, seat),
+            can_follow_led_suit=can_follow_led_suit,
+            is_declaring_side=True,
+            play_history=list(self.history),
+            tricks_won_by_declarer=self.tricks_won_by_declarer,
+            tricks_needed=self.tricks_needed,
+        )
