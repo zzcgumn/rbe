@@ -34,13 +34,18 @@ genuine probability, not a certainty, because a defender dealt both honours
 together does not always show the lower one first.
 
 This example reads that probability off the belief space and reports it,
-against `DoubleDummyDefender` under `SpreadPolicy.TouchingSequence` -- the
-defender who, holding touching equals, actually spreads over both rather
-than mechanically always playing the lower one. (Measured against a
-defender who never does that, the read correctly comes back certain: see
-the printed contrast.) It is a real, non-trivial number here, and still not
-the same question as which card actually gives the higher `P_make` over
-this contract as a whole -- the example reports both and explains the gap.
+against a bespoke defender (`randomises_queen_jack_in_second_seat`) that
+names the 50/50 outright: holding the queen and the jack together, second
+seat, it shows either at random; everywhere else it plays low. That makes
+the restricted-choice fraction this example reads back a hand-checkable
+one rather than whatever a solver's own tie-break happens to produce --
+and `DoubleDummyDefender` under `SpreadPolicy.TouchingSequence` agrees with
+it exactly here, which the printed output also checks. (Measured against a
+defender who never hides a jack behind a queen, the read correctly comes
+back certain: see the printed contrast.) It is a real, non-trivial number
+here, and still not the same question as which card actually gives the
+higher `P_make` over this contract as a whole -- the example reports both
+and explains the gap.
 
 Run it with:
 
@@ -62,7 +67,8 @@ from bridge_notation import (
     format_hand,
     parse_deal,
 )
-from belief_space_local_evaluation import PlaySequence
+from belief_space_local_evaluation import PlaySequence, legal_cards
+from belief_space_local_evaluation.play_sequence import cards_on_trick
 from strategies import (
     ACE,
     JACK,
@@ -256,6 +262,43 @@ def always_rise_with_the_ace(state, view):
     return min(legal, key=lambda c: (c.rank, c.suit))
 
 
+def randomises_queen_jack_in_second_seat(layout, seat, state):
+    """delta: in second seat, a defender holding both the spade queen and
+    the spade jack shows either with equal probability; every other
+    defender, and every other seat, follows with its lowest legal card.
+
+    "Second seat" means exactly one card is already on the trick -- the
+    leader's -- so `seat` is the next to call, before declarer's own
+    third-hand decision is made (the decision
+    `cash_the_king_then_read_the_beliefs` actually reads the belief space
+    for). Read from `layout` rather than `state`, the same way
+    `queen_of_spades_when_it_wins` does: a defender strategy is allowed to
+    see its own seat's cards and the trick in progress directly, and
+    `cards_on_trick`/`layout["first"]` already give trick position without
+    re-deriving it from `state`.
+
+    Written for this ending specifically -- "the queen and the jack" names
+    two fixed cards, not a general rule for any touching pair -- so that
+    the probability `cash_the_king_then_read_the_beliefs` reads back is an
+    exact, hand-checkable restricted-choice fraction: a defender dealt the
+    bare queen is forced to show it; a defender dealt the queen *with* the
+    jack behind it shows the queen only half the time. Unlike
+    `DoubleDummyDefender`, which spreads over touching equals according to
+    its own solver-driven policy, this one names the 50/50 outright.
+    """
+    del state  # Conditions on the layout alone, like queen_of_spades_when_it_wins.
+    legal = legal_cards(layout, seat)
+    on_trick = cards_on_trick(layout)
+
+    if len(on_trick) == 1:
+        queen = pick(legal, SPADES, QUEEN)
+        jack = pick(legal, SPADES, JACK)
+        if queen is not None and jack is not None:
+            return [(queen, 0.5), (jack, 0.5)]
+
+    return [(min(legal, key=lambda c: (c.rank, c.suit)), 1.0)]
+
+
 def main() -> None:
     sequence = restricted_choice_6nt()
     root = sequence.current_deal
@@ -287,8 +330,7 @@ def main() -> None:
         print("       (equal here: every suit shown out of is already exhausted)")
     print()
 
-    ctx = dds3.SolverContext()
-    defence = double_dummy_defender(ctx)
+    defence = randomises_queen_jack_in_second_seat
 
     _LAST_SMALL_CARD_READING.clear()
     belief_value = evaluate(sequence, source, cash_the_king_then_read_the_beliefs, defence)
@@ -301,10 +343,10 @@ def main() -> None:
             f"possible small card, the belief space puts the finesse "
             f"(South does not also guard an honour) right "
             f"{finesse_probability:.0%} of the time -- not a certainty, "
-            f"because DoubleDummyDefender's own TouchingSequence policy "
-            f"sometimes shows the queen from South while still holding the "
-            f"jack back, exactly the restricted-choice asymmetry this "
-            f"number is supposed to capture.")
+            f"because a defender dealt the queen with the jack behind it "
+            f"only shows the queen half the time, exactly the "
+            f"restricted-choice asymmetry this number is supposed to "
+            f"capture.")
 
     always_ace_value = evaluate(sequence, source, always_rise_with_the_ace, defence)
     print(f"\nAlways rising with the ace instead:     P_make = {always_ace_value['p_make']:.4f}")
@@ -315,6 +357,14 @@ def main() -> None:
         "one too, so a kept-back ace never gets a later trick to react in "
         "-- there is nothing to gain by keeping it, and the finesse's own "
         "miss-rate is pure downside once that is true.")
+
+    ctx = dds3.SolverContext()
+    double_dummy_value = evaluate(
+        sequence, source, cash_the_king_then_read_the_beliefs, double_dummy_defender(ctx))
+    print(
+        f"\n`DoubleDummyDefender` under `SpreadPolicy.TouchingSequence` "
+        f"agrees with the bespoke 50/50 exactly here: P_make = "
+        f"{double_dummy_value['p_make']:.4f}.")
 
 
 def evaluate(sequence, source, pi, delta, **options) -> dict:

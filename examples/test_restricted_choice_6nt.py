@@ -3,10 +3,11 @@
 | value | what it is | status |
 | --- | --- | --- |
 | 252 | layouts in the belief space | golden (fixed by the deal and the history) |
-| 60% | finesse read, real branch, vs the touching-sequence defender | golden -- see note below |
+| 60% | finesse read, real branch, vs the bespoke 50/50 defender | **re-derived** below from the raw combinatorics, not just measured |
+| 60% | the same read against `DoubleDummyDefender`'s own touching-sequence policy | golden -- the two agree exactly, which is itself asserted |
 | 100% | the same read against a defender who never hides a jack behind a queen | re-derived -- a defender who always plays its lowest legal card can never show the queen while still holding the jack, so the posterior this example reads is provably 1 against it, not merely measured as 1 |
-| 0.3968 | cash the king, then read the beliefs, vs double dummy | golden |
-| 0.4762 | always rise with the ace instead, vs double dummy | golden; 0.4762 is exactly the posterior mass of the 2-2 spade breaks in this belief space |
+| 0.3968 | cash the king, then read the beliefs, vs the bespoke defender | golden |
+| 0.4762 | always rise with the ace instead, vs the bespoke defender | golden; 0.4762 is exactly the posterior mass of the 2-2 spade breaks in this belief space |
 """
 
 import unittest
@@ -15,6 +16,10 @@ import dds3
 
 import restricted_choice_6nt_belies_space as example
 from strategies import double_dummy_defender, lowest_eligible_defender
+
+Card = example.Card
+SPADES = example.SPADES
+QUEEN, JACK = example.QUEEN, example.JACK
 
 
 class TestTheEnding(unittest.TestCase):
@@ -40,6 +45,51 @@ class TestTheBeliefSpace(unittest.TestCase):
         self.assertEqual(with_history.size(), without_history.size())
 
 
+class TestTheBespokeDefender(unittest.TestCase):
+    """`randomises_queen_jack_in_second_seat` in isolation, independent of
+    the belief space -- a defender holding Q and J together, second seat,
+    really does split 50/50, and plays low everywhere else.
+    """
+
+    def _layout(self, south_spades: int) -> dict:
+        layout = {
+            "trump": 4,  # notrump
+            "first": 2,  # South on lead for this probe
+            "remain_cards": [[0, 0, 0, 0] for _ in range(4)],
+            "current_trick_suit": (0, 0, 0),
+            "current_trick_rank": (0, 0, 0),
+        }
+        layout["remain_cards"][2][SPADES] = south_spades
+        return layout
+
+    def test_it_splits_50_50_holding_the_queen_and_the_jack_second_seat(self) -> None:
+        layout = self._layout((1 << QUEEN) | (1 << JACK))
+        layout["current_trick_suit"] = (SPADES, 0, 0)
+        layout["current_trick_rank"] = (2, 0, 0)  # one card already led
+
+        distribution = example.randomises_queen_jack_in_second_seat(layout, 2, None)
+
+        self.assertEqual(
+            {(card.suit, card.rank): probability for card, probability in distribution},
+            {(SPADES, QUEEN): 0.5, (SPADES, JACK): 0.5})
+
+    def test_it_plays_low_holding_only_the_queen_second_seat(self) -> None:
+        layout = self._layout((1 << QUEEN) | (1 << 5))
+        layout["current_trick_suit"] = (SPADES, 0, 0)
+        layout["current_trick_rank"] = (2, 0, 0)
+
+        distribution = example.randomises_queen_jack_in_second_seat(layout, 2, None)
+
+        self.assertEqual(distribution, [(Card(SPADES, 5), 1.0)])
+
+    def test_it_plays_low_holding_the_queen_and_the_jack_as_the_leader(self) -> None:
+        layout = self._layout((1 << QUEEN) | (1 << JACK))
+
+        distribution = example.randomises_queen_jack_in_second_seat(layout, 2, None)
+
+        self.assertEqual(distribution, [(Card(SPADES, JACK), 1.0)])
+
+
 class TestTheFinesseReading(unittest.TestCase):
     """The one belief-dependent number `cash_the_king_then_read_the_beliefs`
     computes: the probability, on the real branch (South already shown the
@@ -58,12 +108,16 @@ class TestTheFinesseReading(unittest.TestCase):
         self.assertEqual(len(readings), 1, "expected one consistent reading, got %r" % readings)
         return readings.pop()
 
-    def test_it_is_60_percent_against_a_defender_that_hides_a_jack_behind_a_queen(self) -> None:
+    def test_it_is_60_percent_against_the_bespoke_defender(self) -> None:
+        self.assertAlmostEqual(
+            self._read(example.randomises_queen_jack_in_second_seat), 0.6)
+
+    def test_double_dummy_touching_sequence_agrees_exactly(self) -> None:
         ctx = dds3.SolverContext()
 
         self.assertAlmostEqual(self._read(double_dummy_defender(ctx)), 0.6)
 
-    def test_it_is_certain_against_a_defender_that_never_does(self) -> None:
+    def test_it_is_certain_against_a_defender_that_never_hides_a_jack(self) -> None:
         self.assertAlmostEqual(self._read(lowest_eligible_defender), 1.0)
 
 
@@ -73,8 +127,7 @@ class TestPMake(unittest.TestCase):
         root = sequence.current_deal
         record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
         source = example.bsle.ExhaustiveLayoutSource(root, sequence.declarer, example.SEED, record=record)
-        ctx = dds3.SolverContext()
-        defence = double_dummy_defender(ctx)
+        defence = example.randomises_queen_jack_in_second_seat
 
         belief_value = example.evaluate(sequence, source, example.cash_the_king_then_read_the_beliefs, defence)
         ace_value = example.evaluate(sequence, source, example.always_rise_with_the_ace, defence)
