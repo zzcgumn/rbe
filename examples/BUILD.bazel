@@ -64,3 +64,25 @@ py_test(
     main = "test_strategies.py",
     deps = [":guess_6nt_belief_space_lib"],
 )
+
+py_library(
+    name = "restricted_choice_6nt_lib",
+    srcs = ["restricted_choice_6nt_belies_space.py"],
+    imports = ["."],
+    deps = [":example_support"],
+)
+
+py_binary(
+    name = "restricted_choice_6nt",
+    srcs = ["run_restricted_choice_6nt.py"],
+    main = "run_restricted_choice_6nt.py",
+    deps = [":restricted_choice_6nt_lib"],
+)
+
+py_test(
+    name = "restricted_choice_6nt_test",
+    size = "small",
+    srcs = ["test_restricted_choice_6nt.py"],
+    main = "test_restricted_choice_6nt.py",
+    deps = [":restricted_choice_6nt_lib"],
+)
