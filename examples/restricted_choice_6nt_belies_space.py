@@ -70,6 +70,7 @@ from belief_space_local_evaluation import Card
 from bridge_notation import (
     NOTRUMP,
     SEAT_NAMES,
+    SOUTH,
     WEST,
     SPADES,
     format_card,
@@ -336,6 +337,41 @@ def always_shows_the_queen_from_qj_in_second_seat(layout, seat, state):
     return [(min(legal, key=lambda c: (c.rank, c.suit)), 1.0)]
 
 
+def spade_split_frequencies(sequence, source) -> dict:
+    """The belief space's own prior over the root -- before any card of
+    this ending is played -- for four named spade splits: the suit
+    breaking 2-2 between North and South, and South specifically holding
+    the queen-jack pair tight, a singleton jack, or a singleton queen (the
+    real deal's own holding).
+
+    Settled with a throwaway `evaluate()` call. The root's `BeliefView`
+    does not depend on which pi or delta it is paired with -- nobody has
+    read a belief yet, so any legal pair reaches the identical root -- and
+    `probe` below plays the rest of the hand out low purely so the call
+    completes; nothing past its first call matters, and the whole result
+    is discarded once `frequencies` is read back out of the closure.
+    """
+    frequencies = {}
+
+    def probe(state, view):
+        if not state.current_trick and not frequencies:
+            for entry in view.entries:
+                south = entry.layout["remain_cards"][SOUTH][SPADES]
+                frequencies["2-2"] = frequencies.get("2-2", 0.0) + (
+                    entry.posterior if bin(south).count("1") == 2 else 0.0)
+                frequencies["south QJ tight"] = frequencies.get("south QJ tight", 0.0) + (
+                    entry.posterior if south == (1 << QUEEN) | (1 << JACK) else 0.0)
+                frequencies["south singleton J"] = frequencies.get("south singleton J", 0.0) + (
+                    entry.posterior if south == (1 << JACK) else 0.0)
+                frequencies["south singleton Q"] = frequencies.get("south singleton Q", 0.0) + (
+                    entry.posterior if south == (1 << QUEEN) else 0.0)
+        legal = state.legal_cards
+        return min(legal, key=lambda c: (c.rank, c.suit))
+
+    evaluate(sequence, source, probe, randomises_queen_jack_in_second_seat)
+    return frequencies
+
+
 def main() -> None:
     sequence = restricted_choice_6nt()
     root = sequence.current_deal
@@ -365,6 +401,14 @@ def main() -> None:
     print(f"       ... without history: {unconstrained.size()} layouts")
     if source.size() == unconstrained.size():
         print("       (equal here: every suit shown out of is already exhausted)")
+    print()
+
+    frequencies = spade_split_frequencies(sequence, source)
+    print("Spades, prior to any card of this ending -- the belief space's own odds:")
+    print(f"  2-2 break:               {frequencies['2-2']:.2%}")
+    print(f"  South QJ tight:          {frequencies['south QJ tight']:.2%}")
+    print(f"  South singleton jack:    {frequencies['south singleton J']:.2%}")
+    print(f"  South singleton queen:   {frequencies['south singleton Q']:.2%}  (the real deal)")
     print()
 
     defence = randomises_queen_jack_in_second_seat

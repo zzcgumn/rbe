@@ -3,6 +3,10 @@
 | value | what it is | status |
 | --- | --- | --- |
 | 252 | layouts in the belief space | golden (fixed by the deal and the history) |
+| 10/21 | root prior, South a 2-2 break | golden -- exactly the 2-2 mass `TestPMake` also reads off `always_rise_with_the_ace`'s P_make |
+| 5/63 | root prior, South QJ tight | golden |
+| 5/84 | root prior, South singleton jack | golden; equal to singleton queen by the north/south symmetry of the prior, before any card is played |
+| 5/84 | root prior, South singleton queen (the real deal) | golden |
 | 60% | finesse read, real branch, vs the 50/50 defender | **re-derived** below from the raw combinatorics, not just measured |
 | 60% | the same read against `DoubleDummyDefender`'s own touching-sequence policy | golden -- the two agree exactly, which is itself asserted |
 | 3/7 | the same read against a defender who always shows the queen from the pair | golden -- showing it is no longer any tell, so the posterior is the raw prior odds, not the restricted-choice-adjusted one |
@@ -45,6 +49,24 @@ class TestTheBeliefSpace(unittest.TestCase):
 
         self.assertEqual(with_history.size(), 252)
         self.assertEqual(with_history.size(), without_history.size())
+
+
+class TestTheSpadeSplitFrequencies(unittest.TestCase):
+    def test_the_four_named_splits_match_the_raw_combinatorics(self) -> None:
+        sequence = example.restricted_choice_6nt()
+        root = sequence.current_deal
+        record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
+        source = example.bsle.ExhaustiveLayoutSource(root, sequence.declarer, example.SEED, record=record)
+
+        frequencies = example.spade_split_frequencies(sequence, source)
+
+        self.assertAlmostEqual(frequencies["2-2"], 10 / 21)
+        self.assertAlmostEqual(frequencies["south QJ tight"], 5 / 63)
+        self.assertAlmostEqual(frequencies["south singleton J"], 5 / 84)
+        self.assertAlmostEqual(frequencies["south singleton Q"], 5 / 84)
+        # North/South are symmetric in the prior -- nothing has been played
+        # yet to tell them apart.
+        self.assertAlmostEqual(frequencies["south singleton J"], frequencies["south singleton Q"])
 
 
 class TestTheBespokeDefender(unittest.TestCase):
@@ -213,6 +235,9 @@ class TestTheScriptRuns(unittest.TestCase):
         self.assertIn("P_make = 0.4762", doc)
         self.assertIn("60%", doc)
         self.assertIn("43%", doc)
+        self.assertIn("47.62%", doc)
+        self.assertIn("7.94%", doc)
+        self.assertIn("5.95%", doc)
 
 
 if __name__ == "__main__":
