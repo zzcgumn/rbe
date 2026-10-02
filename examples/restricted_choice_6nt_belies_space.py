@@ -33,17 +33,27 @@ card, not yet seen, has settled where the last card is) -- and *that* is a
 genuine probability, not a certainty, because a defender dealt both honours
 together does not always show the lower one first.
 
-This example reads that probability off the belief space and reports it,
-against a bespoke defender (`randomises_queen_jack_in_second_seat`) that
-names the 50/50 outright: holding the queen and the jack together, second
-seat, it shows either at random; everywhere else it plays low. That makes
-the restricted-choice fraction this example reads back a hand-checkable
-one rather than whatever a solver's own tie-break happens to produce --
-and `DoubleDummyDefender` under `SpreadPolicy.TouchingSequence` agrees with
-it exactly here, which the printed output also checks. (Measured against a
-defender who never hides a jack behind a queen, the read correctly comes
-back certain: see the printed contrast.) It is a real, non-trivial number
-here, and still not the same question as which card actually gives the
+This example reads that probability off the belief space and reports it
+against three defenders, each a fixed, named rule rather than a solver's
+own tie-break, so each number is hand-checkable against the rule that
+produced it:
+
+- `randomises_queen_jack_in_second_seat`, which names the restricted-choice
+  50/50 outright: holding the queen and the jack together, second seat, it
+  shows either at random; everywhere else it plays low. `DoubleDummyDefender`
+  under `SpreadPolicy.TouchingSequence` agrees with it exactly here, which
+  the printed output also checks.
+- `always_shows_the_queen_from_qj_in_second_seat`, the deliberate contrast:
+  it always shows the queen from that same holding, never the jack, so
+  showing it is no longer any tell at all -- the posterior collapses to the
+  raw prior odds of the two holdings, and the read swings to favour the ace
+  instead of the finesse.
+- a defender who never hides a jack behind a queen at all (plays its
+  lowest legal card, full stop) -- against it, the read correctly comes
+  back certain, which is a fact derivable from that rule, not merely
+  measured from it.
+
+None of these is the same question as which card actually gives the
 higher `P_make` over this contract as a whole -- the example reports both
 and explains the gap.
 
@@ -299,6 +309,33 @@ def randomises_queen_jack_in_second_seat(layout, seat, state):
     return [(min(legal, key=lambda c: (c.rank, c.suit)), 1.0)]
 
 
+def always_shows_the_queen_from_qj_in_second_seat(layout, seat, state):
+    """delta: in second seat, a defender holding both the spade queen and
+    the spade jack always shows the queen -- never the jack; every other
+    defender, and every other seat, follows with its lowest legal card.
+
+    The deliberate contrast with `randomises_queen_jack_in_second_seat`:
+    showing the queen here carries no information at all about whether the
+    jack is behind it, because a defender dealt the bare queen and a
+    defender dealt the queen with the jack behind it do exactly the same
+    thing. Restricted choice has nothing to bite on, so the posterior this
+    example reads back collapses to the raw prior odds of the two holdings
+    -- unmodified by the showing, where the 50/50 defender's own
+    half-the-time shortfall skews it towards the bare queen instead.
+    """
+    del state  # Conditions on the layout alone, like queen_of_spades_when_it_wins.
+    legal = legal_cards(layout, seat)
+    on_trick = cards_on_trick(layout)
+
+    if len(on_trick) == 1:
+        queen = pick(legal, SPADES, QUEEN)
+        jack = pick(legal, SPADES, JACK)
+        if queen is not None and jack is not None:
+            return [(queen, 1.0)]
+
+    return [(min(legal, key=lambda c: (c.rank, c.suit)), 1.0)]
+
+
 def main() -> None:
     sequence = restricted_choice_6nt()
     root = sequence.current_deal
@@ -365,6 +402,19 @@ def main() -> None:
         f"\n`DoubleDummyDefender` under `SpreadPolicy.TouchingSequence` "
         f"agrees with the bespoke 50/50 exactly here: P_make = "
         f"{double_dummy_value['p_make']:.4f}.")
+
+    _LAST_SMALL_CARD_READING.clear()
+    no_tell_value = evaluate(
+        sequence, source, cash_the_king_then_read_the_beliefs,
+        always_shows_the_queen_from_qj_in_second_seat)
+    no_tell_probability = _LAST_SMALL_CARD_READING[0]
+    print(
+        f"\nAgainst a defender who always shows the queen from the queen "
+        f"and the jack together -- so showing it is no longer any tell at "
+        f"all -- the same read comes back {no_tell_probability:.0%} for "
+        f"the finesse: P_make = {no_tell_value['p_make']:.4f}, identical to "
+        f"always rising with the ace, because that is now the read's own "
+        f"conclusion too.")
 
 
 def evaluate(sequence, source, pi, delta, **options) -> dict:
