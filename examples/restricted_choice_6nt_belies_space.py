@@ -54,8 +54,12 @@ produced it:
   measured from it.
 
 None of these is the same question as which card actually gives the
-higher `P_make` over this contract as a whole -- the example reports both
-and explains the gap.
+higher `P_make` over this contract as a whole -- the example reports both.
+Reading the belief space turns out to score higher than always rising
+with the ace against every defender measured here, which is the sane
+direction for the gap to run: a declarer who reads a real probability
+correctly should never do *worse* than one who ignores it outright, only
+sometimes no better.
 
 Run it with:
 
@@ -123,6 +127,91 @@ def restricted_choice_6nt() -> PlaySequence:
     return sequence
 
 
+def _lead_spade_or_the_lone_club(legal, state):
+    """The lead shared by both declarers below, at every trick either of
+    them leads (dummy's first round, hand's second, and any later round a
+    duck hands back to dummy): prefer a spade to the lone club outright,
+    and within spades, choose among three cases that only ever matter one
+    at a time.
+
+    - The king is still unplayed (this is the first round): lead low --
+      nothing a defender holds beats a king, so there is nothing to
+      protect by leading anything else, and leading the ace here instead
+      would waste the one card that might still need to react to what a
+      defender shows on a *later* round.
+    - The king is gone and the ace is still held: lead the ace. Once the
+      first round has already happened, holding the ace back on a later
+      lead no longer protects anything either -- there is no trick left
+      where retaining it lets it react to a defender's card, because
+      whichever side wins the trick this leads to leads the next one too.
+      This is the mirror image of the first case, not an exception to it.
+    - Neither: lead the higher of the remaining small cards, keeping the
+      lower one as the safe spare `_third_hand_after_the_ace_decision`'s
+      own ten-unblocking note relies on. Leading the higher one first is
+      what makes that spare safe: a hand that leads its small cards
+      low-first is left holding the higher one, which is exactly the card
+      liable to win a trick nobody meant it to.
+    """
+    spades = [c for c in legal if c.suit == SPADES]
+    if not spades:
+        return min(legal, key=lambda c: (c.rank, c.suit))
+
+    king_still_held = bool(
+        state.known_holdings["remain_cards"][state.declarer][SPADES] & (1 << KING))
+    ace = pick(spades, SPADES, ACE)
+    if ace is not None and not king_still_held:
+        return ace
+
+    ten = pick(spades, SPADES, TEN)
+    if ten is not None and len(spades) > 1:
+        small = [c for c in spades if c.rank != TEN]
+        return max(small, key=lambda c: c.rank)
+    return min(spades, key=lambda c: c.rank)
+
+
+def _third_hand_after_the_ace_decision(legal, on_trick, state, dummy):
+    """The shared tail for both declarers below, once whatever the ace
+    question had to settle (rise, duck, or there never was a question) is
+    behind them: play the ten if it is still useful, and otherwise the
+    cheapest remaining card that still wins.
+
+    The ten is "still useful" whenever no *defender's* card on the trick
+    already beats it -- not whenever nothing at all beats it. A defender's
+    higher card means the ten is genuinely beaten and the trick is already
+    lost regardless of what plays under it; our own partner's higher card
+    means the trick is already *won* regardless, and the ten should be
+    unloaded right then rather than saved for a future round where nothing
+    will be behind it to support it. Saving it for later was the specific
+    mistake a bare queen or bare jack still exposed before this function
+    existed: with the ace already gone, a bare ten third hand, led into
+    blind, loses to whichever honour survives -- the trick that unloading
+    it here avoids.
+
+    Past the ten, third hand plays the cheapest card that still wins
+    rather than its own lowest: the generic "always play low" habit used
+    elsewhere in this package is wrong specifically here, because letting
+    an uncontested trick stand up over our own side's lead strands the
+    losing hand on lead with nothing left but a loser in another suit.
+    """
+    ten = pick(legal, SPADES, TEN)
+    if ten is not None:
+        beaten_by_a_defender = any(
+            c.suit == SPADES and c.rank > TEN
+            and (state.trick_leader + position) % 4 not in (state.declarer, dummy)
+            for position, c in enumerate(on_trick))
+        if not beaten_by_a_defender:
+            return ten
+        return min(legal, key=lambda c: (c.rank, c.suit))
+
+    current_high = max((c.rank for c in on_trick if c.suit == SPADES), default=-1)
+    winners = sorted(
+        (c for c in legal if c.suit == SPADES and c.rank > current_high),
+        key=lambda c: c.rank)
+    if winners:
+        return winners[0]
+    return min(legal, key=lambda c: (c.rank, c.suit))
+
+
 def cash_the_king_then_read_the_beliefs(state, view):
     """pi: lead low to the king first (fixed -- the ace guarding it is
     declarer's own, so nothing a defender holds can beat it), then read the
@@ -143,7 +232,10 @@ def cash_the_king_then_read_the_beliefs(state, view):
       is asked directly whether South -- not yet seen this trick -- still
       guards one of the two honours. Above even odds, rise with the ace;
       at or below, duck (keep the ace, and let the ten, still in hand,
-      settle whatever North is left holding on a later round).
+      settle whatever North is left holding on a later round -- see
+      `_lead_spade_or_the_lone_club` and `_third_hand_after_the_ace_decision`
+      for exactly how that later round is handled, which is not "lead
+      low" the way every other round here is).
 
     `view.entries` is read, and its result stashed in the module-level
     `_LAST_SMALL_CARD_READING`, only for `main()` to report afterwards --
@@ -152,25 +244,12 @@ def cash_the_king_then_read_the_beliefs(state, view):
     separate evaluate() call, built the ordinary way from scratch, would
     have to re-derive the identical number; capturing it here instead of
     recomputing it is the plainer way to get it into the report.
-
-    The ten is played explicitly, once it is declarer's only remaining
-    high card, exactly when nothing yet on the trick beats it -- third
-    hand still has to decide without seeing the fourth hand's card, same as
-    every other 3rd-hand decision here. Past that, third hand plays the
-    cheapest card that still wins rather than its own lowest: the generic
-    "always play low" habit used everywhere else in this package is wrong
-    specifically here, because letting an uncontested trick stand up over
-    our own side's lead strands the losing hand on lead with nothing left
-    but a loser in another suit.
     """
     legal = state.legal_cards
     on_trick = state.current_trick
 
     if not on_trick:
-        spades = [c for c in legal if c.suit == SPADES]
-        if spades:
-            return min(spades, key=lambda c: c.rank)
-        return min(legal, key=lambda c: (c.rank, c.suit))
+        return _lead_spade_or_the_lone_club(legal, state)
 
     dummy = (state.declarer + 2) % 4
     if state.trick_leader in (state.declarer, dummy) and state.position_in_trick == 2:
@@ -205,18 +284,7 @@ def cash_the_king_then_read_the_beliefs(state, view):
             nine = pick(legal, SPADES, 9)
             return nine or min(legal, key=lambda c: (c.rank, c.suit))
 
-        ten = pick(legal, SPADES, TEN)
-        if ten is not None:
-            if not any(c.suit == SPADES and c.rank > TEN for c in on_trick):
-                return ten
-            return min(legal, key=lambda c: (c.rank, c.suit))
-
-        current_high = max((c.rank for c in on_trick if c.suit == SPADES), default=-1)
-        winners = sorted(
-            (c for c in legal if c.suit == SPADES and c.rank > current_high),
-            key=lambda c: c.rank)
-        if winners:
-            return winners[0]
+        return _third_hand_after_the_ace_decision(legal, on_trick, state, dummy)
 
     return min(legal, key=lambda c: (c.rank, c.suit))
 
@@ -227,25 +295,20 @@ def always_rise_with_the_ace(state, view):
     space says.
 
     Measured purely for contrast with the belief-reading declarer above.
-    Not because the belief space is wrong about the odds (see the printed
-    reading, and the certain case against the lowest-card defender in
-    `test_restricted_choice_6nt.py`), but because this slam needs every
-    remaining trick: there is no later trick where a kept-back ace gets to
-    react to anything, since whichever side wins the second round leads
-    the third one too. A probability genuinely in the finesse's favour for
-    *that one trick* can still cost tricks overall once nothing is ever
-    gained by keeping the ace back and something is always risked by
-    doing so.
+    It is, perhaps surprisingly, the *worse* of the two overall (see the
+    `P_make` the two print): once North's round-two card is not an honour,
+    rising settles the suit outright in every layout where the split is
+    2-2, but gives up on every layout where South still guards the
+    outstanding honour behind it -- and the belief-reading declarer's own
+    duck reclaims exactly those, correctly handled, without losing
+    anything back in the 2-2 case it was never risking.
     """
     del view
     legal = state.legal_cards
     on_trick = state.current_trick
 
     if not on_trick:
-        spades = [c for c in legal if c.suit == SPADES]
-        if spades:
-            return min(spades, key=lambda c: c.rank)
-        return min(legal, key=lambda c: (c.rank, c.suit))
+        return _lead_spade_or_the_lone_club(legal, state)
 
     dummy = (state.declarer + 2) % 4
     if state.trick_leader in (state.declarer, dummy) and state.position_in_trick == 2:
@@ -257,18 +320,7 @@ def always_rise_with_the_ace(state, view):
         if ace is not None:
             return ace
 
-        ten = pick(legal, SPADES, TEN)
-        if ten is not None:
-            if not any(c.suit == SPADES and c.rank > TEN for c in on_trick):
-                return ten
-            return min(legal, key=lambda c: (c.rank, c.suit))
-
-        current_high = max((c.rank for c in on_trick if c.suit == SPADES), default=-1)
-        winners = sorted(
-            (c for c in legal if c.suit == SPADES and c.rank > current_high),
-            key=lambda c: c.rank)
-        if winners:
-            return winners[0]
+        return _third_hand_after_the_ace_decision(legal, on_trick, state, dummy)
 
     return min(legal, key=lambda c: (c.rank, c.suit))
 
@@ -432,12 +484,13 @@ def main() -> None:
     always_ace_value = evaluate(sequence, source, always_rise_with_the_ace, defence)
     print(f"\nAlways rising with the ace instead:     P_make = {always_ace_value['p_make']:.4f}")
     print(
-        "The percentage play for that one trick and the right technique "
-        "for a contract that cannot afford any loser are different "
-        "questions: whichever side wins the second round leads the third "
-        "one too, so a kept-back ace never gets a later trick to react in "
-        "-- there is nothing to gain by keeping it, and the finesse's own "
-        "miss-rate is pure downside once that is true.")
+        "Lower, not higher: rising settles the suit outright whenever the "
+        "split is 2-2, but gives up on every layout where South still "
+        "guards the outstanding honour behind the one North just showed. "
+        "Reading the belief space reclaims exactly those -- correctly "
+        "handled, the kept-back ace gets a later trick to capture "
+        "whichever honour North is left holding, at no cost back in the "
+        "2-2 layouts it was never risking in the first place.")
 
     ctx = dds3.SolverContext()
     double_dummy_value = evaluate(
@@ -456,9 +509,11 @@ def main() -> None:
         f"\nAgainst a defender who always shows the queen from the queen "
         f"and the jack together -- so showing it is no longer any tell at "
         f"all -- the same read comes back {no_tell_probability:.0%} for "
-        f"the finesse: P_make = {no_tell_value['p_make']:.4f}, identical to "
-        f"always rising with the ace, because that is now the read's own "
-        f"conclusion too.")
+        f"the finesse, favouring the ace at that one node: P_make = "
+        f"{no_tell_value['p_make']:.4f}. Still higher than always rising "
+        f"(which this read matches only at that single node, not "
+        f"everywhere), because every other node in the tree is read on "
+        f"its own belief, not forced to the same answer by name.")
 
 
 def evaluate(sequence, source, pi, delta, **options) -> dict:

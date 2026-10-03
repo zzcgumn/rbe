@@ -11,9 +11,9 @@
 | 60% | the same read against `DoubleDummyDefender`'s own touching-sequence policy | golden -- the two agree exactly, which is itself asserted |
 | 3/7 | the same read against a defender who always shows the queen from the pair | golden -- showing it is no longer any tell, so the posterior is the raw prior odds, not the restricted-choice-adjusted one |
 | 100% | the same read against a defender who never hides a jack behind a queen | re-derived -- a defender who always plays its lowest legal card can never show the queen while still holding the jack, so the posterior this example reads is provably 1 against it, not merely measured as 1 |
-| 0.3968 | cash the king, then read the beliefs, vs the 50/50 defender | golden |
-| 0.4762 | always rise with the ace instead, vs the 50/50 defender | golden; 0.4762 is exactly the posterior mass of the 2-2 spade breaks in this belief space |
-| 0.4762 | cash the king, then read the beliefs, vs the always-shows-the-queen defender | golden -- the read's own conclusion there is to rise, so it matches always-rise exactly |
+| 65/126 | cash the king, then read the beliefs, vs the 50/50 defender | golden |
+| 10/21 | always rise with the ace instead, vs the 50/50 defender | golden; 10/21 is exactly the posterior mass of the 2-2 spade breaks in this belief space, and is unchanged by which defender is paired with it, since rising never reaches a node where the belief mattered |
+| 15/28 | cash the king, then read the beliefs, vs the always-shows-the-queen defender | golden; higher than 10/21 even though the one node this example reports reads "rise" there too -- every *other* node in the tree is still read on its own belief |
 """
 
 import unittest
@@ -193,7 +193,7 @@ class TestTheFinesseReading(unittest.TestCase):
 
 
 class TestPMake(unittest.TestCase):
-    def test_reading_the_beliefs_scores_lower_than_always_rising_here(self) -> None:
+    def test_reading_the_beliefs_scores_higher_than_always_rising_here(self) -> None:
         sequence = example.restricted_choice_6nt()
         root = sequence.current_deal
         record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
@@ -203,11 +203,25 @@ class TestPMake(unittest.TestCase):
         belief_value = example.evaluate(sequence, source, example.cash_the_king_then_read_the_beliefs, defence)
         ace_value = example.evaluate(sequence, source, example.always_rise_with_the_ace, defence)
 
-        self.assertAlmostEqual(belief_value["p_make"], 0.3968253968253968)
-        self.assertAlmostEqual(ace_value["p_make"], 0.47619047619047616)
-        self.assertLess(belief_value["p_make"], ace_value["p_make"])
+        self.assertAlmostEqual(belief_value["p_make"], 65 / 126)
+        self.assertAlmostEqual(ace_value["p_make"], 10 / 21)
+        self.assertGreater(belief_value["p_make"], ace_value["p_make"])
 
-    def test_against_the_no_tell_defender_the_read_matches_always_rising(self) -> None:
+    def test_always_rising_is_exactly_the_2_2_mass_regardless_of_defender(self) -> None:
+        sequence = example.restricted_choice_6nt()
+        root = sequence.current_deal
+        record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
+        source = example.bsle.ExhaustiveLayoutSource(root, sequence.declarer, example.SEED, record=record)
+
+        for defence in (
+            example.randomises_queen_jack_in_second_seat,
+            example.always_shows_the_queen_from_qj_in_second_seat,
+            lowest_eligible_defender,
+        ):
+            ace_value = example.evaluate(sequence, source, example.always_rise_with_the_ace, defence)
+            self.assertAlmostEqual(ace_value["p_make"], 10 / 21)
+
+    def test_against_the_no_tell_defender_the_read_still_beats_always_rising(self) -> None:
         sequence = example.restricted_choice_6nt()
         root = sequence.current_deal
         record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
@@ -217,8 +231,9 @@ class TestPMake(unittest.TestCase):
         belief_value = example.evaluate(sequence, source, example.cash_the_king_then_read_the_beliefs, defence)
         ace_value = example.evaluate(sequence, source, example.always_rise_with_the_ace, defence)
 
-        self.assertAlmostEqual(belief_value["p_make"], ace_value["p_make"])
-        self.assertAlmostEqual(belief_value["p_make"], 0.47619047619047616)
+        self.assertAlmostEqual(belief_value["p_make"], 15 / 28)
+        self.assertAlmostEqual(ace_value["p_make"], 10 / 21)
+        self.assertGreater(belief_value["p_make"], ace_value["p_make"])
 
 
 class TestTheScriptRuns(unittest.TestCase):
@@ -231,8 +246,9 @@ class TestTheScriptRuns(unittest.TestCase):
             example.main()
 
         doc = out.getvalue()
-        self.assertIn("P_make = 0.3968", doc)
+        self.assertIn("P_make = 0.5159", doc)
         self.assertIn("P_make = 0.4762", doc)
+        self.assertIn("P_make = 0.5357", doc)
         self.assertIn("60%", doc)
         self.assertIn("43%", doc)
         self.assertIn("47.62%", doc)
