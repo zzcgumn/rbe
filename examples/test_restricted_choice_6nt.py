@@ -7,10 +7,12 @@
 | 5/63 | root prior, South QJ tight | golden |
 | 5/84 | root prior, South singleton jack | golden; equal to singleton queen by the north/south symmetry of the prior, before any card is played |
 | 5/84 | root prior, South singleton queen (the real deal) | golden |
-| 60% | finesse read, real branch, vs the 50/50 defender | **re-derived** below from the raw combinatorics, not just measured |
-| 60% | the same read against `DoubleDummyDefender`'s own touching-sequence policy | golden -- the two agree exactly, which is itself asserted |
-| 3/7 | the same read against a defender who always shows the queen from the pair | golden -- showing it is no longer any tell, so the posterior is the raw prior odds, not the restricted-choice-adjusted one |
-| 100% | the same read against a defender who never hides a jack behind a queen | re-derived -- a defender who always plays its lowest legal card can never show the queen while still holding the jack, so the posterior this example reads is provably 1 against it, not merely measured as 1 |
+| 60% | finesse read, queen branch, vs the 50/50 defender | **re-derived** below from the raw combinatorics, not just measured |
+| 60% | finesse read, jack branch, vs the 50/50 defender | golden -- identical to the queen branch, a fact about genuine randomisation, not a coincidence |
+| 60% | both branches, again, against `DoubleDummyDefender`'s own touching-sequence policy | golden -- it agrees with the bespoke 50/50 exactly, on both branches |
+| 3/7 | finesse read, queen branch, vs a defender who always shows the queen from the pair | golden -- showing the queen is no longer any tell there, so the posterior is the raw prior odds, not the restricted-choice-adjusted one |
+| 100% | finesse read, jack branch, vs that same always-shows-the-queen defender | re-derived -- that defender can never show the jack while still holding the queen, so the posterior this example reads is provably 1, not merely measured as 1 |
+| 1.0 / 3/7 | the mirror image, queen/jack, against a defender who always plays its lowest legal card | golden -- "lowest always" prefers the jack (the lower-ranked card) from the pair, so it is the *queen* that becomes the dead giveaway there, not the jack |
 | 65/126 | cash the king, then read the beliefs, vs the 50/50 defender | golden |
 | 10/21 | always rise with the ace instead, vs the 50/50 defender | golden; 10/21 is exactly the posterior mass of the 2-2 spade breaks in this belief space, and is unchanged by which defender is paired with it, since rising never reaches a node where the belief mattered |
 | 15/28 | cash the king, then read the beliefs, vs the always-shows-the-queen defender | golden; higher than 10/21 even though the one node this example reports reads "rise" there too -- every *other* node in the tree is still read on its own belief |
@@ -158,38 +160,50 @@ class TestTheAlwaysShowsTheQueenDefender(unittest.TestCase):
 
 
 class TestTheFinesseReading(unittest.TestCase):
-    """The one belief-dependent number `cash_the_king_then_read_the_beliefs`
-    computes: the probability, on the real branch (South already shown the
-    queen, North down to the bare jack), that the finesse is correct.
+    """`cash_the_king_then_read_the_beliefs`'s one belief-dependent number,
+    for each of the two branches it tracks: the probability that the
+    finesse is correct once North has followed with their last possible
+    small card, keyed by which honour South showed on the first round.
     """
 
-    def _read(self, delta) -> float:
+    def _readings(self, delta) -> dict:
         sequence = example.restricted_choice_6nt()
         root = sequence.current_deal
         record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
         source = example.bsle.ExhaustiveLayoutSource(root, sequence.declarer, example.SEED, record=record)
 
-        example._LAST_SMALL_CARD_READING.clear()
+        example._FINESSE_READING_BY_SOUTHS_HONOUR.clear()
         example.evaluate(sequence, source, example.cash_the_king_then_read_the_beliefs, delta)
-        readings = set(example._LAST_SMALL_CARD_READING)
-        self.assertEqual(len(readings), 1, "expected one consistent reading, got %r" % readings)
-        return readings.pop()
+        return dict(example._FINESSE_READING_BY_SOUTHS_HONOUR)
 
-    def test_it_is_60_percent_against_the_bespoke_defender(self) -> None:
-        self.assertAlmostEqual(
-            self._read(example.randomises_queen_jack_in_second_seat), 0.6)
+    def test_it_is_60_percent_either_way_against_the_bespoke_defender(self) -> None:
+        readings = self._readings(example.randomises_queen_jack_in_second_seat)
+
+        self.assertAlmostEqual(readings[example.QUEEN], 0.6)
+        self.assertAlmostEqual(readings[example.JACK], 0.6)
 
     def test_double_dummy_touching_sequence_agrees_exactly(self) -> None:
         ctx = dds3.SolverContext()
+        readings = self._readings(double_dummy_defender(ctx))
 
-        self.assertAlmostEqual(self._read(double_dummy_defender(ctx)), 0.6)
+        self.assertAlmostEqual(readings[example.QUEEN], 0.6)
+        self.assertAlmostEqual(readings[example.JACK], 0.6)
 
-    def test_it_is_certain_against_a_defender_that_never_hides_a_jack(self) -> None:
-        self.assertAlmostEqual(self._read(lowest_eligible_defender), 1.0)
+    def test_queen_is_certain_and_jack_is_3_of_7_against_lowest_always(self) -> None:
+        # The mirror image of the always-shows-the-queen defender below:
+        # "lowest always" prefers the *lower*-ranked card of a touching
+        # pair, so it is the jack that is never shown while the queen is
+        # held back, making a shown queen the certain (forced) signal here.
+        readings = self._readings(lowest_eligible_defender)
 
-    def test_it_is_3_of_7_against_a_defender_who_always_shows_the_queen(self) -> None:
-        self.assertAlmostEqual(
-            self._read(example.always_shows_the_queen_from_qj_in_second_seat), 3 / 7)
+        self.assertAlmostEqual(readings[example.QUEEN], 1.0)
+        self.assertAlmostEqual(readings[example.JACK], 3 / 7)
+
+    def test_jack_is_certain_and_queen_is_3_of_7_against_always_shows_the_queen(self) -> None:
+        readings = self._readings(example.always_shows_the_queen_from_qj_in_second_seat)
+
+        self.assertAlmostEqual(readings[example.JACK], 1.0)
+        self.assertAlmostEqual(readings[example.QUEEN], 3 / 7)
 
 
 class TestPMake(unittest.TestCase):
@@ -249,11 +263,12 @@ class TestTheScriptRuns(unittest.TestCase):
         self.assertIn("P_make = 0.5159", doc)
         self.assertIn("P_make = 0.4762", doc)
         self.assertIn("P_make = 0.5357", doc)
-        self.assertIn("60%", doc)
-        self.assertIn("43%", doc)
         self.assertIn("47.62%", doc)
         self.assertIn("7.94%", doc)
         self.assertIn("5.95%", doc)
+        self.assertIn("ace 40%  --  finesse 60%", doc)  # both branches, bespoke 50/50
+        self.assertIn("ace 57%  --  finesse 43%", doc)  # queen branch, always-shows-the-queen
+        self.assertIn("ace 0%  --  finesse 100%", doc)  # jack branch, always-shows-the-queen
 
 
 if __name__ == "__main__":

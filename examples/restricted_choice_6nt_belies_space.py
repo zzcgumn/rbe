@@ -99,10 +99,13 @@ SEED = 1
 # The one piece of state this module carries outside a strategy's own
 # arguments: the probability `cash_the_king_then_read_the_beliefs` computes
 # at its one belief-dependent node, captured purely for `main()` to report.
+# Keyed by which honour South showed on the first round (QUEEN or JACK) --
+# the two branches this example contrasts, since North's second-round
+# small card is the same "last possible small card" event either way.
 # Nothing here feeds back into the card the strategy returns -- see that
 # function's own docstring for why a side channel is used instead of
 # reasoning the number out a second time afterwards.
-_LAST_SMALL_CARD_READING = []
+_FINESSE_READING_BY_SOUTHS_HONOUR = {}
 
 
 def restricted_choice_6nt() -> PlaySequence:
@@ -262,23 +265,24 @@ def cash_the_king_then_read_the_beliefs(state, view):
             if any(c.suit == SPADES and c.rank >= JACK for c in on_trick):
                 return ace
 
-            north = (state.trick_leader + 1) % 4
             south = (state.trick_leader + 3) % 4
             danger = sum(
                 entry.posterior for entry in view.entries
                 if entry.layout["remain_cards"][south][SPADES] & ((1 << QUEEN) | (1 << JACK)))
-            if any(
-                entry.layout["remain_cards"][south][SPADES] == 0
-                and entry.layout["remain_cards"][north][SPADES] == (1 << JACK)
-                for entry in view.entries
-            ):
-                # This node's layouts include the real one: South already
-                # void (their only spade was the queen, round one), North
-                # down to the bare jack. Captured by matching the *current*
-                # remaining holdings rather than which of North's two small
-                # cards came first, because that ordering is itself the
-                # defender's own choice, not a fact about the real hand.
-                _LAST_SMALL_CARD_READING.append(1.0 - danger)
+
+            souths_first_card = state.history[1]
+            if souths_first_card.suit == SPADES and souths_first_card.rank in (QUEEN, JACK):
+                # The two branches this example contrasts: South's first
+                # round and North's "last possible small card" round
+                # already happened (the honour-on-the-trick check above
+                # has already ruled out North also showing one here), so
+                # this is exactly "jack from South, two small from North"
+                # or "queen from South, two small from North" -- keyed by
+                # which one South showed, not by whether this is the real
+                # deal's own branch (that is South's queen specifically,
+                # but the jack branch is just as real a node in the tree).
+                _FINESSE_READING_BY_SOUTHS_HONOUR.setdefault(
+                    souths_first_card.rank, 1.0 - danger)
             if danger > 0.5:
                 return ace
             nine = pick(legal, SPADES, 9)
@@ -424,6 +428,29 @@ def spade_split_frequencies(sequence, source) -> dict:
     return frequencies
 
 
+def _print_ace_vs_the_finesse(readings_by_souths_honour, label) -> None:
+    """Print the conditional probability of rising with the ace against
+    taking the finesse, for each of the two branches `main()` tracks: the
+    queen from South, two small from North, and the jack from South, two
+    small from North, against one named defender.
+
+    The two numbers printed for each branch always sum to one -- they are
+    the same posterior `cash_the_king_then_read_the_beliefs` itself reads,
+    `danger` and its complement, not two independent measurements -- so
+    this is a restatement of the belief for readability, not a second
+    calculation.
+    """
+    print(f"\nAce vs finesse, against {label}, once North has shown the "
+          f"last possible small card:")
+    for rank, honour in ((QUEEN, "queen"), (JACK, "jack")):
+        finesse = readings_by_souths_honour.get(rank)
+        if finesse is None:
+            continue
+        print(
+            f"    {honour} from South, two small from North: "
+            f"ace {1.0 - finesse:.0%}  --  finesse {finesse:.0%}")
+
+
 def main() -> None:
     sequence = restricted_choice_6nt()
     root = sequence.current_deal
@@ -465,21 +492,15 @@ def main() -> None:
 
     defence = randomises_queen_jack_in_second_seat
 
-    _LAST_SMALL_CARD_READING.clear()
+    _FINESSE_READING_BY_SOUTHS_HONOUR.clear()
     belief_value = evaluate(sequence, source, cash_the_king_then_read_the_beliefs, defence)
     print(f"Cash the king, then read the beliefs:  P_make = {belief_value['p_make']:.4f}")
-
-    if _LAST_SMALL_CARD_READING:
-        finesse_probability = _LAST_SMALL_CARD_READING[0]
-        print(
-            f"\nWhen North follows to the second round with their last "
-            f"possible small card, the belief space puts the finesse "
-            f"(South does not also guard an honour) right "
-            f"{finesse_probability:.0%} of the time -- not a certainty, "
-            f"because a defender dealt the queen with the jack behind it "
-            f"only shows the queen half the time, exactly the "
-            f"restricted-choice asymmetry this number is supposed to "
-            f"capture.")
+    _print_ace_vs_the_finesse(
+        _FINESSE_READING_BY_SOUTHS_HONOUR, "the bespoke 50/50 defender")
+    print(
+        "    The two branches agree exactly: a defender who genuinely "
+        "randomises between the queen and the jack makes either one "
+        "equally uncertain to have been forced, whichever is shown.")
 
     always_ace_value = evaluate(sequence, source, always_rise_with_the_ace, defence)
     print(f"\nAlways rising with the ace instead:     P_make = {always_ace_value['p_make']:.4f}")
@@ -500,20 +521,25 @@ def main() -> None:
         f"agrees with the bespoke 50/50 exactly here: P_make = "
         f"{double_dummy_value['p_make']:.4f}.")
 
-    _LAST_SMALL_CARD_READING.clear()
+    _FINESSE_READING_BY_SOUTHS_HONOUR.clear()
     no_tell_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs,
         always_shows_the_queen_from_qj_in_second_seat)
-    no_tell_probability = _LAST_SMALL_CARD_READING[0]
     print(
         f"\nAgainst a defender who always shows the queen from the queen "
-        f"and the jack together -- so showing it is no longer any tell at "
-        f"all -- the same read comes back {no_tell_probability:.0%} for "
-        f"the finesse, favouring the ace at that one node: P_make = "
-        f"{no_tell_value['p_make']:.4f}. Still higher than always rising "
-        f"(which this read matches only at that single node, not "
-        f"everywhere), because every other node in the tree is read on "
-        f"its own belief, not forced to the same answer by name.")
+        f"and the jack together -- never the jack -- instead: "
+        f"P_make = {no_tell_value['p_make']:.4f}.")
+    _print_ace_vs_the_finesse(
+        _FINESSE_READING_BY_SOUTHS_HONOUR, "the always-shows-the-queen defender")
+    print(
+        "    No longer close: a defender who never prefers the jack makes "
+        "showing it a dead giveaway (it is certainly a bare jack), while "
+        "showing the queen now absorbs every holding that could have "
+        "shown either one -- the single number this example reported "
+        "before adding this contrast was exactly that queen row. Still "
+        "higher than always rising overall, because every other node in "
+        "the tree is read on its own belief, not forced to this one "
+        "node's answer.")
 
 
 def evaluate(sequence, source, pi, delta, **options) -> dict:
