@@ -67,7 +67,7 @@ py_test(
 
 py_library(
     name = "restricted_choice_6nt_lib",
-    srcs = ["restricted_choice_6nt_belies_space.py"],
+    srcs = ["restricted_choice_6nt_belief_space.py"],
     imports = ["."],
     deps = [":example_support"],
 )

@@ -209,6 +209,23 @@ def _third_hand_after_the_ace_decision(legal, on_trick, state, dummy):
     """
     ten = pick(legal, SPADES, TEN)
     if ten is not None:
+        our_sides_cards_on_trick = (
+            c.rank for position, c in enumerate(on_trick)
+            if c.suit == SPADES and (state.trick_leader + position) % 4 in (state.declarer, dummy))
+        if max(our_sides_cards_on_trick, default=-1) > TEN:
+            # Our own side already has this trick's winner on the table,
+            # with something higher than the ten (the ace, the only card
+            # above ten our side ever holds once the king is gone) -- the
+            # trick's outcome is already settled, so the ten is safe to
+            # unload no matter what a defender has also shown. Checking
+            # only "did a defender beat the ten" here, without this,
+            # would keep the ten back whenever a defender's honour also
+            # happened to be on the trick -- even though that honour
+            # never had a chance against our own side's higher card
+            # either, and keeping the ten back is exactly the mistake
+            # this function exists to avoid.
+            return ten
+
         beaten_by_a_defender = any(
             c.suit == SPADES and c.rank > TEN
             and (state.trick_leader + position) % 4 not in (state.declarer, dummy)

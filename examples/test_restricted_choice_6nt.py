@@ -17,6 +17,7 @@
 | 65/126 | the same, vs `DoubleDummyDefender` specifically | golden -- pinned directly rather than left to be inferred from the 50/50 agreement claim plus a separately-asserted number |
 | 10/21 | always rise with the ace instead, vs the 50/50 defender | golden; 10/21 is exactly the posterior mass of the 2-2 spade breaks in this belief space, and is unchanged by which defender is paired with it, since rising never reaches a node where the belief mattered |
 | 15/28 | cash the king, then read the beliefs, vs the always-shows-the-queen defender | golden; higher than 10/21 even though the one node this example reports reads "rise" there too -- every *other* node in the tree is still read on its own belief |
+| 15/28 | the same, vs a defender who always plays its lowest legal card | golden; equal to the always-shows-the-queen figure above by the same mirror symmetry row 15 already describes, not a second coincidence |
 
 A belief-space node sharing a South-honour key with another one is not
 itself a bug -- North voiding out of spades entirely (South holding all
@@ -32,7 +33,7 @@ import unittest
 
 import dds3
 
-import restricted_choice_6nt_belies_space as example
+import restricted_choice_6nt_belief_space as example
 from bridge_notation import CLUBS, DIAMONDS, EAST, WEST
 from strategies import double_dummy_defender, lowest_eligible_defender
 
@@ -139,6 +140,22 @@ class TestThirdHandAfterTheAceDecision(unittest.TestCase):
         # East (dummy) led the ace -- cash_the_king_then_read_the_beliefs's own
         # lead fix, once the king is gone -- South, a defender, follows low.
         on_trick = [Card(SPADES, ACE), Card(SPADES, 8)]
+        state = _FakeState(declarer=WEST, trick_leader=EAST)
+
+        self.assertEqual(
+            example._third_hand_after_the_ace_decision(legal, on_trick, state, EAST),
+            Card(SPADES, TEN))
+
+    def test_unloads_the_ten_even_when_a_defenders_honour_also_shows(self) -> None:
+        # The exact scenario a code-review bot caught: East (dummy) led the
+        # ace, and a defender's honour (here the jack) also appears on the
+        # trick before this decision. The ace already beats the jack
+        # outright, so the ten is still safe to unload -- checking only
+        # "did a defender beat the ten" would wrongly keep it back here,
+        # since the jack *does* beat the ten even though it never had a
+        # chance against the ace.
+        legal = [Card(SPADES, TEN), Card(SPADES, 3)]
+        on_trick = [Card(SPADES, ACE), Card(SPADES, JACK)]
         state = _FakeState(declarer=WEST, trick_leader=EAST)
 
         self.assertEqual(
@@ -413,6 +430,23 @@ class TestPMake(unittest.TestCase):
         self.assertAlmostEqual(ace_value["p_make"], 10 / 21)
         self.assertGreater(belief_value["p_make"], ace_value["p_make"])
 
+    def test_the_read_still_beats_always_rising_against_lowest_always(self) -> None:
+        # The fourth defender the module docstring's "every defender
+        # measured here" claim covers -- pinned directly, the same way
+        # the other three already are, rather than leaving it as the one
+        # case nothing in this file actually asserts.
+        sequence = example.restricted_choice_6nt()
+        root = sequence.current_deal
+        record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
+        source = example.bsle.ExhaustiveLayoutSource(root, sequence.declarer, example.SEED, record=record)
+        defence = lowest_eligible_defender
+
+        belief_value = example.evaluate(sequence, source, example.cash_the_king_then_read_the_beliefs, defence)
+        ace_value = example.evaluate(sequence, source, example.always_rise_with_the_ace, defence)
+
+        self.assertAlmostEqual(belief_value["p_make"], 15 / 28)
+        self.assertAlmostEqual(ace_value["p_make"], 10 / 21)
+        self.assertGreater(belief_value["p_make"], ace_value["p_make"])
 
 class TestTheScriptRuns(unittest.TestCase):
     def test_main_runs_and_reports_both_p_makes(self) -> None:
