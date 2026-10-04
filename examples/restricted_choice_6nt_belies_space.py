@@ -7,7 +7,7 @@ themselves answer differently than it looks.
     West    S KT73   H KJ4   D 642    C 832
 
 West plays 6NT. Eight tricks cash themselves -- the rest of the diamonds,
-hearts and clubs -- leaving the four-card-each ending
+hearts and clubs -- leaving the five-card-each ending
 
     North   S J85    D T      C T
     East    S A9642
@@ -15,13 +15,16 @@ hearts and clubs -- leaving the four-card-each ending
     West    S KT73           C 8
 
 needing all five remaining tricks: the contract's only loser, if there is
-one, is in spades. Declarer and dummy hold A K T 9 6 4 2 between them, nine
-cards; North and South hold the other four -- Q J 8 5 -- split some way
-that is not known.
+one, is in spades. Declarer and dummy hold A K T 9 7 6 4 3 2 between them,
+nine cards; North and South hold the other four -- Q J 8 5 -- split some
+way that is not known.
 
 The plan: lead low from dummy to the king in hand first (safe regardless of
-the split -- nothing but the ace beats a king, and the ace is declarer's
-own). Then lead low again. Whatever North follows with on *that* trick
+the split -- nothing but the ace beats a king, and the ace is dummy's own).
+Then lead low again -- the higher of hand's two remaining small cards,
+specifically, keeping the lower one as the safe spare the ten-unblocking
+technique below relies on; see `_lead_spade_or_the_lone_club`'s own
+docstring for exactly why. Whatever North follows with on *that* trick
 settles everything below the two honours -- the eight and the five are the
 only other outstanding cards, so this is necessarily the last small card
 North can have. If North instead shows an honour here, win with the ace:
@@ -217,14 +220,17 @@ def _third_hand_after_the_ace_decision(legal, on_trick, state, dummy):
 
 def cash_the_king_then_read_the_beliefs(state, view):
     """pi: lead low to the king first (fixed -- the ace guarding it is
-    declarer's own, so nothing a defender holds can beat it), then read the
+    dummy's own, so nothing a defender holds can beat it), then read the
     belief space for the one real decision in the suit.
 
-    Declarer and dummy hold A K T 9 6 4 2 in spades; North and South hold
-    Q J 8 5 between them. Both missing low cards (the eight and the five)
-    are spent by the time North follows to the second round, so whatever
-    North shows there is either an honour or North's last possible small
-    card -- there is no third case.
+    Declarer and dummy hold A K T 9 7 6 4 3 2 in spades; North and South
+    hold Q J 8 5 between them. Both missing low cards (the eight and the
+    five) are spent by the time North follows to the second round, so
+    whatever North shows there is either an honour, North's last possible
+    small card, or (whenever South holds all four missing cards) a
+    discard from a suit North is already void in by then -- which the
+    honour check below treats the same way a genuine small card is
+    treated, since neither is an honour.
 
     - North shows an honour (queen or jack): win with the ace every time.
       A defender who still held the other honour behind the one just shown
@@ -241,7 +247,7 @@ def cash_the_king_then_read_the_beliefs(state, view):
       low" the way every other round here is).
 
     `view.entries` is read, and its result stashed in the module-level
-    `_LAST_SMALL_CARD_READING`, only for `main()` to report afterwards --
+    `_FINESSE_READING_BY_SOUTHS_HONOUR`, only for `main()` to report afterwards --
     not to influence this call's own return value, so the strategy stays a
     pure function of `(state, view)` as the evaluator requires. A second,
     separate evaluate() call, built the ordinary way from scratch, would

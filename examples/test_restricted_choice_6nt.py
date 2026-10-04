@@ -7,11 +7,11 @@
 | 5/63 | root prior, South QJ tight | golden |
 | 5/84 | root prior, South singleton jack | golden; equal to singleton queen by the north/south symmetry of the prior, before any card is played |
 | 5/84 | root prior, South singleton queen (the real deal) | golden |
-| 60% | finesse read, queen branch, vs the 50/50 defender | **re-derived** below from the raw combinatorics, not just measured |
+| 60% | finesse read, queen branch, vs the 50/50 defender | golden |
 | 60% | finesse read, jack branch, vs the 50/50 defender | golden -- identical to the queen branch, a fact about genuine randomisation, not a coincidence |
 | 60% | both branches, again, against `DoubleDummyDefender`'s own touching-sequence policy | golden -- it agrees with the bespoke 50/50 exactly, on both branches |
 | 3/7 | finesse read, queen branch, vs a defender who always shows the queen from the pair | golden -- showing the queen is no longer any tell there, so the posterior is the raw prior odds, not the restricted-choice-adjusted one |
-| 100% | finesse read, jack branch, vs that same always-shows-the-queen defender | re-derived -- that defender can never show the jack while still holding the queen, so the posterior this example reads is provably 1, not merely measured as 1 |
+| 100% | finesse read, jack branch, vs that same always-shows-the-queen defender | golden -- that defender can never show the jack while still holding the queen, so the posterior this example reads is provably 1, not merely measured as 1, but the test itself still computes it the same way as every other row above, not by an independent derivation |
 | 1.0 / 3/7 | the mirror image, queen/jack, against a defender who always plays its lowest legal card | golden -- "lowest always" prefers the jack (the lower-ranked card) from the pair, so it is the *queen* that becomes the dead giveaway there, not the jack |
 | 65/126 | cash the king, then read the beliefs, vs the 50/50 defender | golden |
 | 10/21 | always rise with the ace instead, vs the 50/50 defender | golden; 10/21 is exactly the posterior mass of the 2-2 spade breaks in this belief space, and is unchanged by which defender is paired with it, since rising never reaches a node where the belief mattered |
@@ -23,11 +23,114 @@ import unittest
 import dds3
 
 import restricted_choice_6nt_belies_space as example
+from bridge_notation import EAST, NORTH, WEST
 from strategies import double_dummy_defender, lowest_eligible_defender
 
 Card = example.Card
 SPADES = example.SPADES
 QUEEN, JACK = example.QUEEN, example.JACK
+TEN, ACE, CLUBS = example.TEN, example.ACE, 3
+
+
+class _FakeState:
+    """A duck-typed stand-in for `ObservationState`, carrying only the
+    three attributes `_lead_spade_or_the_lone_club` and
+    `_third_hand_after_the_ace_decision` actually read: `declarer`,
+    `trick_leader`, and `known_holdings`. The real type is read-only and
+    not constructible from Python (nothing builds one outside the
+    evaluator), so a direct unit test of either helper needs a stand-in
+    rather than a real instance.
+    """
+
+    def __init__(self, declarer, trick_leader=None, declarer_spades=0):
+        self.declarer = declarer
+        self.trick_leader = trick_leader
+        self.known_holdings = {"remain_cards": [[0, 0, 0, 0] for _ in range(4)]}
+        self.known_holdings["remain_cards"][declarer][SPADES] = declarer_spades
+
+
+class TestLeadSpadeOrTheLoneClub(unittest.TestCase):
+    """`_lead_spade_or_the_lone_club` in isolation, independent of a real
+    `evaluate()` run -- the three lead cases its own docstring names, plus
+    the no-spades fallback.
+    """
+
+    def test_leads_low_while_the_king_is_still_unplayed(self) -> None:
+        legal = [Card(SPADES, ACE), Card(SPADES, 9), Card(SPADES, 6), Card(SPADES, 4), Card(SPADES, 2)]
+        state = _FakeState(declarer=WEST, declarer_spades=(1 << example.KING))
+
+        self.assertEqual(example._lead_spade_or_the_lone_club(legal, state), Card(SPADES, 2))
+
+    def test_leads_the_ace_once_the_king_is_gone(self) -> None:
+        legal = [Card(SPADES, ACE), Card(SPADES, 9), Card(SPADES, 6), Card(SPADES, 4)]
+        state = _FakeState(declarer=WEST, declarer_spades=0)
+
+        self.assertEqual(example._lead_spade_or_the_lone_club(legal, state), Card(SPADES, ACE))
+
+    def test_leads_the_higher_small_card_keeping_the_lower_as_the_spare(self) -> None:
+        legal = [Card(SPADES, TEN), Card(SPADES, 7), Card(SPADES, 3)]
+        state = _FakeState(declarer=WEST, declarer_spades=0)
+
+        self.assertEqual(example._lead_spade_or_the_lone_club(legal, state), Card(SPADES, 7))
+
+    def test_leads_the_lone_club_once_there_is_no_spade_left(self) -> None:
+        legal = [Card(CLUBS, 8)]
+        state = _FakeState(declarer=WEST, declarer_spades=0)
+
+        self.assertEqual(example._lead_spade_or_the_lone_club(legal, state), Card(CLUBS, 8))
+
+
+class TestThirdHandAfterTheAceDecision(unittest.TestCase):
+    """`_third_hand_after_the_ace_decision` in isolation: the ten is
+    unloaded whenever nothing beats it, or whenever only our own
+    partner's card does, and kept back only once a defender's own card
+    has genuinely beaten it; past the ten, the cheapest winning card is
+    played rather than the lowest.
+    """
+
+    def test_plays_the_ten_when_nothing_on_the_trick_beats_it(self) -> None:
+        legal = [Card(SPADES, TEN), Card(SPADES, 3)]
+        state = _FakeState(declarer=WEST, trick_leader=WEST)
+
+        self.assertEqual(
+            example._third_hand_after_the_ace_decision(legal, [], state, EAST),
+            Card(SPADES, TEN))
+
+    def test_unloads_the_ten_once_its_own_partners_lead_already_won(self) -> None:
+        legal = [Card(SPADES, TEN), Card(SPADES, 3)]
+        on_trick = [Card(SPADES, ACE)]  # led by dummy (East), trick_leader below
+        state = _FakeState(declarer=WEST, trick_leader=EAST)
+
+        self.assertEqual(
+            example._third_hand_after_the_ace_decision(legal, on_trick, state, EAST),
+            Card(SPADES, TEN))
+
+    def test_keeps_the_ten_back_once_a_defenders_card_has_beaten_it(self) -> None:
+        legal = [Card(SPADES, TEN), Card(SPADES, 3)]
+        on_trick = [Card(SPADES, JACK)]  # led by North, a defender
+        state = _FakeState(declarer=WEST, trick_leader=NORTH)
+
+        self.assertEqual(
+            example._third_hand_after_the_ace_decision(legal, on_trick, state, EAST),
+            Card(SPADES, 3))
+
+    def test_plays_the_cheapest_card_that_still_wins_once_the_ten_is_gone(self) -> None:
+        legal = [Card(SPADES, 9), Card(SPADES, 6)]
+        on_trick = [Card(SPADES, 4)]
+        state = _FakeState(declarer=WEST, trick_leader=WEST)
+
+        self.assertEqual(
+            example._third_hand_after_the_ace_decision(legal, on_trick, state, EAST),
+            Card(SPADES, 6))
+
+    def test_plays_its_lowest_once_nothing_left_can_win(self) -> None:
+        legal = [Card(SPADES, 4)]
+        on_trick = [Card(SPADES, 9)]
+        state = _FakeState(declarer=WEST, trick_leader=WEST)
+
+        self.assertEqual(
+            example._third_hand_after_the_ace_decision(legal, on_trick, state, EAST),
+            Card(SPADES, 4))
 
 
 class TestTheEnding(unittest.TestCase):
@@ -227,10 +330,12 @@ class TestPMake(unittest.TestCase):
         record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
         source = example.bsle.ExhaustiveLayoutSource(root, sequence.declarer, example.SEED, record=record)
 
+        ctx = dds3.SolverContext()
         for defence in (
             example.randomises_queen_jack_in_second_seat,
             example.always_shows_the_queen_from_qj_in_second_seat,
             lowest_eligible_defender,
+            double_dummy_defender(ctx),
         ):
             ace_value = example.evaluate(sequence, source, example.always_rise_with_the_ace, defence)
             self.assertAlmostEqual(ace_value["p_make"], 10 / 21)
