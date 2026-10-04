@@ -100,6 +100,13 @@ from strategies import (
 
 SEED = 1
 
+# Not named in strategies.py (only the honours TEN through ACE are), but
+# used the same way below: the specific duck card
+# cash_the_king_then_read_the_beliefs plays, chosen to beat North's own
+# small cards (the eight and the five) while still not committing the
+# ace -- see that function's own docstring.
+NINE = 9
+
 # The one piece of state this module carries outside a strategy's own
 # arguments: the probability `cash_the_king_then_read_the_beliefs` computes
 # at its one belief-dependent node, captured purely for `main()` to report.
@@ -296,11 +303,26 @@ def cash_the_king_then_read_the_beliefs(state, view):
             if any(c.suit == SPADES and c.rank >= JACK for c in on_trick):
                 return ace
 
-            south = (state.trick_leader + 3) % 4
+            # `trick_leader + 3` is South's seat here specifically because
+            # this line is only reachable with `trick_leader == declarer`
+            # (West leading round two) -- the sibling case, `trick_leader
+            # == dummy` (East leading round one), always returns earlier
+            # via the king check above. Were that short-circuit ever
+            # reordered or removed, this would silently compute North's
+            # seat instead of South's, with no error anywhere -- the
+            # specific shape of bug this file's review history already
+            # has two instances of.
+            souths_seat = (state.trick_leader + 3) % 4
             danger = sum(
                 entry.posterior for entry in view.entries
-                if entry.layout["remain_cards"][south][SPADES] & ((1 << QUEEN) | (1 << JACK)))
+                if entry.layout["remain_cards"][souths_seat][SPADES] & ((1 << QUEEN) | (1 << JACK)))
 
+            # `history[1]` is South's first card specifically because
+            # dummy always leads round one (the only round this example
+            # ever reaches with an empty history) and South sits
+            # immediately after dummy -- not a general fact about
+            # `history`'s indexing, only true given this file's fixed
+            # seating.
             souths_first_card = state.history[1]
             if (souths_first_card.suit == SPADES and souths_first_card.rank in (QUEEN, JACK)
                     and _norths_second_card_is_a_genuine_small_spade(on_trick)):
@@ -317,7 +339,7 @@ def cash_the_king_then_read_the_beliefs(state, view):
                     souths_first_card.rank, 1.0 - danger)
             if danger > 0.5:
                 return ace
-            nine = pick(legal, SPADES, 9)
+            nine = pick(legal, SPADES, NINE)
             return nine or min(legal, key=lambda c: (c.rank, c.suit))
 
         return _third_hand_after_the_ace_decision(legal, on_trick, state, dummy)
@@ -444,15 +466,15 @@ def spade_split_frequencies(sequence, source) -> dict:
     def probe(state, view):
         if not state.current_trick and not frequencies:
             for entry in view.entries:
-                south = entry.layout["remain_cards"][SOUTH][SPADES]
+                souths_spades = entry.layout["remain_cards"][SOUTH][SPADES]
                 frequencies["2-2"] = frequencies.get("2-2", 0.0) + (
-                    entry.posterior if bin(south).count("1") == 2 else 0.0)
+                    entry.posterior if bin(souths_spades).count("1") == 2 else 0.0)
                 frequencies["south QJ tight"] = frequencies.get("south QJ tight", 0.0) + (
-                    entry.posterior if south == (1 << QUEEN) | (1 << JACK) else 0.0)
+                    entry.posterior if souths_spades == (1 << QUEEN) | (1 << JACK) else 0.0)
                 frequencies["south singleton J"] = frequencies.get("south singleton J", 0.0) + (
-                    entry.posterior if south == (1 << JACK) else 0.0)
+                    entry.posterior if souths_spades == (1 << JACK) else 0.0)
                 frequencies["south singleton Q"] = frequencies.get("south singleton Q", 0.0) + (
-                    entry.posterior if south == (1 << QUEEN) else 0.0)
+                    entry.posterior if souths_spades == (1 << QUEEN) else 0.0)
         legal = state.legal_cards
         return min(legal, key=lambda c: (c.rank, c.suit))
 
