@@ -567,7 +567,11 @@ def main() -> None:
         "whichever honour North is left holding, at no cost back in the "
         "2-2 layouts it was never risking in the first place.")
 
-    _FINESSE_READING_BY_SOUTHS_HONOUR.clear()
+    # No clear()/read of _FINESSE_READING_BY_SOUTHS_HONOUR around this one:
+    # this call's own ace-vs-finesse breakdown would just repeat the
+    # bespoke 50/50 defender's, which the P_make agreement already printed
+    # below establishes -- nothing here reads the dict before the next
+    # clear() does, ahead of the always-shows-the-queen block.
     ctx = dds3.SolverContext()
     double_dummy_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs, double_dummy_defender(ctx))
