@@ -94,6 +94,7 @@ from strategies import (
     QUEEN,
     TEN,
     double_dummy_defender,
+    lowest_eligible_defender,
     pick,
 )
 
@@ -125,7 +126,7 @@ def restricted_choice_6nt() -> PlaySequence:
     sequence.play_trick("H3 H2 HK H7")  # Small heart to the king.
     sequence.play_trick("HJ H8 HT H5")  # Cash the jack of hearts.
     sequence.play_trick("H4 H9 HA H6")  # Heart to the ace.
-    sequence.play_trick("HQ D5 D4 C5")  # Cash the heart, discarding a diamond and a club.
+    sequence.play_trick("HQ D5 D4 C5")  # Cash the heart, discarding two diamonds and a club.
     sequence.play_trick("CK C6 C3 CA")  # Knock out the ace of clubs.
     sequence.play_trick("CJ CQ C9 C2")  # Exit with a club.
     sequence.play_trick("DK D7 D2 DJ")  # Cash the king of diamonds.
@@ -218,6 +219,30 @@ def _third_hand_after_the_ace_decision(legal, on_trick, state, dummy):
     return min(legal, key=lambda c: (c.rank, c.suit))
 
 
+def _norths_second_card_is_a_genuine_small_spade(on_trick) -> bool:
+    """Whether `on_trick[1]` -- North's response once the honour check in
+    `cash_the_king_then_read_the_beliefs` has already ruled out an honour
+    there -- is an actual spade, as opposed to a discard from a suit North
+    has already voided (which happens whenever South holds all four
+    missing cards, forcing North to zero of them).
+
+    This is the gate on whether a node's `danger` is folded into
+    `_FINESSE_READING_BY_SOUTHS_HONOUR`: a void discard is a structurally
+    different, and in general differently weighted, belief-space node --
+    South having all four missing cards makes South's retaining one of
+    them a near-certainty, nothing like the genuine small-card case --
+    and is not "two small from North" in the sense
+    `_print_ace_vs_the_finesse`'s own label uses. Multiple such nodes can
+    share the same South-honour key, so without this check the captured
+    reading would be whichever node the evaluator happens to visit first
+    -- an artifact of traversal order, not the fixed fact the module
+    docstring claims it is. A pure function of `on_trick` alone, kept
+    separate so this specific condition can be tested without going
+    through a full `evaluate()` run.
+    """
+    return on_trick[1].suit == SPADES
+
+
 def cash_the_king_then_read_the_beliefs(state, view):
     """pi: lead low to the king first (fixed -- the ace guarding it is
     dummy's own, so nothing a defender holds can beat it), then read the
@@ -277,7 +302,8 @@ def cash_the_king_then_read_the_beliefs(state, view):
                 if entry.layout["remain_cards"][south][SPADES] & ((1 << QUEEN) | (1 << JACK)))
 
             souths_first_card = state.history[1]
-            if souths_first_card.suit == SPADES and souths_first_card.rank in (QUEEN, JACK):
+            if (souths_first_card.suit == SPADES and souths_first_card.rank in (QUEEN, JACK)
+                    and _norths_second_card_is_a_genuine_small_spade(on_trick)):
                 # The two branches this example contrasts: South's first
                 # round and North's "last possible small card" round
                 # already happened (the honour-on-the-trick check above
@@ -519,6 +545,7 @@ def main() -> None:
         "whichever honour North is left holding, at no cost back in the "
         "2-2 layouts it was never risking in the first place.")
 
+    _FINESSE_READING_BY_SOUTHS_HONOUR.clear()
     ctx = dds3.SolverContext()
     double_dummy_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs, double_dummy_defender(ctx))
@@ -546,6 +573,23 @@ def main() -> None:
         "higher than always rising overall, because every other node in "
         "the tree is read on its own belief, not forced to this one "
         "node's answer.")
+
+    _FINESSE_READING_BY_SOUTHS_HONOUR.clear()
+    never_hides_value = evaluate(
+        sequence, source, cash_the_king_then_read_the_beliefs, lowest_eligible_defender)
+    print(
+        f"\nAnd against a defender who never hides a jack behind a queen "
+        f"at all -- plays its lowest legal card, full stop -- instead: "
+        f"P_make = {never_hides_value['p_make']:.4f}.")
+    _print_ace_vs_the_finesse(
+        _FINESSE_READING_BY_SOUTHS_HONOUR, "a defender who never hides a jack behind a queen")
+    print(
+        "    The exact mirror of the always-shows-the-queen defender "
+        "above, not a repeat of it: this one prefers the lower-ranked "
+        "card of a touching pair, the jack, so it is the *queen* that "
+        "becomes the dead giveaway here (a bare queen is the only way to "
+        "show it), while the jack now absorbs every holding that could "
+        "have shown either one.")
 
 
 def evaluate(sequence, source, pi, delta, **options) -> dict:

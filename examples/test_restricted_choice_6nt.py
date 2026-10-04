@@ -14,8 +14,18 @@
 | 100% | finesse read, jack branch, vs that same always-shows-the-queen defender | golden -- that defender can never show the jack while still holding the queen, so the posterior this example reads is provably 1, not merely measured as 1, but the test itself still computes it the same way as every other row above, not by an independent derivation |
 | 1.0 / 3/7 | the mirror image, queen/jack, against a defender who always plays its lowest legal card | golden -- "lowest always" prefers the jack (the lower-ranked card) from the pair, so it is the *queen* that becomes the dead giveaway there, not the jack |
 | 65/126 | cash the king, then read the beliefs, vs the 50/50 defender | golden |
+| 65/126 | the same, vs `DoubleDummyDefender` specifically | golden -- pinned directly rather than left to be inferred from the 50/50 agreement claim plus a separately-asserted number |
 | 10/21 | always rise with the ace instead, vs the 50/50 defender | golden; 10/21 is exactly the posterior mass of the 2-2 spade breaks in this belief space, and is unchanged by which defender is paired with it, since rising never reaches a node where the belief mattered |
 | 15/28 | cash the king, then read the beliefs, vs the always-shows-the-queen defender | golden; higher than 10/21 even though the one node this example reports reads "rise" there too -- every *other* node in the tree is still read on its own belief |
+
+A belief-space node sharing a South-honour key with another one is not
+itself a bug -- North voiding out of spades entirely (South holding all
+four missing cards) reaches the same key with a structurally different,
+generally much larger `danger`. `_norths_second_card_is_a_genuine_small_spade`
+excludes those nodes from `_FINESSE_READING_BY_SOUTHS_HONOUR`, and
+`TestNorthsSecondCardIsAGenuineSmallSpade` pins that directly rather than
+relying on the evaluator's own traversal order to keep picking the right
+one first.
 """
 
 import unittest
@@ -23,13 +33,13 @@ import unittest
 import dds3
 
 import restricted_choice_6nt_belies_space as example
-from bridge_notation import EAST, NORTH, WEST
+from bridge_notation import CLUBS, DIAMONDS, EAST, WEST
 from strategies import double_dummy_defender, lowest_eligible_defender
 
 Card = example.Card
 SPADES = example.SPADES
 QUEEN, JACK = example.QUEEN, example.JACK
-TEN, ACE, CLUBS = example.TEN, example.ACE, 3
+TEN, ACE = example.TEN, example.ACE
 
 
 class _FakeState:
@@ -47,6 +57,23 @@ class _FakeState:
         self.trick_leader = trick_leader
         self.known_holdings = {"remain_cards": [[0, 0, 0, 0] for _ in range(4)]}
         self.known_holdings["remain_cards"][declarer][SPADES] = declarer_spades
+
+
+def _south_second_seat_layout(south_spades: int) -> dict:
+    """A minimal deal dict with South holding `south_spades` in spades and
+    nothing else, for probing a defender function directly. Shared by both
+    bespoke-defender test classes below, which differ only in which
+    defender function they call, not in what layout they call it with.
+    """
+    layout = {
+        "trump": 4,  # notrump
+        "first": 2,  # South on lead for this probe
+        "remain_cards": [[0, 0, 0, 0] for _ in range(4)],
+        "current_trick_suit": (0, 0, 0),
+        "current_trick_rank": (0, 0, 0),
+    }
+    layout["remain_cards"][2][SPADES] = south_spades
+    return layout
 
 
 class TestLeadSpadeOrTheLoneClub(unittest.TestCase):
@@ -86,19 +113,32 @@ class TestThirdHandAfterTheAceDecision(unittest.TestCase):
     partner's card does, and kept back only once a defender's own card
     has genuinely beaten it; past the ten, the cheapest winning card is
     played rather than the lowest.
+
+    The function's one real call site
+    (`cash_the_king_then_read_the_beliefs`) only ever reaches it with
+    `state.position_in_trick == 2`, so `on_trick` always has exactly two
+    entries (the leader's card and the second seat's), and the leader is
+    always `declarer` or `dummy` -- never a defender, since this helper is
+    declarer's own third-hand decision. Every case below keeps that
+    shape, rather than the shorter, leaderless `on_trick`s an earlier
+    version of this test used, which this function is never actually
+    called with.
     """
 
     def test_plays_the_ten_when_nothing_on_the_trick_beats_it(self) -> None:
         legal = [Card(SPADES, TEN), Card(SPADES, 3)]
+        on_trick = [Card(SPADES, 4), Card(SPADES, 6)]  # West's lead, North's low follow
         state = _FakeState(declarer=WEST, trick_leader=WEST)
 
         self.assertEqual(
-            example._third_hand_after_the_ace_decision(legal, [], state, EAST),
+            example._third_hand_after_the_ace_decision(legal, on_trick, state, EAST),
             Card(SPADES, TEN))
 
     def test_unloads_the_ten_once_its_own_partners_lead_already_won(self) -> None:
         legal = [Card(SPADES, TEN), Card(SPADES, 3)]
-        on_trick = [Card(SPADES, ACE)]  # led by dummy (East), trick_leader below
+        # East (dummy) led the ace -- cash_the_king_then_read_the_beliefs's own
+        # lead fix, once the king is gone -- South, a defender, follows low.
+        on_trick = [Card(SPADES, ACE), Card(SPADES, 8)]
         state = _FakeState(declarer=WEST, trick_leader=EAST)
 
         self.assertEqual(
@@ -107,8 +147,8 @@ class TestThirdHandAfterTheAceDecision(unittest.TestCase):
 
     def test_keeps_the_ten_back_once_a_defenders_card_has_beaten_it(self) -> None:
         legal = [Card(SPADES, TEN), Card(SPADES, 3)]
-        on_trick = [Card(SPADES, JACK)]  # led by North, a defender
-        state = _FakeState(declarer=WEST, trick_leader=NORTH)
+        on_trick = [Card(SPADES, 4), Card(SPADES, JACK)]  # West's lead, North's jack
+        state = _FakeState(declarer=WEST, trick_leader=WEST)
 
         self.assertEqual(
             example._third_hand_after_the_ace_decision(legal, on_trick, state, EAST),
@@ -116,7 +156,7 @@ class TestThirdHandAfterTheAceDecision(unittest.TestCase):
 
     def test_plays_the_cheapest_card_that_still_wins_once_the_ten_is_gone(self) -> None:
         legal = [Card(SPADES, 9), Card(SPADES, 6)]
-        on_trick = [Card(SPADES, 4)]
+        on_trick = [Card(SPADES, 4), Card(SPADES, 5)]  # West's lead, North's low follow
         state = _FakeState(declarer=WEST, trick_leader=WEST)
 
         self.assertEqual(
@@ -125,12 +165,31 @@ class TestThirdHandAfterTheAceDecision(unittest.TestCase):
 
     def test_plays_its_lowest_once_nothing_left_can_win(self) -> None:
         legal = [Card(SPADES, 4)]
-        on_trick = [Card(SPADES, 9)]
+        on_trick = [Card(SPADES, 6), Card(SPADES, 9)]  # West's lead, North's high follow
         state = _FakeState(declarer=WEST, trick_leader=WEST)
 
         self.assertEqual(
             example._third_hand_after_the_ace_decision(legal, on_trick, state, EAST),
             Card(SPADES, 4))
+
+
+class TestNorthsSecondCardIsAGenuineSmallSpade(unittest.TestCase):
+    """`_norths_second_card_is_a_genuine_small_spade` in isolation: the
+    regression guard behind the fix for a belief-space node mix-up a
+    previous review round caught (a void discard from North, reached
+    whenever South holds all four missing cards, was being folded into
+    the same reading as North genuinely following with a small spade).
+    """
+
+    def test_a_small_spade_is_genuine(self) -> None:
+        on_trick = [Card(SPADES, 4), Card(SPADES, 8)]
+
+        self.assertTrue(example._norths_second_card_is_a_genuine_small_spade(on_trick))
+
+    def test_a_discard_from_a_void_is_not(self) -> None:
+        on_trick = [Card(SPADES, 4), Card(DIAMONDS, 3)]
+
+        self.assertFalse(example._norths_second_card_is_a_genuine_small_spade(on_trick))
 
 
 class TestTheEnding(unittest.TestCase):
@@ -180,19 +239,8 @@ class TestTheBespokeDefender(unittest.TestCase):
     really does split 50/50, and plays low everywhere else.
     """
 
-    def _layout(self, south_spades: int) -> dict:
-        layout = {
-            "trump": 4,  # notrump
-            "first": 2,  # South on lead for this probe
-            "remain_cards": [[0, 0, 0, 0] for _ in range(4)],
-            "current_trick_suit": (0, 0, 0),
-            "current_trick_rank": (0, 0, 0),
-        }
-        layout["remain_cards"][2][SPADES] = south_spades
-        return layout
-
     def test_it_splits_50_50_holding_the_queen_and_the_jack_second_seat(self) -> None:
-        layout = self._layout((1 << QUEEN) | (1 << JACK))
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK))
         layout["current_trick_suit"] = (SPADES, 0, 0)
         layout["current_trick_rank"] = (2, 0, 0)  # one card already led
 
@@ -203,7 +251,7 @@ class TestTheBespokeDefender(unittest.TestCase):
             {(SPADES, QUEEN): 0.5, (SPADES, JACK): 0.5})
 
     def test_it_plays_low_holding_only_the_queen_second_seat(self) -> None:
-        layout = self._layout((1 << QUEEN) | (1 << 5))
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << 5))
         layout["current_trick_suit"] = (SPADES, 0, 0)
         layout["current_trick_rank"] = (2, 0, 0)
 
@@ -212,7 +260,7 @@ class TestTheBespokeDefender(unittest.TestCase):
         self.assertEqual(distribution, [(Card(SPADES, 5), 1.0)])
 
     def test_it_plays_low_holding_the_queen_and_the_jack_as_the_leader(self) -> None:
-        layout = self._layout((1 << QUEEN) | (1 << JACK))
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK))
 
         distribution = example.randomises_queen_jack_in_second_seat(layout, 2, None)
 
@@ -225,19 +273,8 @@ class TestTheAlwaysShowsTheQueenDefender(unittest.TestCase):
     deterministically the queen every time.
     """
 
-    def _layout(self, south_spades: int) -> dict:
-        layout = {
-            "trump": 4,  # notrump
-            "first": 2,  # South on lead for this probe
-            "remain_cards": [[0, 0, 0, 0] for _ in range(4)],
-            "current_trick_suit": (0, 0, 0),
-            "current_trick_rank": (0, 0, 0),
-        }
-        layout["remain_cards"][2][SPADES] = south_spades
-        return layout
-
     def test_it_always_shows_the_queen_holding_the_pair_second_seat(self) -> None:
-        layout = self._layout((1 << QUEEN) | (1 << JACK))
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK))
         layout["current_trick_suit"] = (SPADES, 0, 0)
         layout["current_trick_rank"] = (2, 0, 0)  # one card already led
 
@@ -246,7 +283,7 @@ class TestTheAlwaysShowsTheQueenDefender(unittest.TestCase):
         self.assertEqual(distribution, [(Card(SPADES, QUEEN), 1.0)])
 
     def test_it_plays_low_holding_only_the_queen_second_seat(self) -> None:
-        layout = self._layout((1 << QUEEN) | (1 << 5))
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << 5))
         layout["current_trick_suit"] = (SPADES, 0, 0)
         layout["current_trick_rank"] = (2, 0, 0)
 
@@ -255,7 +292,7 @@ class TestTheAlwaysShowsTheQueenDefender(unittest.TestCase):
         self.assertEqual(distribution, [(Card(SPADES, 5), 1.0)])
 
     def test_it_plays_low_holding_the_queen_and_the_jack_as_the_leader(self) -> None:
-        layout = self._layout((1 << QUEEN) | (1 << JACK))
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK))
 
         distribution = example.always_shows_the_queen_from_qj_in_second_seat(layout, 2, None)
 
@@ -340,6 +377,28 @@ class TestPMake(unittest.TestCase):
             ace_value = example.evaluate(sequence, source, example.always_rise_with_the_ace, defence)
             self.assertAlmostEqual(ace_value["p_make"], 10 / 21)
 
+    def test_reading_the_beliefs_still_beats_always_rising_under_double_dummy(self) -> None:
+        # The module docstring's "every defender measured here" claim,
+        # pinned directly for DoubleDummyDefender rather than left to be
+        # inferred from two separately-asserted numbers: it agrees with
+        # the bespoke 50/50 defender exactly (see main()'s own printed
+        # check), so this should, and does, match
+        # test_reading_the_beliefs_scores_higher_than_always_rising_here's
+        # own 65/126 and 10/21.
+        sequence = example.restricted_choice_6nt()
+        root = sequence.current_deal
+        record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
+        source = example.bsle.ExhaustiveLayoutSource(root, sequence.declarer, example.SEED, record=record)
+        ctx = dds3.SolverContext()
+        defence = double_dummy_defender(ctx)
+
+        belief_value = example.evaluate(sequence, source, example.cash_the_king_then_read_the_beliefs, defence)
+        ace_value = example.evaluate(sequence, source, example.always_rise_with_the_ace, defence)
+
+        self.assertAlmostEqual(belief_value["p_make"], 65 / 126)
+        self.assertAlmostEqual(ace_value["p_make"], 10 / 21)
+        self.assertGreater(belief_value["p_make"], ace_value["p_make"])
+
     def test_against_the_no_tell_defender_the_read_still_beats_always_rising(self) -> None:
         sequence = example.restricted_choice_6nt()
         root = sequence.current_deal
@@ -374,6 +433,13 @@ class TestTheScriptRuns(unittest.TestCase):
         self.assertIn("ace 40%  --  finesse 60%", doc)  # both branches, bespoke 50/50
         self.assertIn("ace 57%  --  finesse 43%", doc)  # queen branch, always-shows-the-queen
         self.assertIn("ace 0%  --  finesse 100%", doc)  # jack branch, always-shows-the-queen
+
+        # The third defender the module docstring promises ("three
+        # defenders") is actually run and printed, not only exercised in
+        # this test file -- the specific regression the previous review
+        # round caught.
+        self.assertIn("never hides a jack behind a queen", doc)
+        self.assertIn("exact mirror of the always-shows-the-queen defender", doc)
 
 
 if __name__ == "__main__":
