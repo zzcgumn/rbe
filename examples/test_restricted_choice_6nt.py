@@ -106,15 +106,26 @@ class _FakeView:
         self.entries = entries
 
 
-def _south_second_seat_layout(south_spades: int) -> dict:
+def _south_second_seat_layout(south_spades: int, leader: int = SOUTH) -> dict:
     """A minimal deal dict with South holding `south_spades` in spades and
     nothing else, for probing a defender function directly. Shared by both
     bespoke-defender test classes below, which differ only in which
     defender function they call, not in what layout they call it with.
+
+    `leader` defaults to South, right for the "as the leader" probes
+    (nothing yet on the trick, South about to lead it). A "second seat"
+    probe -- one card already on the trick, South about to play next --
+    needs a *different* leader: South cannot be both the leader and the
+    very next seat to call on the same trick, so those callers pass
+    `leader=EAST` instead (East leads, South is the next seat to act).
+    `evaluate()` itself would never hand a defender the inconsistent
+    pairing "South led this trick" and "South is on play a second time
+    before anyone else has" -- this parameter exists so these tests do
+    not construct it either.
     """
     layout = {
         "trump": 4,  # notrump
-        "first": 2,  # South on lead for this probe
+        "first": leader,
         "remain_cards": [[0, 0, 0, 0] for _ in range(4)],
         "current_trick_suit": (0, 0, 0),
         "current_trick_rank": (0, 0, 0),
@@ -363,7 +374,7 @@ class TestTheBespokeDefender(unittest.TestCase):
     """
 
     def test_it_splits_50_50_holding_the_queen_and_the_jack_second_seat(self) -> None:
-        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK))
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK), leader=EAST)
         layout["current_trick_suit"] = (SPADES, 0, 0)
         layout["current_trick_rank"] = (2, 0, 0)  # one card already led
 
@@ -374,7 +385,7 @@ class TestTheBespokeDefender(unittest.TestCase):
             {(SPADES, QUEEN): 0.5, (SPADES, JACK): 0.5})
 
     def test_it_plays_low_holding_only_the_queen_second_seat(self) -> None:
-        layout = _south_second_seat_layout((1 << QUEEN) | (1 << 5))
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << 5), leader=EAST)
         layout["current_trick_suit"] = (SPADES, 0, 0)
         layout["current_trick_rank"] = (2, 0, 0)
 
@@ -395,7 +406,7 @@ class TestTheBespokeDefender(unittest.TestCase):
         # (diamonds here) and every card, including both spade honours,
         # is consequently a legal discard. This is not a second-seat
         # spade decision at all, and must not randomise as if it were.
-        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK))
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK), leader=EAST)
         layout["current_trick_suit"] = (DIAMONDS, 0, 0)
         layout["current_trick_rank"] = (5, 0, 0)
 
@@ -411,7 +422,7 @@ class TestTheAlwaysShowsTheQueenDefender(unittest.TestCase):
     """
 
     def test_it_always_shows_the_queen_holding_the_pair_second_seat(self) -> None:
-        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK))
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK), leader=EAST)
         layout["current_trick_suit"] = (SPADES, 0, 0)
         layout["current_trick_rank"] = (2, 0, 0)  # one card already led
 
@@ -420,7 +431,7 @@ class TestTheAlwaysShowsTheQueenDefender(unittest.TestCase):
         self.assertEqual(distribution, [(Card(SPADES, QUEEN), 1.0)])
 
     def test_it_plays_low_holding_only_the_queen_second_seat(self) -> None:
-        layout = _south_second_seat_layout((1 << QUEEN) | (1 << 5))
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << 5), leader=EAST)
         layout["current_trick_suit"] = (SPADES, 0, 0)
         layout["current_trick_rank"] = (2, 0, 0)
 
@@ -439,7 +450,7 @@ class TestTheAlwaysShowsTheQueenDefender(unittest.TestCase):
         # Mirrors the same regression test on the 50/50 defender above:
         # second seat, both honours legal, but only because this
         # defender is void in the suit actually led.
-        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK))
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK), leader=EAST)
         layout["current_trick_suit"] = (DIAMONDS, 0, 0)
         layout["current_trick_rank"] = (5, 0, 0)
 
@@ -604,10 +615,9 @@ class TestTheScriptRuns(unittest.TestCase):
         self.assertIn("ace 57%  --  finesse 43%", doc)  # queen branch, always-shows-the-queen
         self.assertIn("ace 0%  --  finesse 100%", doc)  # jack branch, always-shows-the-queen
 
-        # The third defender the module docstring promises ("three
-        # defenders") is actually run and printed, not only exercised in
-        # this test file -- the specific regression the previous review
-        # round caught.
+        # The fourth defender the module docstring promises is actually
+        # run and printed, not only exercised in this test file -- the
+        # specific regression a previous review round caught.
         self.assertIn("never hides a jack behind a queen", doc)
         self.assertIn("exact mirror of the always-shows-the-queen defender", doc)
 
