@@ -13,20 +13,28 @@
 | 3/7 | finesse read, queen branch, vs a defender who always shows the queen from the pair | golden -- showing the queen is no longer any tell there, so the posterior is the raw prior odds, not the restricted-choice-adjusted one |
 | 100% | finesse read, jack branch, vs that same always-shows-the-queen defender | golden -- that defender can never show the jack while still holding the queen, so the posterior this example reads is provably 1, not merely measured as 1, but the test itself still computes it the same way as every other row above, not by an independent derivation |
 | 1.0 / 3/7 | the mirror image, queen/jack, against a defender who always plays its lowest legal card | golden -- "lowest always" prefers the jack (the lower-ranked card) from the pair, so it is the *queen* that becomes the dead giveaway there, not the jack |
-| 65/126 | cash the king, then read the beliefs, vs the 50/50 defender | golden |
-| 65/126 | the same, vs `DoubleDummyDefender` specifically | golden -- pinned directly rather than left to be inferred from the 50/50 agreement claim plus a separately-asserted number |
+| 95/126 | cash the king, then read the beliefs, vs the 50/50 defender | golden |
+| 65/126 | the same, vs `DoubleDummyDefender` specifically | golden -- *not* equal to the row above, even though the two agree exactly on the genuine small-card node's own reading (`TestTheFinesseReading`); see `TestAlwaysDucksWhenNorthIsVoid` for why the always-duck-when-void technique behind the gap does not pay off against this one defender |
 | 10/21 | always rise with the ace instead, vs the 50/50 defender | golden; 10/21 is exactly the posterior mass of the 2-2 spade breaks in this belief space, and is unchanged by which defender is paired with it, since rising never reaches a node where the belief mattered |
-| 15/28 | cash the king, then read the beliefs, vs the always-shows-the-queen defender | golden; higher than 10/21 even though the one node this example reports reads "rise" there too -- every *other* node in the tree is still read on its own belief |
-| 15/28 | the same, vs a defender who always plays its lowest legal card | golden; equal to the always-shows-the-queen figure above by the same mirror symmetry row 15 already describes, not a second coincidence |
+| 65/84 | cash the king, then read the beliefs, vs the always-shows-the-queen defender | golden |
+| 55/84 | the same, vs a defender who always plays its lowest legal card | golden; the mirror image of the always-shows-the-queen figure above, by the same mirror symmetry row 15 already describes -- not a second coincidence, but not numerically equal either, since the two defenders' own "void" play differs along with their second-seat one |
 
 A belief-space node sharing a South-honour key with another one is not
-itself a bug -- North voiding out of spades entirely (South holding all
-four missing cards) reaches the same key with a structurally different,
-generally much larger `danger`. `_norths_second_card_is_a_genuine_small_spade`
-excludes those nodes from `ace_vs_finesse_readings`'s own result, and
+itself a bug -- North voiding out of spades entirely (South holding three
+or four of the missing cards) reaches the same key with a structurally
+different, generally much larger `danger`.
+`_norths_second_card_is_a_genuine_small_spade` excludes those nodes from
+`ace_vs_finesse_readings`'s own result, and
 `TestNorthsSecondCardIsAGenuineSmallSpade` pins that directly rather than
 relying on the evaluator's own traversal order to keep picking the right
-one first.
+one first. The declarer strategy itself, unlike the reporting helper,
+cannot just exclude those nodes -- it still has to play *something* there
+-- so it always ducks instead of reading `danger` as a probability to
+act on; see `TestAlwaysDucksWhenNorthIsVoid` for why that is right when
+South holds three of the missing cards (ducking wins a layout rising
+would lose) and merely harmless when South holds all four (the contract
+is unmakeable regardless, so neither choice can do better than the
+other).
 """
 
 import unittest
@@ -34,7 +42,7 @@ import unittest
 import dds3
 
 import restricted_choice_6nt_belief_space as example
-from bridge_notation import CLUBS, DIAMONDS, EAST, WEST
+from bridge_notation import CLUBS, DIAMONDS, EAST, SOUTH, WEST
 from strategies import double_dummy_defender, lowest_eligible_defender
 
 Card = example.Card
@@ -44,20 +52,47 @@ TEN, ACE = example.TEN, example.ACE
 
 
 class _FakeState:
-    """A duck-typed stand-in for `ObservationState`, carrying only the
-    three attributes `_lead_spade_or_the_lone_club` and
-    `_third_hand_after_the_ace_decision` actually read: `declarer`,
-    `trick_leader`, and `known_holdings`. The real type is read-only and
-    not constructible from Python (nothing builds one outside the
-    evaluator), so a direct unit test of either helper needs a stand-in
-    rather than a real instance.
+    """A duck-typed stand-in for `ObservationState`. The real type is
+    read-only and not constructible from Python (nothing builds one
+    outside the evaluator), so a direct unit test of a function that
+    reads one needs a stand-in rather than a real instance. Carries only
+    what the functions tested against it actually read: `declarer`,
+    `trick_leader` and `known_holdings` for `_lead_spade_or_the_lone_club`
+    and `_third_hand_after_the_ace_decision`; `legal_cards`,
+    `current_trick` and `position_in_trick` as well, for
+    `cash_the_king_then_read_the_beliefs` itself.
     """
 
-    def __init__(self, declarer, trick_leader=None, declarer_spades=0):
+    def __init__(
+        self, declarer, trick_leader=None, declarer_spades=0,
+        legal_cards=None, current_trick=None, position_in_trick=None,
+    ):
         self.declarer = declarer
         self.trick_leader = trick_leader
         self.known_holdings = {"remain_cards": [[0, 0, 0, 0] for _ in range(4)]}
         self.known_holdings["remain_cards"][declarer][SPADES] = declarer_spades
+        self.legal_cards = legal_cards or []
+        self.current_trick = current_trick or []
+        self.position_in_trick = position_in_trick
+
+
+class _FakeEntry:
+    """A duck-typed stand-in for `BeliefEntry`: `layout` and `posterior`,
+    the only two attributes `_danger_south_still_guards_an_honour` reads.
+    """
+
+    def __init__(self, layout, posterior):
+        self.layout = layout
+        self.posterior = posterior
+
+
+class _FakeView:
+    """A duck-typed stand-in for `BeliefView`: just `entries`, the only
+    attribute `_danger_south_still_guards_an_honour` reads.
+    """
+
+    def __init__(self, entries):
+        self.entries = entries
 
 
 def _south_second_seat_layout(south_spades: int) -> dict:
@@ -188,6 +223,49 @@ class TestThirdHandAfterTheAceDecision(unittest.TestCase):
         self.assertEqual(
             example._third_hand_after_the_ace_decision(legal, on_trick, state, EAST),
             Card(SPADES, 4))
+
+
+class TestAlwaysDucksWhenNorthIsVoid(unittest.TestCase):
+    """`cash_the_king_then_read_the_beliefs` itself, at the one node a
+    previous review round caught: North already void and discarding,
+    not following with a genuine small card. `_danger_south_still_guards_
+    an_honour` always reads 1.0 there, but the two layouts that reach it
+    do not share an outcome -- South holding three of the missing cards
+    is a genuine win for ducking (rising loses it instead), and South
+    holding all four is lost regardless of this decision, which the
+    second test below confirms by checking both choices lose it, not by
+    asserting which one is "correct" where neither is.
+    """
+
+    def _decide(self, souths_remaining_spades: int) -> Card:
+        legal = [Card(SPADES, ACE), Card(SPADES, 9), Card(SPADES, 6), Card(SPADES, 4)]
+        on_trick = [Card(SPADES, 3), Card(DIAMONDS, 3)]  # West's lead, North's void discard
+        state = _FakeState(
+            declarer=WEST, trick_leader=WEST, position_in_trick=2,
+            legal_cards=legal, current_trick=on_trick)
+        layout = {"remain_cards": [[0, 0, 0, 0] for _ in range(4)]}
+        layout["remain_cards"][SOUTH][SPADES] = souths_remaining_spades
+        view = _FakeView([_FakeEntry(layout, 1.0)])
+
+        return example.cash_the_king_then_read_the_beliefs(state, view)
+
+    def test_ducks_when_south_holds_three_the_winning_choice_there(self) -> None:
+        # South started with the queen, the jack, and one small card,
+        # already shown an honour on round one; by this node South's
+        # remaining two cards are the jack and the other small card.
+        card = self._decide((1 << JACK) | (1 << 8))
+
+        self.assertEqual(card, Card(SPADES, example.NINE))
+
+    def test_ducks_when_south_holds_all_four_too_though_nothing_wins_it(self) -> None:
+        # South holds every missing card; the contract cannot be made
+        # regardless of this decision (see this function's own
+        # docstring), but the rule is still "always duck" here, not
+        # "duck only when it helps" -- there is nothing in `danger` that
+        # distinguishes this layout from the three-card one above.
+        card = self._decide((1 << QUEEN) | (1 << JACK) | (1 << 8) | (1 << 5))
+
+        self.assertEqual(card, Card(SPADES, example.NINE))
 
 
 class TestNorthsSecondCardIsAGenuineSmallSpade(unittest.TestCase):
@@ -398,7 +476,7 @@ class TestPMake(unittest.TestCase):
         belief_value = example.evaluate(sequence, source, example.cash_the_king_then_read_the_beliefs, defence)
         ace_value = example.evaluate(sequence, source, example.always_rise_with_the_ace, defence)
 
-        self.assertAlmostEqual(belief_value["p_make"], 65 / 126)
+        self.assertAlmostEqual(belief_value["p_make"], 95 / 126)
         self.assertAlmostEqual(ace_value["p_make"], 10 / 21)
         self.assertGreater(belief_value["p_make"], ace_value["p_make"])
 
@@ -421,11 +499,15 @@ class TestPMake(unittest.TestCase):
     def test_reading_the_beliefs_still_beats_always_rising_under_double_dummy(self) -> None:
         # The module docstring's "every defender measured here" claim,
         # pinned directly for DoubleDummyDefender rather than left to be
-        # inferred from two separately-asserted numbers: it agrees with
-        # the bespoke 50/50 defender exactly (see main()'s own printed
-        # check), so this should, and does, match
-        # test_reading_the_beliefs_scores_higher_than_always_rising_here's
-        # own 65/126 and 10/21.
+        # inferred from two separately-asserted numbers. This no longer
+        # matches test_reading_the_beliefs_scores_higher_than_always_rising_
+        # here's own 95/126: DoubleDummyDefender reads the genuine
+        # small-card node exactly the way the bespoke 50/50 defender does,
+        # but the always-duck-when-void technique does not pay off against
+        # it the way it does against the other three defenders, since that
+        # technique relies on the defender's own remaining cards coming out
+        # lowest-first, which a real double-dummy defender is not obliged
+        # to do. 65/126 is this defender's own number, not a derived one.
         sequence = example.restricted_choice_6nt()
         root = sequence.current_deal
         record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
@@ -450,7 +532,7 @@ class TestPMake(unittest.TestCase):
         belief_value = example.evaluate(sequence, source, example.cash_the_king_then_read_the_beliefs, defence)
         ace_value = example.evaluate(sequence, source, example.always_rise_with_the_ace, defence)
 
-        self.assertAlmostEqual(belief_value["p_make"], 15 / 28)
+        self.assertAlmostEqual(belief_value["p_make"], 65 / 84)
         self.assertAlmostEqual(ace_value["p_make"], 10 / 21)
         self.assertGreater(belief_value["p_make"], ace_value["p_make"])
 
@@ -468,7 +550,7 @@ class TestPMake(unittest.TestCase):
         belief_value = example.evaluate(sequence, source, example.cash_the_king_then_read_the_beliefs, defence)
         ace_value = example.evaluate(sequence, source, example.always_rise_with_the_ace, defence)
 
-        self.assertAlmostEqual(belief_value["p_make"], 15 / 28)
+        self.assertAlmostEqual(belief_value["p_make"], 55 / 84)
         self.assertAlmostEqual(ace_value["p_make"], 10 / 21)
         self.assertGreater(belief_value["p_make"], ace_value["p_make"])
 
@@ -482,9 +564,11 @@ class TestTheScriptRuns(unittest.TestCase):
             example.main()
 
         doc = out.getvalue()
-        self.assertIn("P_make = 0.5159", doc)
+        self.assertIn("P_make = 0.7540", doc)
         self.assertIn("P_make = 0.4762", doc)
-        self.assertIn("P_make = 0.5357", doc)
+        self.assertIn("P_make = 0.5159", doc)
+        self.assertIn("P_make = 0.7738", doc)
+        self.assertIn("P_make = 0.6548", doc)
         self.assertIn("47.62%", doc)
         self.assertIn("7.94%", doc)
         self.assertIn("5.95%", doc)
