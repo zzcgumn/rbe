@@ -69,7 +69,18 @@ py_library(
     name = "restricted_choice_6nt_lib",
     srcs = ["restricted_choice_6nt_belief_space.py"],
     imports = ["."],
-    deps = [":example_support"],
+    deps = [
+        # Imported directly by restricted_choice_6nt_belief_space.py
+        # itself, not only reached transitively through
+        # example_support's own strategies.py -- listed explicitly per
+        # this package's "every direct dependency in deps" rule
+        # (.github/instructions/bazel.instructions.md), rather than
+        # relying on example_support to keep providing them.
+        "//python:belief_space_local_evaluation_lib",
+        "//python:bridge_notation_lib",
+        "@dds//python:dds3_lib",
+        ":example_support",
+    ],
 )
 
 py_binary(
@@ -84,5 +95,13 @@ py_test(
     size = "small",
     srcs = ["test_restricted_choice_6nt.py"],
     main = "test_restricted_choice_6nt.py",
-    deps = [":restricted_choice_6nt_lib"],
+    deps = [
+        # test_restricted_choice_6nt.py also imports dds3, bridge_notation
+        # and strategies directly, not only the example module itself --
+        # same explicit-dependency rule as restricted_choice_6nt_lib above.
+        "//python:bridge_notation_lib",
+        "@dds//python:dds3_lib",
+        ":example_support",
+        ":restricted_choice_6nt_lib",
+    ],
 )

@@ -23,7 +23,7 @@ A belief-space node sharing a South-honour key with another one is not
 itself a bug -- North voiding out of spades entirely (South holding all
 four missing cards) reaches the same key with a structurally different,
 generally much larger `danger`. `_norths_second_card_is_a_genuine_small_spade`
-excludes those nodes from `_FINESSE_READING_BY_SOUTHS_HONOUR`, and
+excludes those nodes from `ace_vs_finesse_readings`'s own result, and
 `TestNorthsSecondCardIsAGenuineSmallSpade` pins that directly rather than
 relying on the evaluator's own traversal order to keep picking the right
 one first.
@@ -329,9 +329,7 @@ class TestTheFinesseReading(unittest.TestCase):
         record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
         source = example.bsle.ExhaustiveLayoutSource(root, sequence.declarer, example.SEED, record=record)
 
-        example._FINESSE_READING_BY_SOUTHS_HONOUR.clear()
-        example.evaluate(sequence, source, example.cash_the_king_then_read_the_beliefs, delta)
-        return dict(example._FINESSE_READING_BY_SOUTHS_HONOUR)
+        return example.ace_vs_finesse_readings(sequence, source, delta)
 
     def test_it_is_60_percent_either_way_against_the_bespoke_defender(self) -> None:
         readings = self._readings(example.randomises_queen_jack_in_second_seat)

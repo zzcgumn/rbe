@@ -107,17 +107,6 @@ SEED = 1
 # ace -- see that function's own docstring.
 NINE = 9
 
-# The one piece of state this module carries outside a strategy's own
-# arguments: the probability `cash_the_king_then_read_the_beliefs` computes
-# at its one belief-dependent node, captured purely for `main()` to report.
-# Keyed by which honour South showed on the first round (QUEEN or JACK) --
-# the two branches this example contrasts, since North's second-round
-# small card is the same "last possible small card" event either way.
-# Nothing here feeds back into the card the strategy returns -- see that
-# function's own docstring for why a side channel is used instead of
-# reasoning the number out a second time afterwards.
-_FINESSE_READING_BY_SOUTHS_HONOUR = {}
-
 
 def restricted_choice_6nt() -> PlaySequence:
     """The deal, and the eight tricks that lead to the ending."""
@@ -251,7 +240,7 @@ def _norths_second_card_is_a_genuine_small_spade(on_trick) -> bool:
     missing cards, forcing North to zero of them).
 
     This is the gate on whether a node's `danger` is folded into
-    `_FINESSE_READING_BY_SOUTHS_HONOUR`: a void discard is a structurally
+    `ace_vs_finesse_readings`'s own `readings` dict: a void discard is a structurally
     different, and in general differently weighted, belief-space node --
     South having all four missing cards makes South's retaining one of
     them a near-certainty, nothing like the genuine small-card case --
@@ -265,6 +254,45 @@ def _norths_second_card_is_a_genuine_small_spade(on_trick) -> bool:
     through a full `evaluate()` run.
     """
     return on_trick[1].suit == SPADES
+
+
+def _danger_south_still_guards_an_honour(state, on_trick, view, dummy):
+    """Pure function of `(state, view)` (plus `on_trick`/`dummy`, both
+    already derivable from `state` and repeated here only so a caller
+    that already has them need not recompute them): `None` everywhere
+    except `cash_the_king_then_read_the_beliefs`'s one belief-dependent
+    node -- king already gone, ace still held, and North's just-played
+    card not an honour -- where it is the belief-space posterior that
+    South, not yet seen this trick, still holds the queen or the jack.
+
+    Factored out of `cash_the_king_then_read_the_beliefs` itself so that
+    function can stay a genuinely pure declarer strategy -- no side
+    channel of its own -- while `ace_vs_finesse_readings` below can still
+    report this exact number: both call this same function, rather than
+    one of them writing it somewhere the other reads it back from.
+    """
+    legal = state.legal_cards
+    if not (state.trick_leader in (state.declarer, dummy) and state.position_in_trick == 2):
+        return None
+    if pick(legal, SPADES, KING) is not None:
+        return None
+    if pick(legal, SPADES, ACE) is None:
+        return None
+    if any(c.suit == SPADES and c.rank >= JACK for c in on_trick):
+        return None
+
+    # `trick_leader + 3` is South's seat here specifically because this
+    # line is only reachable with `trick_leader == declarer` (West
+    # leading round two) -- the sibling case, `trick_leader == dummy`
+    # (East leading round one), already returned `None` above (the king
+    # check). Were that short-circuit ever reordered or removed, this
+    # would silently compute North's seat instead of South's, with no
+    # error anywhere -- the specific shape of bug this file's review
+    # history already has two instances of.
+    souths_seat = (state.trick_leader + 3) % 4
+    return sum(
+        entry.posterior for entry in view.entries
+        if entry.layout["remain_cards"][souths_seat][SPADES] & ((1 << QUEEN) | (1 << JACK)))
 
 
 def cash_the_king_then_read_the_beliefs(state, view):
@@ -288,20 +316,17 @@ def cash_the_king_then_read_the_beliefs(state, view):
       reading it either way, and the ace can never lose to it regardless.
     - North shows small (their last possible small card): the belief space
       is asked directly whether South -- not yet seen this trick -- still
-      guards one of the two honours. Above even odds, rise with the ace;
-      at or below, duck (keep the ace, and let the ten, still in hand,
-      settle whatever North is left holding on a later round -- see
-      `_lead_spade_or_the_lone_club` and `_third_hand_after_the_ace_decision`
-      for exactly how that later round is handled, which is not "lead
-      low" the way every other round here is).
+      guards one of the two honours (`_danger_south_still_guards_an_honour`).
+      Above even odds, rise with the ace; at or below, duck (keep the ace,
+      and let the ten, still in hand, settle whatever North is left
+      holding on a later round -- see `_lead_spade_or_the_lone_club` and
+      `_third_hand_after_the_ace_decision` for exactly how that later
+      round is handled, which is not "lead low" the way every other
+      round here is).
 
-    `view.entries` is read, and its result stashed in the module-level
-    `_FINESSE_READING_BY_SOUTHS_HONOUR`, only for `main()` to report afterwards --
-    not to influence this call's own return value, so the strategy stays a
-    pure function of `(state, view)` as the evaluator requires. A second,
-    separate evaluate() call, built the ordinary way from scratch, would
-    have to re-derive the identical number; capturing it here instead of
-    recomputing it is the plainer way to get it into the report.
+    A pure function of `(state, view)`, with no side channel of its own:
+    see `ace_vs_finesse_readings` for how the belief this function reads
+    gets reported without this function writing it anywhere itself.
     """
     legal = state.legal_cards
     on_trick = state.current_trick
@@ -310,6 +335,13 @@ def cash_the_king_then_read_the_beliefs(state, view):
         return _lead_spade_or_the_lone_club(legal, state)
 
     dummy = (state.declarer + 2) % 4
+    danger = _danger_south_still_guards_an_honour(state, on_trick, view, dummy)
+    if danger is not None:
+        if danger > 0.5:
+            return pick(legal, SPADES, ACE)
+        nine = pick(legal, SPADES, NINE)
+        return nine or min(legal, key=lambda c: (c.rank, c.suit))
+
     if state.trick_leader in (state.declarer, dummy) and state.position_in_trick == 2:
         king = pick(legal, SPADES, KING)
         if king is not None:
@@ -317,47 +349,11 @@ def cash_the_king_then_read_the_beliefs(state, view):
 
         ace = pick(legal, SPADES, ACE)
         if ace is not None:
-            if any(c.suit == SPADES and c.rank >= JACK for c in on_trick):
-                return ace
-
-            # `trick_leader + 3` is South's seat here specifically because
-            # this line is only reachable with `trick_leader == declarer`
-            # (West leading round two) -- the sibling case, `trick_leader
-            # == dummy` (East leading round one), always returns earlier
-            # via the king check above. Were that short-circuit ever
-            # reordered or removed, this would silently compute North's
-            # seat instead of South's, with no error anywhere -- the
-            # specific shape of bug this file's review history already
-            # has two instances of.
-            souths_seat = (state.trick_leader + 3) % 4
-            danger = sum(
-                entry.posterior for entry in view.entries
-                if entry.layout["remain_cards"][souths_seat][SPADES] & ((1 << QUEEN) | (1 << JACK)))
-
-            # `history[1]` is South's first card specifically because
-            # dummy always leads round one (the only round this example
-            # ever reaches with an empty history) and South sits
-            # immediately after dummy -- not a general fact about
-            # `history`'s indexing, only true given this file's fixed
-            # seating.
-            souths_first_card = state.history[1]
-            if (souths_first_card.suit == SPADES and souths_first_card.rank in (QUEEN, JACK)
-                    and _norths_second_card_is_a_genuine_small_spade(on_trick)):
-                # The two branches this example contrasts: South's first
-                # round and North's "last possible small card" round
-                # already happened (the honour-on-the-trick check above
-                # has already ruled out North also showing one here), so
-                # this is exactly "jack from South, two small from North"
-                # or "queen from South, two small from North" -- keyed by
-                # which one South showed, not by whether this is the real
-                # deal's own branch (that is South's queen specifically,
-                # but the jack branch is just as real a node in the tree).
-                _FINESSE_READING_BY_SOUTHS_HONOUR.setdefault(
-                    souths_first_card.rank, 1.0 - danger)
-            if danger > 0.5:
-                return ace
-            nine = pick(legal, SPADES, NINE)
-            return nine or min(legal, key=lambda c: (c.rank, c.suit))
+            # _danger_south_still_guards_an_honour already returned None
+            # above, and the only way it does that with the ace held is
+            # North having just shown an honour -- win with it every time
+            # (see this function's own docstring for why).
+            return ace
 
         return _third_hand_after_the_ace_decision(legal, on_trick, state, dummy)
 
@@ -499,6 +495,47 @@ def spade_split_frequencies(sequence, source) -> dict:
     return frequencies
 
 
+def ace_vs_finesse_readings(sequence, source, delta) -> dict:
+    """The conditional probability that rising with the ace is correct,
+    against taking the finesse, at `cash_the_king_then_read_the_beliefs`'s
+    one belief-dependent node -- once North has followed with their last
+    possible small card -- keyed by which honour South showed on the
+    first round (`QUEEN` or `JACK`), against the given defender.
+
+    Settled with a dedicated `evaluate()` call, the same way
+    `spade_split_frequencies` settles the root's own prior: `probe` plays
+    exactly the game `cash_the_king_then_read_the_beliefs` itself would
+    (it calls that function directly for the returned card, so the two
+    can never disagree about what is actually played), and separately
+    reads `_danger_south_still_guards_an_honour` -- the same pure
+    function `cash_the_king_then_read_the_beliefs` itself reads -- into
+    a `readings` dict that lives only in this call's own closure. Nothing
+    is written to module-level state anywhere in this package: the
+    declarer strategy stays a pure function of `(state, view)`, and this
+    reporting need is met by asking the same question again from
+    outside it, not by having the strategy answer twice.
+    """
+    readings = {}
+
+    def probe(state, view):
+        card = cash_the_king_then_read_the_beliefs(state, view)
+
+        on_trick = state.current_trick
+        if on_trick:
+            dummy = (state.declarer + 2) % 4
+            danger = _danger_south_still_guards_an_honour(state, on_trick, view, dummy)
+            if danger is not None:
+                souths_first_card = state.history[1]
+                if (souths_first_card.suit == SPADES and souths_first_card.rank in (QUEEN, JACK)
+                        and _norths_second_card_is_a_genuine_small_spade(on_trick)):
+                    readings.setdefault(souths_first_card.rank, 1.0 - danger)
+
+        return card
+
+    evaluate(sequence, source, probe, delta)
+    return readings
+
+
 def _print_ace_vs_the_finesse(readings_by_souths_honour, label) -> None:
     """Print the conditional probability of rising with the ace against
     taking the finesse, for each of the two branches `main()` tracks: the
@@ -563,11 +600,10 @@ def main() -> None:
 
     defence = randomises_queen_jack_in_second_seat
 
-    _FINESSE_READING_BY_SOUTHS_HONOUR.clear()
     belief_value = evaluate(sequence, source, cash_the_king_then_read_the_beliefs, defence)
     print(f"Cash the king, then read the beliefs:  P_make = {belief_value['p_make']:.4f}")
     _print_ace_vs_the_finesse(
-        _FINESSE_READING_BY_SOUTHS_HONOUR, "the bespoke 50/50 defender")
+        ace_vs_finesse_readings(sequence, source, defence), "the bespoke 50/50 defender")
     print(
         "    The two branches agree exactly: a defender who genuinely "
         "randomises between the queen and the jack makes either one "
@@ -584,11 +620,9 @@ def main() -> None:
         "whichever honour North is left holding, at no cost back in the "
         "2-2 layouts it was never risking in the first place.")
 
-    # No clear()/read of _FINESSE_READING_BY_SOUTHS_HONOUR around this one:
-    # this call's own ace-vs-finesse breakdown would just repeat the
-    # bespoke 50/50 defender's, which the P_make agreement already printed
-    # below establishes -- nothing here reads the dict before the next
-    # clear() does, ahead of the always-shows-the-queen block.
+    # No ace_vs_finesse_readings() call around this one: its own
+    # breakdown would just repeat the bespoke 50/50 defender's, which the
+    # P_make agreement already printed below establishes.
     ctx = dds3.SolverContext()
     double_dummy_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs, double_dummy_defender(ctx))
@@ -597,7 +631,6 @@ def main() -> None:
         f"agrees with the bespoke 50/50 exactly here: P_make = "
         f"{double_dummy_value['p_make']:.4f}.")
 
-    _FINESSE_READING_BY_SOUTHS_HONOUR.clear()
     no_tell_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs,
         always_shows_the_queen_from_qj_in_second_seat)
@@ -606,7 +639,8 @@ def main() -> None:
         f"and the jack together -- never the jack -- instead: "
         f"P_make = {no_tell_value['p_make']:.4f}.")
     _print_ace_vs_the_finesse(
-        _FINESSE_READING_BY_SOUTHS_HONOUR, "the always-shows-the-queen defender")
+        ace_vs_finesse_readings(sequence, source, always_shows_the_queen_from_qj_in_second_seat),
+        "the always-shows-the-queen defender")
     print(
         "    No longer close: a defender who never prefers the jack makes "
         "showing it a dead giveaway (it is certainly a bare jack), while "
@@ -617,7 +651,6 @@ def main() -> None:
         "the tree is read on its own belief, not forced to this one "
         "node's answer.")
 
-    _FINESSE_READING_BY_SOUTHS_HONOUR.clear()
     never_hides_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs, lowest_eligible_defender)
     print(
@@ -625,7 +658,8 @@ def main() -> None:
         f"at all -- plays its lowest legal card, full stop -- instead: "
         f"P_make = {never_hides_value['p_make']:.4f}.")
     _print_ace_vs_the_finesse(
-        _FINESSE_READING_BY_SOUTHS_HONOUR, "a defender who never hides a jack behind a queen")
+        ace_vs_finesse_readings(sequence, source, lowest_eligible_defender),
+        "a defender who never hides a jack behind a queen")
     print(
         "    The exact mirror of the always-shows-the-queen defender "
         "above, not a repeat of it: this one prefers the lower-ranked "
