@@ -424,7 +424,14 @@ def randomises_queen_jack_in_second_seat(layout, seat, state):
     legal = legal_cards(layout, seat)
     on_trick = cards_on_trick(layout)
 
-    if len(on_trick) == 1:
+    # `on_trick[0].suit == SPADES` is load-bearing, not a sanity check:
+    # without it, this also fires whenever a non-spade trick is led and
+    # this defender is void in that suit (every spade, including both
+    # honours, is then a legal discard too), making it randomise a
+    # discard instead of following the documented "every other seat...
+    # plays its lowest legal card" rule on a trick that was never a
+    # second-seat spade decision at all.
+    if len(on_trick) == 1 and on_trick[0].suit == SPADES:
         queen = pick(legal, SPADES, QUEEN)
         jack = pick(legal, SPADES, JACK)
         if queen is not None and jack is not None:
@@ -451,7 +458,12 @@ def always_shows_the_queen_from_qj_in_second_seat(layout, seat, state):
     legal = legal_cards(layout, seat)
     on_trick = cards_on_trick(layout)
 
-    if len(on_trick) == 1:
+    # See randomises_queen_jack_in_second_seat's own comment on this same
+    # check: without the suit restriction, a non-spade trick this
+    # defender is void in would also hand it both spade honours as legal
+    # discards, firing this special case on a trick that is not a
+    # second-seat spade decision at all.
+    if len(on_trick) == 1 and on_trick[0].suit == SPADES:
         queen = pick(legal, SPADES, QUEEN)
         jack = pick(legal, SPADES, JACK)
         if queen is not None and jack is not None:
@@ -496,11 +508,13 @@ def spade_split_frequencies(sequence, source) -> dict:
 
 
 def ace_vs_finesse_readings(sequence, source, delta) -> dict:
-    """The conditional probability that rising with the ace is correct,
-    against taking the finesse, at `cash_the_king_then_read_the_beliefs`'s
-    one belief-dependent node -- once North has followed with their last
+    """The conditional probability that *the finesse* is correct, against
+    rising with the ace, at `cash_the_king_then_read_the_beliefs`'s one
+    belief-dependent node -- once North has followed with their last
     possible small card -- keyed by which honour South showed on the
-    first round (`QUEEN` or `JACK`), against the given defender.
+    first round (`QUEEN` or `JACK`), against the given defender. (The
+    complementary ace-is-correct probability a caller may also want is
+    just one minus this; `_print_ace_vs_the_finesse` reports both.)
 
     Settled with a dedicated `evaluate()` call, the same way
     `spade_split_frequencies` settles the root's own prior: `probe` plays

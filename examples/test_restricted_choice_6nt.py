@@ -283,6 +283,20 @@ class TestTheBespokeDefender(unittest.TestCase):
 
         self.assertEqual(distribution, [(Card(SPADES, JACK), 1.0)])
 
+    def test_it_plays_low_void_in_second_seat_on_a_non_spade_trick(self) -> None:
+        # Second seat, one card already played, and both honours legal --
+        # but only because this defender is void in the suit actually led
+        # (diamonds here) and every card, including both spade honours,
+        # is consequently a legal discard. This is not a second-seat
+        # spade decision at all, and must not randomise as if it were.
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK))
+        layout["current_trick_suit"] = (DIAMONDS, 0, 0)
+        layout["current_trick_rank"] = (5, 0, 0)
+
+        distribution = example.randomises_queen_jack_in_second_seat(layout, 2, None)
+
+        self.assertEqual(distribution, [(Card(SPADES, JACK), 1.0)])
+
 
 class TestTheAlwaysShowsTheQueenDefender(unittest.TestCase):
     """`always_shows_the_queen_from_qj_in_second_seat`, the deliberate
@@ -310,6 +324,18 @@ class TestTheAlwaysShowsTheQueenDefender(unittest.TestCase):
 
     def test_it_plays_low_holding_the_queen_and_the_jack_as_the_leader(self) -> None:
         layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK))
+
+        distribution = example.always_shows_the_queen_from_qj_in_second_seat(layout, 2, None)
+
+        self.assertEqual(distribution, [(Card(SPADES, JACK), 1.0)])
+
+    def test_it_plays_low_void_in_second_seat_on_a_non_spade_trick(self) -> None:
+        # Mirrors the same regression test on the 50/50 defender above:
+        # second seat, both honours legal, but only because this
+        # defender is void in the suit actually led.
+        layout = _south_second_seat_layout((1 << QUEEN) | (1 << JACK))
+        layout["current_trick_suit"] = (DIAMONDS, 0, 0)
+        layout["current_trick_rank"] = (5, 0, 0)
 
         distribution = example.always_shows_the_queen_from_qj_in_second_seat(layout, 2, None)
 
