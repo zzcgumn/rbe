@@ -19,16 +19,14 @@ one, is in spades. Declarer and dummy hold A K T 9 7 6 4 3 2 between them,
 nine cards; North and South hold the other four -- Q J 8 5 -- split some
 way that is not known.
 
-The plan: lead low from dummy to the king in hand first (safe regardless of
-the split -- nothing but the ace beats a king, and the ace is dummy's own).
-Then lead low again -- the higher of hand's two remaining small cards,
-specifically, keeping the lower one as the safe spare the ten-unblocking
-technique below relies on; see `_lead_spade_or_the_lone_club`'s own
-docstring for exactly why. What North follows with on *that* trick settles
-everything below the two honours -- the eight and the five are the only
-other outstanding cards, so this is necessarily North's last possible
-small card, unless North is already void (South holding all four missing
-cards). Three cases, not two:
+The plan: lead low from dummy to the king in hand first, then lead low
+again -- the higher of hand's two remaining small cards, specifically,
+keeping the lower one as the safe spare the ten-unblocking technique
+below relies on; see `_lead_spade_or_the_lone_club`'s own docstring for
+exactly why. What North follows with on *that* trick settles everything
+below the two honours -- the eight and the five are the only other
+outstanding cards, so this is necessarily North's last possible small
+card, unless North is already void. Three cases, not two:
 
 - North shows an honour: win with the ace every time -- there is nothing
   to read, a defender who still held the other honour behind the one just
@@ -38,21 +36,45 @@ cards). Three cases, not two:
   the ten, still in hand, once South's own card -- not yet seen, and
   played to *this same trick* -- has settled where the last card is).
   Genuinely risky either way: South could reveal the danger card on this
-  very trick, so a wrong duck here can lose outright, on the spot.
+  very trick, so a wrong duck here can lose outright, on the spot. A
+  singleton honour in *South's* hand also lands here: South shows it
+  forced, on the very first round, and North's own two small cards are
+  then read exactly like any genuine 2-2 break.
 - North is already void and discards: always duck, regardless of what the
   belief space says -- it always says South certainly guards an honour
   here, but that is a fact about South's length, not a reason to rise.
-  This covers two different layouts, though, and they do not share an
-  outcome. With three of the missing cards, South cannot be squeezed into
-  showing the second honour on *this* trick -- it comes out one round
-  later instead, forced straight into the ace already waiting on lead by
-  then; ducking wins this layout outright, where rising would have spent
-  the ace for nothing and lost. With all four, the contract cannot be
-  made regardless of this decision -- South's remaining honour outranks
-  this side's only card left above the small spades (the ten) once the
-  king and the ace are both gone, which happens by the third round
-  either way -- so ducking is "free" there only in the sense that it
-  loses the layout no worse than rising would, not because it wins it.
+  Two different layouts share this branch, and they do not share an
+  outcome.
+
+  When South holds the queen *and* the jack -- whether with one small
+  card alongside them or two -- the contract cannot be made by either
+  choice at this trick. South's remaining honour outranks this side's
+  only card left above the small spades (the ten) once the king and the
+  ace are both gone, which happens by the third round regardless of
+  which way this trick goes, and South always has a spot card in hand to
+  hold the second honour back that long. Ducking is "free" there only in
+  the sense that it loses no worse than rising would.
+
+  The other layout sharing this branch -- North's own singleton is the
+  *honour*, with South holding the other honour plus both small cards --
+  is one this plan simply loses, and it is this plan's first move that
+  loses it, not its second. "Lead low to the king first" is not the
+  risk-free opening its own safety (nothing beats a king) makes it look
+  like: it is already a bet that *South*, not North, is the hand hiding
+  a dangerous singleton honour, the same kind of bet the later
+  ace-or-duck decision makes openly and reads the belief space for. This
+  earlier bet is never read anywhere -- the king is led for unconditionally,
+  on every call, regardless of which side the belief space would actually
+  favour. Checked directly against a double-dummy solver, the bet is
+  wrong exactly backwards for this layout: leading the *ace* first, not
+  the king, is what makes all five tricks here; led this plan's way
+  instead, the contract is already down to two tricks out of five before
+  the later duck-or-rise choice is even reached, and no choice at that
+  later point wins the rest back (though ducking still salvages more of
+  it than rising does -- see `always_rise_with_the_ace`'s own docstring).
+  `cash_the_king_then_read_the_beliefs` never asks the belief space this
+  earlier question, so it does not win this layout, even though a
+  declarer who did ask it, in principle, could.
 
 This example reads the genuine (second) case's probability off the belief
 space and reports it, plus the fixed (third) case's correctness, against
@@ -163,11 +185,18 @@ def _lead_spade_or_the_lone_club(legal, state):
     and within spades, choose among three cases that only ever matter one
     at a time.
 
-    - The king is still unplayed (this is the first round): lead low --
-      nothing a defender holds beats a king, so there is nothing to
-      protect by leading anything else, and leading the ace here instead
-      would waste the one card that might still need to react to what a
-      defender shows on a *later* round.
+    - The king is still unplayed (this is the first round): lead low.
+      Nothing a defender holds beats a king, so this trick itself is
+      never at risk -- but that is not the same as this being a neutral,
+      risk-free opening. It is a bet that *South*, not North, is the
+      hand holding a dangerous singleton honour, exactly the kind of bet
+      the later ace-or-duck decision makes openly and reads the belief
+      space for. This earlier one is never asked -- the king is led for
+      unconditionally, every time this is called, regardless of which
+      side is actually more likely to be dangerous. See
+      `cash_the_king_then_read_the_beliefs`'s own docstring for the one
+      layout (North's own singleton is the honour) where that specific
+      bet is wrong, and costs the contract outright.
     - The king is gone and the ace is still held: lead the ace. Once the
       first round has already happened, holding the ace back on a later
       lead no longer protects anything either -- there is no trick left
@@ -322,16 +351,15 @@ def _danger_south_still_guards_an_honour(state, on_trick, view, dummy):
 
 
 def cash_the_king_then_read_the_beliefs(state, view):
-    """pi: lead low to the king first (fixed -- the ace guarding it is
-    dummy's own, so nothing a defender holds can beat it), then read the
-    belief space for the one real decision in the suit.
+    """pi: lead low to the king first, then read the belief space for the
+    one real decision in the suit.
 
     Declarer and dummy hold A K T 9 7 6 4 3 2 in spades; North and South
     hold Q J 8 5 between them. Both missing low cards (the eight and the
     five) are spent by the time North follows to the second round, so
     whatever North shows there is either an honour, North's last possible
-    small card, or (whenever South holds all four missing cards) a
-    discard from a suit North is already void in by then.
+    small card, or (whenever North is already void) a discard from a suit
+    North is already void in by then.
 
     - North shows an honour (queen or jack): win with the ace every time.
       A defender who still held the other honour behind the one just shown
@@ -350,33 +378,47 @@ def cash_the_king_then_read_the_beliefs(state, view):
       round is handled, which is not "lead low" the way every other
       round here is). This is a genuine risk either way: South, not yet
       seen, plays *this same trick*, so a wrong duck here can lose
-      outright, on the spot.
-    - North discards, already void (South holds three or four of the
-      missing cards): always duck, regardless of what
+      outright, on the spot. A singleton honour in *South's* own hand
+      also lands here, not in the void branch below: South shows it
+      forced, on the first round (before this one), and North's two
+      remaining small cards are then read exactly like a genuine 2-2
+      break.
+    - North discards, already void: always duck, regardless of what
       `_danger_south_still_guards_an_honour` computes -- it is always
       1.0 here (North holding nothing forces whatever remains to be
       South's), but that is a fact about South's length, not a reason to
       rise. Two different layouts share this branch, and they do not
       share an outcome:
-        - South holds three: South cannot be squeezed into showing the
-          second honour on *this* trick -- two more of South's own cards
-          stand in the way (one still to follow here, one more on the
-          next round) -- so it comes out one round later, forced straight
-          into the ace this example's own lead rule (`_lead_spade_or_the_
-          lone_club`) already has waiting on lead by then. Rising instead
-          spends the ace right now, on a trick that did not need it, and
-          leaves nothing to answer the honour once South is finally
-          squeezed.
-        - South holds all four: the contract cannot be made regardless of
-          this decision. Once the king and the ace are both gone --
-          unavoidably, by the third round of the suit, whichever one of
-          rise or duck this trick chose -- South's remaining honour
+        - South holds both the queen and the jack (with one small card
+          alongside them, or two): the contract cannot be made by either
+          choice at this trick. Once the king and the ace are both gone
+          -- unavoidably, by the third round of the suit, whichever one
+          of rise or duck this trick chose -- South's remaining honour
           outranks the ten, this side's only card left above North and
-          South's own small cards, and South still has enough low spades
-          to hold it back until exactly that round. Ducking does not
-          avoid this; it only avoids making it worse. Both choices lose
-          this layout identically, which is the only sense in which
-          ducking here is "free" -- not a guarantee that it wins.
+          South's own small cards, and South still has a spot card to
+          hold it back until exactly that round. Ducking does not avoid
+          this; it only avoids making it worse. Both choices lose this
+          layout identically, which is the only sense in which ducking
+          here is "free" -- not a guarantee that it wins.
+        - South holds exactly one honour, with North's own singleton
+          being the other one: double-dummy, this layout *is* makeable
+          -- but not by this function, and not at this trick. The
+          mistake already happened one trick earlier: leading low to
+          the king, this plan's fixed first move, is a bet that *South*
+          is the hand with the dangerous singleton honour, and this
+          layout is exactly the one where that bet is wrong. Checked
+          against a double-dummy solver, leading the *ace* first (not
+          the king) is what makes all five tricks here; led this plan's
+          way instead, the contract is already down to two tricks out of
+          five before this trick's duck-or-rise choice is even reached.
+          Ducking still salvages more of what is left than rising would
+          (see `always_rise_with_the_ace`'s own docstring), but neither
+          choice recovers what the first trick already gave up. This
+          function never reads the belief space at that first lead --
+          `_lead_spade_or_the_lone_club` always leads low, regardless of
+          which side is actually more likely to be dangerous -- so it
+          simply does not win this layout, even though a declarer who
+          asked that earlier question, in principle, could.
 
     A pure function of `(state, view)`, with no side channel of its own:
     see `ace_vs_finesse_readings` for how the belief this function reads
@@ -431,11 +473,20 @@ def always_rise_with_the_ace(state, view):
     honour, with North -- not South -- left holding the other), and that
     case is weighted higher here: 60% against 40%, exactly
     `ace_vs_finesse_readings`'s own printed split for this node, not a
-    free reclaim of one without risking the other. Separately, once
-    North is already void (South holds all four missing cards), duck
-    *is* a pure gain over rising with no corresponding risk -- see
-    `cash_the_king_then_read_the_beliefs`'s own docstring for why that
-    case is structurally different from this one.
+    free reclaim of one without risking the other.
+
+    Separately, once North is already void, rising and ducking are not
+    symmetric the way they are at the genuine small-card node above --
+    but "not symmetric" is not the same as "duck wins outright" either.
+    When South holds both the queen and the jack there, neither choice
+    makes the contract, so rising costs nothing extra. When North's own
+    singleton was the honour instead, the contract was already lost one
+    trick earlier, at this plan's fixed first lead (low to the king,
+    never the ace) -- and within what that first mistake leaves behind,
+    ducking still salvages more than rising does, the same shape of gain
+    as the genuine small-card node, just smaller. See
+    `cash_the_king_then_read_the_beliefs`'s own docstring for exactly
+    which layout is which, and why neither one is a free win for duck.
     """
     del view
     legal = state.legal_cards
@@ -695,17 +746,19 @@ def main() -> None:
         "just printed), and a duck loses that trick on the spot instead "
         "-- the belief-reading declarer's own duck is simply betting on "
         "the more likely 60% case (North left holding the danger card, "
-        "not South), not avoiding a risk altogether. Where reading the "
-        "belief space wins without giving anything up is the separate "
-        "case where North is already void and South holds exactly three "
-        "of the missing cards: there, the kept-back ace gets a later "
-        "trick to capture the honour South is eventually squeezed into "
-        "showing, at no cost back. South holding all four of them is a "
-        "third case again, and neither line saves it -- that split "
-        "cannot be made regardless of this decision, so ducking there is "
-        "free only in the sense that it loses no worse than rising would "
-        "-- see `cash_the_king_then_read_the_beliefs`'s own docstring for "
-        "why each of these three cases is different.")
+        "not South), not avoiding a risk altogether. The void branch, "
+        "where North is already out of spades, is not a clean win for "
+        "duck either. When South holds the queen and the jack together "
+        "there, neither choice makes the contract -- so duck costs "
+        "nothing, but it does not win anything back either. When North's "
+        "own singleton was the honour instead, the contract was already "
+        "lost one trick earlier, at this plan's fixed first lead (low to "
+        "the king, never the ace) -- a double-dummy solver makes that "
+        "layout in full by leading the ace first, a bet this plan never "
+        "makes. Ducking at this later trick still salvages more of what "
+        "is left than rising would, but neither recovers what the first "
+        "lead already gave up -- see `cash_the_king_then_read_the_beliefs`'s "
+        "own docstring for exactly which layout is which.")
 
     ctx = dds3.SolverContext()
     double_dummy_value = evaluate(

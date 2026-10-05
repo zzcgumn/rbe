@@ -20,21 +20,32 @@
 | 55/84 | the same, vs a defender who always plays its lowest legal card | golden; the mirror image of the always-shows-the-queen figure above, by the same mirror symmetry row 15 already describes -- not a second coincidence, but not numerically equal either, since the two defenders' own "void" play differs along with their second-seat one |
 
 A belief-space node sharing a South-honour key with another one is not
-itself a bug -- North voiding out of spades entirely (South holding three
-or four of the missing cards) reaches the same key with a structurally
-different, generally much larger `danger`.
+itself a bug -- North voiding out of spades entirely reaches the same key
+with a structurally different, generally much larger `danger`.
 `_norths_second_card_is_a_genuine_small_spade` excludes those nodes from
 `ace_vs_finesse_readings`'s own result, and
 `TestNorthsSecondCardIsAGenuineSmallSpade` pins that directly rather than
 relying on the evaluator's own traversal order to keep picking the right
 one first. The declarer strategy itself, unlike the reporting helper,
-cannot just exclude those nodes -- it still has to play *something* there
--- so it always ducks instead of reading `danger` as a probability to
-act on; see `TestAlwaysDucksWhenNorthIsVoid` for why that is right when
-South holds three of the missing cards (ducking wins a layout rising
-would lose) and merely harmless when South holds all four (the contract
-is unmakeable regardless, so neither choice can do better than the
-other).
+cannot just exclude those nodes -- it still has to play *something*
+there -- so it always ducks instead of reading `danger` as a probability
+to act on.
+
+That void branch covers two layouts that do not share an outcome, and
+neither is the clean "duck wins" story an earlier draft of this file
+claimed. When South holds the queen *and* the jack together (with one
+small card alongside them, or two), the contract cannot be made by
+either choice -- ducking is merely harmless there, not a win. When
+North's own singleton is the *other* honour instead, the contract is
+double-dummy makeable, but not by this function: the mistake already
+happened one trick earlier, at this plan's fixed first lead (always low
+to the king, never the ace), which is a bet that South, not North, holds
+the dangerous singleton -- a bet this specific layout loses. Ducking at
+the void trick still salvages more of what that first-lead mistake left
+behind than rising would, but it does not recover the rest. See
+`TestAlwaysDucksWhenNorthIsVoid` and
+`restricted_choice_6nt_belief_space.cash_the_king_then_read_the_beliefs`'s
+own docstring for exactly which layout is which.
 """
 
 import unittest
@@ -227,14 +238,26 @@ class TestThirdHandAfterTheAceDecision(unittest.TestCase):
 
 class TestAlwaysDucksWhenNorthIsVoid(unittest.TestCase):
     """`cash_the_king_then_read_the_beliefs` itself, at the one node a
-    previous review round caught: North already void and discarding,
-    not following with a genuine small card. `_danger_south_still_guards_
-    an_honour` always reads 1.0 there, but the two layouts that reach it
-    do not share an outcome -- South holding three of the missing cards
-    is a genuine win for ducking (rising loses it instead), and South
-    holding all four is lost regardless of this decision, which the
-    second test below confirms by checking both choices lose it, not by
-    asserting which one is "correct" where neither is.
+    previous review round caught: North already void and discarding, not
+    following with a genuine small card. `_danger_south_still_guards_an_
+    honour` always reads 1.0 there, but that reading never actually gets
+    consulted here -- `_norths_second_card_is_a_genuine_small_spade` gates
+    the rise before `danger` is even looked at, so this branch always
+    ducks regardless of South's exact remaining holding. Both tests below
+    exercise that same single code path with different bit patterns, not
+    two different branches: the point is that the rule does not change
+    just because the holding looks different.
+
+    Neither test is "duck wins here" -- that is not the same claim for
+    every layout this branch covers. South holding the queen and the jack
+    together makes the contract unmakeable regardless of this choice
+    (ducking is merely harmless there, not a win); North's own singleton
+    being the other honour makes the layout makeable double-dummy, but
+    not by this plan, whose mistake already happened one trick earlier at
+    the fixed king-first lead -- see `cash_the_king_then_read_the_
+    beliefs`'s own docstring for why. Ducking still salvages more than
+    rising would in that second layout, but the test below checking it
+    only confirms the rule is applied uniformly, not that it wins.
     """
 
     def _decide(self, souths_remaining_spades: int) -> Card:
@@ -249,20 +272,25 @@ class TestAlwaysDucksWhenNorthIsVoid(unittest.TestCase):
 
         return example.cash_the_king_then_read_the_beliefs(state, view)
 
-    def test_ducks_when_south_holds_three_the_winning_choice_there(self) -> None:
-        # South started with the queen, the jack, and one small card,
-        # already shown an honour on round one; by this node South's
-        # remaining two cards are the jack and the other small card.
+    def test_ducks_when_south_holds_the_jack_and_a_small_card(self) -> None:
+        # Reachable two different ways -- South started with the queen,
+        # the jack, and one small card and already shed the queen on
+        # round one (unmakeable regardless of this trick's choice), or
+        # North's own singleton was the queen and South started with the
+        # jack and both small cards (makeable double-dummy, but not by
+        # this plan's fixed king-first lead). The function cannot tell
+        # these apart from this node alone, and does not need to: it
+        # ducks either way.
         card = self._decide((1 << JACK) | (1 << 8))
 
         self.assertEqual(card, Card(SPADES, example.NINE))
 
-    def test_ducks_when_south_holds_all_four_too_though_nothing_wins_it(self) -> None:
+    def test_ducks_when_south_holds_all_four_too(self) -> None:
         # South holds every missing card; the contract cannot be made
         # regardless of this decision (see this function's own
         # docstring), but the rule is still "always duck" here, not
         # "duck only when it helps" -- there is nothing in `danger` that
-        # distinguishes this layout from the three-card one above.
+        # distinguishes this layout from the one above.
         card = self._decide((1 << QUEEN) | (1 << JACK) | (1 << 8) | (1 << 5))
 
         self.assertEqual(card, Card(SPADES, example.NINE))
@@ -272,8 +300,8 @@ class TestNorthsSecondCardIsAGenuineSmallSpade(unittest.TestCase):
     """`_norths_second_card_is_a_genuine_small_spade` in isolation: the
     regression guard behind the fix for a belief-space node mix-up a
     previous review round caught (a void discard from North, reached
-    whenever South holds all four missing cards, was being folded into
-    the same reading as North genuinely following with a small spade).
+    whenever North is already out of spades, was being folded into the
+    same reading as North genuinely following with a small spade).
     """
 
     def test_a_small_spade_is_genuine(self) -> None:
