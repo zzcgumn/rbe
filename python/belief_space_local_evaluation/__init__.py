@@ -18,6 +18,10 @@ try:
     from ._belief_space_local_evaluation import ConstrainedSpaceEmptyError
     from ._belief_space_local_evaluation import ConstrainedSpaceStatus
     from ._belief_space_local_evaluation import ContradictoryVoidError
+    from ._belief_space_local_evaluation import DefenderHeuristic
+    from ._belief_space_local_evaluation import DefenderHeuristicChain
+    from ._belief_space_local_evaluation import DefenderHeuristicContext
+    from ._belief_space_local_evaluation import discard_keep_winners
     from ._belief_space_local_evaluation import DistributionEmptyError
     from ._belief_space_local_evaluation import DoubleDummyBound
     from ._belief_space_local_evaluation import DoubleDummyDefender
@@ -27,6 +31,9 @@ try:
     from ._belief_space_local_evaluation import ExhaustiveLayoutSource
     from ._belief_space_local_evaluation import ExpiredBeliefViewError
     from ._belief_space_local_evaluation import ForcedExceedsFixedSeatCountError
+    from ._belief_space_local_evaluation import fourth_seat_low
+    from ._belief_space_local_evaluation import HeuristicDefender
+    from ._belief_space_local_evaluation import high_in_third
     from ._belief_space_local_evaluation import HistoryRejectedError
     from ._belief_space_local_evaluation import HistoryVerdict
     from ._belief_space_local_evaluation import InsufficientFreeCardsError
@@ -34,6 +41,7 @@ try:
     from ._belief_space_local_evaluation import LayoutSource
     from ._belief_space_local_evaluation import LeaderMismatchError
     from ._belief_space_local_evaluation import legal_cards
+    from ._belief_space_local_evaluation import make_default_defender_heuristics
     from ._belief_space_local_evaluation import MissingCardError
     from ._belief_space_local_evaluation import module_name
     from ._belief_space_local_evaluation import NoLayoutSurvivedError
@@ -46,12 +54,15 @@ try:
     from ._belief_space_local_evaluation import RankMap
     from ._belief_space_local_evaluation import RootFailure
     from ._belief_space_local_evaluation import RootFailureError
+    from ._belief_space_local_evaluation import ruff_small
     from ._belief_space_local_evaluation import SampleSizeZeroError
     from ._belief_space_local_evaluation import ScanBudgetExhaustedError
+    from ._belief_space_local_evaluation import second_seat_low
     from ._belief_space_local_evaluation import SingleLayoutSource
     from ._belief_space_local_evaluation import seat_on_play
     from ._belief_space_local_evaluation import SourceNotEnumerableError
     from ._belief_space_local_evaluation import SpreadPolicy
+    from ._belief_space_local_evaluation import third_seat_low
     from ._belief_space_local_evaluation import TrailingTrickMismatchError
     from ._belief_space_local_evaluation import trick_complete_winner
     from ._belief_space_local_evaluation import TrickLengthMismatchError
@@ -71,6 +82,10 @@ except ImportError:
     from _belief_space_local_evaluation import ConstrainedSpaceEmptyError
     from _belief_space_local_evaluation import ConstrainedSpaceStatus
     from _belief_space_local_evaluation import ContradictoryVoidError
+    from _belief_space_local_evaluation import DefenderHeuristic
+    from _belief_space_local_evaluation import DefenderHeuristicChain
+    from _belief_space_local_evaluation import DefenderHeuristicContext
+    from _belief_space_local_evaluation import discard_keep_winners
     from _belief_space_local_evaluation import DistributionEmptyError
     from _belief_space_local_evaluation import DoubleDummyBound
     from _belief_space_local_evaluation import DoubleDummyDefender
@@ -80,6 +95,9 @@ except ImportError:
     from _belief_space_local_evaluation import ExhaustiveLayoutSource
     from _belief_space_local_evaluation import ExpiredBeliefViewError
     from _belief_space_local_evaluation import ForcedExceedsFixedSeatCountError
+    from _belief_space_local_evaluation import fourth_seat_low
+    from _belief_space_local_evaluation import HeuristicDefender
+    from _belief_space_local_evaluation import high_in_third
     from _belief_space_local_evaluation import HistoryRejectedError
     from _belief_space_local_evaluation import HistoryVerdict
     from _belief_space_local_evaluation import InsufficientFreeCardsError
@@ -87,6 +105,7 @@ except ImportError:
     from _belief_space_local_evaluation import LayoutSource
     from _belief_space_local_evaluation import LeaderMismatchError
     from _belief_space_local_evaluation import legal_cards
+    from _belief_space_local_evaluation import make_default_defender_heuristics
     from _belief_space_local_evaluation import MissingCardError
     from _belief_space_local_evaluation import module_name
     from _belief_space_local_evaluation import NoLayoutSurvivedError
@@ -99,12 +118,15 @@ except ImportError:
     from _belief_space_local_evaluation import RankMap
     from _belief_space_local_evaluation import RootFailure
     from _belief_space_local_evaluation import RootFailureError
+    from _belief_space_local_evaluation import ruff_small
     from _belief_space_local_evaluation import SampleSizeZeroError
     from _belief_space_local_evaluation import ScanBudgetExhaustedError
+    from _belief_space_local_evaluation import second_seat_low
     from _belief_space_local_evaluation import SingleLayoutSource
     from _belief_space_local_evaluation import seat_on_play
     from _belief_space_local_evaluation import SourceNotEnumerableError
     from _belief_space_local_evaluation import SpreadPolicy
+    from _belief_space_local_evaluation import third_seat_low
     from _belief_space_local_evaluation import TrailingTrickMismatchError
     from _belief_space_local_evaluation import trick_complete_winner
     from _belief_space_local_evaluation import TrickLengthMismatchError
@@ -133,6 +155,10 @@ __all__ = [
     "ConstrainedSpaceEmptyError",
     "ConstrainedSpaceStatus",
     "ContradictoryVoidError",
+    "DefenderHeuristic",
+    "DefenderHeuristicChain",
+    "DefenderHeuristicContext",
+    "discard_keep_winners",
     "DistributionEmptyError",
     "DoubleDummyBound",
     "DoubleDummyDefender",
@@ -142,6 +168,9 @@ __all__ = [
     "ExhaustiveLayoutSource",
     "ExpiredBeliefViewError",
     "ForcedExceedsFixedSeatCountError",
+    "fourth_seat_low",
+    "HeuristicDefender",
+    "high_in_third",
     "HistoryRejectedError",
     "HistoryVerdict",
     "InsufficientFreeCardsError",
@@ -149,6 +178,7 @@ __all__ = [
     "LayoutSource",
     "LeaderMismatchError",
     "legal_cards",
+    "make_default_defender_heuristics",
     "MissingCardError",
     "module_name",
     "NoLayoutSurvivedError",
@@ -162,12 +192,15 @@ __all__ = [
     "RankMap",
     "RootFailure",
     "RootFailureError",
+    "ruff_small",
     "SampleSizeZeroError",
     "ScanBudgetExhaustedError",
+    "second_seat_low",
     "SingleLayoutSource",
     "seat_on_play",
     "SourceNotEnumerableError",
     "SpreadPolicy",
+    "third_seat_low",
     "TrailingTrickMismatchError",
     "trick_complete_winner",
     "TrickLengthMismatchError",

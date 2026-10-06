@@ -16,9 +16,19 @@
 #include <api/dds_constants.hpp>
 #include <belief_evaluation/belief_view.hpp>
 #include <belief_evaluation/declarer_strategy.hpp>
+#include <belief_evaluation/default_defender_heuristics.hpp>
+#include <belief_evaluation/defender_heuristic.hpp>
+#include <belief_evaluation/defender_heuristic_chain.hpp>
 #include <belief_evaluation/defender_strategy.hpp>
+#include <belief_evaluation/discard_keep_winners.hpp>
 #include <belief_evaluation/double_dummy_bound.hpp>
 #include <belief_evaluation/double_dummy_defender.hpp>
+#include <belief_evaluation/fourth_seat_low.hpp>
+#include <belief_evaluation/heuristic_defender.hpp>
+#include <belief_evaluation/high_in_third.hpp>
+#include <belief_evaluation/ruff_small.hpp>
+#include <belief_evaluation/second_seat_low.hpp>
+#include <belief_evaluation/third_seat_low.hpp>
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/trick.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
@@ -1475,6 +1485,247 @@ auto register_layout_source_bindings(py::module_& module) -> void
 // this extension is ever imported, so the registration already exists by
 // the time a constructor here is called.
 //
+// Converts a solved FutureTricks into the same dict shape dds3.solve_board()
+// already returns to Python ({'nodes', 'cards', 'suit', 'rank', 'equals',
+// 'score'}), truncated to fut.cards entries -- the meaningful ones; indices
+// at or past fut.cards carry no defined value in this module's own C++ code
+// either. No existing converter does this: DoubleDummyDefender's own binding
+// never exposes a raw FutureTricks to Python, only the final WeightedCard
+// list spread() computes from one.
+auto future_tricks_to_dict(FutureTricks const& fut) -> py::dict
+{
+    py::dict result;
+    result["nodes"] = fut.nodes;
+    result["cards"] = fut.cards;
+    py::list suit;
+    py::list rank;
+    py::list equals;
+    py::list score;
+    for (int i = 0; i < fut.cards; ++i) {
+        suit.append(fut.suit[i]);
+        rank.append(fut.rank[i]);
+        equals.append(fut.equals[i]);
+        score.append(fut.score[i]);
+    }
+    result["suit"] = suit;
+    result["rank"] = rank;
+    result["equals"] = equals;
+    result["score"] = score;
+    return result;
+}
+
+// DefenderHeuristicContext holds references (layout, state, fut) that are
+// only valid for the duration of one HeuristicDefender call -- the same
+// lifetime problem BeliefView has (see BeliefViewGuard above). A Python
+// rule stashing "self.last_context = context" must not read freed memory
+// afterwards; every accessor below checks the same kind of per-call
+// validity flag PyBeliefEntry/PyBeliefView already use.
+class PyDefenderHeuristicContext
+{
+public:
+    PyDefenderHeuristicContext(be::DefenderHeuristicContext const* ctx, std::shared_ptr<bool> valid)
+        : ctx_(ctx), valid_(std::move(valid))
+    {
+    }
+
+    auto layout() const -> py::dict
+    {
+        check_valid();
+        return dds3_python::deal_to_dict(ctx_->layout);
+    }
+
+    auto fut() const -> py::dict
+    {
+        check_valid();
+        return future_tricks_to_dict(ctx_->fut);
+    }
+
+    auto seat() const -> int
+    {
+        check_valid();
+        return ctx_->seat;
+    }
+
+    auto position_in_trick() const -> int
+    {
+        check_valid();
+        return ctx_->position_in_trick;
+    }
+
+    auto on_lead_to_trick() const -> int
+    {
+        check_valid();
+        return ctx_->on_lead_to_trick;
+    }
+
+    auto was_on_lead() const -> bool
+    {
+        check_valid();
+        return ctx_->was_on_lead;
+    }
+
+    auto can_follow_led_suit() const -> bool
+    {
+        check_valid();
+        return ctx_->can_follow_led_suit;
+    }
+
+    auto defending_side() const -> bool
+    {
+        check_valid();
+        return ctx_->defending_side;
+    }
+
+    auto trump() const -> int
+    {
+        check_valid();
+        return ctx_->trump;
+    }
+
+private:
+    auto check_valid() const -> void
+    {
+        if (! valid_ || ! *valid_) {
+            throw py::value_error(
+                "this context has expired -- it is valid only for the duration "
+                "of the rule call it was handed to");
+        }
+    }
+
+    be::DefenderHeuristicContext const* ctx_;
+    std::shared_ptr<bool> valid_;
+};
+
+// Wraps a Python-authored rule -- a plain callable of shape
+// (context, best_cards) -> Card | None -- into a be::DefenderHeuristic,
+// mirroring make_defender_strategy's own wrapping pattern below (GIL
+// reacquired per call, since this is always invoked from inside C++ code
+// that itself runs with the GIL released around the owning solve).
+auto wrap_python_heuristic(py::function rule) -> be::DefenderHeuristic
+{
+    return [rule = std::move(rule)](
+               be::DefenderHeuristicContext const& ctx, std::vector<be::Card> const& best_cards)
+        -> std::optional<be::Card>
+    {
+        py::gil_scoped_acquire const gil;
+        auto valid = std::make_shared<bool>(true);
+        struct Invalidator
+        {
+            std::shared_ptr<bool> valid;
+            ~Invalidator()
+            {
+                *valid = false;
+            }
+        } invalidator{valid};
+
+        py::object const result = rule(PyDefenderHeuristicContext(&ctx, valid), py::cast(best_cards));
+        if (result.is_none()) {
+            return std::nullopt;
+        }
+        return py::cast<be::Card>(result);
+    };
+}
+
+auto register_defender_heuristic_bindings(py::module_& module) -> void
+{
+    // Opaque from Python: nothing calls a DefenderHeuristic directly --
+    // it is always threaded through a DefenderHeuristicChain, which calls
+    // it from C++. Produced by the six factory functions below, and
+    // accepted by DefenderHeuristicChain.add() on equal footing with a
+    // plain Python callable of the same shape.
+    py::class_<be::DefenderHeuristic>(
+        module,
+        "DefenderHeuristic",
+        "One rule in a defender heuristic chain, produced by second_seat_low,\n"
+        "high_in_third, third_seat_low, fourth_seat_low, ruff_small or\n"
+        "discard_keep_winners. Pass it to DefenderHeuristicChain.add() --\n"
+        "nothing else accepts or calls one directly. add() also accepts a\n"
+        "plain Python function of shape (context, best_cards) -> Card | None\n"
+        "on exactly the same footing.");
+
+    module.def(
+        "second_seat_low", &be::second_seat_low, py::arg("randomise_touching_honours") = true,
+        "In second seat, following suit, as a defender -- the lowest optimal\n"
+        "card, unless it touches another optimal candidate of the same suit\n"
+        "and randomise_touching_honours (default True), in which case this\n"
+        "rule defers so the chain's own fallback spread -- restricted choice --\n"
+        "picks between them instead.");
+    module.def(
+        "high_in_third", &be::high_in_third,
+        "In third seat, after partner's lead, as a defender -- the highest\n"
+        "optimal card, when it beats dummy's already-played card.");
+    module.def(
+        "third_seat_low", &be::third_seat_low,
+        "In third seat, after partner's lead, as a defender -- the lowest\n"
+        "optimal card, exactly when high_in_third defers (dummy's card\n"
+        "already beats every candidate).");
+    module.def(
+        "fourth_seat_low", &be::fourth_seat_low,
+        "In fourth seat, following suit, as a defender -- the lowest optimal\n"
+        "card.");
+    module.def(
+        "ruff_small", &be::ruff_small,
+        "Void in the led suit, in a trump contract -- ruff with the smallest\n"
+        "optimal trump, unless a not-yet-played declaring-side seat could\n"
+        "overruff.");
+    module.def(
+        "discard_keep_winners", &be::discard_keep_winners,
+        "On a genuine discard, as a defender -- the lowest optimal card from\n"
+        "the suit with the fewest remaining tricks for the defending side.");
+
+    py::class_<PyDefenderHeuristicContext>(
+        module,
+        "DefenderHeuristicContext",
+        "All state a Python-authored rule needs, handed to it for the\n"
+        "duration of one call only -- see ExpiredBeliefViewError's own\n"
+        "docstring for the same \"valid only for the call\" discipline this\n"
+        "type follows (a separate error, not that one, but the same reason).")
+        .def_property_readonly("layout", &PyDefenderHeuristicContext::layout)
+        .def_property_readonly("fut", &PyDefenderHeuristicContext::fut)
+        .def_property_readonly("seat", &PyDefenderHeuristicContext::seat)
+        .def_property_readonly("position_in_trick", &PyDefenderHeuristicContext::position_in_trick)
+        .def_property_readonly("on_lead_to_trick", &PyDefenderHeuristicContext::on_lead_to_trick)
+        .def_property_readonly("was_on_lead", &PyDefenderHeuristicContext::was_on_lead)
+        .def_property_readonly("can_follow_led_suit", &PyDefenderHeuristicContext::can_follow_led_suit)
+        .def_property_readonly("defending_side", &PyDefenderHeuristicContext::defending_side)
+        .def_property_readonly("trump", &PyDefenderHeuristicContext::trump);
+
+    py::class_<be::DefenderHeuristicChain>(
+        module,
+        "DefenderHeuristicChain",
+        "An ordered sequence of DefenderHeuristic rules, tried in add()\n"
+        "order. The one and only way a chain is built -- there is no\n"
+        "denomination argument and no enum of \"which built-ins to\n"
+        "include\": a caller's chain is entirely and exactly whatever\n"
+        "sequence of add() calls they make.")
+        .def(py::init<>())
+        .def(
+            "add",
+            [](be::DefenderHeuristicChain& self, py::object const& heuristic) {
+                if (py::isinstance<be::DefenderHeuristic>(heuristic)) {
+                    self.add(py::cast<be::DefenderHeuristic>(heuristic));
+                } else {
+                    self.add(wrap_python_heuristic(py::cast<py::function>(heuristic)));
+                }
+            },
+            py::arg("heuristic"),
+            "Appends heuristic to the end of the chain -- either a\n"
+            "DefenderHeuristic (from one of the factory functions) or a\n"
+            "plain Python function of shape (context, best_cards) ->\n"
+            "Card | None, on equal footing.");
+
+    module.def(
+        "make_default_defender_heuristics", &be::make_default_defender_heuristics, py::arg("trump"),
+        py::arg("randomise_touching_honours") = true,
+        "Convenience only -- not the only way to build a chain. Equivalent\n"
+        "to add()-ing second_seat_low(randomise_touching_honours),\n"
+        "high_in_third(), third_seat_low(), fourth_seat_low(), ruff_small()\n"
+        "(only when trump names a real suit) and discard_keep_winners(), in\n"
+        "that order. A caller wanting a different order, a subset, or their\n"
+        "own rule spliced in builds a DefenderHeuristicChain directly\n"
+        "instead.");
+}
+
 // Both DoubleDummyDefender and DoubleDummyBound hold SolverContext& --
 // a reference, not owned. A Python object outliving the context it was
 // built from would dangle it: py::keep_alive<1, 2>() on both constructors
@@ -1545,6 +1796,49 @@ public:
 
 private:
     be::DoubleDummyBound bound_;
+};
+
+// Sibling of PyDoubleDummyDefender -- same SolverContext& contract (not
+// owned, not thread-safe). Unlike DoubleDummyDefender, HeuristicDefender's
+// own chain genuinely reads state.declarer (defending_side depends on it),
+// so -- unlike PyDoubleDummyDefender::call, which ignores state entirely --
+// this binding actually reads it, via a plain ".declarer" attribute access
+// rather than py::cast<be::ObservationState> so that any object exposing
+// that one int (a real ObservationState from evaluate()'s own machinery,
+// or a minimal stand-in in a direct, standalone call) works.
+class PyHeuristicDefender
+{
+public:
+    PyHeuristicDefender(SolverContext& ctx, be::DefenderHeuristicChain chain, be::SpreadPolicy fallback_policy)
+        : defender_(ctx, std::move(chain), fallback_policy)
+    {
+    }
+
+    auto call(py::dict const& layout, int seat, py::object const& state) -> py::list
+    {
+        Deal const deal = dds3_python::dict_to_deal(layout);
+        be::ObservationState state_value{};
+        state_value.declarer = py::cast<int>(state.attr("declarer"));
+        be::DefenderStrategy const strategy = defender_.as_strategy();
+
+        std::vector<be::WeightedCard> weighted;
+        {
+            // Released for the solve itself; a chain rule wrapped by
+            // wrap_python_heuristic re-acquires the GIL on its own before
+            // calling back into Python -- see that function's own comment.
+            py::gil_scoped_release const release;
+            weighted = strategy(be::DefenderQuery{deal, seat, state_value});
+        }
+
+        py::list result;
+        for (be::WeightedCard const& card : weighted) {
+            result.append(py::make_tuple(card.card, card.probability));
+        }
+        return result;
+    }
+
+private:
+    be::HeuristicDefender defender_;
 };
 
 auto register_solver_seam_bindings(py::module_& module) -> void
@@ -1633,6 +1927,26 @@ auto register_solver_seam_bindings(py::module_& module) -> void
             }),
             py::arg("ctx"), py::arg("declarer"), py::keep_alive<1, 2>())
         .def("__call__", &PyDoubleDummyBound::call, py::arg("layout"));
+
+    py::class_<PyHeuristicDefender>(
+        module,
+        "HeuristicDefender",
+        "A defender strategy backed by a caller-assembled\n"
+        "DefenderHeuristicChain, falling back to DoubleDummyDefender's own\n"
+        "spread() when every rule in the chain defers. A second\n"
+        "DefenderStrategy implementation, not a replacement for\n"
+        "DoubleDummyDefender -- both are usable anywhere evaluate()'s delta\n"
+        "argument is accepted.\n\n"
+        "**The chain is entirely caller-assembled.** This class never calls\n"
+        "make_default_defender_heuristics() implicitly and has no notion\n"
+        "of \"the default chain\" to special-case.\n\n"
+        "ctx is not owned, and not thread-safe, the same as\n"
+        "DoubleDummyDefender's own contract -- see its docstring.")
+        .def(
+            py::init<SolverContext&, be::DefenderHeuristicChain, be::SpreadPolicy>(), py::arg("ctx"),
+            py::arg("chain"), py::arg("fallback_policy") = be::SpreadPolicy::TouchingSequence,
+            py::keep_alive<1, 2>())
+        .def("__call__", &PyHeuristicDefender::call, py::arg("layout"), py::arg("seat"), py::arg("state"));
 }
 
 // Internal: exercises the converters above end to end, ahead of the real
@@ -1710,6 +2024,10 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
     // the exception-map that call populates.
     register_play_record_bindings(module);
     register_layout_source_bindings(module);
+    // Before register_solver_seam_bindings: HeuristicDefender's own
+    // constructor takes a DefenderHeuristicChain by value, so that type
+    // must already be registered.
+    register_defender_heuristic_bindings(module);
     register_solver_seam_bindings(module);
     register_converter_probes(module);
 
