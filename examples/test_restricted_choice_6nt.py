@@ -18,7 +18,8 @@
 | 10/21 | always rise with the ace instead, vs the 50/50 defender | golden; 10/21 is exactly the posterior mass of the 2-2 spade breaks in this belief space, and is unchanged by which defender is paired with it, since rising never reaches a node where the belief mattered |
 | 65/84 | cash the king, then read the beliefs, vs the always-shows-the-queen defender | golden |
 | 55/84 | the same, vs a defender who always plays its lowest legal card | golden; the mirror image of the always-shows-the-queen figure above, by the same mirror symmetry row 15 already describes -- not a second coincidence, but not numerically equal either, since the two defenders' own "void" play differs along with their second-seat one |
-| 15/28 | cash the king, then read the beliefs, vs a caller-assembled `HeuristicDefender` chain, `randomise_touching_honours` True or False | golden; **the same number either way**, measured not assumed -- every tied second-seat candidate pair this ending's own belief space ever offers `second_seat_low` is a low card tied against one honour, never the queen and the jack tied against each other, so the one rule either setting touches never actually finds a touching pair here |
+| 65/126 | cash the king, then read the beliefs, vs a caller-assembled `HeuristicDefender` chain, `randomise_touching_honours=True` | golden; equal to the `DoubleDummyDefender` row above bit for bit, not a coincidence -- with randomisation on, `second_seat_low` detects every genuine touching pair this ending's own second-seat node reaches and defers there to the chain's own fallback spread, which is exactly `DoubleDummyDefender`'s uniform spread over the same solved position |
+| 15/28 | the same, `randomise_touching_honours=False` | golden; **higher**, not equal -- with randomisation off, the same rule always shows the lower card of a touching pair instead, and the belief-reading declarer is measurably able to exploit it |
 
 A belief-space node sharing a South-honour key with another one is not
 itself a bug -- North voiding out of spades entirely reaches the same key
@@ -594,18 +595,18 @@ class TestPMake(unittest.TestCase):
         self.assertAlmostEqual(ace_value["p_make"], 10 / 21)
         self.assertGreater(belief_value["p_make"], ace_value["p_make"])
 
-    def test_the_randomise_touching_honours_toggle_is_wired_through_but_does_not_move_this_ending(self) -> None:
-        # Measured, not assumed: second_seat_low is the one rule either
-        # setting touches, and in this ending every tied second-seat
-        # candidate pair it is ever actually offered is a low card tied
-        # against one honour, never the queen and the jack tied against
-        # each other -- so fut.equals never reports them as touching and
-        # the rule fires identically either way. These two assertions
-        # exist to prove the chain and the option are both really wired
-        # through (not that this ending is sensitive to the option) --
-        # the genuine restricted-choice gap this example is built around
-        # is the 0.5159 DoubleDummyDefender row above, over a real
-        # touching pair.
+    def test_the_randomise_touching_honours_toggle_moves_this_ending(self) -> None:
+        # With randomisation on, second_seat_low detects every genuine
+        # touching pair this ending's own second-seat node ever reaches
+        # and defers there to the chain's fallback spread, which is
+        # exactly DoubleDummyDefender's own uniform spread over the same
+        # solved position -- so the two agree exactly, not just to four
+        # decimal places (65/126, the same fraction
+        # test_reading_the_beliefs_still_beats_always_rising_under_double_dummy
+        # already pins for DoubleDummyDefender itself). With it off, the
+        # same rule always shows the lower card of a touching pair
+        # instead, and the belief-reading declarer is measurably able to
+        # exploit that -- a higher P_make, not a lower one.
         sequence = example.restricted_choice_6nt()
         root = sequence.current_deal
         record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
@@ -621,8 +622,9 @@ class TestPMake(unittest.TestCase):
             heuristic_defender(ctx, example.bsle.make_default_defender_heuristics(
                 root["trump"], randomise_touching_honours=False)))
 
-        self.assertAlmostEqual(with_value["p_make"], 15 / 28)
+        self.assertAlmostEqual(with_value["p_make"], 65 / 126)
         self.assertAlmostEqual(without_value["p_make"], 15 / 28)
+        self.assertGreater(without_value["p_make"], with_value["p_make"])
 
 
 class TestTheScriptRuns(unittest.TestCase):
@@ -655,11 +657,12 @@ class TestTheScriptRuns(unittest.TestCase):
         self.assertIn("exact mirror of the always-shows-the-queen defender", doc)
 
         # The heuristic defender chain is actually run and printed too,
-        # including the honest finding that this ending's own second-seat
-        # node never offers the queen and the jack tied against each
-        # other -- not only exercised directly in TestPMake.
+        # including the minimal standalone illustration of the mechanism
+        # -- not only exercised directly in TestPMake.
         self.assertIn("caller-assembled heuristic chain", doc)
-        self.assertIn("never reports them as touching", doc)
+        self.assertIn("matching the `DoubleDummyDefender` row above bit for bit", doc)
+        self.assertIn("♠J 50%, ♠Q 50%", doc)
+        self.assertIn("♠J 100%", doc)
 
 
 if __name__ == "__main__":

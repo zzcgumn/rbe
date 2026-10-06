@@ -117,12 +117,17 @@ Run it with:
     bazelisk run //examples:restricted_choice_6nt
 """
 
+import types
+
 import dds3
 
 import belief_space_local_evaluation as bsle
 from belief_space_local_evaluation import Card
 
 from bridge_notation import (
+    EAST,
+    HEARTS,
+    NORTH,
     NOTRUMP,
     SEAT_NAMES,
     SOUTH,
@@ -131,6 +136,7 @@ from bridge_notation import (
     format_card,
     format_denomination,
     format_hand,
+    holding,
     parse_deal,
 )
 from belief_space_local_evaluation import PlaySequence, legal_cards
@@ -829,20 +835,61 @@ def main() -> None:
     print(
         f"\nThe identical chain with randomise_touching_honours=False "
         f"instead: P_make = {without_randomising_value['p_make']:.4f}. "
-        f"Measured, not assumed, equal to the row above: `second_seat_low` "
-        f"is the one rule either setting touches, and in this ending every "
-        f"tied second-seat candidate pair it is ever actually offered "
-        f"turns out to be a low card tied against one honour -- never the "
-        f"queen and the jack tied against *each other* -- so `fut.equals` "
-        f"never reports them as touching and the rule fires identically "
-        f"either way. The restricted-choice gap this example is built "
-        f"around is real, and already measured earlier against "
-        f"`DoubleDummyDefender`'s own uniform spread over a genuine "
-        f"touching pair (`P_make = 0.5159`, above) -- it just is not the "
-        f"gap this particular toggle, on this particular rule, happens to "
-        f"expose in this ending's own second-seat node. These two rows "
-        f"demonstrate the chain is real and the option is wired through "
-        f"correctly, not that every node is sensitive to it.")
+        f"Higher than the row above, not a rounding difference: with "
+        f"randomisation on, `second_seat_low` detects every genuine "
+        f"touching pair this ending's own second-seat node ever reaches "
+        f"and defers to the chain's fallback spread there, which is "
+        f"exactly `DoubleDummyDefender`'s own uniform spread over the "
+        f"same solved position -- so the two agree exactly (both "
+        f"`P_make = 0.5159`, matching the `DoubleDummyDefender` row "
+        f"above bit for bit, not merely to four decimal places). With "
+        f"randomisation off, the same rule instead always shows the "
+        f"lower card of that pair -- the exact information leak this "
+        f"whole example is about -- and measured here, the "
+        f"belief-reading declarer is able to exploit it: this one "
+        f"toggle, isolated from every other difference between "
+        f"defenders this example measures (nothing else in the chain "
+        f"changes between these two rows), raises `P_make` by itself.")
+
+    print(
+        "\nA minimal, standalone position isolating the mechanism behind "
+        "the gap just measured, on the one card it actually turns on: "
+        "East leads a low spade (already played); South, second seat, "
+        "holds only the queen and the jack of spades. Nothing left "
+        "anywhere can beat either one, and the king between them is "
+        "already gone from play, so the two are a genuine touching pair.")
+    minimal_layout = {
+        "trump": NOTRUMP,
+        "first": EAST,
+        "remain_cards": [
+            [holding(4), holding(4), 0, 0],          # North: spade 4, heart 4
+            [0, holding(3), 0, 0],                   # East: spade already played; one heart left
+            [holding(QUEEN, JACK), 0, 0, 0],         # South: the queen and the jack, nothing else
+            [holding(5), holding(5), 0, 0],          # West (dummy): spade 5, heart 5
+        ],
+        "current_trick_suit": (SPADES, 0, 0),
+        "current_trick_rank": (2, 0, 0),             # East's two, already played
+    }
+    minimal_state = types.SimpleNamespace(declarer=EAST)
+
+    def _format_distribution(weighted):
+        return ", ".join(f"{format_card(card)} {probability:.0%}" for card, probability in weighted)
+
+    minimal_with = heuristic_defender(
+        ctx, bsle.make_default_defender_heuristics(NOTRUMP, randomise_touching_honours=True),
+    )(minimal_layout, SOUTH, minimal_state)
+    print(f"    randomise_touching_honours=True:  {_format_distribution(minimal_with)}")
+
+    minimal_without = heuristic_defender(
+        ctx, bsle.make_default_defender_heuristics(NOTRUMP, randomise_touching_honours=False),
+    )(minimal_layout, SOUTH, minimal_state)
+    print(f"    randomise_touching_honours=False: {_format_distribution(minimal_without)}")
+    print(
+        "    With it on, the two are equally likely -- a defender holding "
+        "the bare queen looks identical to one holding the queen with the "
+        "jack behind it. With it off, the jack is certain -- the exact "
+        "information leak the gap above is made of, shown directly on the "
+        "one card South actually plays rather than through a P_make.")
 
 
 def evaluate(sequence, source, pi, delta, **options) -> dict:
