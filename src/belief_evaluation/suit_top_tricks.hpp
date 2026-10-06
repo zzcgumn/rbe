@@ -16,15 +16,15 @@ namespace dds::belief_evaluation
 /// since the trick-counting arithmetic does not depend on which one is
 /// which.
 ///
-/// **Never an overestimate.** Ported in spirit, not verbatim, from
-/// BridgeLibraries-private's `TopTricksAnalyzer`: that algorithm
-/// additionally conserves which specific defending card is played each
+/// **Never an overestimate.** A deliberately simplified single-suit
+/// top-tricks counter: a more elaborate version of this technique would
+/// additionally conserve which specific defending card is played each
 /// round, to avoid unblocking problems between two unevenly-long hands.
 /// This version always leads the higher of the two defending hands'
 /// current top cards instead, which can only ever equal or undercount
-/// the entry-optimal result -- consistent with `TopTricksAnalyzer`'s own
-/// doxygen: "more important that the calculation never overestimates...
-/// might be lower than what is actually available."
+/// the entry-optimal result -- the calculation must never overestimate
+/// how many top tricks are available; it may come out lower than what is
+/// actually achievable in a complex entry position, never higher.
 ///
 /// `trump` uses this module's own convention (`defender_heuristic.hpp`'s
 /// own doxygen): `DDS_NOTRUMP` for no trump suit. When `suit` is not

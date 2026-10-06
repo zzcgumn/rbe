@@ -46,14 +46,14 @@ auto suit_top_tricks(Deal const& layout, int defender_seat, int trump) -> std::a
 
         // The sound upper bound before any ruffing reduction: the
         // defending side cannot win more tricks in this suit than it has
-        // cards to contribute as winners. (BridgeLibraries' own
-        // MaxTopTricks uses max(seat_count, partner_count) instead, which
-        // is tighter than necessary -- it undercounts a split-honours
-        // case like ace-with-one-partner/king-with-the-other down to 1
-        // when both are actually cashable. Sound either way, since this
-        // is only a ceiling the round-by-round loop below still has to
-        // earn against real opponent cards; the looser bound is simply
-        // closer to the truth.)
+        // cards to contribute as winners. (A tighter cap using the max,
+        // not the sum, of the two defending hands' counts was tried and
+        // rejected: it undercounts a split-honours case like
+        // ace-with-one-partner/king-with-the-other down to 1 when both
+        // are actually cashable. Sound either way, since this is only a
+        // ceiling the round-by-round loop below still has to earn
+        // against real opponent cards; the looser bound is simply closer
+        // to the truth.)
         int cap = seat_count + partner_count;
 
         if (trump != DDS_NOTRUMP && suit != trump)

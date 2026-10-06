@@ -15,9 +15,8 @@ namespace dds::belief_evaluation
 /// "Partner led" is checked explicitly even though it is, in this
 /// module's fixed N/E/S/W rotation, always true whenever
 /// `position_in_trick == 2` (two seats around a four-seat cyclic rotation
-/// always lands on the seat's own partner) -- kept for the same clarity
-/// BridgeLibraries' own `HighInThird.cpp` keeps it for, not because it can
-/// fail here.
+/// always lands on the seat's own partner) -- kept here for clarity, not
+/// because it can actually fail in this module's rotation.
 auto high_in_third() -> DefenderHeuristic;
 
 }  // namespace dds::belief_evaluation

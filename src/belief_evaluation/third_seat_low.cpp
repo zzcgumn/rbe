@@ -8,9 +8,8 @@ namespace dds::belief_evaluation
 namespace
 {
     // Duplicated from high_in_third.cpp rather than shared: each concrete
-    // rule in this module is a small, independently-readable .cpp, the
-    // same way BridgeLibraries keeps HighInThird.cpp and ThirdSeatLow.cpp
-    // separate despite the overlap.
+    // rule in this module is a small, independently-readable .cpp, kept
+    // separate from its neighbours despite some overlap between them.
     auto dummy_played_rank(DefenderHeuristicContext const& ctx) -> int
     {
         int const dummy_seat = (ctx.state.declarer + 2) % DDS_HANDS;
