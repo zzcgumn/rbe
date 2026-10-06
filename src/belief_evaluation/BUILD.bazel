@@ -135,8 +135,12 @@ cc_library(
 # double_dummy_defender is kept separate from belief_evaluation above.
 cc_library(
     name = "defender_heuristic",
+    srcs = [
+        "defender_heuristic_chain.cpp",
+    ],
     hdrs = [
         "defender_heuristic.hpp",
+        "defender_heuristic_chain.hpp",
     ],
     visibility = ["//visibility:public"],
     deps = [

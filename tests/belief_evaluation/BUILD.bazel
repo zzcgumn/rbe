@@ -168,6 +168,7 @@ cc_test(
     name = "defender_heuristic_test",
     size = "small",
     srcs = [
+        "defender_heuristic_chain_test.cpp",
         "defender_heuristic_test.cpp",
         "test_support.hpp",
     ],
