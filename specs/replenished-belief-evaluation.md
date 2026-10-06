@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-09-28
+last-updated: 2026-10-06
 ---
 
 # Replenished Belief Evaluation
@@ -788,6 +788,34 @@ rename or include-ordering trick anywhere in the module.
   (`//src/belief_evaluation:double_dummy_bound`), sibling to
   `double_dummy_defender` above and paired with it for the intended sound
   tier-2 configuration.
+- `src/belief_evaluation/defender_heuristic.hpp`,
+  `defender_heuristic_chain.hpp`, `second_seat_low.hpp`,
+  `high_in_third.hpp`, `third_seat_low.hpp`, `fourth_seat_low.hpp`,
+  `ruff_small.hpp`, `suit_top_tricks.hpp`, `discard_keep_winners.hpp`,
+  `default_defender_heuristics.hpp` — `DefenderHeuristic` (a plain
+  callable, not an interface — a caller's own rule and a built-in one
+  are the identical kind of value), `DefenderHeuristicContext`,
+  `DefenderHeuristicChain` (whose `add()` is the *only* way a chain is
+  built — no denomination argument, no enum of which built-ins to
+  include), the six concrete rules as factory functions, and
+  `make_default_defender_heuristics()`, a convenience builder only,
+  never special-cased by anything that consumes a chain. Solver-free:
+  every rule reads an already-solved candidate set rather than calling
+  `solve_board` itself, so this is its own solver-free `cc_library`
+  (`:defender_heuristic`), a sibling target to `:belief_evaluation`
+  above, not folded into it.
+- `src/belief_evaluation/heuristic_defender.hpp` — `HeuristicDefender`, a
+  second `DefenderStrategy` implementation backed by a caller-assembled
+  `DefenderHeuristicChain`, falling back to `spread()` (above) when
+  every rule in the chain defers. **A separate, solver-linked Bazel
+  target** (`//src/belief_evaluation:heuristic_defender`), mirroring
+  `double_dummy_defender` above — not a replacement for it; both are
+  usable anywhere `evaluate()`'s `delta` argument is accepted. Still not
+  best defence against a contract, for the same reason
+  `DoubleDummyDefender` is not: it still only ever offers a card from
+  the double-dummy-optimal candidate set a `solve_board` call produces,
+  which a chain rule or `spread()`'s own fallback then narrows or
+  distributes over — neither invents a candidate outside that set.
 
 ## Known gaps / non-goals
 
