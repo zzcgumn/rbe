@@ -137,10 +137,12 @@ cc_library(
     name = "defender_heuristic",
     srcs = [
         "defender_heuristic_chain.cpp",
+        "second_seat_low.cpp",
     ],
     hdrs = [
         "defender_heuristic.hpp",
         "defender_heuristic_chain.hpp",
+        "second_seat_low.hpp",
     ],
     visibility = ["//visibility:public"],
     deps = [
