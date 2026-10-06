@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>
 #include <api/solve_board.hpp>
@@ -11,6 +13,8 @@
 #include <belief_evaluation/double_dummy_defender.hpp>
 #include <belief_evaluation/fourth_seat_low.hpp>
 #include <belief_evaluation/heuristic_defender.hpp>
+#include <belief_evaluation/high_in_third.hpp>
+#include <belief_evaluation/second_seat_low.hpp>
 
 #include "test_support.hpp"
 
@@ -21,6 +25,7 @@ namespace
     constexpr int Two = 2;
     constexpr int Three = 3;
     constexpr int Four = 4;
+    constexpr int Five = 5;
     constexpr int King = 13;
     constexpr int Ace = 14;
 
@@ -225,45 +230,72 @@ TEST_F(HeuristicDefenderTest, FallsBackToSpreadWhenNoRuleFires)
 
 TEST_F(HeuristicDefenderTest, ANonDefaultChainBehavesExactlyAsItsOwnSelectCardSays)
 {
-    // A hand-built chain, deliberately not the convenience one: only
-    // fourth_seat_low, then a caller-supplied rule that always answers
-    // with a fixed, clearly-wrong-looking card whenever it is reached --
-    // proving HeuristicDefender has no special notion of "the default
-    // chain" to diverge from.
+    // A hand-built chain, deliberately not the convenience one: two
+    // built-ins in non-default order (high_in_third before
+    // second_seat_low, the reverse of make_default_defender_heuristics'
+    // own order), with a caller-supplied rule spliced between them.
+    // North, second seat, holds two non-touching spades -- if
+    // second_seat_low ran, it would pick the low one; the custom rule
+    // instead picks the high one, so which card comes back is proof the
+    // custom rule actually fired and won, not merely that it was
+    // accepted without crashing.
     Deal deal{};
     deal.trump = NoTrump;
-    deal.first = East;
+    deal.first = West;
     deal.currentTrickSuit[0] = Spades;
     deal.currentTrickRank[0] = Three;
-    deal.currentTrickSuit[1] = Hearts;
-    deal.currentTrickRank[1] = Four;
-    deal.currentTrickSuit[2] = Hearts;
-    deal.currentTrickRank[2] = Three;
-    deal.remainCards[North][Spades] = be::holding({Two});
+    deal.remainCards[West][Hearts] = be::holding({Two});   // West's one card left, having led its spade
+    deal.remainCards[North][Spades] = be::holding({Two, King});
+    deal.remainCards[East][Spades] = be::holding({Four});
+    deal.remainCards[East][Hearts] = be::holding({Three});
+    deal.remainCards[South][Hearts] = be::holding({Four, Five});
 
     be::ObservationState state{};
     state.declarer = East;
 
-    be::DefenderHeuristicChain chain;
-    chain.add(be::fourth_seat_low());
     bool custom_rule_called = false;
-    chain.add([&custom_rule_called](be::DefenderHeuristicContext const&,
-                                     std::vector<be::Card> const&) -> std::optional<be::Card> {
+    be::DefenderHeuristicChain chain;
+    chain.add(be::high_in_third());  // position_in_trick == 1 here: defers
+    chain.add([&custom_rule_called](
+                   be::DefenderHeuristicContext const& ctx,
+                   std::vector<be::Card> const& best_cards) -> std::optional<be::Card> {
         custom_rule_called = true;
-        return std::nullopt;
+        auto const highest = std::ranges::max_element(
+            best_cards, [](be::Card const& a, be::Card const& b) { return a.rank < b.rank; });
+        return ctx.position_in_trick == 1 && highest != best_cards.end() ? std::optional(*highest)
+                                                                          : std::nullopt;
     });
+    chain.add(be::second_seat_low());  // never reached: the custom rule above already fired
 
     SolverContext ctx;
     be::HeuristicDefender defender(ctx, chain);
     std::vector<be::WeightedCard> const result =
         defender.as_strategy()(be::DefenderQuery{deal, North, state});
 
-    // fourth_seat_low fires first (North's only legal card), so the
-    // custom rule is never reached -- proving add() order, not merely
-    // that the custom rule is accepted at all.
     ASSERT_EQ(result.size(), 1u);
-    EXPECT_EQ(result[0].card.rank, Two);
-    EXPECT_FALSE(custom_rule_called);
+    EXPECT_EQ(result[0].card.rank, King);  // the custom rule's own answer, not second_seat_low's
+    EXPECT_DOUBLE_EQ(result[0].probability, 1.0);
+    EXPECT_TRUE(custom_rule_called);
+
+    // The composability guarantee itself: HeuristicDefender's own answer
+    // must equal calling this exact chain's select_card() directly
+    // against the same solved position -- proving it has no special
+    // notion of "the default chain" to diverge from, not merely that a
+    // custom rule is accepted.
+    FutureTricks fut{};
+    ASSERT_EQ(solve_board(ctx, deal, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &fut), RETURN_NO_FAULT);
+    std::vector<be::Card> best_cards;
+    for (int i = 0; i < fut.cards; ++i)
+    {
+        best_cards.push_back(be::Card{fut.suit[i], fut.rank[i]});
+    }
+    be::DefenderHeuristicContext const direct_ctx =
+        be::make_defender_heuristic_context(deal, state, North, fut);
+    std::optional<be::Card> const direct_result = chain.select_card(direct_ctx, best_cards);
+
+    ASSERT_TRUE(direct_result.has_value());
+    EXPECT_EQ(direct_result->suit, result[0].card.suit);
+    EXPECT_EQ(direct_result->rank, result[0].card.rank);
 }
 
 TEST_F(HeuristicDefenderTest, ANonZeroSolveBoardStatusReturnsAnEmptyDistribution)
