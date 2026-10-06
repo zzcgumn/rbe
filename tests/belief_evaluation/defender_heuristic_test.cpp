@@ -4,7 +4,9 @@
 #include <api/dds_data_types.hpp>
 
 #include <belief_evaluation/defender_heuristic.hpp>
+#include <belief_evaluation/high_in_third.hpp>
 #include <belief_evaluation/second_seat_low.hpp>
+#include <belief_evaluation/third_seat_low.hpp>
 #include <belief_evaluation/types.hpp>
 
 #include "test_support.hpp"
@@ -16,6 +18,7 @@ namespace
     constexpr int Two = 2;
     constexpr int Three = 3;
     constexpr int Four = 4;
+    constexpr int Jack = 11;
     constexpr int Queen = 12;
     constexpr int King = 13;
     constexpr int Ace = 14;
@@ -391,4 +394,144 @@ TEST_F(SecondSeatLowTest, AlwaysReturnsTheLowestWhenRandomisingIsOff)
         be::second_seat_low(/*randomise_touching_honours=*/false)(ctx, best_cards);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->rank, Queen);
+}
+
+// --- high_in_third / third_seat_low ---------------------------------------
+//
+// South leads, West (dummy) plays second, North (a defender) is third to
+// act, East (declarer) plays last. South and North are partners (both
+// defenders); East and West are partners (declarer and dummy) -- chosen
+// so dummy's card is already visible by North's turn, which is what
+// "high in third" needs.
+
+namespace
+{
+    constexpr int ThirdSeatDeclarer = East;
+    constexpr int ThirdSeatLeader = South;
+    constexpr int ThirdSeat = North;
+}
+
+class HighInThirdAndThirdSeatLowTest : public ::testing::Test
+{
+};
+
+TEST_F(HighInThirdAndThirdSeatLowTest, HighInThirdFiresWhenPartnerLedAndDummysCardIsBeatable)
+{
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = ThirdSeatLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.currentTrickSuit[1] = Spades;
+    deal.currentTrickRank[1] = Jack;  // dummy's card, beatable by the ace
+    deal.remainCards[ThirdSeat][Spades] = be::holding({Two, Ace});
+
+    be::ObservationState state{};
+    state.declarer = ThirdSeatDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, ThirdSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Two}, be::Card{Spades, Ace}};
+
+    std::optional<be::Card> const high_result = be::high_in_third()(ctx, best_cards);
+    ASSERT_TRUE(high_result.has_value());
+    EXPECT_EQ(high_result->rank, Ace);
+
+    // Same context: third_seat_low must defer, proving the partition.
+    EXPECT_FALSE(be::third_seat_low()(ctx, best_cards).has_value());
+}
+
+TEST_F(HighInThirdAndThirdSeatLowTest, ThirdSeatLowFiresWhenDummysCardAlreadyBeatsEveryCandidate)
+{
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = ThirdSeatLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.currentTrickSuit[1] = Spades;
+    deal.currentTrickRank[1] = Ace;  // dummy's card, beats every candidate below
+    deal.remainCards[ThirdSeat][Spades] = be::holding({Two, King});
+
+    be::ObservationState state{};
+    state.declarer = ThirdSeatDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, ThirdSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Two}, be::Card{Spades, King}};
+
+    EXPECT_FALSE(be::high_in_third()(ctx, best_cards).has_value());
+
+    std::optional<be::Card> const low_result = be::third_seat_low()(ctx, best_cards);
+    ASSERT_TRUE(low_result.has_value());
+    EXPECT_EQ(low_result->rank, Two);
+}
+
+TEST_F(HighInThirdAndThirdSeatLowTest, NeitherFiresOutsideThirdSeat)
+{
+    // North itself on lead: position 0, not 2.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = ThirdSeat;
+    deal.remainCards[ThirdSeat][Spades] = be::holding({Ace});
+
+    be::ObservationState state{};
+    state.declarer = ThirdSeatDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, ThirdSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Ace}};
+
+    EXPECT_FALSE(be::high_in_third()(ctx, best_cards).has_value());
+    EXPECT_FALSE(be::third_seat_low()(ctx, best_cards).has_value());
+}
+
+TEST_F(HighInThirdAndThirdSeatLowTest, NeitherFiresWhenVoid)
+{
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = ThirdSeatLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.currentTrickSuit[1] = Spades;
+    deal.currentTrickRank[1] = Jack;
+    deal.remainCards[ThirdSeat][Hearts] = be::holding({Two});  // void in spades
+
+    be::ObservationState state{};
+    state.declarer = ThirdSeatDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, ThirdSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Hearts, Two}};
+
+    EXPECT_FALSE(be::high_in_third()(ctx, best_cards).has_value());
+    EXPECT_FALSE(be::third_seat_low()(ctx, best_cards).has_value());
+}
+
+TEST_F(HighInThirdAndThirdSeatLowTest, NeitherFiresOnTheDeclaringSide)
+{
+    // Identical to the first test's own fixture, except the third seat
+    // (North) is itself declared the declarer -- no longer a defender.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = ThirdSeatLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.currentTrickSuit[1] = Spades;
+    deal.currentTrickRank[1] = Jack;
+    deal.remainCards[ThirdSeat][Spades] = be::holding({Two, Ace});
+
+    be::ObservationState state{};
+    state.declarer = ThirdSeat;  // North is declarer, not a defender
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, ThirdSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Two}, be::Card{Spades, Ace}};
+
+    EXPECT_FALSE(be::high_in_third()(ctx, best_cards).has_value());
+    EXPECT_FALSE(be::third_seat_low()(ctx, best_cards).has_value());
 }
