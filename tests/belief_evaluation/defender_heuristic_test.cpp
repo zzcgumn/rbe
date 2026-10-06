@@ -402,6 +402,51 @@ TEST_F(SecondSeatLowTest, AlwaysReturnsTheLowestWhenRandomisingIsOff)
     EXPECT_EQ(result->rank, Queen);
 }
 
+TEST_F(SecondSeatLowTest, DetectsTouchingWhenSolveBoardCollapsesTheGroupToOneEntry)
+{
+    // The shape solve_board actually returns for a plain touching pair --
+    // not the two-separate-entries shape the tests above construct by
+    // hand: ONE fut entry (dds reports the *highest* card of a touching
+    // run as the representative), with the lower card folded into that
+    // one entry's own equals field. best_cards, built one entry per fut
+    // index exactly as HeuristicDefender builds it, therefore has only
+    // one member here too -- confirmed directly against a real
+    // solve_board call (not asserted by construction) while building the
+    // minimal example in restricted_choice_6nt_belief_space.py's own
+    // main(), where this was first caught: a chain carrying this bug
+    // returns the queen at probability 1.0 under both
+    // randomise_touching_honours settings, never detecting the fold at
+    // all.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = Leader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[SecondSeat][Spades] = be::holding({Queen, Jack});
+    be::ObservationState state{};
+    state.declarer = Declarer;
+
+    FutureTricks fut{};
+    fut.cards = 1;
+    fut.suit[0] = Spades;
+    fut.rank[0] = Queen;
+    fut.equals[0] = 1 << Jack;
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, SecondSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Queen}};
+
+    EXPECT_FALSE(be::second_seat_low(/*randomise_touching_honours=*/true)(ctx, best_cards).has_value());
+
+    std::optional<be::Card> const fixed = be::second_seat_low(/*randomise_touching_honours=*/false)(ctx, best_cards);
+    ASSERT_TRUE(fixed.has_value());
+    EXPECT_EQ(fixed->suit, Spades);
+    EXPECT_EQ(fixed->rank, Jack)
+        << "the true lowest card in the group is the jack, folded into "
+           "the queen's own equals -- not the queen itself, which is "
+           "only the group's canonical representative";
+}
+
 // --- high_in_third / third_seat_low ---------------------------------------
 //
 // South leads, West (dummy) plays second, North (a defender) is third to
