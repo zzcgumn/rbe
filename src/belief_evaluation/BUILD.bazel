@@ -145,6 +145,7 @@ cc_library(
         "second_seat_low.cpp",
         "suit_top_tricks.cpp",
         "third_seat_low.cpp",
+        "touching_group.cpp",
     ],
     hdrs = [
         "default_defender_heuristics.hpp",
@@ -157,6 +158,7 @@ cc_library(
         "second_seat_low.hpp",
         "suit_top_tricks.hpp",
         "third_seat_low.hpp",
+        "touching_group.hpp",
     ],
     visibility = ["//visibility:public"],
     deps = [

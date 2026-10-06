@@ -1,5 +1,7 @@
 #include <belief_evaluation/second_seat_low.hpp>
 
+#include <belief_evaluation/touching_group.hpp>
+
 namespace dds::belief_evaluation
 {
 
@@ -17,17 +19,16 @@ namespace
     //    compares *different* best_cards entries against each other -- the
     //    first version of this function -- can never see this case at all:
     //    with one entry there is nothing to loop over, and the bug is
-    //    silent, not a crash.
+    //    silent, not a crash. true_lowest_rank (shared with the other
+    //    rules that compare candidates by raw rank) resolves the rank
+    //    half of this; only the touching verdict itself is local here.
     // 2. The cross-reference loop below, for the case a caller lists a
     //    touching group as separate best_cards entries explicitly instead
     //    (checked in both directions, since dds may record a group's
     //    membership on whichever entry it treats as the representative,
-    //    not necessarily the lowest-ranked one).
-    //
-    // Returns the group's own true lowest rank alongside the verdict,
-    // since that rank may itself be one folded into lowest_index's equals
-    // rather than best_cards[lowest_index].rank -- dds's own representative
-    // is the *highest* card of a touching run, not the lowest.
+    //    not necessarily the lowest-ranked one). The group is not
+    //    collapsed in this shape, so best_cards[lowest_index].rank is
+    //    already the true lowest rank -- nothing to resolve.
     struct TouchingResult
     {
         bool touches;
@@ -38,23 +39,10 @@ namespace
         std::vector<Card> const& best_cards, FutureTricks const& fut, std::size_t lowest_index) -> TouchingResult
     {
         Card const& lowest = best_cards[lowest_index];
-        int lowest_rank = lowest.rank;
 
-        if (lowest_index < static_cast<std::size_t>(fut.cards))
+        if (lowest_index < static_cast<std::size_t>(fut.cards) && fut.equals[lowest_index] != 0)
         {
-            unsigned const equals = static_cast<unsigned>(fut.equals[lowest_index]);
-            if (equals != 0)
-            {
-                for (int rank = 2; rank < lowest_rank; ++rank)
-                {
-                    if ((equals & (1u << rank)) != 0)
-                    {
-                        lowest_rank = rank;
-                        break;
-                    }
-                }
-                return TouchingResult{true, lowest_rank};
-            }
+            return TouchingResult{true, true_lowest_rank(best_cards, fut, lowest_index)};
         }
 
         for (std::size_t j = 0; j < best_cards.size(); ++j)
@@ -69,10 +57,10 @@ namespace
                 j < static_cast<std::size_t>(fut.cards) && (fut.equals[j] & (1u << lowest.rank)) != 0;
             if (lowest_names_other || other_names_lowest)
             {
-                return TouchingResult{true, lowest_rank};
+                return TouchingResult{true, lowest.rank};
             }
         }
-        return TouchingResult{false, lowest_rank};
+        return TouchingResult{false, lowest.rank};
     }
 }
 

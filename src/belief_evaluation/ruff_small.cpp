@@ -2,6 +2,8 @@
 
 #include <api/dds_constants.hpp>
 
+#include <belief_evaluation/touching_group.hpp>
+
 namespace dds::belief_evaluation
 {
 
@@ -14,25 +16,33 @@ auto ruff_small() -> DefenderHeuristic
             return std::nullopt;
         }
 
-        std::optional<Card> smallest_trump;
-        for (Card const& card : best_cards)
+        // Every candidate considered here is confined to one suit
+        // (ctx.trump), so two touching runs among them are disjoint,
+        // ordered intervals -- comparing by raw (representative) rank
+        // already finds the right entry; only the rank ultimately played
+        // (used below for the card returned and the overruff check) needs
+        // resolving against ctx.fut.equals (see true_lowest_rank's own
+        // doxygen).
+        std::optional<std::size_t> smallest_trump_index;
+        for (std::size_t i = 0; i < best_cards.size(); ++i)
         {
-            if (card.suit != ctx.trump)
+            if (best_cards[i].suit != ctx.trump)
             {
                 continue;
             }
-            if (!smallest_trump || card.rank < smallest_trump->rank)
+            if (!smallest_trump_index || best_cards[i].rank < best_cards[*smallest_trump_index].rank)
             {
-                smallest_trump = card;
+                smallest_trump_index = i;
             }
         }
-        if (!smallest_trump)
+        if (!smallest_trump_index)
         {
             return std::nullopt;
         }
+        int const smallest_trump_rank = true_lowest_rank(best_cards, ctx.fut, *smallest_trump_index);
 
         int const led_suit = ctx.layout.currentTrickSuit[0];
-        unsigned const higher_trump_mask = ~((1u << (smallest_trump->rank + 1)) - 1);
+        unsigned const higher_trump_mask = ~((1u << (smallest_trump_rank + 1)) - 1);
 
         for (int seat = 0; seat < DDS_HANDS; ++seat)
         {
@@ -60,7 +70,7 @@ auto ruff_small() -> DefenderHeuristic
             }
         }
 
-        return smallest_trump;
+        return Card{best_cards[*smallest_trump_index].suit, smallest_trump_rank};
     };
 }
 

@@ -22,6 +22,10 @@ namespace
     constexpr int Two = 2;
     constexpr int Three = 3;
     constexpr int Four = 4;
+    constexpr int Five = 5;
+    constexpr int Six = 6;
+    constexpr int Nine = 9;
+    constexpr int Ten = 10;
     constexpr int Jack = 11;
     constexpr int Queen = 12;
     constexpr int King = 13;
@@ -519,6 +523,45 @@ TEST_F(HighInThirdAndThirdSeatLowTest, ThirdSeatLowFiresWhenDummysCardAlreadyBea
     EXPECT_EQ(low_result->rank, Two);
 }
 
+TEST_F(HighInThirdAndThirdSeatLowTest, ThirdSeatLowReturnsTheTrueLowestCandidateWhenSolveBoardCollapsesTheGroupToOneEntry)
+{
+    // Same collapsing shape as fourth_seat_low's own regression test: one
+    // fut entry (the king, dds's representative), with the queen folded
+    // into its equals. Dummy's ace beats the king, so high_in_third
+    // defers and third_seat_low must fire -- the true lowest card in the
+    // group is the queen, not the king it is written down as.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = ThirdSeatLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.currentTrickSuit[1] = Spades;
+    deal.currentTrickRank[1] = Ace;  // dummy's card, beats the king
+    deal.remainCards[ThirdSeat][Spades] = be::holding({Queen, King});
+    be::ObservationState state{};
+    state.declarer = ThirdSeatDeclarer;
+
+    FutureTricks fut{};
+    fut.cards = 1;
+    fut.suit[0] = Spades;
+    fut.rank[0] = King;
+    fut.equals[0] = 1 << Queen;
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, ThirdSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, King}};
+
+    EXPECT_FALSE(be::high_in_third()(ctx, best_cards).has_value());
+
+    std::optional<be::Card> const low_result = be::third_seat_low()(ctx, best_cards);
+    ASSERT_TRUE(low_result.has_value());
+    EXPECT_EQ(low_result->suit, Spades);
+    EXPECT_EQ(low_result->rank, Queen)
+        << "the true lowest card in the group is the queen, folded into "
+           "the king's own equals -- not the king itself, which is only "
+           "the group's canonical representative";
+}
+
 TEST_F(HighInThirdAndThirdSeatLowTest, NeitherFiresOutsideThirdSeat)
 {
     // North itself on lead: position 0, not 2.
@@ -717,6 +760,46 @@ TEST_F(FourthSeatLowTest, ReturnsTheLowestCandidate)
     EXPECT_EQ(result->rank, Two);
 }
 
+TEST_F(FourthSeatLowTest, ReturnsTheTrueLowestCandidateWhenSolveBoardCollapsesTheGroupToOneEntry)
+{
+    // The same collapsing shape second_seat_low's own regression test
+    // reproduces: solve_board folds a touching run (queen and jack, king
+    // gone) to one canonical entry (the queen, dds's own representative),
+    // with the jack folded into that entry's equals. best_cards therefore
+    // has only this one member, and the true lowest card in the group --
+    // the jack -- is nowhere written down as its own rank.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = FourthSeatLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.currentTrickSuit[1] = Diamonds;
+    deal.currentTrickRank[1] = Four;
+    deal.currentTrickSuit[2] = Diamonds;
+    deal.currentTrickRank[2] = King;
+    deal.remainCards[FourthSeat][Spades] = be::holding({Queen, Jack});
+    be::ObservationState state{};
+    state.declarer = FourthSeatDeclarer;
+
+    FutureTricks fut{};
+    fut.cards = 1;
+    fut.suit[0] = Spades;
+    fut.rank[0] = Queen;
+    fut.equals[0] = 1 << Jack;
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, FourthSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Queen}};
+
+    std::optional<be::Card> const result = be::fourth_seat_low()(ctx, best_cards);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->suit, Spades);
+    EXPECT_EQ(result->rank, Jack)
+        << "the true lowest card in the group is the jack, folded into "
+           "the queen's own equals -- not the queen itself, which is "
+           "only the group's canonical representative";
+}
+
 // --- discard_keep_winners --------------------------------------------------
 
 namespace
@@ -877,6 +960,52 @@ TEST_F(DiscardKeepWinnersTest, BreaksATieByRankThenSuit)
     }
 }
 
+TEST_F(DiscardKeepWinnersTest, ResolvesTrueRankBeforeComparingAcrossDifferentSuits)
+{
+    // Unlike second/third/fourth-seat low, this rule compares candidates
+    // from *different* suits -- so, unlike those rules, comparing by raw
+    // (representative) rank is not merely cosmetically wrong when a
+    // candidate's group is collapsed, it can pick the wrong suit
+    // outright. Both suits give zero top tricks (East holds the ace of
+    // each), so the tie is broken by rank alone. Spades collapses to one
+    // fut entry, the six, with the two folded into its equals -- the true
+    // lowest card there is the two. Diamonds is a plain five, no fold.
+    // Comparing *representative* ranks (six vs five) picks diamonds; the
+    // true lowest ranks (two vs five) must pick spades instead.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = DiscardLeader;
+    deal.currentTrickSuit[0] = Hearts;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[Discarder][Spades] = be::holding({Two, Six});
+    deal.remainCards[East][Spades] = be::holding({Ace});
+    deal.remainCards[Discarder][Diamonds] = be::holding({Five});
+    deal.remainCards[East][Diamonds] = be::holding({Ace});
+
+    be::ObservationState state{};
+    state.declarer = DiscardDeclarer;
+
+    FutureTricks fut{};
+    fut.cards = 2;
+    fut.suit[0] = Spades;
+    fut.rank[0] = Six;
+    fut.equals[0] = 1 << Two;
+    fut.suit[1] = Diamonds;
+    fut.rank[1] = Five;
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, Discarder, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Six}, be::Card{Diamonds, Five}};
+
+    std::optional<be::Card> const result = be::discard_keep_winners()(ctx, best_cards);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->suit, Spades)
+        << "the true lowest rank (the spade two, folded into the six's "
+           "own equals) beats the diamond five -- comparing by "
+           "representative rank alone would have picked diamonds instead";
+    EXPECT_EQ(result->rank, Two);
+}
+
 // --- ruff_small -------------------------------------------------------
 
 namespace
@@ -939,6 +1068,43 @@ TEST_F(RuffSmallTest, ReturnsTheSmallestTrumpWhenNoOverruffIsPossible)
     std::optional<be::Card> const result = be::ruff_small()(ctx, best_cards);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->rank, Two);
+}
+
+TEST_F(RuffSmallTest, DetectsAnOverruffAgainstTheTrueLowestTrumpNotTheCollapsedRepresentative)
+{
+    // North's trumps collapse to one fut entry: the jack (dds's own
+    // representative), with the nine folded into its equals -- nothing
+    // holds the ten between them. The true lowest trump North would
+    // actually play is the nine, not the jack. East's own ten sits
+    // strictly between the two: it overruffs the nine but not the jack.
+    // A rule that computed the overruff mask from the uncollapsed
+    // representative rank (the jack) would miss this threat entirely and
+    // wrongly return a card instead of deferring.
+    Deal deal{};
+    deal.trump = RuffTrump;
+    deal.first = RuffLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[RuffSeat][Hearts] = be::holding({Nine, Jack});
+    deal.remainCards[RuffNotYetPlayedDeclaringSide][Hearts] = be::holding({Ten});
+
+    be::ObservationState state{};
+    state.declarer = RuffDeclarer;
+
+    FutureTricks fut{};
+    fut.cards = 1;
+    fut.suit[0] = RuffTrump;
+    fut.rank[0] = Jack;
+    fut.equals[0] = 1 << Nine;
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, RuffSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{RuffTrump, Jack}};
+
+    EXPECT_FALSE(be::ruff_small()(ctx, best_cards).has_value())
+        << "East's ten overruffs the true lowest trump (the nine, folded "
+           "into the jack's own equals), even though it cannot beat the "
+           "jack itself";
 }
 
 TEST_F(RuffSmallTest, DefersWhenADeclaringSideSeatCanOverruff)

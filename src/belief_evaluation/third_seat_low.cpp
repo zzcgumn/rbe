@@ -2,6 +2,8 @@
 
 #include <api/dds_constants.hpp>
 
+#include <belief_evaluation/touching_group.hpp>
+
 namespace dds::belief_evaluation
 {
 
@@ -30,6 +32,10 @@ namespace
         return highest;
     }
 
+    // All candidates follow the same led suit here, so comparing by raw
+    // (representative) rank already finds the right entry -- see
+    // true_lowest_rank's own doxygen for why the search itself needs no
+    // resolving, only the value ultimately returned for it.
     auto lowest_candidate_index(std::vector<Card> const& best_cards) -> std::size_t
     {
         std::size_t lowest = 0;
@@ -64,7 +70,8 @@ auto third_seat_low() -> DefenderHeuristic
         {
             return std::nullopt;  // high_in_third's own case: defer to it
         }
-        return best_cards[lowest_candidate_index(best_cards)];
+        std::size_t const lowest = lowest_candidate_index(best_cards);
+        return Card{best_cards[lowest].suit, true_lowest_rank(best_cards, ctx.fut, lowest)};
     };
 }
 
