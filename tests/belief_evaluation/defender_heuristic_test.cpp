@@ -3,6 +3,7 @@
 #include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>
 
+#include <belief_evaluation/default_defender_heuristics.hpp>
 #include <belief_evaluation/defender_heuristic.hpp>
 #include <belief_evaluation/discard_keep_winners.hpp>
 #include <belief_evaluation/fourth_seat_low.hpp>
@@ -962,4 +963,74 @@ TEST_F(RuffSmallTest, FiresOnlyWhenVoidInTheLedSuit)
     std::vector<be::Card> const best_cards{be::Card{Spades, Two}};
 
     EXPECT_FALSE(be::ruff_small()(ctx, best_cards).has_value());
+}
+
+// --- make_default_defender_heuristics --------------------------------------
+
+class MakeDefaultDefenderHeuristicsTest : public ::testing::Test
+{
+};
+
+TEST_F(MakeDefaultDefenderHeuristicsTest, TheNotrumpChainWorksEndToEndThroughADiscard)
+{
+    // ruff_small defers unconditionally whenever ctx.trump == NoTrump
+    // (see its own gate), whether or not it is present in the chain --
+    // its exclusion from the notrump chain is therefore not separately
+    // observable by behaviour alone. What *is* observable, and is what
+    // this test actually checks: the notrump chain still reaches and
+    // fires discard_keep_winners, its last rule, on a genuine discard.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = DiscardLeader;
+    deal.currentTrickSuit[0] = Hearts;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[Discarder][Spades] = be::holding({Two});
+    deal.remainCards[East][Spades] = be::holding({Ace});
+
+    be::ObservationState state{};
+    state.declarer = DiscardDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, Discarder, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Two}};
+
+    be::DefenderHeuristicChain const chain = be::make_default_defender_heuristics(NoTrump);
+    std::optional<be::Card> const result = chain.select_card(ctx, best_cards);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->suit, Spades);
+    EXPECT_EQ(result->rank, Two);
+}
+
+TEST_F(MakeDefaultDefenderHeuristicsTest, InsertsRuffSmallBeforeDiscardKeepWinnersForATrumpContract)
+{
+    // Hearts is trump. North, void in spades (the led suit), holds the
+    // two of hearts (a trump) and is offered a club ace as an
+    // alternative candidate. Clubs gives zero top tricks for the
+    // defending side (East holds the ace); hearts gives one (nothing
+    // else is in the deal to beat North's own lone heart). If
+    // discard_keep_winners ran first, it would pick the club (fewer top
+    // tricks) -- ruff_small running first instead must return the trump.
+    Deal deal{};
+    deal.trump = RuffTrump;
+    deal.first = RuffLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[RuffSeat][Hearts] = be::holding({Two});
+    deal.remainCards[RuffNotYetPlayedDeclaringSide][Spades] = be::holding({Four});  // can follow suit
+    deal.remainCards[East][Clubs] = be::holding({Ace});
+
+    be::ObservationState state{};
+    state.declarer = RuffDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, RuffSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Hearts, Two}, be::Card{Clubs, Ace}};
+
+    be::DefenderHeuristicChain const chain = be::make_default_defender_heuristics(RuffTrump);
+    std::optional<be::Card> const result = chain.select_card(ctx, best_cards);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->suit, Hearts);
+    EXPECT_EQ(result->rank, Two);
 }

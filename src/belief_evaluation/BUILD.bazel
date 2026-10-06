@@ -136,6 +136,7 @@ cc_library(
 cc_library(
     name = "defender_heuristic",
     srcs = [
+        "default_defender_heuristics.cpp",
         "defender_heuristic_chain.cpp",
         "discard_keep_winners.cpp",
         "fourth_seat_low.cpp",
@@ -146,6 +147,7 @@ cc_library(
         "third_seat_low.cpp",
     ],
     hdrs = [
+        "default_defender_heuristics.hpp",
         "defender_heuristic.hpp",
         "defender_heuristic_chain.hpp",
         "discard_keep_winners.hpp",
@@ -161,6 +163,25 @@ cc_library(
         ":belief_evaluation",
         "@dds//library/src/api:api_definitions",
         "@dds//library/src/api:dds_constants",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# Sibling of double_dummy_defender, same reasoning for staying out of the
+# solver-free defender_heuristic library above: a caller supplying their
+# own delta should not have to link the solver to get the evaluator.
+cc_library(
+    name = "heuristic_defender",
+    srcs = ["heuristic_defender.cpp"],
+    hdrs = ["heuristic_defender.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":belief_evaluation",
+        ":defender_heuristic",
+        "@dds//library/src:dds",
     ],
     include_prefix = "belief_evaluation",
     copts = DDS_CPPOPTS,
