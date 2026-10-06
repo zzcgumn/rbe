@@ -159,3 +159,26 @@ cc_test(
     linkopts = DDS_LINKOPTS,
     local_defines = DDS_LOCAL_DEFINES,
 )
+
+# Solver-free, mirroring //src/belief_evaluation:defender_heuristic's own
+# separation from double_dummy_defender/heuristic_defender below it. Grows
+# across the double_dummy_with_heuristics_defenders tasks as each concrete
+# rule lands; test_support.hpp is shared with the rest of this suite.
+cc_test(
+    name = "defender_heuristic_test",
+    size = "small",
+    srcs = [
+        "defender_heuristic_test.cpp",
+        "test_support.hpp",
+    ],
+    deps = [
+        "//src/belief_evaluation",
+        "//src/belief_evaluation:defender_heuristic",
+        "@dds//library/src/api:api_definitions",
+        "@dds//library/src/api:dds_constants",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
