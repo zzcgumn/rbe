@@ -77,7 +77,8 @@ TEST_F(HeuristicDefenderTest, ThirdSeatGateFiresEndToEndWhenDummysCardIsBeatable
     // consumed. North, third to act, holds the suit's only remaining low
     // card: forced, so this exercises the shared third-seat gate
     // (high_in_third / third_seat_low), not which of the two specifically
-    // answers -- already distinguished in task 4's own hand-built tests.
+    // answers -- already distinguished against hand-built contexts in
+    // defender_heuristic_test.cpp.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = South;
