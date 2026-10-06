@@ -4,6 +4,7 @@
 #include <api/dds_data_types.hpp>
 
 #include <belief_evaluation/defender_heuristic.hpp>
+#include <belief_evaluation/fourth_seat_low.hpp>
 #include <belief_evaluation/high_in_third.hpp>
 #include <belief_evaluation/second_seat_low.hpp>
 #include <belief_evaluation/third_seat_low.hpp>
@@ -25,6 +26,7 @@ namespace
 
     constexpr int Spades = 0;
     constexpr int Hearts = 1;
+    constexpr int Diamonds = 2;
     constexpr int NoTrump = DDS_NOTRUMP;
 
     constexpr int North = 0;
@@ -534,4 +536,134 @@ TEST_F(HighInThirdAndThirdSeatLowTest, NeitherFiresOnTheDeclaringSide)
 
     EXPECT_FALSE(be::high_in_third()(ctx, best_cards).has_value());
     EXPECT_FALSE(be::third_seat_low()(ctx, best_cards).has_value());
+}
+
+// --- fourth_seat_low -------------------------------------------------------
+
+namespace
+{
+    // East (declarer) leads; North, fourth to act, is a defender.
+    constexpr int FourthSeatDeclarer = East;
+    constexpr int FourthSeatLeader = East;
+    constexpr int FourthSeat = North;
+}
+
+class FourthSeatLowTest : public ::testing::Test
+{
+};
+
+TEST_F(FourthSeatLowTest, FiresOnlyInFourthSeatFollowingSuitAsADefender)
+{
+    be::DefenderHeuristic const rule = be::fourth_seat_low();
+
+    // Positive: fourth seat, following suit, defending. Three cards
+    // already on the trick (ranks irrelevant beyond being non-zero,
+    // i.e. actually played) so seat_on_play(deal) genuinely reaches the
+    // fourth seat.
+    {
+        Deal deal{};
+        deal.trump = NoTrump;
+        deal.first = FourthSeatLeader;
+        deal.currentTrickSuit[0] = Spades;
+        deal.currentTrickRank[0] = Three;
+        deal.currentTrickSuit[1] = Hearts;
+        deal.currentTrickRank[1] = Four;
+        deal.currentTrickSuit[2] = Hearts;
+        deal.currentTrickRank[2] = King;
+        deal.remainCards[FourthSeat][Spades] = be::holding({Two, Queen});
+        be::ObservationState state{};
+        state.declarer = FourthSeatDeclarer;
+        FutureTricks fut{};
+        be::DefenderHeuristicContext const ctx =
+            be::make_defender_heuristic_context(deal, state, FourthSeat, fut);
+        std::vector<be::Card> const best_cards{be::Card{Spades, Two}, be::Card{Spades, Queen}};
+
+        std::optional<be::Card> const result = rule(ctx, best_cards);
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->rank, Two);
+    }
+
+    // Negative: wrong position (the seat on play is the trick leader
+    // itself).
+    {
+        Deal deal{};
+        deal.trump = NoTrump;
+        deal.first = FourthSeat;
+        deal.remainCards[FourthSeat][Spades] = be::holding({Two});
+        be::ObservationState state{};
+        state.declarer = FourthSeatDeclarer;
+        FutureTricks fut{};
+        be::DefenderHeuristicContext const ctx =
+            be::make_defender_heuristic_context(deal, state, FourthSeat, fut);
+        std::vector<be::Card> const best_cards{be::Card{Spades, Two}};
+        EXPECT_FALSE(rule(ctx, best_cards).has_value());
+    }
+
+    // Negative: cannot follow suit (void in the led suit).
+    {
+        Deal deal{};
+        deal.trump = NoTrump;
+        deal.first = FourthSeatLeader;
+        deal.currentTrickSuit[0] = Spades;
+        deal.currentTrickRank[0] = Three;
+        deal.currentTrickSuit[1] = Diamonds;
+        deal.currentTrickRank[1] = Four;
+        deal.currentTrickSuit[2] = Diamonds;
+        deal.currentTrickRank[2] = King;
+        deal.remainCards[FourthSeat][Hearts] = be::holding({Two});
+        be::ObservationState state{};
+        state.declarer = FourthSeatDeclarer;
+        FutureTricks fut{};
+        be::DefenderHeuristicContext const ctx =
+            be::make_defender_heuristic_context(deal, state, FourthSeat, fut);
+        std::vector<be::Card> const best_cards{be::Card{Hearts, Two}};
+        EXPECT_FALSE(rule(ctx, best_cards).has_value());
+    }
+
+    // Negative: declaring side (the fourth seat is the declarer itself).
+    {
+        Deal deal{};
+        deal.trump = NoTrump;
+        deal.first = FourthSeatLeader;
+        deal.currentTrickSuit[0] = Spades;
+        deal.currentTrickRank[0] = Three;
+        deal.currentTrickSuit[1] = Diamonds;
+        deal.currentTrickRank[1] = Four;
+        deal.currentTrickSuit[2] = Diamonds;
+        deal.currentTrickRank[2] = King;
+        deal.remainCards[FourthSeat][Spades] = be::holding({Two});
+        be::ObservationState state{};
+        state.declarer = FourthSeat;  // North is declarer, not a defender
+        FutureTricks fut{};
+        be::DefenderHeuristicContext const ctx =
+            be::make_defender_heuristic_context(deal, state, FourthSeat, fut);
+        std::vector<be::Card> const best_cards{be::Card{Spades, Two}};
+        EXPECT_FALSE(rule(ctx, best_cards).has_value());
+    }
+}
+
+TEST_F(FourthSeatLowTest, ReturnsTheLowestCandidate)
+{
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = FourthSeatLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.currentTrickSuit[1] = Diamonds;
+    deal.currentTrickRank[1] = Four;
+    deal.currentTrickSuit[2] = Diamonds;
+    deal.currentTrickRank[2] = King;
+    deal.remainCards[FourthSeat][Spades] = be::holding({Three, Two, Queen});
+    be::ObservationState state{};
+    state.declarer = FourthSeatDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, FourthSeat, fut);
+    std::vector<be::Card> const best_cards{
+        be::Card{Spades, Three}, be::Card{Spades, Two}, be::Card{Spades, Queen}};
+
+    std::optional<be::Card> const result = be::fourth_seat_low()(ctx, best_cards);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->rank, Two);
 }
