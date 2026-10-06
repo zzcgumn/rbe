@@ -857,10 +857,12 @@ rename or include-ordering trick anywhere in the module.
   of tricks is in scope.
 - No deception-capable or partial-information defender models. The defender
   contract models perfect-information defenders only.
-- No defender heuristic beyond double-dummy equivalence. Signalling,
-  falsecarding, "low from three low" and similar conventions are all later
-  work or out of scope entirely; the only defenders this capability ships
-  are a test double and one that spreads uniformly over a double-dummy-tied
-  candidate set.
+- No signalling, falsecarding, or deception-capable defender. `HeuristicDefender`
+  (see "Key entry points" above) ships a chain of bridge-technique conventions
+  — second/third/fourth-hand low, high-in-third, ruff-small,
+  discard-keep-winners — but every one of them still only ever picks among
+  the double-dummy-optimal candidates a `solve_board` call produces; none
+  reasons about what partner or declarer can infer from the choice, which is
+  what the conventions above are for.
 - No `dds_c_*` C-ABI shim entry, and so no Java/FFM, .NET, or WASM binding
   surface for this capability.
