@@ -7,6 +7,7 @@
 #include <belief_evaluation/discard_keep_winners.hpp>
 #include <belief_evaluation/fourth_seat_low.hpp>
 #include <belief_evaluation/high_in_third.hpp>
+#include <belief_evaluation/ruff_small.hpp>
 #include <belief_evaluation/second_seat_low.hpp>
 #include <belief_evaluation/third_seat_low.hpp>
 #include <belief_evaluation/types.hpp>
@@ -828,4 +829,137 @@ TEST_F(DiscardKeepWinnersTest, BreaksATieByRankThenSuit)
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(result->suit, Diamonds);
     }
+}
+
+// --- ruff_small -------------------------------------------------------
+
+namespace
+{
+    // Trump is hearts. West leads a spade; North (seat 0), one card into
+    // the trick, is void in spades and holds two low hearts. East (the
+    // declarer) and South have not yet played to this trick.
+    constexpr int RuffTrump = Hearts;
+    constexpr int RuffLeader = West;
+    constexpr int RuffSeat = North;
+    constexpr int RuffDeclarer = East;  // dummy is West, the leader
+    constexpr int RuffNotYetPlayedDeclaringSide = East;
+    constexpr int RuffNotYetPlayedDefendingSide = South;
+}
+
+class RuffSmallTest : public ::testing::Test
+{
+};
+
+TEST_F(RuffSmallTest, FiresWhenVoidInANotrumpContractNever)
+{
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = RuffLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[RuffSeat][Hearts] = be::holding({Two, Three});
+
+    be::ObservationState state{};
+    state.declarer = RuffDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, RuffSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Hearts, Two}, be::Card{Hearts, Three}};
+
+    EXPECT_FALSE(be::ruff_small()(ctx, best_cards).has_value());
+}
+
+TEST_F(RuffSmallTest, ReturnsTheSmallestTrumpWhenNoOverruffIsPossible)
+{
+    Deal deal{};
+    deal.trump = RuffTrump;
+    deal.first = RuffLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[RuffSeat][Hearts] = be::holding({Two, Three});
+    // Neither not-yet-played seat can overruff: East can follow suit
+    // (holds a spade), South holds no hearts at all.
+    deal.remainCards[RuffNotYetPlayedDeclaringSide][Spades] = be::holding({Four});
+
+    be::ObservationState state{};
+    state.declarer = RuffDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, RuffSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Hearts, Two}, be::Card{Hearts, Three}};
+
+    std::optional<be::Card> const result = be::ruff_small()(ctx, best_cards);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->rank, Two);
+}
+
+TEST_F(RuffSmallTest, DefersWhenADeclaringSideSeatCanOverruff)
+{
+    Deal deal{};
+    deal.trump = RuffTrump;
+    deal.first = RuffLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[RuffSeat][Hearts] = be::holding({Two, Three});
+    // East, declaring side, is void in spades and holds a higher trump.
+    deal.remainCards[RuffNotYetPlayedDeclaringSide][Hearts] = be::holding({Four});
+
+    be::ObservationState state{};
+    state.declarer = RuffDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, RuffSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Hearts, Two}, be::Card{Hearts, Three}};
+
+    EXPECT_FALSE(be::ruff_small()(ctx, best_cards).has_value());
+}
+
+TEST_F(RuffSmallTest, DoesNotDeferToADefendingSideSeatsOverruffPotential)
+{
+    Deal deal{};
+    deal.trump = RuffTrump;
+    deal.first = RuffLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[RuffSeat][Hearts] = be::holding({Two, Three});
+    // South, the *defending* side, is void in spades and holds a much
+    // higher trump -- irrelevant to this rule's own declaring-side gate.
+    deal.remainCards[RuffNotYetPlayedDefendingSide][Hearts] = be::holding({Ace});
+    // East (declaring) can follow suit, so cannot overruff either.
+    deal.remainCards[RuffNotYetPlayedDeclaringSide][Spades] = be::holding({Four});
+
+    be::ObservationState state{};
+    state.declarer = RuffDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, RuffSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Hearts, Two}, be::Card{Hearts, Three}};
+
+    std::optional<be::Card> const result = be::ruff_small()(ctx, best_cards);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->rank, Two);
+}
+
+TEST_F(RuffSmallTest, FiresOnlyWhenVoidInTheLedSuit)
+{
+    Deal deal{};
+    deal.trump = RuffTrump;
+    deal.first = RuffLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[RuffSeat][Spades] = be::holding({Two});  // can follow suit
+
+    be::ObservationState state{};
+    state.declarer = RuffDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, RuffSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Two}};
+
+    EXPECT_FALSE(be::ruff_small()(ctx, best_cards).has_value());
 }
