@@ -170,6 +170,7 @@ cc_test(
     srcs = [
         "defender_heuristic_chain_test.cpp",
         "defender_heuristic_test.cpp",
+        "suit_top_tricks_test.cpp",
         "test_support.hpp",
     ],
     deps = [

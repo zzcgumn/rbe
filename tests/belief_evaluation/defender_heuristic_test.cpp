@@ -4,6 +4,7 @@
 #include <api/dds_data_types.hpp>
 
 #include <belief_evaluation/defender_heuristic.hpp>
+#include <belief_evaluation/discard_keep_winners.hpp>
 #include <belief_evaluation/fourth_seat_low.hpp>
 #include <belief_evaluation/high_in_third.hpp>
 #include <belief_evaluation/second_seat_low.hpp>
@@ -27,6 +28,7 @@ namespace
     constexpr int Spades = 0;
     constexpr int Hearts = 1;
     constexpr int Diamonds = 2;
+    constexpr int Clubs = 3;
     constexpr int NoTrump = DDS_NOTRUMP;
 
     constexpr int North = 0;
@@ -666,4 +668,164 @@ TEST_F(FourthSeatLowTest, ReturnsTheLowestCandidate)
     std::optional<be::Card> const result = be::fourth_seat_low()(ctx, best_cards);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->rank, Two);
+}
+
+// --- discard_keep_winners --------------------------------------------------
+
+namespace
+{
+    // East declares, West is dummy. North is a defender, void in the led
+    // suit (hearts) and must discard.
+    constexpr int DiscardDeclarer = East;
+    // West on lead -> North (seat 0) is next to act, one card into the
+    // trick: seat_on_play((West + 1) % 4) == North.
+    constexpr int DiscardLeader = West;
+    constexpr int Discarder = North;
+}
+
+class DiscardKeepWinnersTest : public ::testing::Test
+{
+};
+
+TEST_F(DiscardKeepWinnersTest, FiresOnlyOnAGenuineDiscardAsADefender)
+{
+    be::DefenderHeuristic const rule = be::discard_keep_winners();
+
+    // Positive: not on lead, void in the led suit, defending.
+    {
+        Deal deal{};
+        deal.trump = NoTrump;
+        deal.first = DiscardLeader;
+        deal.currentTrickSuit[0] = Hearts;
+        deal.currentTrickRank[0] = Three;
+        deal.remainCards[Discarder][Spades] = be::holding({Two});
+        be::ObservationState state{};
+        state.declarer = DiscardDeclarer;
+        FutureTricks fut{};
+        be::DefenderHeuristicContext const ctx =
+            be::make_defender_heuristic_context(deal, state, Discarder, fut);
+        std::vector<be::Card> const best_cards{be::Card{Spades, Two}};
+        EXPECT_TRUE(rule(ctx, best_cards).has_value());
+    }
+
+    // Negative: on lead.
+    {
+        Deal deal{};
+        deal.trump = NoTrump;
+        deal.first = Discarder;
+        deal.remainCards[Discarder][Spades] = be::holding({Two});
+        be::ObservationState state{};
+        state.declarer = DiscardDeclarer;
+        FutureTricks fut{};
+        be::DefenderHeuristicContext const ctx =
+            be::make_defender_heuristic_context(deal, state, Discarder, fut);
+        std::vector<be::Card> const best_cards{be::Card{Spades, Two}};
+        EXPECT_FALSE(rule(ctx, best_cards).has_value());
+    }
+
+    // Negative: can follow suit (not a discard).
+    {
+        Deal deal{};
+        deal.trump = NoTrump;
+        deal.first = DiscardLeader;
+        deal.currentTrickSuit[0] = Hearts;
+        deal.currentTrickRank[0] = Three;
+        deal.remainCards[Discarder][Hearts] = be::holding({Two});
+        be::ObservationState state{};
+        state.declarer = DiscardDeclarer;
+        FutureTricks fut{};
+        be::DefenderHeuristicContext const ctx =
+            be::make_defender_heuristic_context(deal, state, Discarder, fut);
+        std::vector<be::Card> const best_cards{be::Card{Hearts, Two}};
+        EXPECT_FALSE(rule(ctx, best_cards).has_value());
+    }
+
+    // Negative: declaring side.
+    {
+        Deal deal{};
+        deal.trump = NoTrump;
+        deal.first = DiscardLeader;
+        deal.currentTrickSuit[0] = Hearts;
+        deal.currentTrickRank[0] = Three;
+        deal.remainCards[Discarder][Spades] = be::holding({Two});
+        be::ObservationState state{};
+        state.declarer = Discarder;  // North is declarer, not a defender
+        FutureTricks fut{};
+        be::DefenderHeuristicContext const ctx =
+            be::make_defender_heuristic_context(deal, state, Discarder, fut);
+        std::vector<be::Card> const best_cards{be::Card{Spades, Two}};
+        EXPECT_FALSE(rule(ctx, best_cards).has_value());
+    }
+}
+
+TEST_F(DiscardKeepWinnersTest, DiscardsFromTheSuitWithTheFewestDefendingSideTopTricks)
+{
+    // Spades: East (an opponent) holds the ace, so North's own spade is
+    // not a winner -- zero top tricks there. Diamonds: North holds the
+    // ace and South (partner) holds the king -- two top tricks, worth
+    // protecting. The rule must discard the spade, not the diamond ace.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = DiscardLeader;
+    deal.currentTrickSuit[0] = Hearts;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[Discarder][Spades] = be::holding({Two});
+    deal.remainCards[East][Spades] = be::holding({Ace});
+    deal.remainCards[Discarder][Diamonds] = be::holding({Ace});
+    deal.remainCards[South][Diamonds] = be::holding({King});
+
+    be::ObservationState state{};
+    state.declarer = DiscardDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, Discarder, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Two}, be::Card{Diamonds, Ace}};
+
+    std::optional<be::Card> const result = be::discard_keep_winners()(ctx, best_cards);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->suit, Spades);
+    EXPECT_EQ(result->rank, Two);
+}
+
+TEST_F(DiscardKeepWinnersTest, BreaksATieByRankThenSuit)
+{
+    // Clubs and diamonds both give zero top tricks (East holds the ace of
+    // each). best_cards offers a higher club and a lower diamond first --
+    // rank breaks the tie (the diamond, lower, wins) -- and then a second
+    // comparison where both suits offer the same rank, where suit itself
+    // (diamonds < clubs) breaks the tie.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = DiscardLeader;
+    deal.currentTrickSuit[0] = Hearts;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[Discarder][Clubs] = be::holding({Three});
+    deal.remainCards[East][Clubs] = be::holding({Ace});
+    deal.remainCards[Discarder][Diamonds] = be::holding({Two});
+    deal.remainCards[East][Diamonds] = be::holding({Ace});
+
+    be::ObservationState state{};
+    state.declarer = DiscardDeclarer;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, Discarder, fut);
+
+    // Rank breaks the tie: the lower-ranked diamond two wins over the club three.
+    {
+        std::vector<be::Card> const best_cards{be::Card{Clubs, Three}, be::Card{Diamonds, Two}};
+        std::optional<be::Card> const result = be::discard_keep_winners()(ctx, best_cards);
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->suit, Diamonds);
+        EXPECT_EQ(result->rank, Two);
+    }
+
+    // Same rank in both suits: suit itself breaks the tie (diamonds < clubs).
+    {
+        std::vector<be::Card> const best_cards{be::Card{Clubs, Two}, be::Card{Diamonds, Two}};
+        std::optional<be::Card> const result = be::discard_keep_winners()(ctx, best_cards);
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->suit, Diamonds);
+    }
 }
