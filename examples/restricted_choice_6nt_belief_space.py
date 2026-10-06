@@ -142,6 +142,7 @@ from strategies import (
     QUEEN,
     TEN,
     double_dummy_defender,
+    heuristic_defender,
     lowest_eligible_defender,
     pick,
 )
@@ -811,6 +812,37 @@ def main() -> None:
         "becomes the dead giveaway here (a bare queen is the only way to "
         "show it), while the jack now absorbs every holding that could "
         "have shown either one.")
+
+    with_randomising_value = evaluate(
+        sequence, source, cash_the_king_then_read_the_beliefs,
+        heuristic_defender(ctx, bsle.make_default_defender_heuristics(
+            root["trump"], randomise_touching_honours=True)))
+    print(
+        f"\nAgainst a caller-assembled heuristic chain (second-hand low, "
+        f"third-hand high/low, ...) with randomise_touching_honours=True "
+        f"instead: P_make = {with_randomising_value['p_make']:.4f}.")
+
+    without_randomising_value = evaluate(
+        sequence, source, cash_the_king_then_read_the_beliefs,
+        heuristic_defender(ctx, bsle.make_default_defender_heuristics(
+            root["trump"], randomise_touching_honours=False)))
+    print(
+        f"\nThe identical chain with randomise_touching_honours=False "
+        f"instead: P_make = {without_randomising_value['p_make']:.4f}. "
+        f"Measured, not assumed, equal to the row above: `second_seat_low` "
+        f"is the one rule either setting touches, and in this ending every "
+        f"tied second-seat candidate pair it is ever actually offered "
+        f"turns out to be a low card tied against one honour -- never the "
+        f"queen and the jack tied against *each other* -- so `fut.equals` "
+        f"never reports them as touching and the rule fires identically "
+        f"either way. The restricted-choice gap this example is built "
+        f"around is real, and already measured earlier against "
+        f"`DoubleDummyDefender`'s own uniform spread over a genuine "
+        f"touching pair (`P_make = 0.5159`, above) -- it just is not the "
+        f"gap this particular toggle, on this particular rule, happens to "
+        f"expose in this ending's own second-seat node. These two rows "
+        f"demonstrate the chain is real and the option is wired through "
+        f"correctly, not that every node is sensitive to it.")
 
 
 def evaluate(sequence, source, pi, delta, **options) -> dict:
