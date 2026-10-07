@@ -46,21 +46,6 @@ namespace
         candidates.emplace(card_key(card), card);
     }
 
-    /// The single canonical best entry: the highest score, breaking ties by
-    /// keeping the first entry reached (dds's own ordering).
-    auto canonical_best(FutureTricks const& fut) -> int
-    {
-        int best = 0;
-        for (int i = 1; i < fut.cards; ++i)
-        {
-            if (fut.score[i] > fut.score[best])
-            {
-                best = i;
-            }
-        }
-        return best;
-    }
-
     auto max_score(FutureTricks const& fut) -> int
     {
         int max = fut.score[0];
@@ -73,6 +58,19 @@ namespace
         }
         return max;
     }
+}
+
+auto canonical_best(FutureTricks const& fut) -> int
+{
+    int best = 0;
+    for (int i = 1; i < fut.cards; ++i)
+    {
+        if (fut.score[i] > fut.score[best])
+        {
+            best = i;
+        }
+    }
+    return best;
 }
 
 auto spread(FutureTricks const& fut, SpreadPolicy policy) -> std::vector<WeightedCard>

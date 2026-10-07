@@ -451,6 +451,52 @@ TEST_F(SecondSeatLowTest, DetectsTouchingWhenSolveBoardCollapsesTheGroupToOneEnt
            "only the group's canonical representative";
 }
 
+TEST_F(SecondSeatLowTest, DoesNotDeferWhenTheLowestGroupIsNotTheOneSpreadWouldPick)
+{
+    // Two disjoint touching groups tied for best score: ace-with-king
+    // at fut index 0 (the representative dds lists first), queen-with-jack
+    // at index 1. The lowest candidate by rank is the queen -- this
+    // rule's own pick, which does touch (the jack) -- but
+    // spread(fut, SpreadPolicy::TouchingSequence) always resolves to
+    // canonical_best(fut)'s own entry, index 0 here (first entry reached
+    // among those tied for the top score), which is the ace/king pair,
+    // not this one. Deferring would silently randomise the wrong pair;
+    // this rule must return its own answer (the jack) directly instead,
+    // exactly as randomize_touching_honors=false would.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = Leader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[SecondSeat][Spades] = be::holding({Ace, King, Queen, Jack});
+    be::ObservationState state{};
+    state.declarer = Declarer;
+
+    FutureTricks fut{};
+    fut.cards = 2;
+    fut.suit[0] = Spades;
+    fut.rank[0] = Ace;
+    fut.equals[0] = 1 << King;
+    fut.score[0] = 5;
+    fut.suit[1] = Spades;
+    fut.rank[1] = Queen;
+    fut.equals[1] = 1 << Jack;
+    fut.score[1] = 5;  // tied with index 0 -- canonical_best keeps index 0
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, SecondSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Ace}, be::Card{Spades, Queen}};
+
+    std::optional<be::Card> const result = be::second_seat_low(/*randomize_touching_honors=*/true)(ctx, best_cards);
+    ASSERT_TRUE(result.has_value())
+        << "deferring here would hand the decision to spread(), which "
+           "would randomise the ace/king pair instead of this rule's own "
+           "queen/jack pair -- not what randomize_touching_honors=true "
+           "is supposed to do";
+    EXPECT_EQ(result->suit, Spades);
+    EXPECT_EQ(result->rank, Jack);
+}
+
 // --- high_in_third / third_seat_low ---------------------------------------
 //
 // South leads, West (dummy) plays second, North (a defender) is third to

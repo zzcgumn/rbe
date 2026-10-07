@@ -1,5 +1,6 @@
 #include <belief_evaluation/second_seat_low.hpp>
 
+#include <belief_evaluation/spread.hpp>
 #include <belief_evaluation/touching_group.hpp>
 
 namespace dds::belief_evaluation
@@ -88,7 +89,23 @@ auto second_seat_low(bool randomize_touching_honors) -> DefenderHeuristic
         }
 
         TouchingResult const touching = touching_group_of(best_cards, ctx.fut, lowest_index);
-        if (randomize_touching_honors && touching.touches)
+
+        // Deferring only actually randomises the lowest candidate's own
+        // group if that group is the one spread(fut,
+        // SpreadPolicy::TouchingSequence) itself goes on to pick --
+        // fut may hold more than one disjoint touching group tied for
+        // best score (e.g. an untouched A-K alongside a separate Q-J),
+        // and spread() always resolves to canonical_best(fut)'s own
+        // group, not necessarily this one. Deferring when the two
+        // diverge would silently randomise the wrong pair -- or, if
+        // canonical_best's own candidate does not touch anything at
+        // all, would not randomise at all -- so this rule only defers
+        // when it knows the fallback actually lands on its own group;
+        // otherwise it still returns its own answer directly, the same
+        // card randomize_touching_honors=false would give.
+        bool const defer_reaches_this_group =
+            canonical_best(ctx.fut) == static_cast<int>(lowest_index);
+        if (randomize_touching_honors && touching.touches && defer_reaches_this_group)
         {
             return std::nullopt;
         }
