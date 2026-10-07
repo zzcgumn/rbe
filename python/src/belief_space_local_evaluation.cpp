@@ -1540,6 +1540,17 @@ public:
         return future_tricks_to_dict(ctx_->fut);
     }
 
+    /// A copy, via the same py::class_<be::ObservationState> binding
+    /// query.state is already exposed through elsewhere in this file --
+    /// safe to retain past this call's own lifetime (unlike layout()/fut()'s
+    /// dicts, built fresh each call, this is a value copy of the same
+    /// kind), even though the context it was read from is not.
+    auto state() const -> be::ObservationState
+    {
+        check_valid();
+        return ctx_->state;
+    }
+
     auto seat() const -> int
     {
         check_valid();
@@ -1682,6 +1693,7 @@ auto register_defender_heuristic_bindings(py::module_& module) -> void
         "type follows (a separate error, not that one, but the same reason).")
         .def_property_readonly("layout", &PyDefenderHeuristicContext::layout)
         .def_property_readonly("fut", &PyDefenderHeuristicContext::fut)
+        .def_property_readonly("state", &PyDefenderHeuristicContext::state)
         .def_property_readonly("seat", &PyDefenderHeuristicContext::seat)
         .def_property_readonly("position_in_trick", &PyDefenderHeuristicContext::position_in_trick)
         .def_property_readonly("on_lead_to_trick", &PyDefenderHeuristicContext::on_lead_to_trick)
@@ -1800,12 +1812,26 @@ private:
 
 // Sibling of PyDoubleDummyDefender -- same SolverContext& contract (not
 // owned, not thread-safe). Unlike DoubleDummyDefender, HeuristicDefender's
-// own chain genuinely reads state.declarer (defending_side depends on it),
-// so -- unlike PyDoubleDummyDefender::call, which ignores state entirely --
-// this binding actually reads it, via a plain ".declarer" attribute access
-// rather than py::cast<be::ObservationState> so that any object exposing
-// that one int (a real ObservationState from evaluate()'s own machinery,
-// or a minimal stand-in in a direct, standalone call) works.
+// own chain genuinely reads state.declarer (defending_side depends on it)
+// and a caller-authored Python rule may want the rest of it too (a C++
+// rule sees the whole thing: ctx.state is a plain field, not gated by any
+// accessor) -- so, unlike PyDoubleDummyDefender::call, which ignores
+// state entirely, this binding accepts either a real, fully-populated
+// ObservationState (from evaluate()'s own machinery, already bound via
+// the py::class_<be::ObservationState> above) or a minimal stand-in
+// exposing only ".declarer" for a direct, standalone call: the former is
+// used whole, by py::cast through that existing binding; only the latter
+// falls back to a declarer-only value.
+auto observation_state_from(py::object const& state) -> be::ObservationState
+{
+    if (py::isinstance<be::ObservationState>(state)) {
+        return py::cast<be::ObservationState>(state);
+    }
+    be::ObservationState state_value{};
+    state_value.declarer = py::cast<int>(state.attr("declarer"));
+    return state_value;
+}
+
 class PyHeuristicDefender
 {
 public:
@@ -1817,8 +1843,7 @@ public:
     auto call(py::dict const& layout, int seat, py::object const& state) -> py::list
     {
         Deal const deal = dds3_python::dict_to_deal(layout);
-        be::ObservationState state_value{};
-        state_value.declarer = py::cast<int>(state.attr("declarer"));
+        be::ObservationState const state_value = observation_state_from(state);
         be::DefenderStrategy const strategy = defender_.as_strategy();
 
         std::vector<be::WeightedCard> weighted;
