@@ -44,17 +44,21 @@ auto suit_top_tricks(Deal const& layout, int defender_seat, int trump) -> std::a
         int const seat_count = card_count(layout.remainCards[defender_seat][suit]);
         int const partner_count = card_count(layout.remainCards[partner_seat][suit]);
 
-        // The sound upper bound before any ruffing reduction: the
-        // defending side cannot win more tricks in this suit than it has
-        // cards to contribute as winners. (A tighter cap using the max,
-        // not the sum, of the two defending hands' counts was tried and
-        // rejected: it undercounts a split-honours case like
-        // ace-with-one-partner/king-with-the-other down to 1 when both
-        // are actually cashable. Sound either way, since this is only a
-        // ceiling the round-by-round loop below still has to earn
-        // against real opponent cards; the looser bound is simply closer
-        // to the truth.)
-        int cap = seat_count + partner_count;
+        // The sound upper bound before any ruffing reduction: a round of
+        // this suit, for as long as *both* defending hands still hold it,
+        // consumes one card from each of them simultaneously -- whoever
+        // is not on lead that round still has to follow suit in the same
+        // trick, not save its card for a separate one. So the two hands
+        // cannot cash seat_count + partner_count separate tricks merely
+        // by combining counts; the number of rounds the suit survives is
+        // bounded by whichever defending hand is longer, not their sum
+        // (the shorter hand becomes void partway through, after which
+        // the longer one keeps running the suit alone for the remaining
+        // rounds). Summing was tried first and rejected after tracing a
+        // single ace-with-one-partner/king-with-the-other round by hand:
+        // both cards are consumed in the very same trick, giving one
+        // cashable trick there, not two.
+        int cap = std::max(seat_count, partner_count);
 
         if (trump != DDS_NOTRUMP && suit != trump)
         {

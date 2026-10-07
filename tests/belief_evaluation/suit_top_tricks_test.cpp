@@ -14,6 +14,7 @@ namespace
 {
     constexpr int Two = 2;
     constexpr int Three = 3;
+    constexpr int Four = 4;
     constexpr int Nine = 9;
     constexpr int Jack = 11;
     constexpr int Queen = 12;
@@ -34,13 +35,37 @@ class SuitTopTricksTest : public ::testing::Test
 {
 };
 
-TEST_F(SuitTopTricksTest, TopTwoSplitBetweenPartnersGivesTwoTopTricks)
+TEST_F(SuitTopTricksTest, OneCardEachSplitBetweenPartnersGivesOneTopTrick)
 {
     // North (defender) holds the ace, South (partner) holds the king --
     // the top two cards, split between the partnership, with nothing
-    // between them held by the opponents. Two top tricks.
+    // between them held by the opponents. All four hands hold exactly
+    // one card of this suit, so it can only ever be played once: the
+    // ace and king are both consumed in that same single trick, which
+    // the ace wins. One top trick, not two -- summing the two defending
+    // holdings would overcount this.
     Deal deal{};
     deal.remainCards[North][Spades] = be::holding({Ace});
+    deal.remainCards[South][Spades] = be::holding({King});
+    deal.remainCards[East][Spades] = be::holding({Two});
+    deal.remainCards[West][Spades] = be::holding({Three});
+
+    std::array<int, 4> const tricks = be::suit_top_tricks(deal, North, NoTrump);
+    EXPECT_EQ(tricks[Spades], 1);
+}
+
+TEST_F(SuitTopTricksTest, LongerHandKeepsRunningAfterTheShorterOneIsExhausted)
+{
+    // North (defender) holds the ace plus a low card; South (partner)
+    // holds only the king. Round one consumes the ace and the king
+    // together (both still hold the suit) -- a trick the ace wins.
+    // South is now void; North alone runs the suit for a second round
+    // with its remaining low card, which nothing is left to beat. Two
+    // top tricks from four total cards (not four, and not
+    // max(2,1) undercounting to 1 either): the sum-based cap this
+    // replaces would have claimed three.
+    Deal deal{};
+    deal.remainCards[North][Spades] = be::holding({Ace, Four});
     deal.remainCards[South][Spades] = be::holding({King});
     deal.remainCards[East][Spades] = be::holding({Two});
     deal.remainCards[West][Spades] = be::holding({Three});
