@@ -30,7 +30,11 @@ struct DefenderHeuristicContext
     /// The same solve the candidate set (`best_cards`, passed alongside
     /// this context to every DefenderHeuristic call) came from. Carries
     /// exact touching-group membership (`fut.equals`) -- see
-    /// `second_seat_low`'s own doxygen for the one rule that reads it.
+    /// `touching_group.hpp`'s own doxygen for the parallel-array
+    /// precondition this implies between `fut` and `best_cards`, and for
+    /// every rule that resolves it (`second_seat_low`, `third_seat_low`,
+    /// `fourth_seat_low`, `ruff_small`, and `discard_keep_winners`, not
+    /// only the first of those).
     FutureTricks const& fut;
 
     int seat;               ///< == seat_on_play(layout)
