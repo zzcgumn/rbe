@@ -26,6 +26,7 @@ namespace
     constexpr int Three = 3;
     constexpr int Four = 4;
     constexpr int Five = 5;
+    constexpr int Nine = 9;
     constexpr int King = 13;
     constexpr int Ace = 14;
 
@@ -218,6 +219,54 @@ TEST_F(HeuristicDefenderTest, FallsBackToSpreadWhenNoRuleFires)
     be::DoubleDummyDefender double_dummy_defender(ctx);
     std::vector<be::WeightedCard> const double_dummy_result =
         double_dummy_defender.as_strategy()(be::DefenderQuery{deal, East, state});
+
+    ASSERT_EQ(heuristic_result.size(), double_dummy_result.size());
+    for (std::size_t i = 0; i < heuristic_result.size(); ++i)
+    {
+        EXPECT_EQ(heuristic_result[i].card.suit, double_dummy_result[i].card.suit);
+        EXPECT_EQ(heuristic_result[i].card.rank, double_dummy_result[i].card.rank);
+        EXPECT_DOUBLE_EQ(heuristic_result[i].probability, double_dummy_result[i].probability);
+    }
+}
+
+TEST_F(HeuristicDefenderTest, FallsBackToSpreadWhenAChainRuleReturnsACardOutsideTheOptimalSet)
+{
+    // A chain is a caller-assembled sequence of plain callables -- there
+    // is no interface or base class constraining what a rule may return.
+    // A misbehaving one (a bug in a caller-authored rule, not anything
+    // this chain's own built-ins would do) that always answers with a
+    // card the solve never reported -- not held by the queried seat,
+    // not double-dummy-optimal -- must never actually reach the caller:
+    // specs/replenished-belief-evaluation.md's own claim that this class
+    // "never invents a candidate outside that set" has to hold even when
+    // a chain rule tries to.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = West;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[West][Hearts] = be::holding({Two});  // West's one card left, having led its spade
+    deal.remainCards[North][Spades] = be::holding({Two, King});
+    deal.remainCards[East][Spades] = be::holding({Four});
+    deal.remainCards[East][Hearts] = be::holding({Three});
+    deal.remainCards[South][Hearts] = be::holding({Four, Five});
+
+    be::ObservationState state{};
+    state.declarer = East;
+
+    be::DefenderHeuristicChain chain;
+    chain.add([](be::DefenderHeuristicContext const&, std::vector<be::Card> const&) -> std::optional<be::Card> {
+        return be::Card{Spades, Nine};  // North holds no such card; not a solved candidate either
+    });
+
+    SolverContext ctx;
+    be::HeuristicDefender heuristic_defender(ctx, chain);
+    std::vector<be::WeightedCard> const heuristic_result =
+        heuristic_defender.as_strategy()(be::DefenderQuery{deal, North, state});
+
+    be::DoubleDummyDefender double_dummy_defender(ctx);
+    std::vector<be::WeightedCard> const double_dummy_result =
+        double_dummy_defender.as_strategy()(be::DefenderQuery{deal, North, state});
 
     ASSERT_EQ(heuristic_result.size(), double_dummy_result.size());
     for (std::size_t i = 0; i < heuristic_result.size(); ++i)
