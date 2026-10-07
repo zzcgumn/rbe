@@ -370,7 +370,7 @@ TEST_F(SecondSeatLowTest, DefersWhenTheLowestTouchesAnotherCandidateAndRandomisi
         be::make_defender_heuristic_context(deal, state, SecondSeat, fut);
     std::vector<be::Card> const best_cards{be::Card{Spades, Queen}, be::Card{Spades, Ace}};
 
-    EXPECT_FALSE(be::second_seat_low(/*randomise_touching_honours=*/true)(ctx, best_cards).has_value());
+    EXPECT_FALSE(be::second_seat_low(/*randomize_touching_honors=*/true)(ctx, best_cards).has_value());
 }
 
 TEST_F(SecondSeatLowTest, AlwaysReturnsTheLowestWhenRandomisingIsOff)
@@ -401,7 +401,7 @@ TEST_F(SecondSeatLowTest, AlwaysReturnsTheLowestWhenRandomisingIsOff)
     std::vector<be::Card> const best_cards{be::Card{Spades, Queen}, be::Card{Spades, Ace}};
 
     std::optional<be::Card> const result =
-        be::second_seat_low(/*randomise_touching_honours=*/false)(ctx, best_cards);
+        be::second_seat_low(/*randomize_touching_honors=*/false)(ctx, best_cards);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->rank, Queen);
 }
@@ -419,7 +419,7 @@ TEST_F(SecondSeatLowTest, DetectsTouchingWhenSolveBoardCollapsesTheGroupToOneEnt
     // minimal example in restricted_choice_6nt_belief_space.py's own
     // main(), where this was first caught: a chain carrying this bug
     // returns the queen at probability 1.0 under both
-    // randomise_touching_honours settings, never detecting the fold at
+    // randomize_touching_honors settings, never detecting the fold at
     // all.
     Deal deal{};
     deal.trump = NoTrump;
@@ -440,9 +440,9 @@ TEST_F(SecondSeatLowTest, DetectsTouchingWhenSolveBoardCollapsesTheGroupToOneEnt
         be::make_defender_heuristic_context(deal, state, SecondSeat, fut);
     std::vector<be::Card> const best_cards{be::Card{Spades, Queen}};
 
-    EXPECT_FALSE(be::second_seat_low(/*randomise_touching_honours=*/true)(ctx, best_cards).has_value());
+    EXPECT_FALSE(be::second_seat_low(/*randomize_touching_honors=*/true)(ctx, best_cards).has_value());
 
-    std::optional<be::Card> const fixed = be::second_seat_low(/*randomise_touching_honours=*/false)(ctx, best_cards);
+    std::optional<be::Card> const fixed = be::second_seat_low(/*randomize_touching_honors=*/false)(ctx, best_cards);
     ASSERT_TRUE(fixed.has_value());
     EXPECT_EQ(fixed->suit, Spades);
     EXPECT_EQ(fixed->rank, Jack)
@@ -560,6 +560,99 @@ TEST_F(HighInThirdAndThirdSeatLowTest, ThirdSeatLowReturnsTheTrueLowestCandidate
         << "the true lowest card in the group is the queen, folded into "
            "the king's own equals -- not the king itself, which is only "
            "the group's canonical representative";
+}
+
+TEST_F(HighInThirdAndThirdSeatLowTest, ComparesAgainstTheSecondPlayersCardWhenItIsDeclarerNotDummy)
+{
+    // The fixture above always has EAST declare, which puts WEST (dummy)
+    // at the trick's second position -- the only case a seat-derived
+    // "dummy's position" calculation happens to land safely inside
+    // currentTrickRank's three-element bound. Declaring WEST instead
+    // puts EAST (dummy) at the *fourth* position and WEST (declarer) at
+    // the second: the same partner-led, third-seat gate holds (the
+    // rotation does not care who declares), but a prior version of this
+    // rule computed dummy's seat and derived position 3 from it here --
+    // one past the bound. This fixture exists to prove the fix compares
+    // against trick index 1 directly, regardless of who's sitting there.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = ThirdSeatLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.currentTrickSuit[1] = Spades;
+    deal.currentTrickRank[1] = Jack;  // West (declarer here), following suit
+    deal.remainCards[ThirdSeat][Spades] = be::holding({Two, Ace});
+
+    be::ObservationState state{};
+    state.declarer = West;
+
+    FutureTricks fut{};
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, ThirdSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Two}, be::Card{Spades, Ace}};
+
+    std::optional<be::Card> const high_result = be::high_in_third()(ctx, best_cards);
+    ASSERT_TRUE(high_result.has_value());
+    EXPECT_EQ(high_result->rank, Ace);
+    EXPECT_FALSE(be::third_seat_low()(ctx, best_cards).has_value());
+}
+
+TEST_F(HighInThirdAndThirdSeatLowTest, ASecondHandRuffBeatsEveryCandidateRegardlessOfRank)
+{
+    // West, void in the led suit (spades), ruffs with a trump instead of
+    // following -- nothing that merely follows suit can beat a trump, so
+    // high_in_third must defer (rising cannot help) and third_seat_low
+    // must fire, no matter how high North's own candidates rank.
+    Deal deal{};
+    deal.trump = Hearts;
+    deal.first = ThirdSeatLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.currentTrickSuit[1] = Hearts;
+    deal.currentTrickRank[1] = Four;  // West's ruff
+    deal.remainCards[ThirdSeat][Spades] = be::holding({Ace});
+
+    be::ObservationState state{};
+    state.declarer = West;
+
+    FutureTricks fut{};
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, ThirdSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Ace}};
+
+    EXPECT_FALSE(be::high_in_third()(ctx, best_cards).has_value());
+
+    std::optional<be::Card> const low_result = be::third_seat_low()(ctx, best_cards);
+    ASSERT_TRUE(low_result.has_value());
+    EXPECT_EQ(low_result->rank, Ace);
+}
+
+TEST_F(HighInThirdAndThirdSeatLowTest, ASecondHandDiscardOfAThirdSuitBeatsNoCandidate)
+{
+    // West, void in the led suit, discards a plain card of a third suit
+    // (not trump -- there is none here) instead of following: that card
+    // does not contest the trick at all, so high_in_third must fire
+    // regardless of how low North's own candidate ranks.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = ThirdSeatLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.currentTrickSuit[1] = Diamonds;
+    deal.currentTrickRank[1] = Two;  // West's discard, no trump exists
+    deal.remainCards[ThirdSeat][Spades] = be::holding({Jack});
+
+    be::ObservationState state{};
+    state.declarer = West;
+
+    FutureTricks fut{};
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, ThirdSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Jack}};
+
+    std::optional<be::Card> const high_result = be::high_in_third()(ctx, best_cards);
+    ASSERT_TRUE(high_result.has_value());
+    EXPECT_EQ(high_result->rank, Jack);
 }
 
 TEST_F(HighInThirdAndThirdSeatLowTest, NeitherFiresOutsideThirdSeat)
@@ -892,8 +985,10 @@ TEST_F(DiscardKeepWinnersTest, DiscardsFromTheSuitWithTheFewestDefendingSideTopT
 {
     // Spades: East (an opponent) holds the ace, so North's own spade is
     // not a winner -- zero top tricks there. Diamonds: North holds the
-    // ace and South (partner) holds the king -- two top tricks, worth
-    // protecting. The rule must discard the spade, not the diamond ace.
+    // ace and South (partner) holds the king, nothing else outstanding
+    // in the suit -- one top trick (the ace and king are consumed in
+    // the same round), still worth more than zero. The rule must
+    // discard the spade, not the diamond ace.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = DiscardLeader;

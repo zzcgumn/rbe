@@ -6,11 +6,21 @@ namespace dds::belief_evaluation
 {
 
 /// delta rule: in third seat, following suit, as a defender, after
-/// partner's lead and dummy's second-hand card -- play the highest
-/// double-dummy-optimal card, when it beats dummy's played card. Defers
-/// whenever dummy's card already beats every candidate (see
+/// partner's lead and the second player's card -- play the highest
+/// double-dummy-optimal card, when it beats that card. Defers whenever
+/// the second player's card already beats every candidate (see
 /// `third_seat_low`, which fires in exactly that case) or any other gate
 /// condition fails.
+///
+/// The second player (trick index 1) is from the declaring side by
+/// construction -- partner led, and this module's fixed N/E/S/W rotation
+/// always alternates sides -- but *which* of declarer or dummy that is
+/// varies by deal, so this rule compares against trick index 1 directly
+/// rather than deriving a seat and assuming it lands there (an earlier
+/// version did, and read past `currentTrickRank`'s bound whenever the
+/// assumption failed). A trump ruff at that position beats every
+/// candidate (nothing that merely follows suit beats a trump); a plain
+/// discard of a third suit beats none (it does not contest the trick).
 ///
 /// "Partner led" is checked explicitly even though it is, in this
 /// module's fixed N/E/S/W rotation, always true whenever

@@ -12,11 +12,30 @@ namespace
     // Duplicated from high_in_third.cpp rather than shared: each concrete
     // rule in this module is a small, independently-readable .cpp, kept
     // separate from its neighbours despite some overlap between them.
-    auto dummy_played_rank(DefenderHeuristicContext const& ctx) -> int
+    //
+    // The card played at the trick's second position -- always index 1,
+    // never "dummy's card" specifically; see high_in_third.cpp's own
+    // comment on this same function for why (a prior version derived
+    // dummy's seat and assumed its position, which could read past
+    // currentTrickRank's bound). Effective rank, not the raw one, since
+    // the second player may have ruffed (beats every candidate) or
+    // discarded a third suit (beats none) instead of following suit.
+    auto second_hand_effective_rank(DefenderHeuristicContext const& ctx) -> int
     {
-        int const dummy_seat = (ctx.state.declarer + 2) % DDS_HANDS;
-        int const dummy_position = (dummy_seat - ctx.on_lead_to_trick + DDS_HANDS) % DDS_HANDS;
-        return ctx.layout.currentTrickRank[dummy_position];
+        constexpr int kBeatsNothing = 0;
+        constexpr int kBeatsEverything = 100;
+
+        int const led_suit = ctx.layout.currentTrickSuit[0];
+        int const second_hand_suit = ctx.layout.currentTrickSuit[1];
+        if (second_hand_suit == led_suit)
+        {
+            return ctx.layout.currentTrickRank[1];
+        }
+        if (ctx.trump != DDS_NOTRUMP && second_hand_suit == ctx.trump)
+        {
+            return kBeatsEverything;
+        }
+        return kBeatsNothing;
     }
 
     auto highest_candidate_index(std::vector<Card> const& best_cards) -> std::size_t
@@ -66,7 +85,7 @@ auto third_seat_low() -> DefenderHeuristic
         }
 
         Card const& highest = best_cards[highest_candidate_index(best_cards)];
-        if (highest.rank > dummy_played_rank(ctx))
+        if (highest.rank > second_hand_effective_rank(ctx))
         {
             return std::nullopt;  // high_in_third's own case: defer to it
         }
