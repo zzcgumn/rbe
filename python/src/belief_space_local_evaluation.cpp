@@ -1664,12 +1664,14 @@ auto register_defender_heuristic_bindings(py::module_& module) -> void
     module.def(
         "high_in_third", &be::high_in_third,
         "In third seat, after partner's lead, as a defender -- the highest\n"
-        "optimal card, when it beats dummy's already-played card.");
+        "optimal card, when it beats the second player's already-played\n"
+        "card (not necessarily dummy's -- see the C++ doxygen on this same\n"
+        "rule for why).");
     module.def(
         "third_seat_low", &be::third_seat_low,
         "In third seat, after partner's lead, as a defender -- the lowest\n"
-        "optimal card, exactly when high_in_third defers (dummy's card\n"
-        "already beats every candidate).");
+        "optimal card, exactly when high_in_third defers (the second\n"
+        "player's card already beats every candidate).");
     module.def(
         "fourth_seat_low", &be::fourth_seat_low,
         "In fourth seat, following suit, as a defender -- the lowest optimal\n"
