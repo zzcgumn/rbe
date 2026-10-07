@@ -86,24 +86,44 @@ auto suit_top_tricks(Deal const& layout, int defender_seat, int trump) -> std::a
             defending.resize(static_cast<std::size_t>(cap));
         }
 
-        // The single highest card either opposing hand holds -- not a
-        // pool to match round by round, but the one card that decides
-        // where our run of winners stops. The moment one of our own
-        // cards, led highest first, fails to beat it, the opponent wins
-        // that trick and gains the lead: this function counts only
-        // tricks cashed *by leading this suit*, and once the opponents
-        // have won a trick in it, they are not obliged to lead it back,
-        // so nothing beyond that point is a guaranteed top trick, no
-        // matter how high our remaining cards individually rank. 0 (no
-        // real rank is this low) stands for "no opposing card at all".
+        // The single highest card either opposing hand holds -- the one
+        // card that decides whether our *next* led card wins its trick,
+        // for as long as either opposing hand still has one to contend
+        // with. The moment one of our own cards, led highest first,
+        // fails to beat it, the opponent wins that trick and gains the
+        // lead: this function counts only tricks cashed *by leading this
+        // suit*, and once the opponents have won a trick in it, they are
+        // not obliged to lead it back, so nothing beyond that point is a
+        // guaranteed top trick, no matter how high our remaining cards
+        // individually rank. 0 (no real rank is this low) stands for "no
+        // opposing card at all".
         std::vector<int> const opp_a_ranks = sorted_ranks_descending(layout.remainCards[opponent_a][suit]);
         std::vector<int> const opp_b_ranks = sorted_ranks_descending(layout.remainCards[opponent_b][suit]);
         int const opponent_max =
             std::max(opp_a_ranks.empty() ? 0 : opp_a_ranks.front(), opp_b_ranks.empty() ? 0 : opp_b_ranks.front());
 
+        // How many rounds either opposing hand can even contest: every
+        // non-void hand, ours or theirs, is forced to contribute a card
+        // every round the suit is run, whether or not that round is won
+        // -- so a hand with k cards is spent, and void for every later
+        // round, after exactly k rounds of this suit being run,
+        // regardless of how those k rounds came out. Once our own
+        // winning run has reached that many rounds, both opposing hands
+        // are provably exhausted (the longer of the two having forced
+        // the pace), and every further card of ours within cap wins
+        // automatically, whatever its own rank -- opponent_max no longer
+        // describes a card that can still be played against it.
+        int const opponent_rounds =
+            std::max(static_cast<int>(opp_a_ranks.size()), static_cast<int>(opp_b_ranks.size()));
+
         int count = 0;
         for (int const our_card : defending)  // already highest first
         {
+            if (count >= opponent_rounds)
+            {
+                ++count;  // the opposing side is provably void by now
+                continue;
+            }
             if (our_card <= opponent_max)
             {
                 break;

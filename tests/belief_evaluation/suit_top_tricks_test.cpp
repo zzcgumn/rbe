@@ -118,6 +118,30 @@ TEST_F(SuitTopTricksTest, StopsCountingAfterTheFirstStopperRatherThanConsumingIt
     EXPECT_EQ(tricks[Spades], 0);
 }
 
+TEST_F(SuitTopTricksTest, BothOpponentsGoingVoidTogetherLetsTheRemainingLowCardsWinToo)
+{
+    // North (defender) holds the ace and the two; South (partner) holds
+    // nothing. East holds only the king, West only the queen -- one
+    // card each, neither beating North's ace. Comparing every one of
+    // North's cards against a single static "highest opposing card"
+    // (the king) without ever recognising that both opponents go
+    // completely void after round one would wrongly stop at the two
+    // (2 <= 13). Physically: trick one, North leads the ace; East and
+    // West, each holding exactly one spade, are both forced to follow
+    // suit in that same trick regardless of what North leads, so the
+    // king and the queen are both spent there, and the ace -- the
+    // highest card played -- wins. Both opponents are now void, so
+    // trick two, North's two, wins automatically with nothing left to
+    // contest it. Two top tricks, not one.
+    Deal deal{};
+    deal.remainCards[North][Spades] = be::holding({Ace, Two});
+    deal.remainCards[East][Spades] = be::holding({King});
+    deal.remainCards[West][Spades] = be::holding({Queen});
+
+    std::array<int, 4> const tricks = be::suit_top_tricks(deal, North, NoTrump);
+    EXPECT_EQ(tricks[Spades], 2);
+}
+
 TEST_F(SuitTopTricksTest, DeclaringSideHoldingTheTopGivesZero)
 {
     // East (an opponent of North/South) holds the ace; North's own best
