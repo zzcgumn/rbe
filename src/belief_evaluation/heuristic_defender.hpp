@@ -41,6 +41,9 @@ public:
     /// distribution over the solved position. A non-zero `solve_board`
     /// status returns an empty distribution, exactly as
     /// `DoubleDummyDefender::as_strategy()` already does.
+    ///
+    /// The returned `DefenderStrategy` captures `this` and must not outlive
+    /// this `HeuristicDefender`.
     auto as_strategy() -> DefenderStrategy;
 
 private:
