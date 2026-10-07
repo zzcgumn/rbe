@@ -1,7 +1,7 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-10-06
+last-updated: 2026-10-07
 ---
 
 # Replenished Belief Evaluation
