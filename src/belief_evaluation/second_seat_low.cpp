@@ -64,9 +64,9 @@ namespace
     }
 }
 
-auto second_seat_low(bool randomise_touching_honours) -> DefenderHeuristic
+auto second_seat_low(bool randomize_touching_honors) -> DefenderHeuristic
 {
-    return [randomise_touching_honours](
+    return [randomize_touching_honors](
                DefenderHeuristicContext const& ctx, std::vector<Card> const& best_cards) -> std::optional<Card>
     {
         if (ctx.position_in_trick != 1 || !ctx.can_follow_led_suit || !ctx.defending_side)
@@ -88,7 +88,7 @@ auto second_seat_low(bool randomise_touching_honours) -> DefenderHeuristic
         }
 
         TouchingResult const touching = touching_group_of(best_cards, ctx.fut, lowest_index);
-        if (randomise_touching_honours && touching.touches)
+        if (randomize_touching_honors && touching.touches)
         {
             return std::nullopt;
         }

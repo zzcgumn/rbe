@@ -816,7 +816,7 @@ rename or include-ordering trick anywhere in the module.
   the double-dummy-optimal candidate set a `solve_board` call produces,
   which a chain rule or `spread()`'s own fallback then narrows or
   distributes over — neither invents a candidate outside that set.
-  `second_seat_low`'s `randomise_touching_honours` argument governs
+  `second_seat_low`'s `randomize_touching_honors` argument governs
   exactly the restricted-choice behaviour `SpreadPolicy.TouchingSequence`
   already licenses: on, the rule defers on a genuine touching pair so
   the chain's fallback `spread()` randomises between them instead; off,

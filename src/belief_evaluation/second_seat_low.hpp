@@ -6,7 +6,7 @@ namespace dds::belief_evaluation
 {
 
 /// delta rule: in second seat, following suit, as a defender, play the
-/// lowest double-dummy-optimal card -- unless `randomise_touching_honours`
+/// lowest double-dummy-optimal card -- unless `randomize_touching_honors`
 /// (default true) and that lowest candidate touches another same-suit
 /// candidate (per `ctx.fut.equals`, read against `best_cards` under the
 /// precondition below), in which case this rule defers so the chain's own
@@ -18,6 +18,6 @@ namespace dds::belief_evaluation
 /// `i`. `HeuristicDefender` (the only production caller) builds both from
 /// the same solve this way; a caller assembling a context and a candidate
 /// set by hand for a rule that reads `fut` must keep them parallel too.
-auto second_seat_low(bool randomise_touching_honours = true) -> DefenderHeuristic;
+auto second_seat_low(bool randomize_touching_honors = true) -> DefenderHeuristic;
 
 }  // namespace dds::belief_evaluation

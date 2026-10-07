@@ -12,10 +12,10 @@
 namespace dds::belief_evaluation
 {
 
-auto make_default_defender_heuristics(int trump, bool randomise_touching_honours) -> DefenderHeuristicChain
+auto make_default_defender_heuristics(int trump, bool randomize_touching_honors) -> DefenderHeuristicChain
 {
     DefenderHeuristicChain chain;
-    chain.add(second_seat_low(randomise_touching_honours));
+    chain.add(second_seat_low(randomize_touching_honors));
     chain.add(high_in_third());
     chain.add(third_seat_low());
     chain.add(fourth_seat_low());

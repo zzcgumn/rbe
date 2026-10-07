@@ -419,7 +419,7 @@ trick-counting cannot see.
 
 **The chain is entirely caller-assembled: any order, any subset of the
 built-in rules, a caller's own rules on equal footing with them.**
-`make_default_defender_heuristics(trump, randomise_touching_honours=True)`
+`make_default_defender_heuristics(trump, randomize_touching_honors=True)`
 builds the chain shown above purely as a convenience — the shipped order,
 nothing more — and is never special-cased by `HeuristicDefender` or
 anything else that consumes a chain. Building one by hand instead:
@@ -434,7 +434,7 @@ chain.add(my_own_rule)                      # a plain Python function,
 chain.add(bsle.discard_keep_winners())
 ```
 
-`second_seat_low`'s `randomise_touching_honours` (default `True`) governs
+`second_seat_low`'s `randomize_touching_honors` (default `True`) governs
 exactly the restricted-choice behaviour `SpreadPolicy.TouchingSequence`
 already licenses: off, it always plays the lower card of a touching pair
 rather than randomising between them, which leaks which specific card was

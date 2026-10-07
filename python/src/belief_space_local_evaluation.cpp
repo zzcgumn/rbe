@@ -1655,10 +1655,10 @@ auto register_defender_heuristic_bindings(py::module_& module) -> void
         "on exactly the same footing.");
 
     module.def(
-        "second_seat_low", &be::second_seat_low, py::arg("randomise_touching_honours") = true,
+        "second_seat_low", &be::second_seat_low, py::arg("randomize_touching_honors") = true,
         "In second seat, following suit, as a defender -- the lowest optimal\n"
         "card, unless it touches another optimal candidate of the same suit\n"
-        "and randomise_touching_honours (default True), in which case this\n"
+        "and randomize_touching_honors (default True), in which case this\n"
         "rule defers so the chain's own fallback spread -- restricted choice --\n"
         "picks between them instead.");
     module.def(
@@ -1728,9 +1728,9 @@ auto register_defender_heuristic_bindings(py::module_& module) -> void
 
     module.def(
         "make_default_defender_heuristics", &be::make_default_defender_heuristics, py::arg("trump"),
-        py::arg("randomise_touching_honours") = true,
+        py::arg("randomize_touching_honors") = true,
         "Convenience only -- not the only way to build a chain. Equivalent\n"
-        "to add()-ing second_seat_low(randomise_touching_honours),\n"
+        "to add()-ing second_seat_low(randomize_touching_honors),\n"
         "high_in_third(), third_seat_low(), fourth_seat_low(), ruff_small()\n"
         "(only when trump names a real suit) and discard_keep_winners(), in\n"
         "that order. A caller wanting a different order, a subset, or their\n"

@@ -822,18 +822,18 @@ def main() -> None:
     with_randomising_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs,
         heuristic_defender(ctx, bsle.make_default_defender_heuristics(
-            root["trump"], randomise_touching_honours=True)))
+            root["trump"], randomize_touching_honors=True)))
     print(
         f"\nAgainst a caller-assembled heuristic chain (second-hand low, "
-        f"third-hand high/low, ...) with randomise_touching_honours=True "
+        f"third-hand high/low, ...) with randomize_touching_honors=True "
         f"instead: P_make = {with_randomising_value['p_make']:.4f}.")
 
     without_randomising_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs,
         heuristic_defender(ctx, bsle.make_default_defender_heuristics(
-            root["trump"], randomise_touching_honours=False)))
+            root["trump"], randomize_touching_honors=False)))
     print(
-        f"\nThe identical chain with randomise_touching_honours=False "
+        f"\nThe identical chain with randomize_touching_honors=False "
         f"instead: P_make = {without_randomising_value['p_make']:.4f}. "
         f"Higher than the row above, not a rounding difference: with "
         f"randomisation on, `second_seat_low` detects every genuine "
@@ -876,14 +876,14 @@ def main() -> None:
         return ", ".join(f"{format_card(card)} {probability:.0%}" for card, probability in weighted)
 
     minimal_with = heuristic_defender(
-        ctx, bsle.make_default_defender_heuristics(NOTRUMP, randomise_touching_honours=True),
+        ctx, bsle.make_default_defender_heuristics(NOTRUMP, randomize_touching_honors=True),
     )(minimal_layout, SOUTH, minimal_state)
-    print(f"    randomise_touching_honours=True:  {_format_distribution(minimal_with)}")
+    print(f"    randomize_touching_honors=True:  {_format_distribution(minimal_with)}")
 
     minimal_without = heuristic_defender(
-        ctx, bsle.make_default_defender_heuristics(NOTRUMP, randomise_touching_honours=False),
+        ctx, bsle.make_default_defender_heuristics(NOTRUMP, randomize_touching_honors=False),
     )(minimal_layout, SOUTH, minimal_state)
-    print(f"    randomise_touching_honours=False: {_format_distribution(minimal_without)}")
+    print(f"    randomize_touching_honors=False: {_format_distribution(minimal_without)}")
     print(
         "    With it on, the two are equally likely -- a defender holding "
         "the bare queen looks identical to one holding the queen with the "

@@ -18,8 +18,8 @@
 | 10/21 | always rise with the ace instead, vs the 50/50 defender | golden; 10/21 is exactly the posterior mass of the 2-2 spade breaks in this belief space, and is unchanged by which defender is paired with it, since rising never reaches a node where the belief mattered |
 | 65/84 | cash the king, then read the beliefs, vs the always-shows-the-queen defender | golden |
 | 55/84 | the same, vs a defender who always plays its lowest legal card | golden; the mirror image of the always-shows-the-queen figure above, by the same mirror symmetry row 15 already describes -- not a second coincidence, but not numerically equal either, since the two defenders' own "void" play differs along with their second-seat one |
-| 65/126 | cash the king, then read the beliefs, vs a caller-assembled `HeuristicDefender` chain, `randomise_touching_honours=True` | golden; equal to the `DoubleDummyDefender` row above bit for bit, not a coincidence -- with randomisation on, `second_seat_low` detects every genuine touching pair this ending's own second-seat node reaches and defers there to the chain's own fallback spread, which is exactly `DoubleDummyDefender`'s uniform spread over the same solved position |
-| 15/28 | the same, `randomise_touching_honours=False` | golden; **higher**, not equal -- with randomisation off, the same rule always shows the lower card of a touching pair instead, and the belief-reading declarer is measurably able to exploit it |
+| 65/126 | cash the king, then read the beliefs, vs a caller-assembled `HeuristicDefender` chain, `randomize_touching_honors=True` | golden; equal to the `DoubleDummyDefender` row above bit for bit, not a coincidence -- with randomisation on, `second_seat_low` detects every genuine touching pair this ending's own second-seat node reaches and defers there to the chain's own fallback spread, which is exactly `DoubleDummyDefender`'s uniform spread over the same solved position |
+| 15/28 | the same, `randomize_touching_honors=False` | golden; **higher**, not equal -- with randomisation off, the same rule always shows the lower card of a touching pair instead, and the belief-reading declarer is measurably able to exploit it |
 
 A belief-space node sharing a South-honour key with another one is not
 itself a bug -- North voiding out of spades entirely reaches the same key
@@ -595,7 +595,7 @@ class TestPMake(unittest.TestCase):
         self.assertAlmostEqual(ace_value["p_make"], 10 / 21)
         self.assertGreater(belief_value["p_make"], ace_value["p_make"])
 
-    def test_the_randomise_touching_honours_toggle_moves_this_ending(self) -> None:
+    def test_the_randomize_touching_honors_toggle_moves_this_ending(self) -> None:
         # With randomisation on, second_seat_low detects every genuine
         # touching pair this ending's own second-seat node ever reaches
         # and defers there to the chain's fallback spread, which is
@@ -616,11 +616,11 @@ class TestPMake(unittest.TestCase):
         with_value = example.evaluate(
             sequence, source, example.cash_the_king_then_read_the_beliefs,
             heuristic_defender(ctx, example.bsle.make_default_defender_heuristics(
-                root["trump"], randomise_touching_honours=True)))
+                root["trump"], randomize_touching_honors=True)))
         without_value = example.evaluate(
             sequence, source, example.cash_the_king_then_read_the_beliefs,
             heuristic_defender(ctx, example.bsle.make_default_defender_heuristics(
-                root["trump"], randomise_touching_honours=False)))
+                root["trump"], randomize_touching_honors=False)))
 
         self.assertAlmostEqual(with_value["p_make"], 65 / 126)
         self.assertAlmostEqual(without_value["p_make"], 15 / 28)
