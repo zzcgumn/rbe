@@ -200,6 +200,7 @@ cc_test(
         "//src/belief_evaluation:defender_heuristic",
         "//src/belief_evaluation:double_dummy_defender",
         "//src/belief_evaluation:heuristic_defender",
+        "@dds//library/src:dds",  # api/solve_board.hpp's own providing target, included directly
         "@dds//library/src/api:api_definitions",
         "@dds//library/src/solver_context",
         "@dds//library/src/api:dds_constants",
