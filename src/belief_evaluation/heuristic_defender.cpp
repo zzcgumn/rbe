@@ -20,6 +20,17 @@ namespace
     // makes for it, rather than trusting every rule in the chain to.
     auto is_double_dummy_optimal(Card const& card, FutureTricks const& fut) -> bool
     {
+        // card comes from a caller-authored chain rule, not from fut
+        // itself -- rank must be checked against the documented 2..14
+        // range before it is ever used to shift equals's bits; a
+        // negative or oversized rank (reachable from Python with no
+        // range check of its own) is undefined behaviour for `1u <<
+        // card.rank`, not merely a card this function can correctly
+        // recognise as non-optimal.
+        if (card.rank < 2 || card.rank > 14)
+        {
+            return false;
+        }
         for (int i = 0; i < fut.cards; ++i)
         {
             if (fut.suit[i] != card.suit)

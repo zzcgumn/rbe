@@ -277,6 +277,56 @@ TEST_F(HeuristicDefenderTest, FallsBackToSpreadWhenAChainRuleReturnsACardOutside
     }
 }
 
+TEST_F(HeuristicDefenderTest, FallsBackToSpreadWhenAChainRuleReturnsAnOutOfRangeRank)
+{
+    // Nothing stops a caller-authored rule from returning a rank outside
+    // the documented 2..14 range (Python's Card constructor accepts any
+    // int) -- the validation above must reject this before it is ever
+    // used to shift equals's bits, not merely once rank happens to be a
+    // plausible card. Negative and oversized ranks both exercised, since
+    // either is undefined behaviour for a raw `1u << rank` with no
+    // range check first.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = West;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[West][Hearts] = be::holding({Two});
+    deal.remainCards[North][Spades] = be::holding({Two, King});
+    deal.remainCards[East][Spades] = be::holding({Four});
+    deal.remainCards[East][Hearts] = be::holding({Three});
+    deal.remainCards[South][Hearts] = be::holding({Four, Five});
+
+    be::ObservationState state{};
+    state.declarer = East;
+
+    SolverContext ctx;
+    be::DoubleDummyDefender double_dummy_defender(ctx);
+    std::vector<be::WeightedCard> const double_dummy_result =
+        double_dummy_defender.as_strategy()(be::DefenderQuery{deal, North, state});
+
+    for (int const bad_rank : {-1, 32, 1000})
+    {
+        be::DefenderHeuristicChain chain;
+        chain.add([bad_rank](be::DefenderHeuristicContext const&,
+                              std::vector<be::Card> const&) -> std::optional<be::Card> {
+            return be::Card{Spades, bad_rank};
+        });
+
+        be::HeuristicDefender heuristic_defender(ctx, chain);
+        std::vector<be::WeightedCard> const heuristic_result =
+            heuristic_defender.as_strategy()(be::DefenderQuery{deal, North, state});
+
+        ASSERT_EQ(heuristic_result.size(), double_dummy_result.size());
+        for (std::size_t i = 0; i < heuristic_result.size(); ++i)
+        {
+            EXPECT_EQ(heuristic_result[i].card.suit, double_dummy_result[i].card.suit);
+            EXPECT_EQ(heuristic_result[i].card.rank, double_dummy_result[i].card.rank);
+            EXPECT_DOUBLE_EQ(heuristic_result[i].probability, double_dummy_result[i].probability);
+        }
+    }
+}
+
 TEST_F(HeuristicDefenderTest, ANonDefaultChainBehavesExactlyAsItsOwnSelectCardSays)
 {
     // A hand-built chain, deliberately not the convenience one: two
