@@ -97,6 +97,27 @@ TEST_F(SuitTopTricksTest, AnOpponentDucksRatherThanAlwaysUsingItsHighestRemainin
     EXPECT_EQ(tricks[Spades], 1);
 }
 
+TEST_F(SuitTopTricksTest, StopsCountingAfterTheFirstStopperRatherThanConsumingItAndContinuing)
+{
+    // North (defender) holds two through six, five cards headed low;
+    // East (an opponent) holds only the seven -- one card, but higher
+    // than every one of North's. A version that "matches and removes" a
+    // stopper, then keeps counting North's remaining cards as automatic
+    // winners, would consume the seven against North's two and credit
+    // the three, four, five, and six as four more top tricks. That is
+    // not how leading the suit actually goes: North would lead the six
+    // first (highest first, to maximise the run), the seven beats it
+    // immediately, and North never even gets to try the lower four --
+    // once East wins that trick, East is not obliged to lead spades
+    // back. Zero top tricks, not four.
+    Deal deal{};
+    deal.remainCards[North][Spades] = be::holding({Two, Three, Four, Five, Six});
+    deal.remainCards[East][Spades] = be::holding({Seven});
+
+    std::array<int, 4> const tricks = be::suit_top_tricks(deal, North, NoTrump);
+    EXPECT_EQ(tricks[Spades], 0);
+}
+
 TEST_F(SuitTopTricksTest, DeclaringSideHoldingTheTopGivesZero)
 {
     // East (an opponent of North/South) holds the ace; North's own best

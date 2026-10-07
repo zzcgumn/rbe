@@ -76,9 +76,7 @@ auto suit_top_tricks(Deal const& layout, int defender_seat, int trump) -> std::a
         // across both defending hands combined. A card beyond the top
         // cap is never the deciding card of any round -- there are only
         // cap rounds to win -- so it is excluded rather than confusing
-        // the matching below with a card that can never actually win a
-        // trick (and could otherwise pointlessly absorb an opposing
-        // stopper that a higher card of ours still needs).
+        // the count below with a card that can never actually be reached.
         std::vector<int> defending = sorted_ranks_descending(layout.remainCards[defender_seat][suit]);
         std::vector<int> const partner_ranks = sorted_ranks_descending(layout.remainCards[partner_seat][suit]);
         defending.insert(defending.end(), partner_ranks.begin(), partner_ranks.end());
@@ -87,39 +85,30 @@ auto suit_top_tricks(Deal const& layout, int defender_seat, int trump) -> std::a
         {
             defending.resize(static_cast<std::size_t>(cap));
         }
-        std::sort(defending.begin(), defending.end());  // ascending, for the matching below
 
-        // The opposing side's stoppers, pooled together: whichever
-        // specific opponent hand holds the needed card, *some* opponent
-        // uses it (never an overestimate if the pooling itself is
-        // generous to the opponents, which merging rather than tracking
-        // each hand's own depletion timing separately is). A real
-        // opponent ducks under a lead their smallest surviving card
-        // cannot beat, saving a larger card to stop a higher lead of
-        // ours instead -- so each of our candidates, processed from the
-        // lowest upward, must be matched against the smallest *sufficient*
-        // remaining stopper, not assumed beaten by whichever opposing
-        // card a purely rank-parallel walk happens to compare it to.
-        std::vector<int> opponents = sorted_ranks_descending(layout.remainCards[opponent_a][suit]);
-        std::vector<int> const opponent_b_ranks = sorted_ranks_descending(layout.remainCards[opponent_b][suit]);
-        opponents.insert(opponents.end(), opponent_b_ranks.begin(), opponent_b_ranks.end());
-        std::sort(opponents.begin(), opponents.end());  // ascending
+        // The single highest card either opposing hand holds -- not a
+        // pool to match round by round, but the one card that decides
+        // where our run of winners stops. The moment one of our own
+        // cards, led highest first, fails to beat it, the opponent wins
+        // that trick and gains the lead: this function counts only
+        // tricks cashed *by leading this suit*, and once the opponents
+        // have won a trick in it, they are not obliged to lead it back,
+        // so nothing beyond that point is a guaranteed top trick, no
+        // matter how high our remaining cards individually rank. 0 (no
+        // real rank is this low) stands for "no opposing card at all".
+        std::vector<int> const opp_a_ranks = sorted_ranks_descending(layout.remainCards[opponent_a][suit]);
+        std::vector<int> const opp_b_ranks = sorted_ranks_descending(layout.remainCards[opponent_b][suit]);
+        int const opponent_max =
+            std::max(opp_a_ranks.empty() ? 0 : opp_a_ranks.front(), opp_b_ranks.empty() ? 0 : opp_b_ranks.front());
 
         int count = 0;
-        for (int const our_card : defending)
+        for (int const our_card : defending)  // already highest first
         {
-            // No duplicate ranks exist within one suit across different
-            // hands, so upper_bound's "first strictly greater" is exactly
-            // the smallest card that beats our_card.
-            auto const stopper = std::upper_bound(opponents.begin(), opponents.end(), our_card);
-            if (stopper == opponents.end())
+            if (our_card <= opponent_max)
             {
-                ++count;
+                break;
             }
-            else
-            {
-                opponents.erase(stopper);
-            }
+            ++count;
         }
 
         result[static_cast<std::size_t>(suit)] = count;
