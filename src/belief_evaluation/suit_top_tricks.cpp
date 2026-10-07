@@ -72,38 +72,53 @@ auto suit_top_tricks(Deal const& layout, int defender_seat, int trump) -> std::a
             }
         }
 
+        // Our own candidates for these cap rounds: the cap highest cards
+        // across both defending hands combined. A card beyond the top
+        // cap is never the deciding card of any round -- there are only
+        // cap rounds to win -- so it is excluded rather than confusing
+        // the matching below with a card that can never actually win a
+        // trick (and could otherwise pointlessly absorb an opposing
+        // stopper that a higher card of ours still needs).
         std::vector<int> defending = sorted_ranks_descending(layout.remainCards[defender_seat][suit]);
         std::vector<int> const partner_ranks = sorted_ranks_descending(layout.remainCards[partner_seat][suit]);
         defending.insert(defending.end(), partner_ranks.begin(), partner_ranks.end());
         std::sort(defending.begin(), defending.end(), std::greater<>());
+        if (defending.size() > static_cast<std::size_t>(cap))
+        {
+            defending.resize(static_cast<std::size_t>(cap));
+        }
+        std::sort(defending.begin(), defending.end());  // ascending, for the matching below
 
-        std::vector<int> const opp_a_ranks = sorted_ranks_descending(layout.remainCards[opponent_a][suit]);
-        std::vector<int> const opp_b_ranks = sorted_ranks_descending(layout.remainCards[opponent_b][suit]);
+        // The opposing side's stoppers, pooled together: whichever
+        // specific opponent hand holds the needed card, *some* opponent
+        // uses it (never an overestimate if the pooling itself is
+        // generous to the opponents, which merging rather than tracking
+        // each hand's own depletion timing separately is). A real
+        // opponent ducks under a lead their smallest surviving card
+        // cannot beat, saving a larger card to stop a higher lead of
+        // ours instead -- so each of our candidates, processed from the
+        // lowest upward, must be matched against the smallest *sufficient*
+        // remaining stopper, not assumed beaten by whichever opposing
+        // card a purely rank-parallel walk happens to compare it to.
+        std::vector<int> opponents = sorted_ranks_descending(layout.remainCards[opponent_a][suit]);
+        std::vector<int> const opponent_b_ranks = sorted_ranks_descending(layout.remainCards[opponent_b][suit]);
+        opponents.insert(opponents.end(), opponent_b_ranks.begin(), opponent_b_ranks.end());
+        std::sort(opponents.begin(), opponents.end());  // ascending
 
         int count = 0;
-        std::size_t defending_index = 0;
-        std::size_t opp_a_index = 0;
-        std::size_t opp_b_index = 0;
-
-        while (count < cap && defending_index < defending.size())
+        for (int const our_card : defending)
         {
-            int const lead = defending[defending_index];
-            bool const a_beats = opp_a_index < opp_a_ranks.size() && opp_a_ranks[opp_a_index] > lead;
-            bool const b_beats = opp_b_index < opp_b_ranks.size() && opp_b_ranks[opp_b_index] > lead;
-            if (a_beats || b_beats)
+            // No duplicate ranks exist within one suit across different
+            // hands, so upper_bound's "first strictly greater" is exactly
+            // the smallest card that beats our_card.
+            auto const stopper = std::upper_bound(opponents.begin(), opponents.end(), our_card);
+            if (stopper == opponents.end())
             {
-                break;
+                ++count;
             }
-
-            ++count;
-            ++defending_index;
-            if (opp_a_index < opp_a_ranks.size())
+            else
             {
-                ++opp_a_index;
-            }
-            if (opp_b_index < opp_b_ranks.size())
-            {
-                ++opp_b_index;
+                opponents.erase(stopper);
             }
         }
 

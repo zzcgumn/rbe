@@ -20,11 +20,21 @@ namespace dds::belief_evaluation
 /// top-tricks counter: a more elaborate version of this technique would
 /// additionally conserve which specific defending card is played each
 /// round, to avoid unblocking problems between two unevenly-long hands.
-/// This version always leads the higher of the two defending hands'
-/// current top cards instead, which can only ever equal or undercount
-/// the entry-optimal result -- the calculation must never overestimate
-/// how many top tricks are available; it may come out lower than what is
-/// actually achievable in a complex entry position, never higher.
+/// This version takes the defending side's own `cap` highest cards
+/// combined (`cap` bounded by whichever defending hand is longer -- a
+/// round, for as long as both still hold the suit, consumes one card
+/// from each simultaneously, so the two hands cannot cash more separate
+/// tricks than that) and matches them against the opposing side's own
+/// cards pooled together, smallest sufficient stopper first, as an
+/// opponent playing optimally (ducking under a lead it cannot usefully
+/// beat, to save a larger card for a higher one of ours instead) would.
+/// Pooling the two opposing hands rather than tracking each one's own
+/// depletion timing separately is itself an extra simplification in the
+/// safe direction: it is never less generous to the opponents than the
+/// true position, so it can only ever equal or undercount the
+/// entry-optimal, optimal-defense result -- the calculation must never
+/// overestimate how many top tricks are available; it may come out
+/// lower than what is actually achievable, never higher.
 ///
 /// `trump` uses this module's own convention (`defender_heuristic.hpp`'s
 /// own doxygen): `DDS_NOTRUMP` for no trump suit. When `suit` is not

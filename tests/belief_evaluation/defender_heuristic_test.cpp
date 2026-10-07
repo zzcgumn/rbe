@@ -1061,19 +1061,24 @@ TEST_F(DiscardKeepWinnersTest, ResolvesTrueRankBeforeComparingAcrossDifferentSui
     // from *different* suits -- so, unlike those rules, comparing by raw
     // (representative) rank is not merely cosmetically wrong when a
     // candidate's group is collapsed, it can pick the wrong suit
-    // outright. Both suits give zero top tricks (East holds the ace of
-    // each), so the tie is broken by rank alone. Spades collapses to one
-    // fut entry, the six, with the two folded into its equals -- the true
-    // lowest card there is the two. Diamonds is a plain five, no fold.
-    // Comparing *representative* ranks (six vs five) picks diamonds; the
-    // true lowest ranks (two vs five) must pick spades instead.
+    // outright. Both suits give zero top tricks: East holds the ace of
+    // diamonds (beating North's only diamond outright), and *both* the
+    // ace and king of spades (so neither of North's two spades gets
+    // through -- one ace could only stop one of the two, which is not
+    // zero; this is why suit_top_tricks's own regression tests require
+    // two genuine stoppers here, not one). So the tie is broken by rank
+    // alone. Spades collapses to one fut entry, the six, with the two
+    // folded into its equals -- the true lowest card there is the two.
+    // Diamonds is a plain five, no fold. Comparing *representative*
+    // ranks (six vs five) picks diamonds; the true lowest ranks (two vs
+    // five) must pick spades instead.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = DiscardLeader;
     deal.currentTrickSuit[0] = Hearts;
     deal.currentTrickRank[0] = Three;
     deal.remainCards[Discarder][Spades] = be::holding({Two, Six});
-    deal.remainCards[East][Spades] = be::holding({Ace});
+    deal.remainCards[East][Spades] = be::holding({Ace, King});
     deal.remainCards[Discarder][Diamonds] = be::holding({Five});
     deal.remainCards[East][Diamonds] = be::holding({Ace});
 

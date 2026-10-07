@@ -15,6 +15,10 @@ namespace
     constexpr int Two = 2;
     constexpr int Three = 3;
     constexpr int Four = 4;
+    constexpr int Five = 5;
+    constexpr int Six = 6;
+    constexpr int Seven = 7;
+    constexpr int Eight = 8;
     constexpr int Nine = 9;
     constexpr int Jack = 11;
     constexpr int Queen = 12;
@@ -72,6 +76,25 @@ TEST_F(SuitTopTricksTest, LongerHandKeepsRunningAfterTheShorterOneIsExhausted)
 
     std::array<int, 4> const tricks = be::suit_top_tricks(deal, North, NoTrump);
     EXPECT_EQ(tricks[Spades], 2);
+}
+
+TEST_F(SuitTopTricksTest, AnOpponentDucksRatherThanAlwaysUsingItsHighestRemainingCard)
+{
+    // North (defender) holds the eight and the six; East (an opponent)
+    // holds the seven and the five. Comparing in strict descending
+    // order from both sides -- the bug this test exists to catch --
+    // would pair North's eight against East's seven (eight wins) and
+    // then North's six against East's five (six wins too), claiming two
+    // top tricks. A real opponent does not play that way: East ducks
+    // under the eight with the five (the seven cannot beat it either,
+    // so using it here would only waste it), keeping the seven to beat
+    // North's six on the next round instead. One top trick, not two.
+    Deal deal{};
+    deal.remainCards[North][Spades] = be::holding({Eight, Six});
+    deal.remainCards[East][Spades] = be::holding({Seven, Five});
+
+    std::array<int, 4> const tricks = be::suit_top_tricks(deal, North, NoTrump);
+    EXPECT_EQ(tricks[Spades], 1);
 }
 
 TEST_F(SuitTopTricksTest, DeclaringSideHoldingTheTopGivesZero)
