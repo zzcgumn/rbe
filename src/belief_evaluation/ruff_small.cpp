@@ -11,7 +11,7 @@ auto ruff_small() -> DefenderHeuristic
 {
     return [](DefenderHeuristicContext const& ctx, std::vector<Card> const& best_cards) -> std::optional<Card>
     {
-        if (ctx.trump == DDS_NOTRUMP || ctx.was_on_lead || ctx.can_follow_led_suit)
+        if (ctx.trump == DDS_NOTRUMP || ctx.was_on_lead || ctx.can_follow_led_suit || !ctx.defending_side)
         {
             return std::nullopt;
         }

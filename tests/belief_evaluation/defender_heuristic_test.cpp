@@ -1253,6 +1253,36 @@ TEST_F(RuffSmallTest, ReturnsTheSmallestTrumpWhenNoOverruffIsPossible)
     EXPECT_EQ(result->rank, Two);
 }
 
+TEST_F(RuffSmallTest, DoesNotFireOnTheDeclaringSide)
+{
+    // Identical fixture to ReturnsTheSmallestTrumpWhenNoOverruffIsPossible
+    // above -- same void, same trumps, same absence of any overruff --
+    // except RuffSeat is declarer rather than a defender. Every sibling
+    // rule (second_seat_low, high_in_third, third_seat_low, fourth_seat_low,
+    // discard_keep_winners) additionally gates on ctx.defending_side;
+    // this rule must too, since a DefenderHeuristicContext can be built by
+    // hand for any seat (Tasks 2/4), and nothing else stops this rule from
+    // handing back a defensive ruff for a seat that is, by this context,
+    // on the declaring side.
+    Deal deal{};
+    deal.trump = RuffTrump;
+    deal.first = RuffLeader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[RuffSeat][Hearts] = be::holding({Two, Three});
+    deal.remainCards[RuffNotYetPlayedDeclaringSide][Spades] = be::holding({Four});
+
+    be::ObservationState state{};
+    state.declarer = RuffSeat;
+    FutureTricks fut{};
+
+    be::DefenderHeuristicContext const ctx =
+        be::make_defender_heuristic_context(deal, state, RuffSeat, fut);
+    std::vector<be::Card> const best_cards{be::Card{Hearts, Two}, be::Card{Hearts, Three}};
+
+    EXPECT_FALSE(be::ruff_small()(ctx, best_cards).has_value());
+}
+
 TEST_F(RuffSmallTest, DetectsAnOverruffAgainstTheTrueLowestTrumpNotTheCollapsedRepresentative)
 {
     // North's trumps collapse to one fut entry: the jack (dds's own
