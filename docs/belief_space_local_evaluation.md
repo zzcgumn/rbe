@@ -440,7 +440,12 @@ already licenses: off, it always plays the lower card of a touching pair
 rather than randomising between them, which leaks which specific card was
 held — a real cost when it fires, though not every position reaches a
 genuinely touching pair at that rule's own gate, in which case the two
-settings agree.
+settings agree. This holds only so long as no rule placed *after*
+`second_seat_low` in the same chain also fires at the same decision point
+— the chain tries every later rule before ever reaching the fallback
+spread, so such a rule would silently win instead, regardless of this
+setting. Put `second_seat_low` last among any rules that could fire
+where it does (see `second_seat_low.hpp`'s own doxygen).
 
 **A `SolverContext` is not thread-safe** (its own C++ contract: one
 context per thread), and `DoubleDummyDefender`/`DoubleDummyBound`/

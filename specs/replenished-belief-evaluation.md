@@ -823,7 +823,16 @@ rename or include-ordering trick anywhere in the module.
   it always plays the lower card, which is the one way this capability
   lets a caller model a defender who leaks which specific card was held
   — reusing `SpreadPolicy`'s own existing justification rather than
-  introducing a new one.
+  introducing a new one. **This guarantee is conditioned on chain
+  position, not unconditional**: it holds only when no later rule in the
+  same caller-assembled chain also fires at the decision point
+  `second_seat_low` defers on — a caller obligation the composability
+  contract above cannot enforce without compromising itself (no rule can
+  know what a later, possibly caller-supplied, rule in its own chain will
+  do). See `second_seat_low.hpp`'s own doxygen for the exact condition
+  and `DefenderHeuristicChainTest.ALaterRuleAtTheSameDecisionPointDefeats
+  SecondSeatLowsDeferral` for the documented, tested behaviour when it is
+  violated.
 
 ## Known gaps / non-goals
 
