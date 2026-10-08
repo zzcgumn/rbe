@@ -1542,13 +1542,23 @@ public:
 
     /// A copy, via the same py::class_<be::ObservationState> binding
     /// query.state is already exposed through elsewhere in this file --
-    /// safe to retain past this call's own lifetime (unlike layout()/fut()'s
-    /// dicts, built fresh each call, this is a value copy of the same
-    /// kind), even though the context it was read from is not.
+    /// safe to retain past this call's own lifetime for every field except
+    /// one: `play_record` is a non-owning pointer into the `EvaluateOptions`
+    /// this evaluation was called with (`types.hpp`'s own doxygen on that
+    /// field), which has no guarantee of outliving this one call, let alone
+    /// a Python rule stashing this copy past it. The same hazard
+    /// `evaluate()` itself already guards against for
+    /// `EvaluationValue::retained_root` (`evaluate.cpp`, "retained_root
+    /// outlives the call... play_record's usual non-owning contract...
+    /// does not extend to a value handed back to the caller, so it is
+    /// cleared here rather than left dangling") -- applied the same way
+    /// here, for the same reason.
     auto state() const -> be::ObservationState
     {
         check_valid();
-        return ctx_->state;
+        be::ObservationState copy = ctx_->state;
+        copy.play_record = nullptr;
+        return copy;
     }
 
     auto seat() const -> int

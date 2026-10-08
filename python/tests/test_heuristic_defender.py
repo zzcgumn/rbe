@@ -9,6 +9,7 @@ from belief_space_local_evaluation import evaluate
 from belief_space_local_evaluation import ExhaustiveLayoutSource
 from belief_space_local_evaluation import HeuristicDefender
 from belief_space_local_evaluation import make_default_defender_heuristics
+from belief_space_local_evaluation import PlayRecord
 from belief_space_local_evaluation import second_seat_low
 
 Spades, Hearts, Diamonds, Clubs = 0, 1, 2, 3
@@ -216,6 +217,81 @@ class HeuristicDefenderTest(unittest.TestCase):
 
         self.assertNotIn("error", result)
         self.assertEqual(stashed.get("tricks_needed"), tricks_needed)
+
+    def test_a_stashed_states_play_record_is_cleared_rather_than_left_dangling(self):
+        # context.state() returns a copy -- documented safe to retain past
+        # the one rule call it was handed to, unlike the context itself
+        # (see the test above and the one below). But one field of that
+        # copy, play_record, is a non-owning pointer into the
+        # EvaluateOptions this evaluation was called with
+        # (types.hpp's own doxygen on ObservationState::play_record), which
+        # has no guarantee of outliving this call at all, let alone a rule
+        # stashing the copy past it. evaluate() itself already clears this
+        # same field for EvaluationValue::retained_root for exactly this
+        # reason (evaluate.cpp); context.state() must do the same rather
+        # than hand back a value whose play_record reads freed memory the
+        # moment this test's own evaluate() call returns.
+        stashed = {}
+
+        def stashing_rule(context, best_cards):
+            stashed["state"] = context.state
+            return None
+
+        remain_cards = [[0, 0, 0, 0] for _ in range(4)]
+        remain_cards[North][Spades] = holding(12, 11)
+        remain_cards[South][Spades] = holding(2, 3)
+        remain_cards[East][Spades] = holding(14, 4)
+        remain_cards[West][Spades] = holding(13, 5)
+        remain_cards[North][Clubs] = holding(6)
+        remain_cards[South][Clubs] = holding(7)
+        remain_cards[East][Clubs] = holding(8)
+        remain_cards[West][Clubs] = holding(9)
+        root = {
+            "trump": DDS_NOTRUMP,
+            "first": East,
+            "remain_cards": remain_cards,
+            "current_trick_suit": (0, 0, 0),
+            "current_trick_rank": (0, 0, 0),
+        }
+
+        def lowest_card_in(remain_cards_row):
+            for suit in range(4):
+                mask = remain_cards_row[suit]
+                if mask:
+                    rank = 2
+                    while not (mask & (1 << rank)):
+                        rank += 1
+                    return Card(suit, rank)
+            raise AssertionError("seat holds nothing")
+
+        def lowest_legal_card(deal, seat):
+            remain_cards = deal["remain_cards"][seat]
+            if deal["current_trick_rank"][0] != 0:
+                led = deal["current_trick_suit"][0]
+                if remain_cards[led] != 0:
+                    return lowest_card_in([remain_cards[led] if s == led else 0 for s in range(4)])
+            return lowest_card_in(remain_cards)
+
+        def declarer_play(state, view):
+            del view
+            return lowest_legal_card(state.known_holdings, state.seat_on_play)
+
+        source = ExhaustiveLayoutSource(root, North, 1)
+        ctx = dds3.SolverContext()
+        chain = DefenderHeuristicChain()
+        chain.add(stashing_rule)
+        defender = HeuristicDefender(ctx, chain)
+
+        record = PlayRecord([], East)
+        result = evaluate(root, North, 1, source, declarer_play, defender, play_record=record)
+
+        self.assertNotIn("error", result)
+        self.assertIn("state", stashed)
+        # The rest of the copy is still exactly what the live call saw --
+        # only play_record, the one field with no safe lifetime past this
+        # call, is cleared.
+        self.assertEqual(stashed["state"].tricks_needed, 1)
+        self.assertIsNone(stashed["state"].play_record)
 
     def test_a_stashed_context_raises_after_the_rule_that_received_it_returns(self):
         # DefenderHeuristicContext is only valid for the duration of the
