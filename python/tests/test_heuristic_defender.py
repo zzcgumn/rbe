@@ -218,22 +218,29 @@ class HeuristicDefenderTest(unittest.TestCase):
         self.assertNotIn("error", result)
         self.assertEqual(stashed.get("tricks_needed"), tricks_needed)
 
-    def test_a_stashed_states_play_record_is_cleared_rather_than_left_dangling(self):
-        # context.state() returns a copy -- documented safe to retain past
-        # the one rule call it was handed to, unlike the context itself
-        # (see the test above and the one below). But one field of that
-        # copy, play_record, is a non-owning pointer into the
-        # EvaluateOptions this evaluation was called with
-        # (types.hpp's own doxygen on ObservationState::play_record), which
-        # has no guarantee of outliving this call at all, let alone a rule
-        # stashing the copy past it. evaluate() itself already clears this
-        # same field for EvaluationValue::retained_root for exactly this
-        # reason (evaluate.cpp); context.state() must do the same rather
-        # than hand back a value whose play_record reads freed memory the
-        # moment this test's own evaluate() call returns.
+    def test_a_stashed_states_play_record_raises_rather_than_reading_freed_memory(self):
+        # context.state is a copy -- documented safe to retain past the
+        # one rule call it was handed to, unlike the context itself (see
+        # the test above and the one below). One field of that copy,
+        # play_record, is a non-owning pointer into the EvaluateOptions
+        # this evaluation was called with (types.hpp's own doxygen on
+        # ObservationState::play_record), which has no guarantee of
+        # outliving this call at all, let alone a rule stashing the copy
+        # past it. Reading .play_record on the stashed copy after this
+        # test's own evaluate() call returns must therefore raise, via the
+        # same play_record_valid guard mechanism evaluate() itself uses
+        # for pi/delta's own ObservationState copies (types.hpp,
+        # belief_space_local_evaluation.cpp) -- not silently read freed
+        # memory, and not silently read back as None either, since every
+        # other field of the same copy (see tricks_needed below) remains
+        # perfectly valid to read at this point.
         stashed = {}
 
         def stashing_rule(context, best_cards):
+            # Read live, during this very call, before anything is
+            # retained -- proving the guard does not cost this capability,
+            # only block reading it late.
+            stashed["live_play_record"] = context.state.play_record
             stashed["state"] = context.state
             return None
 
@@ -287,11 +294,14 @@ class HeuristicDefenderTest(unittest.TestCase):
 
         self.assertNotIn("error", result)
         self.assertIn("state", stashed)
-        # The rest of the copy is still exactly what the live call saw --
-        # only play_record, the one field with no safe lifetime past this
-        # call, is cleared.
+        self.assertIsNotNone(stashed["live_play_record"])
+        self.assertEqual(stashed["live_play_record"].opening_leader, East)
+        # The rest of the retained copy is still exactly what the live
+        # call saw -- only play_record, the one field with no safe
+        # lifetime past this call, raises.
         self.assertEqual(stashed["state"].tricks_needed, 1)
-        self.assertIsNone(stashed["state"].play_record)
+        with self.assertRaises(ValueError):
+            stashed["state"].play_record
 
     def test_a_stashed_context_raises_after_the_rule_that_received_it_returns(self):
         # DefenderHeuristicContext is only valid for the duration of the

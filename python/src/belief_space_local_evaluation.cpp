@@ -380,6 +380,19 @@ auto register_observation_state_bindings(py::module_& module) -> void
         .def_property_readonly(
             "play_record",
             [](be::ObservationState const& self) -> py::object {
+                // play_record_valid is set only by this binding's own
+                // evaluate()/HeuristicDefender call sites, exactly when a
+                // caller might retain this ObservationState copy past the
+                // one call that produced it -- see its own doxygen
+                // (types.hpp). Empty means no such guard applies (every
+                // state a plain C++ caller sees, and every live read
+                // during the call that produced this copy either way).
+                if (self.play_record_valid && ! *self.play_record_valid) {
+                    throw py::value_error(
+                        "play_record is only valid for the duration of the call that "
+                        "produced this state -- that call has since returned, and the "
+                        "record it pointed to no longer exists");
+                }
                 if (self.play_record == nullptr) {
                     return py::none();
                 }
@@ -388,7 +401,9 @@ auto register_observation_state_bindings(py::module_& module) -> void
             "Every card played before this evaluation's root, or None if\n"
             "the caller supplied no PlayRecord. Distinct from history:\n"
             "play_record is invariant for the whole evaluation, history is\n"
-            "root-relative and grows during the search.");
+            "root-relative and grows during the search. Reading this after\n"
+            "retaining `state` past the call that handed it to you raises\n"
+            "ValueError rather than returning stale data.");
 }
 
 // BeliefView holds a std::span into caller-owned scratch and node.layouts,
@@ -602,6 +617,22 @@ auto probe_with_belief_view(
 // that corrupts the interpreter the first time two threads exercise it,
 // and there must be exactly one place per kind that could get this wrong.
 //
+// Attaches play_record_valid to a copy of state, so the play_record
+// property (registered above) can tell a copy a Python caller might
+// retain past the evaluate() call that produced it from one read live,
+// during that call -- see ObservationState::play_record_valid's own
+// doxygen (types.hpp). evaluate()'s own binding creates one call_valid
+// flag per call and flips it false when that call returns (regardless of
+// how it returns), shared across every state copy handed to pi/state_key/
+// delta during it.
+auto state_for_python(be::ObservationState const& state, std::shared_ptr<bool> const& call_valid)
+    -> be::ObservationState
+{
+    be::ObservationState copy = state;
+    copy.play_record_valid = call_valid;
+    return copy;
+}
+
 // A Python pi/delta author can reach for `random.choice` without a second
 // thought; DeclarerStrategy::play's own doxygen is emphatic that play
 // must be a pure function of its arguments (state, view) alone, since the
@@ -611,25 +642,28 @@ auto probe_with_belief_view(
 // cache. `hash(seed, state) mod n` is the honest way to get variety
 // without breaking purity.
 auto make_declarer_strategy(
-    be::StrategyId id, py::function const& play, std::optional<py::function> const& state_key)
-    -> be::DeclarerStrategy
+    be::StrategyId id, py::function const& play, std::optional<py::function> const& state_key,
+    std::shared_ptr<bool> const& call_valid) -> be::DeclarerStrategy
 {
     be::DeclarerStrategy strategy;
     strategy.id = id;
-    strategy.play = [play](be::ObservationState const& state, be::BeliefView const& view) -> be::Card {
+    strategy.play = [play, call_valid](be::ObservationState const& state, be::BeliefView const& view) -> be::Card {
         py::gil_scoped_acquire gil;
         BeliefViewGuard guard;
-        py::object const result =
-            play(py::cast(state, py::return_value_policy::copy), py::cast(PyBeliefView(&view, guard.valid)));
+        py::object const result = play(
+            py::cast(state_for_python(state, call_valid), py::return_value_policy::copy),
+            py::cast(PyBeliefView(&view, guard.valid)));
         return py::cast<be::Card>(result);
     };
     if (state_key.has_value()) {
         py::function const key_fn = *state_key;
-        strategy.state_key = [key_fn](be::ObservationState const& state, be::BeliefView const& view) -> be::StateKey {
+        strategy.state_key =
+            [key_fn, call_valid](be::ObservationState const& state, be::BeliefView const& view) -> be::StateKey {
             py::gil_scoped_acquire gil;
             BeliefViewGuard guard;
             py::object const result = key_fn(
-                py::cast(state, py::return_value_policy::copy), py::cast(PyBeliefView(&view, guard.valid)));
+                py::cast(state_for_python(state, call_valid), py::return_value_policy::copy),
+                py::cast(PyBeliefView(&view, guard.valid)));
             return std::string(py::cast<py::bytes>(result));
         };
     }
@@ -654,14 +688,15 @@ auto make_declarer_strategy(
 // with no mass, which is not the same thing as leaving it out. This is
 // the single most likely way a Python delta is subtly wrong; validated
 // server-side by validate_defender_distribution, not re-derived here.
-auto make_defender_strategy(py::function const& delta) -> be::DefenderStrategy
+auto make_defender_strategy(py::function const& delta, std::shared_ptr<bool> const& call_valid)
+    -> be::DefenderStrategy
 {
-    return [delta](be::DefenderQuery const& query) -> std::vector<be::WeightedCard> {
+    return [delta, call_valid](be::DefenderQuery const& query) -> std::vector<be::WeightedCard> {
         py::gil_scoped_acquire gil;
         py::object const result = delta(
             dds3_python::deal_to_dict(query.layout),
             query.seat,
-            py::cast(query.state, py::return_value_policy::copy));
+            py::cast(state_for_python(query.state, call_valid), py::return_value_policy::copy));
 
         std::vector<be::WeightedCard> weighted;
         for (py::handle const item : py::cast<py::sequence>(result)) {
@@ -926,9 +961,25 @@ auto evaluate(
     std::optional<py::function> const state_key_fn =
         state_key.is_none() ? std::nullopt : std::make_optional(py::cast<py::function>(state_key));
 
+    // Shared across every ObservationState copy pi/state_key/delta see
+    // during this one evaluate() call (state_for_python, above), and
+    // flipped false when this call returns -- by any path, including an
+    // exception -- so a retained copy's play_record property raises
+    // rather than reading freed memory afterwards. See
+    // ObservationState::play_record_valid's own doxygen (types.hpp).
+    auto const call_valid = std::make_shared<bool>(true);
+    struct CallValidInvalidator
+    {
+        std::shared_ptr<bool> valid;
+        ~CallValidInvalidator()
+        {
+            *valid = false;
+        }
+    } const invalidate_call_valid{call_valid};
+
     Deal const root_deal = dds3_python::dict_to_deal(root);
-    be::DeclarerStrategy const strategy = make_declarer_strategy(1, pi, state_key_fn);
-    be::DefenderStrategy const delta_fn = make_defender_strategy(delta);
+    be::DeclarerStrategy const strategy = make_declarer_strategy(1, pi, state_key_fn, call_valid);
+    be::DefenderStrategy const delta_fn = make_defender_strategy(delta, call_valid);
 
     be::EvaluateOptions options;
     options.retain_root = retain_root;
@@ -1542,22 +1593,21 @@ public:
 
     /// A copy, via the same py::class_<be::ObservationState> binding
     /// query.state is already exposed through elsewhere in this file --
-    /// safe to retain past this call's own lifetime for every field except
-    /// one: `play_record` is a non-owning pointer into the `EvaluateOptions`
-    /// this evaluation was called with (`types.hpp`'s own doxygen on that
-    /// field), which has no guarantee of outliving this one call, let alone
-    /// a Python rule stashing this copy past it. The same hazard
-    /// `evaluate()` itself already guards against for
-    /// `EvaluationValue::retained_root` (`evaluate.cpp`, "retained_root
-    /// outlives the call... play_record's usual non-owning contract...
-    /// does not extend to a value handed back to the caller, so it is
-    /// cleared here rather than left dangling") -- applied the same way
-    /// here, for the same reason.
+    /// safe to retain past this call's own lifetime for every field,
+    /// `play_record` included: `play_record_valid` is set here to the
+    /// same `valid_` flag that already governs every other accessor on
+    /// this context, so a rule that stashes this copy and reads
+    /// `.play_record` after the one rule call it was handed to returns
+    /// raises `ValueError` the same way `layout`/`fut`/etc. already do
+    /// here, rather than reading freed memory. See
+    /// `ObservationState::play_record_valid`'s own doxygen (types.hpp)
+    /// and `evaluate()`'s own binding, which sets the same field for the
+    /// same reason at a different (whole-call) granularity.
     auto state() const -> be::ObservationState
     {
         check_valid();
         be::ObservationState copy = ctx_->state;
-        copy.play_record = nullptr;
+        copy.play_record_valid = valid_;
         return copy;
     }
 

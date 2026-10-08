@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <span>
 #include <string>
 #include <utility>
@@ -111,6 +112,25 @@ struct ObservationState
     /// such guarantee about `options` -- `evaluate()` clears this field
     /// there rather than leave it dangling; see that field's own doxygen.
     PlayRecord const* play_record = nullptr;
+
+    /// Set only by the Python binding, never by this core engine itself --
+    /// every C++ caller sees this default-empty and gets exactly today's
+    /// behaviour (play_record read directly, no guard, correct for a
+    /// caller who keeps EvaluateOptions alive for as long as its own
+    /// ObservationState copies live, which is the documented contract
+    /// above). The hazard this guards against is specific to the Python
+    /// surface: `evaluate()`'s binding builds a transient, call-local
+    /// EvaluateOptions whose lifetime a Python caller cannot see or
+    /// control, so a Python strategy stashing `state` past the call that
+    /// handed it over and later reading `.play_record` would otherwise
+    /// read freed memory. Empty means "no guard applies"; non-empty and
+    /// false means "the call that produced this copy has returned, and
+    /// play_record no longer points at anything live" -- the Python
+    /// `.play_record` property (belief_space_local_evaluation.cpp) checks
+    /// this and raises rather than dereferencing in that case. Read
+    /// access to play_record during the call this state was built for is
+    /// unaffected either way.
+    std::shared_ptr<bool> play_record_valid;
 };
 
 /// One layout in a belief view, paired with its normalised posterior.
