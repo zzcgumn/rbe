@@ -819,22 +819,22 @@ def main() -> None:
         "show it), while the jack now absorbs every holding that could "
         "have shown either one.")
 
-    with_randomising_value = evaluate(
+    with_randomizing_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs,
         heuristic_defender(ctx, bsle.make_default_defender_heuristics(
             root["trump"], randomize_touching_honors=True)))
     print(
         f"\nAgainst a caller-assembled heuristic chain (second-hand low, "
         f"third-hand high/low, ...) with randomize_touching_honors=True "
-        f"instead: P_make = {with_randomising_value['p_make']:.4f}.")
+        f"instead: P_make = {with_randomizing_value['p_make']:.4f}.")
 
-    without_randomising_value = evaluate(
+    without_randomizing_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs,
         heuristic_defender(ctx, bsle.make_default_defender_heuristics(
             root["trump"], randomize_touching_honors=False)))
     print(
         f"\nThe identical chain with randomize_touching_honors=False "
-        f"instead: P_make = {without_randomising_value['p_make']:.4f}. "
+        f"instead: P_make = {without_randomizing_value['p_make']:.4f}. "
         f"Higher than the row above, not a rounding difference: with "
         f"randomisation on, `second_seat_low` detects every genuine "
         f"touching pair this ending's own second-seat node ever reaches "
