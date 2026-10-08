@@ -19,7 +19,22 @@ namespace dds::belief_evaluation
 /// randomise the wrong pair (or not randomise at all, if the canonical
 /// entry does not touch anything), so this rule returns its own answer
 /// directly in that case instead -- the same card
-/// `randomize_touching_honors=false` would give.
+/// `randomize_touching_honors=false` would give. Likewise if
+/// `ctx.fallback_policy` is not `SpreadPolicy::TouchingSequence`:
+/// deferring is only restricted choice if the fallback it reaches
+/// actually spreads over just this one group, which `SpreadPolicy::
+/// AllOptimal` does not (see `spread.hpp`'s own doxygen on the two
+/// policies).
+///
+/// Deferring is also only restricted choice in the first place if
+/// nothing later in the caller-assembled chain goes on to pick a card
+/// for this same decision point instead of letting the deferral reach
+/// the fallback -- `DefenderHeuristicChain::select_card()` tries every
+/// later rule before falling back, by design, so a chain combining this
+/// rule with a later one that can also fire here is a caller
+/// obligation this rule cannot itself enforce. Put `second_seat_low`
+/// last among any rules that could fire at the same decision point when
+/// `randomize_touching_honors` is relied upon.
 ///
 /// **Precondition shared by every rule that reads `ctx.fut.equals`
 /// against `best_cards`**: the two must be parallel, i.e.

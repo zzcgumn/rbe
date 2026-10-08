@@ -105,7 +105,20 @@ auto second_seat_low(bool randomize_touching_honors) -> DefenderHeuristic
         // card randomize_touching_honors=false would give.
         bool const defer_reaches_this_group =
             canonical_best(ctx.fut) == static_cast<int>(lowest_index);
-        if (randomize_touching_honors && touching.touches && defer_reaches_this_group)
+
+        // And only if the fallback it defers to is actually the policy
+        // that distributes over just this one touching group --
+        // ctx.fallback_policy may be SpreadPolicy::AllOptimal instead
+        // (a HeuristicDefender constructed with that policy), which
+        // spreads over every tied candidate across every suit rather
+        // than restricting to this group alone. Deferring there would
+        // not produce restricted choice at all, so this rule falls
+        // back to returning its own answer directly in that case too.
+        bool const fallback_is_touching_sequence =
+            ctx.fallback_policy == SpreadPolicy::TouchingSequence;
+
+        if (randomize_touching_honors && touching.touches && defer_reaches_this_group
+            && fallback_is_touching_sequence)
         {
             return std::nullopt;
         }

@@ -8,6 +8,7 @@
 #include <api/dds_constants.hpp>
 #include <api/dds_data_types.hpp>
 
+#include <belief_evaluation/spread.hpp>
 #include <belief_evaluation/trick.hpp>
 #include <belief_evaluation/types.hpp>
 
@@ -44,6 +45,17 @@ struct DefenderHeuristicContext
     bool can_follow_led_suit;
     bool defending_side;  ///< seat % 2 != state.declarer % 2
     int trump;             ///< layout.trump; see this struct's own doxygen above
+
+    /// The policy `HeuristicDefender::as_strategy()` will fall back to if
+    /// every rule in the chain defers -- `SpreadPolicy::TouchingSequence`
+    /// by default, matching `HeuristicDefender`'s own constructor default.
+    /// A rule that defers specifically to obtain restricted-choice
+    /// semantics from that fallback (`second_seat_low`'s own doxygen) must
+    /// check this first: deferring when the caller has chosen
+    /// `SpreadPolicy::AllOptimal` instead does not reach the touching-pair
+    /// distribution the rule means to produce, since that policy spreads
+    /// over every tied candidate across suits, not just this one group.
+    SpreadPolicy fallback_policy;
 };
 
 /// One rule in a defender heuristic chain. Returns the chosen card, or
@@ -61,9 +73,15 @@ using DefenderHeuristic =
 /// Builds the context every DefenderHeuristic call reads. `seat` must be
 /// the seat actually on play at `layout` -- a DefenderStrategy is only
 /// ever invoked for that seat, so this is an invariant to assert, not a
-/// case to handle.
+/// case to handle. `fallback_policy` defaults to the same
+/// `SpreadPolicy::TouchingSequence` that `HeuristicDefender`'s own
+/// constructor defaults to; a caller building a context for a
+/// `HeuristicDefender` constructed with a different policy must pass
+/// that same policy here, or `DefenderHeuristicContext::fallback_policy`
+/// will not describe what the fallback actually does.
 inline auto make_defender_heuristic_context(
-    Deal const& layout, ObservationState const& state, int seat, FutureTricks const& fut)
+    Deal const& layout, ObservationState const& state, int seat, FutureTricks const& fut,
+    SpreadPolicy fallback_policy = SpreadPolicy::TouchingSequence)
     -> DefenderHeuristicContext
 {
     assert(seat == seat_on_play(layout));
@@ -92,6 +110,7 @@ inline auto make_defender_heuristic_context(
         can_follow_led_suit,
         defending_side,
         layout.trump,
+        fallback_policy,
     };
 }
 

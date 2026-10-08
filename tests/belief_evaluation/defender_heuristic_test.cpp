@@ -342,7 +342,7 @@ TEST_F(SecondSeatLowTest, ReturnsTheLowestCandidateWhenNoTouchingGroup)
     EXPECT_EQ(result->rank, Two);
 }
 
-TEST_F(SecondSeatLowTest, DefersWhenTheLowestTouchesAnotherCandidateAndRandomisingIsOn)
+TEST_F(SecondSeatLowTest, DefersWhenTheLowestTouchesAnotherCandidateAndRandomizingIsOn)
 {
     Deal deal{};
     deal.trump = NoTrump;
@@ -373,7 +373,44 @@ TEST_F(SecondSeatLowTest, DefersWhenTheLowestTouchesAnotherCandidateAndRandomisi
     EXPECT_FALSE(be::second_seat_low(/*randomize_touching_honors=*/true)(ctx, best_cards).has_value());
 }
 
-TEST_F(SecondSeatLowTest, AlwaysReturnsTheLowestWhenRandomisingIsOff)
+TEST_F(SecondSeatLowTest, DoesNotDeferWhenTheFallbackPolicyIsNotTouchingSequence)
+{
+    // The identical fixture as the deferring test above, differing only
+    // in the fallback policy passed to make_defender_heuristic_context:
+    // SpreadPolicy::AllOptimal instead of the default TouchingSequence.
+    // Deferring here would hand the decision to spread(fut, AllOptimal),
+    // which spreads over every tied candidate across every suit rather
+    // than restricting to this queen/ace group alone -- not restricted
+    // choice at all, so this rule must return its own answer directly,
+    // exactly as randomize_touching_honors=false would.
+    Deal deal{};
+    deal.trump = NoTrump;
+    deal.first = Leader;
+    deal.currentTrickSuit[0] = Spades;
+    deal.currentTrickRank[0] = Three;
+    deal.remainCards[SecondSeat][Spades] = be::holding({Queen, Ace});
+    be::ObservationState state{};
+    state.declarer = Declarer;
+
+    FutureTricks fut{};
+    fut.cards = 2;
+    fut.suit[0] = Spades;
+    fut.rank[0] = Queen;
+    fut.equals[0] = 0;
+    fut.suit[1] = Spades;
+    fut.rank[1] = Ace;
+    fut.equals[1] = 1 << Queen;
+
+    be::DefenderHeuristicContext const ctx = be::make_defender_heuristic_context(
+        deal, state, SecondSeat, fut, be::SpreadPolicy::AllOptimal);
+    std::vector<be::Card> const best_cards{be::Card{Spades, Queen}, be::Card{Spades, Ace}};
+
+    std::optional<be::Card> const result = be::second_seat_low(/*randomize_touching_honors=*/true)(ctx, best_cards);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->rank, Queen);
+}
+
+TEST_F(SecondSeatLowTest, AlwaysReturnsTheLowestWhenRandomizingIsOff)
 {
     // The identical fixture as the test above, differing only in the one
     // constructor argument -- this is what proves the argument does

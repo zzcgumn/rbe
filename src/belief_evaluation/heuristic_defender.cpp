@@ -75,7 +75,7 @@ auto HeuristicDefender::as_strategy() -> DefenderStrategy
         }
 
         DefenderHeuristicContext const ctx =
-            make_defender_heuristic_context(query.layout, query.state, query.seat, fut);
+            make_defender_heuristic_context(query.layout, query.state, query.seat, fut, fallback_policy_);
 
         if (std::optional<Card> const card = chain_.select_card(ctx, best_cards))
         {
