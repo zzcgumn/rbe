@@ -142,6 +142,54 @@ TEST_F(SuitTopTricksTest, BothOpponentsGoingVoidTogetherLetsTheRemainingLowCards
     EXPECT_EQ(tricks[Spades], 2);
 }
 
+TEST_F(SuitTopTricksTest, UndercountsWhenTheShorterOpponentHoldsTheOnlyDangerousCard)
+{
+    // The one gap suit_top_tricks.hpp's own doxygen names explicitly: a
+    // single static opponent_max is compared against every one of our
+    // cards for as long as count < opponent_rounds (the LONGER opposing
+    // hand's own count) -- but opponent_max's owner can itself be the
+    // SHORTER hand, already void well before opponent_rounds is reached.
+    //
+    // North (defender) holds King, Eight, Five; South (partner) holds
+    // nothing. East holds only the Nine -- the shorter hand, and the one
+    // holding the only card that could trouble North's King. West holds
+    // Two, Three -- longer, but harmless (nothing above North's Five).
+    //
+    // Physically: trick one, North leads the King; East, with its one
+    // card, must play the Nine; West ducks with the Two, keeping the
+    // Three in reserve. North's King wins; East is now void. Trick two,
+    // North leads the Eight; West's only remaining card, the Three,
+    // cannot beat it; North's Eight wins; West is now void too. Trick
+    // three, North's Five wins automatically with nothing left to
+    // contest it at all. Three top tricks -- the true optimal-defense
+    // answer.
+    //
+    // This function returns 1: opponent_max is 9 (East's card, the only
+    // one that could ever beat anything of North's here), and
+    // opponent_rounds = max(East's count = 1, West's count = 2) = 2 --
+    // West's own length, not East's, since opponent_rounds tracks
+    // whichever opposing hand is LONGER, with no notion of which one
+    // actually holds opponent_max. So North's second card (the Eight) is
+    // still compared against the stale opponent_max (9) before
+    // opponent_rounds's auto-win branch ever triggers, even though East
+    // -- opponent_max's own owner -- went void a full round earlier.
+    //
+    // Safe (an undercount, never an overestimate) and accepted per this
+    // function's own documented contract and the plan's Non-goals (no
+    // exact double-dummy suit-trick calculator is in scope) -- pinned
+    // here as a known limitation, not a bug to fix, so a future change
+    // to the opponent-exhaustion model has a concrete regression to
+    // check itself against either way.
+    Deal deal{};
+    deal.remainCards[North][Spades] = be::holding({King, Eight, Five});
+    deal.remainCards[East][Spades] = be::holding({Nine});
+    deal.remainCards[West][Spades] = be::holding({Two, Three});
+
+    std::array<int, 4> const tricks = be::suit_top_tricks(deal, North, NoTrump);
+    EXPECT_EQ(tricks[Spades], 1)
+        << "today's known undercount (true answer: 3) -- see this test's own comment";
+}
+
 TEST_F(SuitTopTricksTest, DeclaringSideHoldingTheTopGivesZero)
 {
     // East (an opponent of North/South) holds the ace; North's own best
