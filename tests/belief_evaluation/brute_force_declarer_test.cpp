@@ -628,3 +628,69 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsCapsHowManyLayoutsTheOpponentModelIsQue
 
     EXPECT_EQ(call_count, 2);
 }
+
+// --- self-consistency: BruteForceDeclarer against DoubleDummyBound's
+// own ceiling, run through evaluate() end to end ---------------------------
+
+TEST_F(BruteForceDeclarerTest, EndToEndMatchesDoubleDummyBoundsOwnCeiling)
+{
+    // The same balanced, 2-card-per-hand fixture PicksTheCardThatWinsThe
+    // TrickOverTheOneThatLosesIt uses, now paired with a *real*
+    // DoubleDummyDefender (not the scripted single_card_defender) as both
+    // BruteForceDeclarer's own internal opponent model and evaluate()'s
+    // outer delta -- the intended, self-consistent configuration. One
+    // SolverContext, one DoubleDummyDefender instance reused for both
+    // roles: safe here since this test is single-threaded and
+    // DoubleDummyDefender's own non-thread-safety contract only concerns
+    // concurrent use, not reuse.
+    //
+    // Under genuine double-dummy defence (not the earlier scripted
+    // "always lowest" model), East sees through either lead and denies
+    // declarer a trick either way: rising with the King when North leads
+    // the Jack (forcing it, rather than ducking with the Six as the
+    // scripted model always did), and refusing to waste the King on
+    // North's Two (playing the Six, which already beats it, and keeping
+    // the King to also beat North's remaining Jack next). Declarer's true
+    // double-dummy trick count from this layout is therefore 0, not 1 --
+    // verified below via DoubleDummyBound directly, not assumed.
+    Deal layout{};
+    layout.trump = DDS_NOTRUMP;
+    layout.first = North;
+    layout.remainCards[North][Spades] = be::holding({Jack, Two});
+    layout.remainCards[South][Spades] = be::holding({Three, Five});
+    layout.remainCards[East][Spades] = be::holding({King, Six});
+    layout.remainCards[West][Spades] = be::holding({Four, Seven});
+
+    SolverContext ctx;
+    be::DoubleDummyDefender dd(ctx);
+    be::BruteForceDeclarer brute_force(
+        ctx, be::DeclarerObjective::MaximiseProbabilityToMake, dd.as_strategy());
+
+    be::DoubleDummyBound bound(ctx, North);
+    int const true_ceiling = bound.as_bound()(layout);
+    ASSERT_EQ(true_ceiling, 0)
+        << "fixture's own derivation expects optimal defence to deny declarer every trick here";
+
+    be::VectorLayoutSource const source({layout});
+    be::EvaluationResult const result = be::evaluate(
+        layout, /*declarer=*/North, /*tricks_needed=*/1, source, brute_force.as_strategy(),
+        dd.as_strategy());
+
+    ASSERT_FALSE(result.error.has_value());
+    be::EvaluationValue const& value = result.by_strategy.begin()->second;
+
+    double const expected_p_make = (0 + true_ceiling >= 1) ? 1.0 : 0.0;
+    EXPECT_NEAR(value.p_make, expected_p_make, be::ProbabilitySumTolerance);
+
+    // Stronger than just the aggregate: both of North's candidate leads,
+    // not only whichever one pi actually chose, should independently
+    // report the same value -- a genuine tie at the true ceiling, not a
+    // coincidence of which one happened to be picked.
+    ASSERT_TRUE(value.root_is_declaring_side);
+    ASSERT_EQ(value.root_children.size(), 2u);
+    for (be::RootChildValue const& child : value.root_children)
+    {
+        EXPECT_NEAR(child.value, expected_p_make, be::ProbabilitySumTolerance)
+            << "card (" << child.card.suit << "," << child.card.rank << ")";
+    }
+}
