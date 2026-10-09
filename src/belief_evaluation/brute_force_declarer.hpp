@@ -117,6 +117,25 @@ private:
     /// whole lifetime.
     auto bound_for(ObservationState const& state) -> DoubleDummyBound&;
 
+    /// The recursion: terminal_leaf_value/cutoff_leaf_value at a leaf,
+    /// else a cache lookup, else branch on whose turn it is -- every
+    /// legal card tried and the best kept at a declarer/dummy node
+    /// (make_declarer_children, one call, every child), every surviving
+    /// layout's own opponent_model_ response grouped and summed at a
+    /// defender node (expand_defender_node) -- and the result stored back
+    /// in the cache before returning. See brute_force_strategy.md's own
+    /// "Correctness" section and this header's class doxygen for why a
+    /// plain sum/max needs no normalisation step given this class's own
+    /// root-construction convention (kappa = 1, p = posterior).
+    auto search(BeliefNode const& node, int depth) -> double;
+
+    /// True when `seat` is declarer or dummy -- the same two-line check
+    /// evaluate.cpp's own file-local is_declarer_side makes; duplicated
+    /// here rather than shared, since it is genuinely two lines and
+    /// evaluate.cpp's own copy is anonymous-namespace-private to that
+    /// translation unit.
+    static auto is_declarer_side(ObservationState const& state, int seat) -> bool;
+
     SolverContext& ctx_;
     DeclarerObjective objective_;
     DefenderStrategy opponent_model_;

@@ -1,10 +1,16 @@
 #include <belief_evaluation/brute_force_declarer.hpp>
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
+#include <api/dds_constants.hpp>
+
+#include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/trick.hpp>
 
@@ -117,6 +123,70 @@ auto BruteForceDeclarer::bound_for(ObservationState const& state) -> DoubleDummy
     return *bound_;
 }
 
+auto BruteForceDeclarer::is_declarer_side(ObservationState const& state, int seat) -> bool
+{
+    int const dummy = (state.declarer + 2) % DDS_HANDS;
+    return seat == state.declarer || seat == dummy;
+}
+
+auto BruteForceDeclarer::search(BeliefNode const& node, int depth) -> double
+{
+    if (is_terminal(node))
+    {
+        return terminal_leaf_value(node, objective_);
+    }
+    if (options_.max_depth.has_value() && depth >= *options_.max_depth)
+    {
+        return cutoff_leaf_value(node, bound_for(node.state).as_bound(), objective_);
+    }
+
+    BruteForceCacheKey const key = make_brute_force_cache_key(node.state, node.layouts, node.p);
+    if (std::optional<double> const cached = cache_.find(key); cached.has_value())
+    {
+        return *cached;
+    }
+
+    int const seat = seat_on_play(node.state.known_holdings);
+    double value = 0.0;
+
+    if (is_declarer_side(node.state, seat))
+    {
+        std::vector<Card> const cards = enumerate_legal_cards(node.state.known_holdings, seat);
+        std::vector<BeliefNode> const children = make_declarer_children(node, cards);
+        double best = -std::numeric_limits<double>::infinity();
+        for (BeliefNode const& child : children)
+        {
+            best = std::max(best, search(child, depth + 1));
+        }
+        value = best;
+    }
+    else
+    {
+        // A dedicated exception type (carrying the same validation detail
+        // ExpandDefenderResult already provides) replaces this generic
+        // one once this strategy's own error-reporting surface is built
+        // out -- DeclarerStrategy::play has no error channel of its own
+        // to report through, the way evaluate()'s EvaluationResult does,
+        // so throwing is the only means actually available here.
+        ExpandDefenderResult const result = expand_defender_node(node, opponent_model_);
+        if (! result.children.has_value())
+        {
+            throw std::runtime_error(
+                "BruteForceDeclarer's own internal opponent model violated DefenderStrategy's "
+                "contract");
+        }
+        KahanAccumulator total;
+        for (BeliefNode const& child : *result.children)
+        {
+            total.add(search(child, depth + 1));
+        }
+        value = total.value();
+    }
+
+    cache_.insert(key, value);
+    return value;
+}
+
 auto BruteForceDeclarer::as_strategy() -> DeclarerStrategy
 {
     DeclarerStrategy strategy;
@@ -124,12 +194,22 @@ auto BruteForceDeclarer::as_strategy() -> DeclarerStrategy
     strategy.play = [this](ObservationState const& state, BeliefView const& view) -> Card
     {
         BeliefNode const root = make_internal_root(state, view);
-        // TODO: search the belief space and return the best card under
-        // objective_, rather than the first legal one -- a later task.
-        (void)objective_;
-        (void)opponent_model_;
-        return enumerate_legal_cards(root.state.known_holdings, seat_on_play(root.state.known_holdings))
-            .front();
+        int const seat = seat_on_play(root.state.known_holdings);
+        std::vector<Card> const cards = enumerate_legal_cards(root.state.known_holdings, seat);
+        std::vector<BeliefNode> const children = make_declarer_children(root, cards);
+
+        double best_value = -std::numeric_limits<double>::infinity();
+        Card best_card = cards.front();
+        for (std::size_t i = 0; i < children.size(); ++i)
+        {
+            double const value = search(children[i], /*depth=*/1);
+            if (value > best_value)
+            {
+                best_value = value;
+                best_card = cards[i];
+            }
+        }
+        return best_card;
     };
     strategy.state_key = [](ObservationState const& state, BeliefView const& view) -> StateKey
     {
