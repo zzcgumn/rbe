@@ -42,6 +42,13 @@ pybind_extension(
         # pairing immediately above.
         "//src/belief_evaluation:defender_heuristic",
         "//src/belief_evaluation:heuristic_defender",
+        # The lookahead declarer strategy: brute_force_cache is solver-free
+        # (key construction alone), brute_force_declarer is the one piece
+        # that calls the solver (via its own DoubleDummyBound and its
+        # default DoubleDummyDefender opponent model), mirroring the same
+        # pairing pattern as the two groups immediately above.
+        "//src/belief_evaluation:brute_force_cache",
+        "//src/belief_evaluation:brute_force_declarer",
     ],
     visibility = ["//visibility:public"],
 )
@@ -208,6 +215,17 @@ py_test(
     size = "small",
     main = "tests/test_heuristic_defender.py",
     srcs = ["tests/test_heuristic_defender.py"],
+    deps = [
+        ":belief_space_local_evaluation_lib",
+        "@dds//python:dds3_lib",
+    ],
+)
+
+py_test(
+    name = "brute_force_declarer_test",
+    size = "small",
+    main = "tests/test_belief_space_local_evaluation_brute_force_declarer.py",
+    srcs = ["tests/test_belief_space_local_evaluation_brute_force_declarer.py"],
     deps = [
         ":belief_space_local_evaluation_lib",
         "@dds//python:dds3_lib",
