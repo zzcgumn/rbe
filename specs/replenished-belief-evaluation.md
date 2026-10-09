@@ -1,7 +1,8 @@
 ---
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
-last-updated: 2026-10-07
+last-updated: 2026-10-09
+related-plans: [brute_force_strategy]
 ---
 
 # Replenished Belief Evaluation
@@ -833,6 +834,29 @@ rename or include-ordering trick anywhere in the module.
   and `DefenderHeuristicChainTest.ALaterRuleAtTheSameDecisionPointDefeats
   SecondSeatLowsDeferral` for the documented, tested behaviour when it is
   violated.
+- `src/belief_evaluation/brute_force_declarer.hpp` — `BruteForceDeclarer`,
+  a lookahead `DeclarerStrategy` implementation: at a declarer/dummy node
+  it branches over every legal card and keeps the best under a fixed
+  `DeclarerObjective` (expected tricks, or probability to make); at a
+  defender node it groups and sums each surviving layout's own response
+  from a caller-supplied internal `opponent_model` (defaulting to an
+  owned `DoubleDummyDefender`). The first strategy here that searches
+  rather than follows a fixed rule — but it is still, from `evaluate()`'s
+  own point of view, one ordinary `DeclarerStrategy`: the search is
+  entirely private to `play()`'s own call, with its own externally-owned
+  cache (safe to share across this one instance's own calls, never
+  across two differently-configured instances), and `evaluate()` itself
+  neither knows nor cares that a lookahead happened inside it. Its result
+  is only a faithful stand-in for "the double-dummy-optimal declarer"
+  when the paired `delta` matches its own internal `opponent_model`;
+  paired with anything else, `evaluate()` still returns a well-defined
+  `P_make` for that specific pairing, just not that one. **A separate,
+  solver-linked Bazel target** (`//src/belief_evaluation:brute_force_
+  declarer`), mirroring `double_dummy_defender`/`heuristic_defender`
+  above; its own cache-key construction
+  (`src/belief_evaluation/brute_force_cache.hpp`) is solver-free and
+  built as its own sibling target for the same reason
+  `defender_heuristic` is kept separate from `heuristic_defender`.
 
 ## Known gaps / non-goals
 
@@ -858,12 +882,20 @@ rename or include-ordering trick anywhere in the module.
   *answer*, not merely the cost, for any declarer strategy that reads its
   belief view. See "Behaviour & invariants" above.
 - No search over declarer strategies — this capability evaluates one fixed
-  strategy against one fixed defender strategy at a time.
+  strategy against one fixed defender strategy at a time. `BruteForceDeclarer`
+  (see "Key entry points" above) does not change this: its own lookahead is
+  entirely private to the one `DeclarerStrategy` it is, invisible to
+  `evaluate()`, which still just calls `play()` once per node and follows
+  whatever card comes back, exactly as it does for any other strategy.
 - No lookup tables or equivalence-class collapsing beyond the exact gap
   removal `renumber()` performs; in particular no small-card / `least_win`
   style approximation.
 - No expected-tricks variant — only the probability of making a target number
-  of tricks is in scope.
+  of tricks is in scope, at the evaluator level. `BruteForceDeclarer`'s own
+  `DeclarerObjective::MaximiseExpectedTricks` is an internal objective its own
+  search maximises when choosing a card; `evaluate()`'s own `p_make` is still
+  always a probability regardless of which objective the strategy it was
+  given happens to use internally.
 - No deception-capable or partial-information defender models. The defender
   contract models perfect-information defenders only.
 - No signalling, falsecarding, or deception-capable defender. `HeuristicDefender`
