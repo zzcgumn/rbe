@@ -424,3 +424,53 @@ TEST_F(BruteForceDeclarerTest, ACacheHitSkipsRecomputingASubtreeReachedByTranspo
 
     EXPECT_EQ(call_count, 24);
 }
+
+TEST_F(BruteForceDeclarerTest, AMalformedOpponentModelThrowsRatherThanMiscomputing)
+{
+    // East holds a card (so a real defender decision is reached), but the
+    // scripted opponent model offers an empty distribution -- the same
+    // ValidationError::DistributionEmpty case expand_defender_node already
+    // detects at evaluate()'s own outer level. DeclarerStrategy::play has
+    // no error channel of its own to report this through, so it must
+    // throw; the point of this test is that it throws a *specific*,
+    // inspectable type carrying the real cause, not a generic one.
+    Deal layout{};
+    layout.trump = DDS_NOTRUMP;
+    layout.first = North;
+    layout.remainCards[North][Spades] = be::holding({Ace});
+    layout.remainCards[South][Spades] = be::holding({Two});
+    layout.remainCards[East][Spades] = be::holding({Three});
+    layout.remainCards[West][Spades] = be::holding({Four});
+
+    be::ObservationState state{};
+    state.trump = DDS_NOTRUMP;
+    state.first = North;
+    state.declarer = North;
+    state.tricks_needed = 1;
+    state.tricks_won_by_declarer = 0;
+    state.known_holdings = layout;
+    state.ranks = be::make_rank_map(layout);
+
+    std::vector<Deal> const layouts = {layout};
+    std::vector<be::BeliefEntry> const entries = make_entries(layouts, {1.0});
+
+    be::DefenderStrategy const broken = [](be::DefenderQuery const&) -> std::vector<be::WeightedCard>
+    {
+        return {};
+    };
+
+    SolverContext ctx;
+    be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximiseExpectedTricks, broken);
+    be::DeclarerStrategy const pi = declarer.as_strategy();
+
+    try
+    {
+        pi.play(state, be::BeliefView{entries, false, entries.size()});
+        FAIL() << "expected BruteForceOpponentModelError";
+    }
+    catch (be::BruteForceOpponentModelError const& error)
+    {
+        EXPECT_EQ(error.validation, be::ValidationError::DistributionEmpty);
+        EXPECT_EQ(error.offending_layout.remainCards[East][Spades], be::holding({Three}));
+    }
+}

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <optional>
 
 #include <belief_evaluation/brute_force_cache.hpp>
@@ -8,6 +9,7 @@
 #include <belief_evaluation/double_dummy_bound.hpp>
 #include <belief_evaluation/double_dummy_defender.hpp>
 #include <belief_evaluation/node.hpp>
+#include <belief_evaluation/validation.hpp>
 
 /// Forward-declared rather than included -- see double_dummy_defender.hpp's
 /// own doxygen on this same declaration for why.
@@ -45,6 +47,36 @@ struct BruteForceOptions
     /// never redistributed; this is a deliberate under-count, not an
     /// approximation that could go either way.
     std::optional<std::uint64_t> max_layouts;
+};
+
+/// Thrown from a DeclarerStrategy::play call built by
+/// BruteForceDeclarer::as_strategy() when the caller-supplied
+/// opponent_model violates DefenderStrategy's own contract -- the same
+/// violations validate_defender_distribution already catches at
+/// evaluate()'s own outer level, carried here via the same ValidationError
+/// enum and offending layout ExpandDefenderResult already provides.
+///
+/// DeclarerStrategy::play returns a bare Card, with no error channel at
+/// this interface the way evaluate()'s own EvaluationResult has -- this is
+/// caller input (a substituted opponent_model), not an internal invariant,
+/// so it is reported, the same way this module's own convention already
+/// treats caller input elsewhere, by the only means actually available at
+/// this interface: throwing a specific, inspectable type rather than
+/// miscomputing silently or throwing something generic.
+struct BruteForceOpponentModelError : std::exception
+{
+    ValidationError validation;
+    Deal offending_layout;
+
+    BruteForceOpponentModelError(ValidationError validation, Deal const& offending_layout)
+    : validation(validation), offending_layout(offending_layout)
+    {
+    }
+
+    auto what() const noexcept -> char const* override
+    {
+        return "BruteForceDeclarer's own internal opponent model violated DefenderStrategy's contract";
+    }
 };
 
 /// The node's value when `is_terminal(node)` already holds: `terminal_value()`

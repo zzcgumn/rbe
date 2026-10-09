@@ -4,7 +4,6 @@
 #include <cassert>
 #include <cstring>
 #include <limits>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -162,18 +161,10 @@ auto BruteForceDeclarer::search(BeliefNode const& node, int depth) -> double
     }
     else
     {
-        // A dedicated exception type (carrying the same validation detail
-        // ExpandDefenderResult already provides) replaces this generic
-        // one once this strategy's own error-reporting surface is built
-        // out -- DeclarerStrategy::play has no error channel of its own
-        // to report through, the way evaluate()'s EvaluationResult does,
-        // so throwing is the only means actually available here.
         ExpandDefenderResult const result = expand_defender_node(node, opponent_model_);
         if (! result.children.has_value())
         {
-            throw std::runtime_error(
-                "BruteForceDeclarer's own internal opponent model violated DefenderStrategy's "
-                "contract");
+            throw BruteForceOpponentModelError{result.error, result.offending_layout};
         }
         KahanAccumulator total;
         for (BeliefNode const& child : *result.children)
