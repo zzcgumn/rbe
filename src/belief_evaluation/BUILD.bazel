@@ -146,6 +146,30 @@ cc_library(
     local_defines = DDS_LOCAL_DEFINES,
 )
 
+# Sibling of double_dummy_defender/double_dummy_bound, same reasoning for
+# staying out of the core library's own deps: this is the one piece that
+# calls the solver (directly, via DoubleDummyBound for its own depth-cutoff
+# leaves, and indirectly, via an owned DoubleDummyDefender when the caller
+# supplies no opponent model of their own).
+cc_library(
+    name = "brute_force_declarer",
+    srcs = ["brute_force_declarer.cpp"],
+    hdrs = ["brute_force_declarer.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":belief_evaluation",
+        ":brute_force_cache",
+        ":double_dummy_bound",
+        ":double_dummy_defender",
+        "@dds//library/src:dds",
+        "@dds//library/src/solver_context",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
 # The defender heuristic chain and its concrete rules (second_seat_low,
 # high_in_third, ...). Deliberately solver-free, like belief_evaluation
 # itself: every rule reads an already-solved candidate set
