@@ -1,9 +1,11 @@
 #include <belief_evaluation/brute_force_declarer.hpp>
 
+#include <cassert>
 #include <cstring>
 #include <string>
 #include <vector>
 
+#include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/trick.hpp>
 
 namespace dds::belief_evaluation
@@ -64,6 +66,30 @@ namespace
     }
 }
 
+auto terminal_leaf_value(BeliefNode const& node, DeclarerObjective objective) -> double
+{
+    if (objective == DeclarerObjective::MaximiseExpectedTricks)
+    {
+        return node_mass(node) * static_cast<double>(node.state.tricks_won_by_declarer);
+    }
+    return terminal_value(node);
+}
+
+auto cutoff_leaf_value(BeliefNode const& node, LayoutBound const& bound, DeclarerObjective objective)
+    -> double
+{
+    KahanAccumulator total;
+    for (std::size_t i = 0; i < node.layouts.size(); ++i)
+    {
+        int const declarer_total_tricks = node.state.tricks_won_by_declarer + bound(node.layouts[i]);
+        double const per_layout_value = (objective == DeclarerObjective::MaximiseExpectedTricks)
+            ? static_cast<double>(declarer_total_tricks)
+            : (declarer_total_tricks >= node.state.tricks_needed ? 1.0 : 0.0);
+        total.add(node.p[i] * per_layout_value);
+    }
+    return node.kappa * total.value();
+}
+
 BruteForceDeclarer::BruteForceDeclarer(
     SolverContext& ctx, DeclarerObjective objective, DefenderStrategy opponent_model,
     BruteForceOptions options)
@@ -78,6 +104,17 @@ BruteForceDeclarer::BruteForceDeclarer(
         default_opponent_.emplace(ctx_);
         opponent_model_ = default_opponent_->as_strategy();
     }
+}
+
+auto BruteForceDeclarer::bound_for(ObservationState const& state) -> DoubleDummyBound&
+{
+    if (! bound_.has_value())
+    {
+        bound_.emplace(ctx_, state.declarer);
+        bound_declarer_ = state.declarer;
+    }
+    assert(state.declarer == bound_declarer_);
+    return *bound_;
 }
 
 auto BruteForceDeclarer::as_strategy() -> DeclarerStrategy

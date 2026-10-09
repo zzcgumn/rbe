@@ -5,6 +5,7 @@
 #include <belief_evaluation/brute_force_cache.hpp>
 #include <belief_evaluation/declarer_strategy.hpp>
 #include <belief_evaluation/defender_strategy.hpp>
+#include <belief_evaluation/double_dummy_bound.hpp>
 #include <belief_evaluation/double_dummy_defender.hpp>
 #include <belief_evaluation/node.hpp>
 
@@ -46,13 +47,35 @@ struct BruteForceOptions
     std::optional<std::uint64_t> max_layouts;
 };
 
+/// The node's value when `is_terminal(node)` already holds: `terminal_value()`
+/// reused verbatim for `MaximiseProbabilityToMake` (made/not-made is
+/// already what that function answers), and the node's own mass-weighted
+/// trick count for `MaximiseExpectedTricks` -- `tricks_won_by_declarer` is
+/// common knowledge at a genuine terminal node (nothing is left to play),
+/// so no per-layout loop is needed here, unlike cutoff_leaf_value below.
+///
+/// Exposed as a free function, like already_made()/is_dead()/tier2_dead()
+/// in evaluate.hpp, so a test can build a node by hand and check this
+/// without the recursion.
+auto terminal_leaf_value(BeliefNode const& node, DeclarerObjective objective) -> double;
+
+/// The node's value at a depth cutoff reached before a genuine terminal.
+/// Unlike terminal_leaf_value, the layouts surviving here can have
+/// genuinely different per-layout double-dummy trick counts from each
+/// other -- a cutoff, by definition, stops before the position is common
+/// knowledge about who wins what -- so this sums
+/// `node.kappa * node.p[i] * per-layout-value` across every layout rather
+/// than reading one node-wide number. `bound` is declarer's own
+/// double-dummy trick count from a given layout, regardless of who is
+/// actually on lead there -- see DoubleDummyBound::as_bound().
+auto cutoff_leaf_value(BeliefNode const& node, LayoutBound const& bound, DeclarerObjective objective)
+    -> double;
+
 /// A DeclarerStrategy backed by an exhaustive (or depth/size-bounded)
 /// lookahead search over the belief space, keeping the best legal card
-/// under a fixed DeclarerObjective. Ported from BridgeLibraries-private's
-/// own BeliefSpaceSearch; see brute_force_strategy.md
-/// (../rbe-notes/plans/, not committed here) for the full design
-/// rationale. The two caveats worth repeating on this class itself, not
-/// only in a plan:
+/// under a fixed DeclarerObjective -- the first lookahead-based (rather
+/// than fixed-rule) declarer strategy in this module. The two caveats
+/// worth being explicit about on this class itself:
 ///
 /// - **This presumes its own internal opponent model is what the paired
 ///   delta actually is.** Paired with a different delta, evaluate() still
@@ -86,12 +109,22 @@ public:
     auto as_strategy() -> DeclarerStrategy;
 
 private:
+    /// Lazily constructs bound_ from the first state.declarer this
+    /// instance's play() is ever called with -- the constructor cannot do
+    /// this itself, since no state is available yet at construction time.
+    /// Asserts every subsequent call agrees: this strategy, like
+    /// DoubleDummyBound itself, is used for one declarer seat for its
+    /// whole lifetime.
+    auto bound_for(ObservationState const& state) -> DoubleDummyBound&;
+
     SolverContext& ctx_;
     DeclarerObjective objective_;
     DefenderStrategy opponent_model_;
     BruteForceOptions options_;
     BruteForceCache cache_;
     std::optional<DoubleDummyDefender> default_opponent_;  // engaged only when the caller supplied no opponent_model
+    std::optional<DoubleDummyBound> bound_;                // lazily constructed; see bound_for()
+    int bound_declarer_ = -1;                              // tracks bound_'s own declarer, for the assertion above
 };
 
 }  // namespace dds::belief_evaluation
