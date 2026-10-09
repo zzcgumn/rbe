@@ -90,6 +90,27 @@ cc_library(
 # solver to get the evaluator), and this is where a future GIL-release
 # boundary for the Python binding needs to live, cleanly separated from the
 # callback boundary that runs on the calling thread.
+# Solver-free, like belief_evaluation itself -- the key-construction and
+# quantisation logic needs no solver, and keeping it out of
+# brute_force_declarer's own target (below) means a caller supplying their
+# own opponent model to BruteForceDeclarer still needs the solver (via
+# DoubleDummyBound inside that class), but a test of the cache alone does
+# not.
+cc_library(
+    name = "brute_force_cache",
+    srcs = ["brute_force_cache.cpp"],
+    hdrs = ["brute_force_cache.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":belief_evaluation",
+        "@dds//library/src/api:dds_constants",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
 cc_library(
     name = "double_dummy_defender",
     srcs = ["double_dummy_defender.cpp"],
