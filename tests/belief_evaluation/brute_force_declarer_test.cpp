@@ -474,3 +474,157 @@ TEST_F(BruteForceDeclarerTest, AMalformedOpponentModelThrowsRatherThanMiscomputi
         EXPECT_EQ(error.offending_layout.remainCards[East][Spades], be::holding({Three}));
     }
 }
+
+// --- max_layouts: the lowest-posterior-first cap --------------------------
+
+TEST_F(BruteForceDeclarerTest, DropLowestPosteriorLayoutsKeepsTheHighestWeightedOnes)
+{
+    Deal a{};
+    a.remainCards[North][Spades] = be::holding({Two});
+    Deal b{};
+    b.remainCards[North][Spades] = be::holding({Three});
+    Deal c{};
+    c.remainCards[North][Spades] = be::holding({Four});
+
+    be::BeliefNode node{};
+    node.layouts = {a, b, c};
+    node.p = {0.1, 0.6, 0.3};
+    node.root_keys = {10, 11, 12};
+    node.kappa = 1.0;
+
+    be::BeliefNode const pruned = be::drop_lowest_posterior_layouts(node, /*keep=*/2);
+
+    ASSERT_EQ(pruned.layouts.size(), 2u);
+    ASSERT_EQ(pruned.p.size(), 2u);
+    ASSERT_EQ(pruned.root_keys.size(), 2u);
+    // deal_b (p=0.6, root_key=11) and deal_c (p=0.3, root_key=12) survive;
+    // deal_a (p=0.1, root_key=10) is dropped -- order among survivors is
+    // not asserted, only membership, via the parallel root_keys array.
+    bool const has_11 = (pruned.root_keys[0] == 11 || pruned.root_keys[1] == 11);
+    bool const has_12 = (pruned.root_keys[0] == 12 || pruned.root_keys[1] == 12);
+    EXPECT_TRUE(has_11);
+    EXPECT_TRUE(has_12);
+}
+
+TEST_F(BruteForceDeclarerTest, DropLowestPosteriorLayoutsDoesNotRedistributeMass)
+{
+    Deal a{};
+    Deal b{};
+    Deal c{};
+
+    be::BeliefNode node{};
+    node.layouts = {a, b, c};
+    node.p = {0.1, 0.6, 0.3};
+    node.root_keys = {10, 11, 12};
+    node.kappa = 1.0;
+
+    be::BeliefNode const pruned = be::drop_lowest_posterior_layouts(node, /*keep=*/2);
+
+    EXPECT_DOUBLE_EQ(node_mass(pruned), 0.9);  // 0.6 + 0.3, not renormalised to 1.0
+}
+
+TEST_F(BruteForceDeclarerTest, DropLowestPosteriorLayoutsIsANoOpWhenNothingExceedsKeep)
+{
+    Deal a{};
+    Deal b{};
+
+    be::BeliefNode node{};
+    node.layouts = {a, b};
+    node.p = {0.5, 0.5};
+    node.root_keys = {1, 2};
+    node.kappa = 1.0;
+
+    be::BeliefNode const pruned = be::drop_lowest_posterior_layouts(node, /*keep=*/5);
+
+    EXPECT_EQ(pruned.layouts.size(), 2u);
+    EXPECT_DOUBLE_EQ(node_mass(pruned), 1.0);
+}
+
+TEST_F(BruteForceDeclarerTest, MaxLayoutsAbsentChangesNothing)
+{
+    // Re-run PicksTheCardThatWinsTheTrickOverTheOneThatLosesIt's own
+    // fixture with max_layouts left default (absent) -- identical result,
+    // proving this task introduced no regression to the unbounded path.
+    Deal layout{};
+    layout.trump = DDS_NOTRUMP;
+    layout.first = North;
+    layout.remainCards[North][Spades] = be::holding({Jack, Two});
+    layout.remainCards[South][Spades] = be::holding({Three, Five});
+    layout.remainCards[East][Spades] = be::holding({King, Six});
+    layout.remainCards[West][Spades] = be::holding({Four, Seven});
+
+    be::ObservationState state{};
+    state.trump = DDS_NOTRUMP;
+    state.first = North;
+    state.declarer = North;
+    state.tricks_needed = 1;
+    state.tricks_won_by_declarer = 0;
+    state.known_holdings = layout;
+    state.ranks = be::make_rank_map(layout);
+
+    std::vector<Deal> const layouts = {layout};
+    std::vector<be::BeliefEntry> const entries = make_entries(layouts, {1.0});
+
+    SolverContext ctx;
+    be::BruteForceDeclarer declarer(
+        ctx, be::DeclarerObjective::MaximiseProbabilityToMake, be::single_card_defender);
+    be::DeclarerStrategy const pi = declarer.as_strategy();
+
+    be::Card const chosen = pi.play(state, be::BeliefView{entries, false, entries.size()});
+
+    EXPECT_EQ(chosen.rank, Jack);
+}
+
+TEST_F(BruteForceDeclarerTest, MaxLayoutsCapsHowManyLayoutsTheOpponentModelIsQueriedOver)
+{
+    // North holds exactly one card -- no declarer-side choice at all, so
+    // this test isolates max_layouts's own effect from declarer branching
+    // entirely. Two layouts in the belief space, differing only in which
+    // defender holds which filler (irrelevant to the outcome; only their
+    // count matters here). The one trick still has *two* defender turns
+    // (East, then West) before it resolves -- expand_defender_node
+    // queries the opponent model once per surviving layout, at each.
+    // Without a cap: 2 layouts x 2 defender turns = 4 queries. With
+    // max_layouts = 1: exactly one layout should survive pruning before
+    // either defender node is reached -- 1 layout x 2 turns = 2 queries.
+    Deal layout_a{};
+    layout_a.trump = DDS_NOTRUMP;
+    layout_a.first = North;
+    layout_a.remainCards[North][Spades] = be::holding({Ace});
+    layout_a.remainCards[South][Spades] = be::holding({Two});
+    layout_a.remainCards[East][Spades] = be::holding({Three});
+    layout_a.remainCards[West][Spades] = be::holding({Four});
+
+    Deal layout_b = layout_a;
+    layout_b.remainCards[East][Spades] = be::holding({Four});
+    layout_b.remainCards[West][Spades] = be::holding({Three});
+
+    be::ObservationState state{};
+    state.trump = DDS_NOTRUMP;
+    state.first = North;
+    state.declarer = North;
+    state.tricks_needed = 1;
+    state.tricks_won_by_declarer = 0;
+    state.known_holdings = layout_a;
+    state.ranks = be::make_rank_map(layout_a);
+
+    std::vector<Deal> const layouts = {layout_a, layout_b};
+    std::vector<be::BeliefEntry> const entries = make_entries(layouts, {0.7, 0.3});
+
+    int call_count = 0;
+    be::DefenderStrategy const spy = [&](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
+    {
+        ++call_count;
+        return be::single_card_defender(query);
+    };
+
+    be::BruteForceOptions options{};
+    options.max_layouts = 1;
+    SolverContext ctx;
+    be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximiseProbabilityToMake, spy, options);
+    be::DeclarerStrategy const pi = declarer.as_strategy();
+
+    pi.play(state, be::BeliefView{entries, false, entries.size()});
+
+    EXPECT_EQ(call_count, 2);
+}

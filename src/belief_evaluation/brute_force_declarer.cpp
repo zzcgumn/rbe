@@ -95,6 +95,49 @@ auto cutoff_leaf_value(BeliefNode const& node, LayoutBound const& bound, Declare
     return node.kappa * total.value();
 }
 
+auto drop_lowest_posterior_layouts(BeliefNode const& node, std::uint64_t keep) -> BeliefNode
+{
+    if (static_cast<std::uint64_t>(node.layouts.size()) <= keep)
+    {
+        return node;
+    }
+
+    std::vector<std::size_t> indices(node.layouts.size());
+    for (std::size_t i = 0; i < indices.size(); ++i)
+    {
+        indices[i] = i;
+    }
+    // Descending by posterior, ties broken by index -- a total order, so
+    // the kept set is deterministic regardless of the input's own
+    // ordering (mirroring expand_defender_node's own std::map-ordered
+    // iteration elsewhere in this module, for the same reason).
+    std::sort(indices.begin(), indices.end(), [&node](std::size_t a, std::size_t b)
+    {
+        if (node.p[a] != node.p[b])
+        {
+            return node.p[a] > node.p[b];
+        }
+        return a < b;
+    });
+    indices.resize(static_cast<std::size_t>(keep));
+
+    BeliefNode pruned{};
+    pruned.state = node.state;
+    pruned.kappa = node.kappa;
+    pruned.is_sample = node.is_sample;
+    pruned.no_more_available = node.no_more_available;
+    pruned.layouts.reserve(indices.size());
+    pruned.p.reserve(indices.size());
+    pruned.root_keys.reserve(indices.size());
+    for (std::size_t idx : indices)
+    {
+        pruned.layouts.push_back(node.layouts[idx]);
+        pruned.p.push_back(node.p[idx]);
+        pruned.root_keys.push_back(node.root_keys[idx]);
+    }
+    return pruned;
+}
+
 BruteForceDeclarer::BruteForceDeclarer(
     SolverContext& ctx, DeclarerObjective objective, DefenderStrategy opponent_model,
     BruteForceOptions options)
@@ -139,19 +182,31 @@ auto BruteForceDeclarer::search(BeliefNode const& node, int depth) -> double
         return cutoff_leaf_value(node, bound_for(node.state).as_bound(), objective_);
     }
 
-    BruteForceCacheKey const key = make_brute_force_cache_key(node.state, node.layouts, node.p);
+    // A node whose own surviving layout count exceeds max_layouts is
+    // pruned down before anything else below reads node.layouts/p --
+    // the cache key included, so a cache entry remembers the answer to
+    // this smaller problem rather than pretending it solved the larger
+    // one. drop_lowest_posterior_layouts() returns its argument unchanged
+    // when nothing needs dropping, so this is safe to call unconditionally
+    // once max_layouts is set at all.
+    BeliefNode const pruned = options_.max_layouts.has_value()
+        ? drop_lowest_posterior_layouts(node, *options_.max_layouts)
+        : node;
+    BeliefNode const& n = pruned;
+
+    BruteForceCacheKey const key = make_brute_force_cache_key(n.state, n.layouts, n.p);
     if (std::optional<double> const cached = cache_.find(key); cached.has_value())
     {
         return *cached;
     }
 
-    int const seat = seat_on_play(node.state.known_holdings);
+    int const seat = seat_on_play(n.state.known_holdings);
     double value = 0.0;
 
-    if (is_declarer_side(node.state, seat))
+    if (is_declarer_side(n.state, seat))
     {
-        std::vector<Card> const cards = enumerate_legal_cards(node.state.known_holdings, seat);
-        std::vector<BeliefNode> const children = make_declarer_children(node, cards);
+        std::vector<Card> const cards = enumerate_legal_cards(n.state.known_holdings, seat);
+        std::vector<BeliefNode> const children = make_declarer_children(n, cards);
         double best = -std::numeric_limits<double>::infinity();
         for (BeliefNode const& child : children)
         {
@@ -161,7 +216,7 @@ auto BruteForceDeclarer::search(BeliefNode const& node, int depth) -> double
     }
     else
     {
-        ExpandDefenderResult const result = expand_defender_node(node, opponent_model_);
+        ExpandDefenderResult const result = expand_defender_node(n, opponent_model_);
         if (! result.children.has_value())
         {
             throw BruteForceOpponentModelError{result.error, result.offending_layout};

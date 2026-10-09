@@ -103,6 +103,18 @@ auto terminal_leaf_value(BeliefNode const& node, DeclarerObjective objective) ->
 auto cutoff_leaf_value(BeliefNode const& node, LayoutBound const& bound, DeclarerObjective objective)
     -> double;
 
+/// `node`, pruned down to its `keep` highest-posterior layouts when it
+/// holds more than that, else `node` unchanged. The dropped mass is never
+/// redistributed onto the survivors -- a deliberate under-count, matching
+/// this module's own convention for an approximation that must never
+/// overestimate (`suit_top_tricks.hpp`'s own doxygen is the same shape of
+/// trade-off, cited for the pattern, not because the two are related).
+/// Redistributing would instead systematically overweight whichever
+/// layouts happen to survive, the wrong direction for a cap whose purpose
+/// is to keep the search from being misled by a too-small sample. Ties
+/// broken by index, for determinism.
+auto drop_lowest_posterior_layouts(BeliefNode const& node, std::uint64_t keep) -> BeliefNode;
+
 /// A DeclarerStrategy backed by an exhaustive (or depth/size-bounded)
 /// lookahead search over the belief space, keeping the best legal card
 /// under a fixed DeclarerObjective -- the first lookahead-based (rather
