@@ -124,3 +124,70 @@ cc_library(
     linkopts = DDS_LINKOPTS,
     local_defines = DDS_LOCAL_DEFINES,
 )
+
+# The defender heuristic chain and its concrete rules (second_seat_low,
+# high_in_third, ...). Deliberately solver-free, like belief_evaluation
+# itself: every rule reads an already-solved candidate set
+# (DefenderHeuristicContext::fut, best_cards) rather than calling
+# solve_board on its own account, so this target never needs
+# @dds//library/src:dds. heuristic_defender (below) is the one piece that
+# does call the solver, and is kept separate for exactly the same reason
+# double_dummy_defender is kept separate from belief_evaluation above.
+cc_library(
+    name = "defender_heuristic",
+    srcs = [
+        "default_defender_heuristics.cpp",
+        "defender_heuristic_chain.cpp",
+        "discard_keep_winners.cpp",
+        "fourth_seat_low.cpp",
+        "high_in_third.cpp",
+        "ruff_small.cpp",
+        "second_seat_low.cpp",
+        "suit_top_tricks.cpp",
+        "third_seat_low.cpp",
+        "touching_group.cpp",
+    ],
+    hdrs = [
+        "default_defender_heuristics.hpp",
+        "defender_heuristic.hpp",
+        "defender_heuristic_chain.hpp",
+        "discard_keep_winners.hpp",
+        "fourth_seat_low.hpp",
+        "high_in_third.hpp",
+        "ruff_small.hpp",
+        "second_seat_low.hpp",
+        "suit_top_tricks.hpp",
+        "third_seat_low.hpp",
+        "touching_group.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":belief_evaluation",
+        "@dds//library/src/api:api_definitions",
+        "@dds//library/src/api:dds_constants",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# Sibling of double_dummy_defender, same reasoning for staying out of the
+# solver-free defender_heuristic library above: a caller supplying their
+# own delta should not have to link the solver to get the evaluator.
+cc_library(
+    name = "heuristic_defender",
+    srcs = ["heuristic_defender.cpp"],
+    hdrs = ["heuristic_defender.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":belief_evaluation",
+        ":defender_heuristic",
+        "@dds//library/src:dds",  # api/solve_board.hpp's own providing target, included directly
+        "@dds//library/src/solver_context",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)

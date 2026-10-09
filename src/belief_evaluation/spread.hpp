@@ -42,6 +42,18 @@ enum class SpreadPolicy
     AllOptimal,
 };
 
+/// The index `spread()`'s own `SpreadPolicy::TouchingSequence` branch
+/// treats as the single canonical entry: the highest `fut.score`,
+/// breaking ties by keeping the first entry reached (dds's own
+/// ordering). Exported so a caller choosing whether to defer to
+/// `spread(fut, SpreadPolicy::TouchingSequence)` can check in advance
+/// whether doing so actually reaches the group it means -- `fut` may
+/// hold more than one disjoint touching group tied for best score, and
+/// this is the one `spread()` itself will pick, not necessarily the one
+/// any particular caller has in mind. See `second_seat_low`'s own
+/// doxygen for the rule this matters to.
+auto canonical_best(FutureTricks const& fut) -> int;
+
 /// The candidate cards `policy` spreads probability over, given a solved
 /// position's `fut`, each with equal probability (`1 / candidate count`).
 /// `fut.suit`/`fut.rank` name each candidate entry's card; `fut.equals`

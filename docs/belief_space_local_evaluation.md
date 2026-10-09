@@ -379,6 +379,9 @@ import dds3
 ctx = dds3.SolverContext()
 delta = bsle.DoubleDummyDefender(ctx)                    # usable directly as delta
 bound = bsle.DoubleDummyBound(ctx, declarer)              # usable directly as bound
+
+chain = bsle.make_default_defender_heuristics(trump)     # convenience: the shipped order
+delta = bsle.HeuristicDefender(ctx, chain)                # also usable directly as delta
 ```
 
 A `SolverContext` built through `dds3` works here directly — the two
@@ -400,12 +403,56 @@ candidate's own group, across suits — those cards are equally *good* but
 not otherwise equivalent, so this is a more advanced justification, not a
 drop-in alternative.
 
+`HeuristicDefender` is a second `delta` implementation, not a
+replacement for `DoubleDummyDefender` — both are usable anywhere
+`evaluate()`'s `delta` argument is accepted. It solves the same way
+`DoubleDummyDefender` does, then hands the double-dummy-optimal
+candidates to a chain of small, independently-testable conventions
+(second-hand low, third-hand high/low, fourth-hand low, ruff small,
+discard keeping winners), falling back to `DoubleDummyDefender`'s own
+uniform spread only when every rule in the chain defers. It exists
+because that uniform spread sometimes includes a card no competent human
+defender would actually choose there — not because it scores worse (a
+tied card, by definition, does not), but because ordinary defensive
+technique picks one specific card from the tie for reasons double-dummy
+trick-counting cannot see.
+
+**The chain is entirely caller-assembled: any order, any subset of the
+built-in rules, a caller's own rules on equal footing with them.**
+`make_default_defender_heuristics(trump, randomize_touching_honors=True)`
+builds the chain shown above purely as a convenience — the shipped order,
+nothing more — and is never special-cased by `HeuristicDefender` or
+anything else that consumes a chain. Building one by hand instead:
+
+```python
+chain = bsle.DefenderHeuristicChain()
+chain.add(bsle.high_in_third())            # any order --
+chain.add(bsle.second_seat_low(False))      # -- not the shipped one
+chain.add(my_own_rule)                      # a plain Python function,
+                                             # (context, best_cards) -> Card | None,
+                                             # on equal footing with the built-ins
+chain.add(bsle.discard_keep_winners())
+```
+
+`second_seat_low`'s `randomize_touching_honors` (default `True`) governs
+exactly the restricted-choice behaviour `SpreadPolicy.TouchingSequence`
+already licenses: off, it always plays the lower card of a touching pair
+rather than randomising between them, which leaks which specific card was
+held — a real cost when it fires, though not every position reaches a
+genuinely touching pair at that rule's own gate, in which case the two
+settings agree. This holds only so long as no rule placed *after*
+`second_seat_low` in the same chain also fires at the same decision point
+— the chain tries every later rule before ever reaching the fallback
+spread, so such a rule would silently win instead, regardless of this
+setting. Put `second_seat_low` last among any rules that could fire
+where it does (see `second_seat_low.hpp`'s own doxygen).
+
 **A `SolverContext` is not thread-safe** (its own C++ contract: one
-context per thread), and `DoubleDummyDefender`/`DoubleDummyBound` release
-the GIL around the actual solve — so, unlike most of this module, two
-Python threads really do run concurrently here if they share one. Build
-one `SolverContext` (and one `DoubleDummyDefender`/`DoubleDummyBound`) per
-worker; do not share either across threads.
+context per thread), and `DoubleDummyDefender`/`DoubleDummyBound`/
+`HeuristicDefender` release the GIL around the actual solve — so, unlike
+most of this module, two Python threads really do run concurrently here
+if they share one. Build one `SolverContext` (and one of whichever
+defender/bound types) per worker; do not share either across threads.
 
 ### Where Python is deliberately stricter than C++
 

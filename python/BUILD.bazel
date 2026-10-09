@@ -36,6 +36,12 @@ pybind_extension(
         # that; these two are what actually need the solver.
         "//src/belief_evaluation:double_dummy_bound",
         "//src/belief_evaluation:double_dummy_defender",
+        # The heuristic defender chain: defender_heuristic is solver-free
+        # (the rules themselves), heuristic_defender is the one piece that
+        # calls the solver, mirroring the double_dummy_bound/double_dummy_defender
+        # pairing immediately above.
+        "//src/belief_evaluation:defender_heuristic",
+        "//src/belief_evaluation:heuristic_defender",
     ],
     visibility = ["//visibility:public"],
 )
@@ -191,6 +197,17 @@ py_test(
     size = "small",
     main = "tests/test_belief_space_local_evaluation_solver.py",
     srcs = ["tests/test_belief_space_local_evaluation_solver.py"],
+    deps = [
+        ":belief_space_local_evaluation_lib",
+        "@dds//python:dds3_lib",
+    ],
+)
+
+py_test(
+    name = "heuristic_defender_test",
+    size = "small",
+    main = "tests/test_heuristic_defender.py",
+    srcs = ["tests/test_heuristic_defender.py"],
     deps = [
         ":belief_space_local_evaluation_lib",
         "@dds//python:dds3_lib",

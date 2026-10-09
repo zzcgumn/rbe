@@ -1,0 +1,140 @@
+#include <belief_evaluation/suit_top_tricks.hpp>
+
+#include <algorithm>
+#include <bit>
+#include <cstdint>
+#include <vector>
+
+#include <api/dds_constants.hpp>
+
+namespace dds::belief_evaluation
+{
+
+namespace
+{
+    auto card_count(unsigned holding) -> int
+    {
+        return std::popcount(static_cast<std::uint32_t>(holding));
+    }
+
+    auto sorted_ranks_descending(unsigned holding) -> std::vector<int>
+    {
+        std::vector<int> ranks;
+        for (int rank = 14; rank >= 2; --rank)
+        {
+            if ((holding & (1u << rank)) != 0)
+            {
+                ranks.push_back(rank);
+            }
+        }
+        return ranks;
+    }
+}
+
+auto suit_top_tricks(Deal const& layout, int defender_seat, int trump) -> std::array<int, 4>
+{
+    int const partner_seat = (defender_seat + 2) % DDS_HANDS;
+    int const opponent_a = (defender_seat + 1) % DDS_HANDS;
+    int const opponent_b = (defender_seat + 3) % DDS_HANDS;
+
+    std::array<int, 4> result{};
+
+    for (int suit = 0; suit < DDS_SUITS; ++suit)
+    {
+        int const seat_count = card_count(layout.remainCards[defender_seat][suit]);
+        int const partner_count = card_count(layout.remainCards[partner_seat][suit]);
+
+        // The sound upper bound before any ruffing reduction: a round of
+        // this suit, for as long as *both* defending hands still hold it,
+        // consumes one card from each of them simultaneously -- whoever
+        // is not on lead that round still has to follow suit in the same
+        // trick, not save its card for a separate one. So the two hands
+        // cannot cash seat_count + partner_count separate tricks merely
+        // by combining counts; the number of rounds the suit survives is
+        // bounded by whichever defending hand is longer, not their sum
+        // (the shorter hand becomes void partway through, after which
+        // the longer one keeps running the suit alone for the remaining
+        // rounds). Summing was tried first and rejected after tracing a
+        // single ace-with-one-partner/king-with-the-other round by hand:
+        // both cards are consumed in the very same trick, giving one
+        // cashable trick there, not two.
+        int cap = std::max(seat_count, partner_count);
+
+        if (trump != DDS_NOTRUMP && suit != trump)
+        {
+            if (card_count(layout.remainCards[opponent_a][trump]) > 0)
+            {
+                cap = std::min(cap, card_count(layout.remainCards[opponent_a][suit]));
+            }
+            if (card_count(layout.remainCards[opponent_b][trump]) > 0)
+            {
+                cap = std::min(cap, card_count(layout.remainCards[opponent_b][suit]));
+            }
+        }
+
+        // Our own candidates for these cap rounds: the cap highest cards
+        // across both defending hands combined. A card beyond the top
+        // cap is never the deciding card of any round -- there are only
+        // cap rounds to win -- so it is excluded rather than confusing
+        // the count below with a card that can never actually be reached.
+        std::vector<int> defending = sorted_ranks_descending(layout.remainCards[defender_seat][suit]);
+        std::vector<int> const partner_ranks = sorted_ranks_descending(layout.remainCards[partner_seat][suit]);
+        defending.insert(defending.end(), partner_ranks.begin(), partner_ranks.end());
+        std::sort(defending.begin(), defending.end(), std::greater<>());
+        if (defending.size() > static_cast<std::size_t>(cap))
+        {
+            defending.resize(static_cast<std::size_t>(cap));
+        }
+
+        // The single highest card either opposing hand holds -- the one
+        // card that decides whether our *next* led card wins its trick,
+        // for as long as either opposing hand still has one to contend
+        // with. The moment one of our own cards, led highest first,
+        // fails to beat it, the opponent wins that trick and gains the
+        // lead: this function counts only tricks cashed *by leading this
+        // suit*, and once the opponents have won a trick in it, they are
+        // not obliged to lead it back, so nothing beyond that point is a
+        // guaranteed top trick, no matter how high our remaining cards
+        // individually rank. 0 (no real rank is this low) stands for "no
+        // opposing card at all".
+        std::vector<int> const opp_a_ranks = sorted_ranks_descending(layout.remainCards[opponent_a][suit]);
+        std::vector<int> const opp_b_ranks = sorted_ranks_descending(layout.remainCards[opponent_b][suit]);
+        int const opponent_max =
+            std::max(opp_a_ranks.empty() ? 0 : opp_a_ranks.front(), opp_b_ranks.empty() ? 0 : opp_b_ranks.front());
+
+        // How many rounds either opposing hand can even contest: every
+        // non-void hand, ours or theirs, is forced to contribute a card
+        // every round the suit is run, whether or not that round is won
+        // -- so a hand with k cards is spent, and void for every later
+        // round, after exactly k rounds of this suit being run,
+        // regardless of how those k rounds came out. Once our own
+        // winning run has reached that many rounds, both opposing hands
+        // are provably exhausted (the longer of the two having forced
+        // the pace), and every further card of ours within cap wins
+        // automatically, whatever its own rank -- opponent_max no longer
+        // describes a card that can still be played against it.
+        int const opponent_rounds =
+            std::max(static_cast<int>(opp_a_ranks.size()), static_cast<int>(opp_b_ranks.size()));
+
+        int count = 0;
+        for (int const our_card : defending)  // already highest first
+        {
+            if (count >= opponent_rounds)
+            {
+                ++count;  // the opposing side is provably void by now
+                continue;
+            }
+            if (our_card <= opponent_max)
+            {
+                break;
+            }
+            ++count;
+        }
+
+        result[static_cast<std::size_t>(suit)] = count;
+    }
+
+    return result;
+}
+
+}  // namespace dds::belief_evaluation

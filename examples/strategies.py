@@ -272,6 +272,32 @@ def double_dummy_defender(ctx, policy=None):
     return bsle.DoubleDummyDefender(ctx, policy)
 
 
+def heuristic_defender(ctx, chain, fallback_policy=None):
+    """delta: a caller-assembled chain of small, independently-testable
+    conventions (second-hand low, third-hand high/low, fourth-hand low,
+    ruff small, discard keeping winners) -- falling back to
+    `DoubleDummyDefender`'s own uniform spread only when every rule in
+    `chain` defers.
+
+    `bsle.HeuristicDefender` is already usable as delta directly; this
+    exists for the same reason `double_dummy_defender` above does -- to
+    keep its caveats next to the call. Both of that function's own
+    caveats apply here unchanged: **a `SolverContext` is not
+    thread-safe**, and the solve releases the GIL, so one context (and
+    one of these) per worker.
+
+    **`chain` is entirely caller-assembled.** This function never builds
+    one implicitly -- pass `bsle.make_default_defender_heuristics(trump)`
+    for the shipped order, or a `bsle.DefenderHeuristicChain` built by
+    hand for anything else; neither is a second-class argument here.
+    """
+    import belief_space_local_evaluation as bsle
+
+    if fallback_policy is None:
+        fallback_policy = bsle.SpreadPolicy.TouchingSequence
+    return bsle.HeuristicDefender(ctx, chain, fallback_policy)
+
+
 def remembers_whether_a_heart_was_already_pitched(state, view):
     """Whether declarer's choice depends on a heart already having been
     discarded before the root -- something state.history cannot show

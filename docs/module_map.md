@@ -39,7 +39,25 @@ the solver.
 | --- | --- |
 | `double_dummy_defender.hpp` | a δ backed by `solve_board()` |
 | `double_dummy_bound.hpp` | a `LayoutBound` backed by `solve_board()` |
-| `spread.hpp` | `SpreadPolicy` and the pure, solver-free distribution over a solved position |
+| `spread.hpp` | `SpreadPolicy`, `canonical_best()`, and the pure, solver-free distribution over a solved position |
+| `heuristic_defender.hpp` | `HeuristicDefender`, a second δ backed by `solve_board()`, delegating to a caller-assembled `DefenderHeuristicChain` and falling back to `spread()` |
+
+### Heuristic defenders
+
+The chain `HeuristicDefender` delegates to, and the rules it ships --
+solver-free: each rule reads an already-solved candidate set rather than
+calling `solve_board()` itself, so these share `defender_heuristic`'s own
+build target, a sibling of `belief_evaluation` above, not of
+`heuristic_defender`.
+
+| Header | Holds |
+| --- | --- |
+| `defender_heuristic.hpp` | `DefenderHeuristic`, `DefenderHeuristicContext` |
+| `defender_heuristic_chain.hpp` | `DefenderHeuristicChain`, the caller-assembled, order-matters sequence |
+| `second_seat_low.hpp`, `high_in_third.hpp`, `third_seat_low.hpp`, `fourth_seat_low.hpp`, `ruff_small.hpp`, `discard_keep_winners.hpp` | the six concrete rules |
+| `touching_group.hpp` | `true_lowest_rank()`, shared by every rule above that resolves a collapsed touching group |
+| `suit_top_tricks.hpp` | the discard-suit estimator `discard_keep_winners` reads |
+| `default_defender_heuristics.hpp` | `make_default_defender_heuristics()`, a convenience builder only -- never special-cased by anything that consumes a chain |
 
 ### Inside the recursion
 

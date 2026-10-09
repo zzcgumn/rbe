@@ -124,6 +124,64 @@ class TestEvaluatePlayRecord(unittest.TestCase):
         self.assertNotIn("error", result)
         self.assertIsNone(captured["play_record"])
 
+    def test_a_pi_stashed_states_play_record_raises_after_evaluate_returns(self) -> None:
+        # state.play_record is invariant for "the whole evaluation"
+        # (ObservationState's own doxygen) -- live, during any pi call
+        # while evaluate() is still running, it is always safe to read
+        # (test_play_record_reaches_the_state_pi_is_given above already
+        # covers that). But the state object itself is a value a Python
+        # pi can retain past its own call -- DeclarerStrategy::play's own
+        # purity requirement discourages this, but nothing enforces it --
+        # and play_record's backing storage is owned by this evaluate()
+        # call's own transient EvaluateOptions, which does not survive the
+        # call. Reading .play_record on a stashed state after evaluate()
+        # has returned must therefore raise, not read freed memory.
+        stashed = {}
+
+        def pi(state, view):
+            del view
+            stashed["state"] = state
+            seat = (state.first + len(state.history)) % 4
+            return lowest_card_in(state.known_holdings["remain_cards"][seat])
+
+        root = make_one_card_finesse_root()
+        source = ExhaustiveLayoutSource(root, North, 5)
+        record = PlayRecord([Card(Diamonds, 2)], West)
+
+        result = evaluate(root, North, 1, source, pi, defender_play, play_record=record)
+
+        self.assertNotIn("error", result)
+        self.assertIn("state", stashed)
+        with self.assertRaises(ValueError):
+            stashed["state"].play_record
+
+    def test_a_delta_stashed_states_play_record_raises_after_evaluate_returns(self) -> None:
+        # The same hazard, for delta's own state argument
+        # (make_defender_strategy) rather than pi's -- delta carries no
+        # purity requirement at all, so retaining state there is not even
+        # discouraged by convention.
+        stashed = {}
+
+        def delta(layout, seat, state):
+            stashed["state"] = state
+            return defender_play(layout, seat, state)
+
+        def pi(state, view):
+            del view
+            seat = (state.first + len(state.history)) % 4
+            return lowest_card_in(state.known_holdings["remain_cards"][seat])
+
+        root = make_one_card_finesse_root()
+        source = ExhaustiveLayoutSource(root, North, 5)
+        record = PlayRecord([Card(Diamonds, 2)], West)
+
+        result = evaluate(root, North, 1, source, pi, delta, play_record=record)
+
+        self.assertNotIn("error", result)
+        self.assertIn("state", stashed)
+        with self.assertRaises(ValueError):
+            stashed["state"].play_record
+
 
 class TestExhaustiveLayoutSourceRecordArgument(unittest.TestCase):
     def test_a_supplied_record_is_consistent_and_reaches_the_source(self) -> None:

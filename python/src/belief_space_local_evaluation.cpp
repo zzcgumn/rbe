@@ -16,9 +16,19 @@
 #include <api/dds_constants.hpp>
 #include <belief_evaluation/belief_view.hpp>
 #include <belief_evaluation/declarer_strategy.hpp>
+#include <belief_evaluation/default_defender_heuristics.hpp>
+#include <belief_evaluation/defender_heuristic.hpp>
+#include <belief_evaluation/defender_heuristic_chain.hpp>
 #include <belief_evaluation/defender_strategy.hpp>
+#include <belief_evaluation/discard_keep_winners.hpp>
 #include <belief_evaluation/double_dummy_bound.hpp>
 #include <belief_evaluation/double_dummy_defender.hpp>
+#include <belief_evaluation/fourth_seat_low.hpp>
+#include <belief_evaluation/heuristic_defender.hpp>
+#include <belief_evaluation/high_in_third.hpp>
+#include <belief_evaluation/ruff_small.hpp>
+#include <belief_evaluation/second_seat_low.hpp>
+#include <belief_evaluation/third_seat_low.hpp>
 #include <belief_evaluation/evaluate.hpp>
 #include <belief_evaluation/trick.hpp>
 #include <belief_evaluation/exhaustive_layout_source.hpp>
@@ -370,6 +380,19 @@ auto register_observation_state_bindings(py::module_& module) -> void
         .def_property_readonly(
             "play_record",
             [](be::ObservationState const& self) -> py::object {
+                // play_record_valid is set only by this binding's own
+                // evaluate()/HeuristicDefender call sites, exactly when a
+                // caller might retain this ObservationState copy past the
+                // one call that produced it -- see its own doxygen
+                // (types.hpp). Empty means no such guard applies (every
+                // state a plain C++ caller sees, and every live read
+                // during the call that produced this copy either way).
+                if (self.play_record_valid && ! *self.play_record_valid) {
+                    throw py::value_error(
+                        "play_record is only valid for the duration of the call that "
+                        "produced this state -- that call has since returned, and the "
+                        "record it pointed to no longer exists");
+                }
                 if (self.play_record == nullptr) {
                     return py::none();
                 }
@@ -378,7 +401,9 @@ auto register_observation_state_bindings(py::module_& module) -> void
             "Every card played before this evaluation's root, or None if\n"
             "the caller supplied no PlayRecord. Distinct from history:\n"
             "play_record is invariant for the whole evaluation, history is\n"
-            "root-relative and grows during the search.");
+            "root-relative and grows during the search. Reading this after\n"
+            "retaining `state` past the call that handed it to you raises\n"
+            "ValueError rather than returning stale data.");
 }
 
 // BeliefView holds a std::span into caller-owned scratch and node.layouts,
@@ -592,6 +617,22 @@ auto probe_with_belief_view(
 // that corrupts the interpreter the first time two threads exercise it,
 // and there must be exactly one place per kind that could get this wrong.
 //
+// Attaches play_record_valid to a copy of state, so the play_record
+// property (registered above) can tell a copy a Python caller might
+// retain past the evaluate() call that produced it from one read live,
+// during that call -- see ObservationState::play_record_valid's own
+// doxygen (types.hpp). evaluate()'s own binding creates one call_valid
+// flag per call and flips it false when that call returns (regardless of
+// how it returns), shared across every state copy handed to pi/state_key/
+// delta during it.
+auto state_for_python(be::ObservationState const& state, std::shared_ptr<bool> const& call_valid)
+    -> be::ObservationState
+{
+    be::ObservationState copy = state;
+    copy.play_record_valid = call_valid;
+    return copy;
+}
+
 // A Python pi/delta author can reach for `random.choice` without a second
 // thought; DeclarerStrategy::play's own doxygen is emphatic that play
 // must be a pure function of its arguments (state, view) alone, since the
@@ -601,25 +642,28 @@ auto probe_with_belief_view(
 // cache. `hash(seed, state) mod n` is the honest way to get variety
 // without breaking purity.
 auto make_declarer_strategy(
-    be::StrategyId id, py::function const& play, std::optional<py::function> const& state_key)
-    -> be::DeclarerStrategy
+    be::StrategyId id, py::function const& play, std::optional<py::function> const& state_key,
+    std::shared_ptr<bool> const& call_valid) -> be::DeclarerStrategy
 {
     be::DeclarerStrategy strategy;
     strategy.id = id;
-    strategy.play = [play](be::ObservationState const& state, be::BeliefView const& view) -> be::Card {
+    strategy.play = [play, call_valid](be::ObservationState const& state, be::BeliefView const& view) -> be::Card {
         py::gil_scoped_acquire gil;
         BeliefViewGuard guard;
-        py::object const result =
-            play(py::cast(state, py::return_value_policy::copy), py::cast(PyBeliefView(&view, guard.valid)));
+        py::object const result = play(
+            py::cast(state_for_python(state, call_valid), py::return_value_policy::copy),
+            py::cast(PyBeliefView(&view, guard.valid)));
         return py::cast<be::Card>(result);
     };
     if (state_key.has_value()) {
         py::function const key_fn = *state_key;
-        strategy.state_key = [key_fn](be::ObservationState const& state, be::BeliefView const& view) -> be::StateKey {
+        strategy.state_key =
+            [key_fn, call_valid](be::ObservationState const& state, be::BeliefView const& view) -> be::StateKey {
             py::gil_scoped_acquire gil;
             BeliefViewGuard guard;
             py::object const result = key_fn(
-                py::cast(state, py::return_value_policy::copy), py::cast(PyBeliefView(&view, guard.valid)));
+                py::cast(state_for_python(state, call_valid), py::return_value_policy::copy),
+                py::cast(PyBeliefView(&view, guard.valid)));
             return std::string(py::cast<py::bytes>(result));
         };
     }
@@ -644,14 +688,15 @@ auto make_declarer_strategy(
 // with no mass, which is not the same thing as leaving it out. This is
 // the single most likely way a Python delta is subtly wrong; validated
 // server-side by validate_defender_distribution, not re-derived here.
-auto make_defender_strategy(py::function const& delta) -> be::DefenderStrategy
+auto make_defender_strategy(py::function const& delta, std::shared_ptr<bool> const& call_valid)
+    -> be::DefenderStrategy
 {
-    return [delta](be::DefenderQuery const& query) -> std::vector<be::WeightedCard> {
+    return [delta, call_valid](be::DefenderQuery const& query) -> std::vector<be::WeightedCard> {
         py::gil_scoped_acquire gil;
         py::object const result = delta(
             dds3_python::deal_to_dict(query.layout),
             query.seat,
-            py::cast(query.state, py::return_value_policy::copy));
+            py::cast(state_for_python(query.state, call_valid), py::return_value_policy::copy));
 
         std::vector<be::WeightedCard> weighted;
         for (py::handle const item : py::cast<py::sequence>(result)) {
@@ -916,9 +961,25 @@ auto evaluate(
     std::optional<py::function> const state_key_fn =
         state_key.is_none() ? std::nullopt : std::make_optional(py::cast<py::function>(state_key));
 
+    // Shared across every ObservationState copy pi/state_key/delta see
+    // during this one evaluate() call (state_for_python, above), and
+    // flipped false when this call returns -- by any path, including an
+    // exception -- so a retained copy's play_record property raises
+    // rather than reading freed memory afterwards. See
+    // ObservationState::play_record_valid's own doxygen (types.hpp).
+    auto const call_valid = std::make_shared<bool>(true);
+    struct CallValidInvalidator
+    {
+        std::shared_ptr<bool> valid;
+        ~CallValidInvalidator()
+        {
+            *valid = false;
+        }
+    } const invalidate_call_valid{call_valid};
+
     Deal const root_deal = dds3_python::dict_to_deal(root);
-    be::DeclarerStrategy const strategy = make_declarer_strategy(1, pi, state_key_fn);
-    be::DefenderStrategy const delta_fn = make_defender_strategy(delta);
+    be::DeclarerStrategy const strategy = make_declarer_strategy(1, pi, state_key_fn, call_valid);
+    be::DefenderStrategy const delta_fn = make_defender_strategy(delta, call_valid);
 
     be::EvaluateOptions options;
     options.retain_root = retain_root;
@@ -1475,6 +1536,270 @@ auto register_layout_source_bindings(py::module_& module) -> void
 // this extension is ever imported, so the registration already exists by
 // the time a constructor here is called.
 //
+// Converts a solved FutureTricks into the same dict shape dds3.solve_board()
+// already returns to Python ({'nodes', 'cards', 'suit', 'rank', 'equals',
+// 'score'}), truncated to fut.cards entries -- the meaningful ones; indices
+// at or past fut.cards carry no defined value in this module's own C++ code
+// either. No existing converter does this: DoubleDummyDefender's own binding
+// never exposes a raw FutureTricks to Python, only the final WeightedCard
+// list spread() computes from one.
+auto future_tricks_to_dict(FutureTricks const& fut) -> py::dict
+{
+    py::dict result;
+    result["nodes"] = fut.nodes;
+    result["cards"] = fut.cards;
+    py::list suit;
+    py::list rank;
+    py::list equals;
+    py::list score;
+    for (int i = 0; i < fut.cards; ++i) {
+        suit.append(fut.suit[i]);
+        rank.append(fut.rank[i]);
+        equals.append(fut.equals[i]);
+        score.append(fut.score[i]);
+    }
+    result["suit"] = suit;
+    result["rank"] = rank;
+    result["equals"] = equals;
+    result["score"] = score;
+    return result;
+}
+
+// DefenderHeuristicContext holds references (layout, state, fut) that are
+// only valid for the duration of one HeuristicDefender call -- the same
+// lifetime problem BeliefView has (see BeliefViewGuard above). A Python
+// rule stashing "self.last_context = context" must not read freed memory
+// afterwards; every accessor below checks the same kind of per-call
+// validity flag PyBeliefEntry/PyBeliefView already use.
+class PyDefenderHeuristicContext
+{
+public:
+    PyDefenderHeuristicContext(be::DefenderHeuristicContext const* ctx, std::shared_ptr<bool> valid)
+        : ctx_(ctx), valid_(std::move(valid))
+    {
+    }
+
+    auto layout() const -> py::dict
+    {
+        check_valid();
+        return dds3_python::deal_to_dict(ctx_->layout);
+    }
+
+    auto fut() const -> py::dict
+    {
+        check_valid();
+        return future_tricks_to_dict(ctx_->fut);
+    }
+
+    /// A copy, via the same py::class_<be::ObservationState> binding
+    /// query.state is already exposed through elsewhere in this file --
+    /// safe to retain past this call's own lifetime for every field,
+    /// `play_record` included: `play_record_valid` is set here to the
+    /// same `valid_` flag that already governs every other accessor on
+    /// this context, so a rule that stashes this copy and reads
+    /// `.play_record` after the one rule call it was handed to returns
+    /// raises `ValueError` the same way `layout`/`fut`/etc. already do
+    /// here, rather than reading freed memory. See
+    /// `ObservationState::play_record_valid`'s own doxygen (types.hpp)
+    /// and `evaluate()`'s own binding, which sets the same field for the
+    /// same reason at a different (whole-call) granularity.
+    auto state() const -> be::ObservationState
+    {
+        check_valid();
+        be::ObservationState copy = ctx_->state;
+        copy.play_record_valid = valid_;
+        return copy;
+    }
+
+    auto seat() const -> int
+    {
+        check_valid();
+        return ctx_->seat;
+    }
+
+    auto position_in_trick() const -> int
+    {
+        check_valid();
+        return ctx_->position_in_trick;
+    }
+
+    auto on_lead_to_trick() const -> int
+    {
+        check_valid();
+        return ctx_->on_lead_to_trick;
+    }
+
+    auto was_on_lead() const -> bool
+    {
+        check_valid();
+        return ctx_->was_on_lead;
+    }
+
+    auto can_follow_led_suit() const -> bool
+    {
+        check_valid();
+        return ctx_->can_follow_led_suit;
+    }
+
+    auto defending_side() const -> bool
+    {
+        check_valid();
+        return ctx_->defending_side;
+    }
+
+    auto trump() const -> int
+    {
+        check_valid();
+        return ctx_->trump;
+    }
+
+private:
+    auto check_valid() const -> void
+    {
+        if (! valid_ || ! *valid_) {
+            throw py::value_error(
+                "this context has expired -- it is valid only for the duration "
+                "of the rule call it was handed to");
+        }
+    }
+
+    be::DefenderHeuristicContext const* ctx_;
+    std::shared_ptr<bool> valid_;
+};
+
+// Wraps a Python-authored rule -- a plain callable of shape
+// (context, best_cards) -> Card | None -- into a be::DefenderHeuristic,
+// mirroring make_defender_strategy's own wrapping pattern below (GIL
+// reacquired per call, since this is always invoked from inside C++ code
+// that itself runs with the GIL released around the owning solve).
+auto wrap_python_heuristic(py::function rule) -> be::DefenderHeuristic
+{
+    return [rule = std::move(rule)](
+               be::DefenderHeuristicContext const& ctx, std::vector<be::Card> const& best_cards)
+        -> std::optional<be::Card>
+    {
+        py::gil_scoped_acquire const gil;
+        auto valid = std::make_shared<bool>(true);
+        struct Invalidator
+        {
+            std::shared_ptr<bool> valid;
+            ~Invalidator()
+            {
+                *valid = false;
+            }
+        } invalidator{valid};
+
+        py::object const result = rule(PyDefenderHeuristicContext(&ctx, valid), py::cast(best_cards));
+        if (result.is_none()) {
+            return std::nullopt;
+        }
+        return py::cast<be::Card>(result);
+    };
+}
+
+auto register_defender_heuristic_bindings(py::module_& module) -> void
+{
+    // Opaque from Python: nothing calls a DefenderHeuristic directly --
+    // it is always threaded through a DefenderHeuristicChain, which calls
+    // it from C++. Produced by the six factory functions below, and
+    // accepted by DefenderHeuristicChain.add() on equal footing with a
+    // plain Python callable of the same shape.
+    py::class_<be::DefenderHeuristic>(
+        module,
+        "DefenderHeuristic",
+        "One rule in a defender heuristic chain, produced by second_seat_low,\n"
+        "high_in_third, third_seat_low, fourth_seat_low, ruff_small or\n"
+        "discard_keep_winners. Pass it to DefenderHeuristicChain.add() --\n"
+        "nothing else accepts or calls one directly. add() also accepts a\n"
+        "plain Python function of shape (context, best_cards) -> Card | None\n"
+        "on exactly the same footing.");
+
+    module.def(
+        "second_seat_low", &be::second_seat_low, py::arg("randomize_touching_honors") = true,
+        "In second seat, following suit, as a defender -- the lowest optimal\n"
+        "card, unless it touches another optimal candidate of the same suit\n"
+        "and randomize_touching_honors (default True), in which case this\n"
+        "rule defers so the chain's own fallback spread -- restricted choice --\n"
+        "picks between them instead.");
+    module.def(
+        "high_in_third", &be::high_in_third,
+        "In third seat, after partner's lead, as a defender -- the highest\n"
+        "optimal card, when it beats the second player's already-played\n"
+        "card (not necessarily dummy's -- see the C++ doxygen on this same\n"
+        "rule for why).");
+    module.def(
+        "third_seat_low", &be::third_seat_low,
+        "In third seat, after partner's lead, as a defender -- the lowest\n"
+        "optimal card, exactly when high_in_third defers (the second\n"
+        "player's card already beats every candidate).");
+    module.def(
+        "fourth_seat_low", &be::fourth_seat_low,
+        "In fourth seat, following suit, as a defender -- the lowest optimal\n"
+        "card.");
+    module.def(
+        "ruff_small", &be::ruff_small,
+        "Void in the led suit, in a trump contract -- ruff with the smallest\n"
+        "optimal trump, unless a not-yet-played declaring-side seat could\n"
+        "overruff.");
+    module.def(
+        "discard_keep_winners", &be::discard_keep_winners,
+        "On a genuine discard, as a defender -- the lowest optimal card from\n"
+        "the suit with the fewest remaining tricks for the defending side.");
+
+    py::class_<PyDefenderHeuristicContext>(
+        module,
+        "DefenderHeuristicContext",
+        "All state a Python-authored rule needs, handed to it for the\n"
+        "duration of one call only -- see ExpiredBeliefViewError's own\n"
+        "docstring for the same \"valid only for the call\" discipline this\n"
+        "type follows (a separate error, not that one, but the same reason).")
+        .def_property_readonly("layout", &PyDefenderHeuristicContext::layout)
+        .def_property_readonly("fut", &PyDefenderHeuristicContext::fut)
+        .def_property_readonly("state", &PyDefenderHeuristicContext::state)
+        .def_property_readonly("seat", &PyDefenderHeuristicContext::seat)
+        .def_property_readonly("position_in_trick", &PyDefenderHeuristicContext::position_in_trick)
+        .def_property_readonly("on_lead_to_trick", &PyDefenderHeuristicContext::on_lead_to_trick)
+        .def_property_readonly("was_on_lead", &PyDefenderHeuristicContext::was_on_lead)
+        .def_property_readonly("can_follow_led_suit", &PyDefenderHeuristicContext::can_follow_led_suit)
+        .def_property_readonly("defending_side", &PyDefenderHeuristicContext::defending_side)
+        .def_property_readonly("trump", &PyDefenderHeuristicContext::trump);
+
+    py::class_<be::DefenderHeuristicChain>(
+        module,
+        "DefenderHeuristicChain",
+        "An ordered sequence of DefenderHeuristic rules, tried in add()\n"
+        "order. The one and only way a chain is built -- there is no\n"
+        "denomination argument and no enum of \"which built-ins to\n"
+        "include\": a caller's chain is entirely and exactly whatever\n"
+        "sequence of add() calls they make.")
+        .def(py::init<>())
+        .def(
+            "add",
+            [](be::DefenderHeuristicChain& self, py::object const& heuristic) {
+                if (py::isinstance<be::DefenderHeuristic>(heuristic)) {
+                    self.add(py::cast<be::DefenderHeuristic>(heuristic));
+                } else {
+                    self.add(wrap_python_heuristic(py::cast<py::function>(heuristic)));
+                }
+            },
+            py::arg("heuristic"),
+            "Appends heuristic to the end of the chain -- either a\n"
+            "DefenderHeuristic (from one of the factory functions) or a\n"
+            "plain Python function of shape (context, best_cards) ->\n"
+            "Card | None, on equal footing.");
+
+    module.def(
+        "make_default_defender_heuristics", &be::make_default_defender_heuristics, py::arg("trump"),
+        py::arg("randomize_touching_honors") = true,
+        "Convenience only -- not the only way to build a chain. Equivalent\n"
+        "to add()-ing second_seat_low(randomize_touching_honors),\n"
+        "high_in_third(), third_seat_low(), fourth_seat_low(), ruff_small()\n"
+        "(only when trump names a real suit) and discard_keep_winners(), in\n"
+        "that order. A caller wanting a different order, a subset, or their\n"
+        "own rule spliced in builds a DefenderHeuristicChain directly\n"
+        "instead.");
+}
+
 // Both DoubleDummyDefender and DoubleDummyBound hold SolverContext& --
 // a reference, not owned. A Python object outliving the context it was
 // built from would dangle it: py::keep_alive<1, 2>() on both constructors
@@ -1545,6 +1870,62 @@ public:
 
 private:
     be::DoubleDummyBound bound_;
+};
+
+// Sibling of PyDoubleDummyDefender -- same SolverContext& contract (not
+// owned, not thread-safe). Unlike DoubleDummyDefender, HeuristicDefender's
+// own chain genuinely reads state.declarer (defending_side depends on it)
+// and a caller-authored Python rule may want the rest of it too (a C++
+// rule sees the whole thing: ctx.state is a plain field, not gated by any
+// accessor) -- so, unlike PyDoubleDummyDefender::call, which ignores
+// state entirely, this binding accepts either a real, fully-populated
+// ObservationState (from evaluate()'s own machinery, already bound via
+// the py::class_<be::ObservationState> above) or a minimal stand-in
+// exposing only ".declarer" for a direct, standalone call: the former is
+// used whole, by py::cast through that existing binding; only the latter
+// falls back to a declarer-only value.
+auto observation_state_from(py::object const& state) -> be::ObservationState
+{
+    if (py::isinstance<be::ObservationState>(state)) {
+        return py::cast<be::ObservationState>(state);
+    }
+    be::ObservationState state_value{};
+    state_value.declarer = py::cast<int>(state.attr("declarer"));
+    return state_value;
+}
+
+class PyHeuristicDefender
+{
+public:
+    PyHeuristicDefender(SolverContext& ctx, be::DefenderHeuristicChain chain, be::SpreadPolicy fallback_policy)
+        : defender_(ctx, std::move(chain), fallback_policy)
+    {
+    }
+
+    auto call(py::dict const& layout, int seat, py::object const& state) -> py::list
+    {
+        Deal const deal = dds3_python::dict_to_deal(layout);
+        be::ObservationState const state_value = observation_state_from(state);
+        be::DefenderStrategy const strategy = defender_.as_strategy();
+
+        std::vector<be::WeightedCard> weighted;
+        {
+            // Released for the solve itself; a chain rule wrapped by
+            // wrap_python_heuristic re-acquires the GIL on its own before
+            // calling back into Python -- see that function's own comment.
+            py::gil_scoped_release const release;
+            weighted = strategy(be::DefenderQuery{deal, seat, state_value});
+        }
+
+        py::list result;
+        for (be::WeightedCard const& card : weighted) {
+            result.append(py::make_tuple(card.card, card.probability));
+        }
+        return result;
+    }
+
+private:
+    be::HeuristicDefender defender_;
 };
 
 auto register_solver_seam_bindings(py::module_& module) -> void
@@ -1633,6 +2014,26 @@ auto register_solver_seam_bindings(py::module_& module) -> void
             }),
             py::arg("ctx"), py::arg("declarer"), py::keep_alive<1, 2>())
         .def("__call__", &PyDoubleDummyBound::call, py::arg("layout"));
+
+    py::class_<PyHeuristicDefender>(
+        module,
+        "HeuristicDefender",
+        "A defender strategy backed by a caller-assembled\n"
+        "DefenderHeuristicChain, falling back to DoubleDummyDefender's own\n"
+        "spread() when every rule in the chain defers. A second\n"
+        "DefenderStrategy implementation, not a replacement for\n"
+        "DoubleDummyDefender -- both are usable anywhere evaluate()'s delta\n"
+        "argument is accepted.\n\n"
+        "**The chain is entirely caller-assembled.** This class never calls\n"
+        "make_default_defender_heuristics() implicitly and has no notion\n"
+        "of \"the default chain\" to special-case.\n\n"
+        "ctx is not owned, and not thread-safe, the same as\n"
+        "DoubleDummyDefender's own contract -- see its docstring.")
+        .def(
+            py::init<SolverContext&, be::DefenderHeuristicChain, be::SpreadPolicy>(), py::arg("ctx"),
+            py::arg("chain"), py::arg("fallback_policy") = be::SpreadPolicy::TouchingSequence,
+            py::keep_alive<1, 2>())
+        .def("__call__", &PyHeuristicDefender::call, py::arg("layout"), py::arg("seat"), py::arg("state"));
 }
 
 // Internal: exercises the converters above end to end, ahead of the real
@@ -1710,6 +2111,10 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
     // the exception-map that call populates.
     register_play_record_bindings(module);
     register_layout_source_bindings(module);
+    // Before register_solver_seam_bindings: HeuristicDefender's own
+    // constructor takes a DefenderHeuristicChain by value, so that type
+    // must already be registered.
+    register_defender_heuristic_bindings(module);
     register_solver_seam_bindings(module);
     register_converter_probes(module);
 
