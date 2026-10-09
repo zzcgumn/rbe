@@ -804,11 +804,14 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsMustBeAppliedBeforeCutoffLeafValueNotAf
     // evaluate()'s own root_children, for a declarer root, are computed by
     // evaluate()'s own outer recursion, not by this strategy's internal
     // one). This test instead directly proves the two leaf functions
-    // themselves compose correctly in the order search() uses them
-    // (brute_force_declarer.cpp's own search(): prune, then check
-    // terminal/cutoff) -- the exact fix for this finding -- against the
-    // wrong order (cutoff first, prune only in the branching case) it
-    // regresses.
+    // themselves compose correctly in the order search() uses them for
+    // the depth-cutoff case specifically (brute_force_declarer.cpp's own
+    // search(): prune, then check the depth cutoff -- is_terminal is
+    // checked separately, before pruning, since a terminal leaf has no
+    // solver cost for max_layouts to bound; see the companion test
+    // MaxLayoutsMustNotBeAppliedBeforeATerminalLeaf below for that case)
+    // -- the exact fix for this finding -- against the wrong order
+    // (cutoff first, prune only in the branching case) it regresses.
     //
     // One well-formed layout (East holds the Clubs Ace; South/West hold
     // low fillers; East's ace trivially wins the only remaining trick, so
@@ -871,4 +874,66 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsMustBeAppliedBeforeCutoffLeafValueNotAf
         node, bound.as_bound(), be::DeclarerObjective::MaximiseExpectedTricks);
     EXPECT_NEAR(wrong_order_value, 1.4, 1e-9);
     EXPECT_GT(wrong_order_value, 1.0);
+}
+
+TEST_F(BruteForceDeclarerTest, MaxLayoutsMustNotBeAppliedBeforeATerminalLeaf)
+{
+    // The companion regression to the test above, for the opposite
+    // mistake: pruning *before* checking is_terminal. Unlike the
+    // depth-cutoff case, a terminal leaf calls no solver --
+    // terminal_leaf_value is O(1), reading only node.state's own
+    // tricks_won_by_declarer (common knowledge once nothing is left to
+    // play) and summing node.p -- so there is no cost here for max_layouts
+    // to bound, only mass it would silently lose with nothing gained in
+    // return. search() therefore checks is_terminal on the node exactly
+    // as given, before any pruning.
+    //
+    // Both layouts below are already fully played out (a default,
+    // all-empty Deal, same as node.hpp's own is_terminal doxygen
+    // describes: "no hand in the node has a card left" -- checking one
+    // representative layout suffices, so neither layout here needs any
+    // real cards at all, unlike the depth-cutoff test above, which goes
+    // through DoubleDummyBound and does). node.p is split 0.9/0.1, so
+    // max_layouts = 1 would drop the lower-posterior layout if pruning
+    // ran first.
+    be::ObservationState state{};
+    state.tricks_needed = 3;
+    state.tricks_won_by_declarer = 3;  // already made, common knowledge once terminal
+
+    be::BeliefNode node{};
+    node.layouts = {Deal{}, Deal{}};
+    node.p = {0.9, 0.1};
+    node.root_keys = {0, 1};  // drop_lowest_posterior_layouts indexes this parallel array
+    node.kappa = 1.0;
+    node.state = state;
+
+    ASSERT_TRUE(be::is_terminal(node));
+
+    // Correct (search()'s own order): is_terminal/terminal_leaf_value see
+    // the node exactly as given -- both layouts' mass counts, 0.9 + 0.1 =
+    // 1.0 of kappa, so MaximiseProbabilityToMake's own node_mass is 1.0
+    // and MaximiseExpectedTricks's own mass-weighted trick count is
+    // 1.0 * 3 = 3.0.
+    double const correct_p_make =
+        be::terminal_leaf_value(node, be::DeclarerObjective::MaximiseProbabilityToMake);
+    EXPECT_DOUBLE_EQ(correct_p_make, 1.0);
+    double const correct_expected_tricks =
+        be::terminal_leaf_value(node, be::DeclarerObjective::MaximiseExpectedTricks);
+    EXPECT_DOUBLE_EQ(correct_expected_tricks, 3.0);
+
+    // The regression this test is for: pruning before the terminal check
+    // (the mistake this test regresses) drops the lower-posterior layout
+    // first, so terminal_leaf_value only ever sees the 0.9 that survives
+    // -- node_mass 0.9, not 1.0; mass-weighted tricks 0.9 * 3 = 2.7, not
+    // 3.0 -- a silent under-count with no solver call saved to justify it.
+    be::BeliefNode const wrongly_pruned_first = be::drop_lowest_posterior_layouts(node, 1);
+    double const wrong_p_make = be::terminal_leaf_value(
+        wrongly_pruned_first, be::DeclarerObjective::MaximiseProbabilityToMake);
+    EXPECT_DOUBLE_EQ(wrong_p_make, 0.9);
+    EXPECT_LT(wrong_p_make, correct_p_make);
+
+    double const wrong_expected_tricks = be::terminal_leaf_value(
+        wrongly_pruned_first, be::DeclarerObjective::MaximiseExpectedTricks);
+    EXPECT_DOUBLE_EQ(wrong_expected_tricks, 2.7);
+    EXPECT_LT(wrong_expected_tricks, correct_expected_tricks);
 }

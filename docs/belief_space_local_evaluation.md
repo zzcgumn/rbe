@@ -479,9 +479,13 @@ belief space every time. Affordable on a small, fully-enumerable ending;
 measured directly on one such ending with a real, non-trivial belief
 space (252 layouts): over 100 seconds and 1.7 million calls into
 `opponent_model` for the unbounded search. `max_layouts`, when set, drops
-a node's lowest-posterior layouts rather than searching all of them — the
-dropped mass is never redistributed onto the survivors, a deliberate
-under-count rather than an approximation that could go either way.
+a node's lowest-posterior layouts rather than searching all of them before
+a depth cutoff's own per-layout solver cost is paid — the dropped mass is
+never redistributed onto the survivors, a deliberate under-count rather
+than an approximation that could go either way. Does not apply to a
+genuine terminal node, which calls no solver and is already cheap: there
+is nothing there for the cap to bound, only mass it would otherwise lose
+for no reason.
 
 **The cache `BruteForceDeclarer` owns internally is private to one
 instance, and reused across calls only when `max_depth` is left `None`.**

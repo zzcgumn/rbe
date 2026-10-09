@@ -181,27 +181,43 @@ auto BruteForceDeclarer::is_declarer_side(ObservationState const& state, int sea
 
 auto BruteForceDeclarer::search(BeliefNode const& node, int depth) -> double
 {
+    // is_terminal/terminal_leaf_value checked on the *original* node,
+    // before any pruning: there is no solver call here to bound -- a
+    // terminal leaf is already O(1), reading only common knowledge
+    // (tricks_won_by_declarer) plus node_mass over whatever node.p it is
+    // handed -- so pruning first would buy nothing and cost real
+    // accuracy: drop_lowest_posterior_layouts() never redistributes the
+    // dropped layouts' own mass onto the survivors, so a terminal node
+    // reached with more surviving layouts than max_layouts (the common
+    // case for the very first node search() is ever called on, since
+    // play() builds its root and its declarer children directly from the
+    // full, unpruned BeliefView the caller handed in) would otherwise
+    // silently under-count the true probability/expected-tricks value for
+    // no reason connected to what max_layouts actually exists to bound.
+    if (is_terminal(node))
+    {
+        return terminal_leaf_value(node, objective_);
+    }
+
     // A node whose own surviving layout count exceeds max_layouts is
-    // pruned down before anything else below reads node.layouts/p --
-    // every leaf case (terminal, depth-cutoff) included, not just the
-    // cache key below. Pruning before the depth-cutoff check in
-    // particular matters: cutoff_leaf_value calls DoubleDummyBound once
-    // per surviving layout, a real solver call, so a cutoff reached before
-    // any ancestor node had a chance to prune (max_depth of 0 or 1, say)
-    // must still see the capped layout set, not the original, possibly
-    // much larger one -- otherwise max_layouts silently stops bounding
-    // exactly the cost it exists to bound. drop_lowest_posterior_layouts()
-    // returns its argument unchanged when nothing needs dropping, so this
-    // is safe to call unconditionally once max_layouts is set at all.
+    // pruned down before anything below this point reads node.layouts/p
+    // -- the depth-cutoff check right after, and the cache key further
+    // down. Pruning before the depth-cutoff check in particular matters:
+    // cutoff_leaf_value calls DoubleDummyBound once per surviving layout,
+    // a real solver call, so a cutoff reached before any ancestor node
+    // had a chance to prune (max_depth of 0 or 1, say) must still see the
+    // capped layout set, not the original, possibly much larger one --
+    // otherwise max_layouts silently stops bounding exactly the cost it
+    // exists to bound. Unlike the terminal case above, this one does have
+    // a real cost to bound, which is exactly why it is pruned first and
+    // the terminal case is not. drop_lowest_posterior_layouts() returns
+    // its argument unchanged when nothing needs dropping, so this is safe
+    // to call unconditionally once max_layouts is set at all.
     BeliefNode const pruned = options_.max_layouts.has_value()
         ? drop_lowest_posterior_layouts(node, *options_.max_layouts)
         : node;
     BeliefNode const& n = pruned;
 
-    if (is_terminal(n))
-    {
-        return terminal_leaf_value(n, objective_);
-    }
     if (options_.max_depth.has_value() && depth >= *options_.max_depth)
     {
         return cutoff_leaf_value(n, bound_for(n.state).as_bound(), objective_);

@@ -48,6 +48,12 @@ struct BruteForceOptions
     /// and search()'s own ordering. The dropped mass is never
     /// redistributed; this is a deliberate under-count, not an
     /// approximation that could go either way.
+    ///
+    /// **Does not apply to a genuine terminal node.** A terminal leaf
+    /// calls no solver and is already O(1) -- there is no cost there for
+    /// pruning to bound, only mass to lose -- so search() checks
+    /// is_terminal() against the node's own full, unpruned layout set
+    /// before this cap is ever consulted.
     std::optional<std::uint64_t> max_layouts;
 };
 
