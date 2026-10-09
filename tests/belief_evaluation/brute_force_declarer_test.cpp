@@ -782,3 +782,93 @@ TEST_F(BruteForceDeclarerTest, MaxDepthDoesNotCarryTheCacheAcrossSeparatePlayCal
     EXPECT_EQ(second_card.suit, first_card.suit);
     EXPECT_EQ(second_card.rank, first_card.rank);
 }
+
+TEST_F(BruteForceDeclarerTest, MaxLayoutsMustBeAppliedBeforeCutoffLeafValueNotAfter)
+{
+    // A regression for a cost-bound gap, not a correctness one: with
+    // max_depth set small enough to reach a cutoff before any node had a
+    // chance to prune (max_depth of 0 or 1 reaches the cutoff at the very
+    // first node search() visits), cutoff_leaf_value must still see at
+    // most max_layouts layouts -- it calls DoubleDummyBound, a real
+    // solver call, once per layout in whatever node it is handed.
+    //
+    // There is no way to observe this through play()'s own returned card:
+    // every legal card at one declarer node shares the exact same belief
+    // space, undivided (node.hpp's own "declarer nodes pass weight
+    // through undivided") -- make_declarer_children() gives every
+    // candidate the identical, full set of layouts, so a layout that
+    // contaminates one candidate's own eventual value contaminates every
+    // sibling candidate's by the same additive amount, and can therefore
+    // never change *which* one search()'s own max picks, only the
+    // absolute value nothing public exposes (search() itself is private;
+    // evaluate()'s own root_children, for a declarer root, are computed by
+    // evaluate()'s own outer recursion, not by this strategy's internal
+    // one). This test instead directly proves the two leaf functions
+    // themselves compose correctly in the order search() uses them
+    // (brute_force_declarer.cpp's own search(): prune, then check
+    // terminal/cutoff) -- the exact fix for this finding -- against the
+    // wrong order (cutoff first, prune only in the branching case) it
+    // regresses.
+    //
+    // One well-formed layout (East holds the Clubs Ace; South/West hold
+    // low fillers; East's ace trivially wins the only remaining trick, so
+    // declarer's own continuation from here is 0 tricks -- confirmed below
+    // via a direct DoubleDummyBound call, not assumed) at the higher
+    // posterior (0.9), and one garbage layout (a default-constructed,
+    // all-empty Deal -- the same malformed input
+    // double_dummy_bound_test.cpp's own
+    // AMalformedLayoutSurfacesAsTheSentinelNotARealBound fixture uses,
+    // which DoubleDummyBound answers with its own too-high sentinel, 14,
+    // precisely because there is nothing there for the solver to analyse)
+    // at the lower posterior (0.1). max_layouts = 1 keeps only the
+    // well-formed one.
+    Deal well_formed{};
+    well_formed.trump = DDS_NOTRUMP;
+    well_formed.first = North;
+    well_formed.currentTrickSuit[0] = Clubs;
+    well_formed.currentTrickRank[0] = Two;  // North's own already-played forced lead
+    well_formed.remainCards[South][Clubs] = be::holding({King});
+    well_formed.remainCards[East][Clubs] = be::holding({Ace});
+    well_formed.remainCards[West][Clubs] = be::holding({Three});
+
+    SolverContext ctx;
+    be::DoubleDummyBound bound(ctx, /*declarer=*/North);
+    int const bound_well_formed = bound.as_bound()(well_formed);
+    ASSERT_EQ(bound_well_formed, 0)
+        << "fixture's own derivation expects East's ace to win the only remaining trick outright";
+
+    int const bound_garbage = bound.as_bound()(Deal{});
+    ASSERT_EQ(bound_garbage, 14) << "the solver-failure sentinel, confirming this layout is "
+                                    "genuinely unscoreable, not accidentally valid";
+
+    be::ObservationState state{};
+    state.tricks_needed = 1;
+    state.tricks_won_by_declarer = 0;
+
+    be::BeliefNode node{};
+    node.layouts = {well_formed, Deal{}};
+    node.p = {0.9, 0.1};
+    node.root_keys = {0, 1};  // drop_lowest_posterior_layouts indexes this parallel array
+    node.kappa = 1.0;
+    node.state = state;
+
+    // Fixed order (search()'s own: prune, then evaluate the leaf) --
+    // matches the production code exactly: only the well-formed layout's
+    // own mass contributes, giving 0.
+    be::BeliefNode const pruned = be::drop_lowest_posterior_layouts(node, 1);
+    double const fixed_order_value = be::cutoff_leaf_value(
+        pruned, bound.as_bound(), be::DeclarerObjective::MaximiseExpectedTricks);
+    EXPECT_DOUBLE_EQ(fixed_order_value, pruned.kappa * pruned.p[0] * (0 + bound_well_formed));
+    EXPECT_DOUBLE_EQ(fixed_order_value, 0.0);
+
+    // The regression this test is for: the wrong order (cutoff first, as
+    // the bug had it, pruning only in the branching case reached further
+    // down) runs cutoff_leaf_value over the *unpruned* node -- the
+    // garbage layout's own sentinel-derived value (0 + 14 = 14) still
+    // contributes 0.1 * 14 = 1.4, a stark, unmissable difference from the
+    // correctly-pruned 0.0, not a rounding-level one.
+    double const wrong_order_value = be::cutoff_leaf_value(
+        node, bound.as_bound(), be::DeclarerObjective::MaximiseExpectedTricks);
+    EXPECT_NEAR(wrong_order_value, 1.4, 1e-9);
+    EXPECT_GT(wrong_order_value, 1.0);
+}

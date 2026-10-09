@@ -43,8 +43,10 @@ struct BruteForceOptions
 
     /// A node whose own surviving layout count exceeds this is pruned down
     /// to the max_layouts highest-posterior layouts before being searched
-    /// further -- see drop_lowest_posterior_layouts(). The dropped mass is
-    /// never redistributed; this is a deliberate under-count, not an
+    /// further, including before a depth cutoff's own per-layout
+    /// DoubleDummyBound cost is paid -- see drop_lowest_posterior_layouts()
+    /// and search()'s own ordering. The dropped mass is never
+    /// redistributed; this is a deliberate under-count, not an
     /// approximation that could go either way.
     std::optional<std::uint64_t> max_layouts;
 };

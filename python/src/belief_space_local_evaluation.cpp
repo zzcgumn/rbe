@@ -1939,14 +1939,23 @@ private:
     be::HeuristicDefender defender_;
 };
 
-// BruteForceDeclarer's own opponent_model parameter, unlike evaluate()'s
-// outer delta, never needs play_record's late-read guard: its internal
-// recursion builds its own ObservationState copies from scratch and never
-// sets play_record on any of them at all, so there is nothing here for
-// state_for_python()/call_valid to guard against. A plain, un-guarded
-// wrapper is correct, not merely simpler -- reusing make_defender_strategy
-// as-is would be wrong, not just redundant, since that function expects a
-// call_valid this strategy has no equivalent of.
+// BruteForceDeclarer's own opponent_model parameter needs no guard of its
+// own -- not because play_record is never set on the states built here,
+// but because every one of them is a copy of whatever `state` this
+// strategy's own play() was called with (make_internal_root's own
+// `root.state = state;`), and a copy carries play_record_valid right
+// along with it. When this strategy is used as evaluate()'s own pi
+// through the Python binding, that `state` already has play_record_valid
+// set to the *outer* call's own call_valid flag (state_for_python,
+// installed before pi(...) is ever invoked) -- so whatever guard the
+// outer evaluate() call installed is inherited through every copy this
+// strategy's internal recursion makes, not dropped. There is nothing
+// *new* here for a guard to protect against, which is why a plain,
+// un-guarded wrapper is correct, not merely simpler -- reusing
+// make_defender_strategy as-is would still be wrong, not just redundant,
+// since that function expects a call_valid this strategy has no
+// equivalent of (it would need its own, separate flag, not the inherited
+// one already riding along on `state`).
 auto make_opponent_model(std::optional<py::function> const& opponent_model) -> be::DefenderStrategy
 {
     if (! opponent_model.has_value()) {

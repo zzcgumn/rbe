@@ -181,26 +181,31 @@ auto BruteForceDeclarer::is_declarer_side(ObservationState const& state, int sea
 
 auto BruteForceDeclarer::search(BeliefNode const& node, int depth) -> double
 {
-    if (is_terminal(node))
-    {
-        return terminal_leaf_value(node, objective_);
-    }
-    if (options_.max_depth.has_value() && depth >= *options_.max_depth)
-    {
-        return cutoff_leaf_value(node, bound_for(node.state).as_bound(), objective_);
-    }
-
     // A node whose own surviving layout count exceeds max_layouts is
     // pruned down before anything else below reads node.layouts/p --
-    // the cache key included, so a cache entry remembers the answer to
-    // this smaller problem rather than pretending it solved the larger
-    // one. drop_lowest_posterior_layouts() returns its argument unchanged
-    // when nothing needs dropping, so this is safe to call unconditionally
-    // once max_layouts is set at all.
+    // every leaf case (terminal, depth-cutoff) included, not just the
+    // cache key below. Pruning before the depth-cutoff check in
+    // particular matters: cutoff_leaf_value calls DoubleDummyBound once
+    // per surviving layout, a real solver call, so a cutoff reached before
+    // any ancestor node had a chance to prune (max_depth of 0 or 1, say)
+    // must still see the capped layout set, not the original, possibly
+    // much larger one -- otherwise max_layouts silently stops bounding
+    // exactly the cost it exists to bound. drop_lowest_posterior_layouts()
+    // returns its argument unchanged when nothing needs dropping, so this
+    // is safe to call unconditionally once max_layouts is set at all.
     BeliefNode const pruned = options_.max_layouts.has_value()
         ? drop_lowest_posterior_layouts(node, *options_.max_layouts)
         : node;
     BeliefNode const& n = pruned;
+
+    if (is_terminal(n))
+    {
+        return terminal_leaf_value(n, objective_);
+    }
+    if (options_.max_depth.has_value() && depth >= *options_.max_depth)
+    {
+        return cutoff_leaf_value(n, bound_for(n.state).as_bound(), objective_);
+    }
 
     BruteForceCacheKey const key = make_brute_force_cache_key(n.state, n.layouts, n.p);
     if (std::optional<double> const cached = cache_.find(key); cached.has_value())
