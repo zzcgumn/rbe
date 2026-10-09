@@ -694,3 +694,91 @@ TEST_F(BruteForceDeclarerTest, EndToEndMatchesDoubleDummyBoundsOwnCeiling)
             << "card (" << child.card.suit << "," << child.card.rank << ")";
     }
 }
+
+// --- max_depth: cross-call cache scoping -----------------------------------
+
+TEST_F(BruteForceDeclarerTest, MaxDepthDoesNotCarryTheCacheAcrossSeparatePlayCalls)
+{
+    // The same three-independent-suits fixture
+    // ACacheHitSkipsRecomputingASubtreeReachedByTransposition uses, now
+    // with max_depth set. The cutoff a finite max_depth triggers depends
+    // on *call-relative* recursion depth: the same logical node reached
+    // at a different depth by a different play() call has a genuinely
+    // different correct cutoff-or-not answer, so carrying the cache
+    // across calls is only sound when max_depth is absent (see
+    // BruteForceDeclarer's own class doxygen). This test does not need to
+    // construct two *different* roots at two different depths to catch a
+    // regression here -- running the *identical* call twice is already
+    // decisive: if the cache were (wrongly) carried over, the second call
+    // would hit a cache entry for literally every node it visits (same
+    // root, same tree, same depths both times -- a transposition that
+    // really would be safe to reuse, which is exactly why this case alone
+    // cannot distinguish "reuse" from "correct reuse", only "reuse
+    // happened or did not"), collapsing its own opponent-model call count
+    // to near zero; with the fix, the second call recomputes everything
+    // fresh and its count matches the first call's exactly.
+    auto const make_suit_layout = [](int suit) -> Deal
+    {
+        Deal layout{};
+        layout.trump = DDS_NOTRUMP;
+        layout.first = North;
+        layout.remainCards[North][suit] = be::holding({Ace});
+        layout.remainCards[South][suit] = be::holding({Two});
+        layout.remainCards[East][suit] = be::holding({Three});
+        layout.remainCards[West][suit] = be::holding({Four});
+        return layout;
+    };
+
+    Deal layout{};
+    layout.trump = DDS_NOTRUMP;
+    layout.first = North;
+    for (int suit : {Spades, Hearts, Diamonds})
+    {
+        Deal const one_suit = make_suit_layout(suit);
+        for (int hand = 0; hand < DDS_HANDS; ++hand)
+        {
+            layout.remainCards[hand][suit] = one_suit.remainCards[hand][suit];
+        }
+    }
+
+    be::ObservationState state{};
+    state.trump = DDS_NOTRUMP;
+    state.first = North;
+    state.declarer = North;
+    state.tricks_needed = 3;
+    state.tricks_won_by_declarer = 0;
+    state.known_holdings = layout;
+    state.ranks = be::make_rank_map(layout);
+
+    std::vector<Deal> const layouts = {layout};
+    std::vector<be::BeliefEntry> const entries = make_entries(layouts, {1.0});
+
+    int call_count = 0;
+    be::DefenderStrategy const spy = [&](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
+    {
+        ++call_count;
+        return be::single_card_defender(query);
+    };
+
+    be::BruteForceOptions options{};
+    options.max_depth = 5;  // cuts off at trick 2's East response -- see the fixture's own
+                             // sibling test for the exact depth-by-depth layout
+    SolverContext ctx;
+    be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximiseExpectedTricks, spy, options);
+    be::DeclarerStrategy const pi = declarer.as_strategy();
+
+    call_count = 0;
+    be::Card const first_card =
+        pi.play(state, be::BeliefView{entries, false, entries.size()});
+    int const first_call_count = call_count;
+    ASSERT_GT(first_call_count, 0);
+
+    call_count = 0;
+    be::Card const second_card =
+        pi.play(state, be::BeliefView{entries, false, entries.size()});
+    int const second_call_count = call_count;
+
+    EXPECT_EQ(second_call_count, first_call_count);
+    EXPECT_EQ(second_card.suit, first_card.suit);
+    EXPECT_EQ(second_card.rank, first_card.rank);
+}

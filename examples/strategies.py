@@ -315,9 +315,13 @@ def brute_force_declarer(ctx, objective=None, opponent_model=None, max_depth=Non
     matching its internal one.
 
     **The cache this owns is safe to share across this one instance's own
-    calls, never across two differently-configured instances** -- a
-    different `objective` or a different `opponent_model` corrupts
-    backed-up values silently.
+    calls only when `max_depth` is left `None`** -- with it set, the
+    cutoff it triggers depends on how deep *this particular* search call
+    is into its own lookahead, not on anything inherent to the position,
+    so each call starts from a clean cache instead. Never shared across
+    two differently-configured instances either way -- a different
+    `objective` or a different `opponent_model` corrupts backed-up values
+    silently.
 
     `opponent_model` left `None` resolves to an owned `DoubleDummyDefender`
     over `ctx` -- the common case, with no need to construct one yourself.

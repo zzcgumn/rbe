@@ -484,13 +484,17 @@ dropped mass is never redistributed onto the survivors, a deliberate
 under-count rather than an approximation that could go either way.
 
 **The cache `BruteForceDeclarer` owns internally is private to one
-instance** — safe to reuse across any number of `evaluate()` calls that
-instance is used in, never across two instances built with a different
-`DeclarerObjective` or a different `opponent_model`, which would silently
-corrupt backed-up values. Nothing about this cache is visible to, or
-shared with, `evaluate()` itself: the search is entirely private to one
-`play()` call, and `evaluate()` has no idea a lookahead happened inside
-it at all.
+instance, and reused across calls only when `max_depth` is left `None`.**
+With it absent, safe to reuse across any number of `evaluate()` calls that
+instance is used in. With it set, the cutoff it triggers depends on how
+deep *that one call's own* lookahead is, not on anything inherent to the
+position, so each `play()` call starts from a clean cache instead —
+correct, at the cost of cross-call reuse. Never shared across two
+instances built with a different `DeclarerObjective` or a different
+`opponent_model` either way, which would silently corrupt backed-up
+values. Nothing about this cache is visible to, or shared with,
+`evaluate()` itself: the search is entirely private to one `play()` call,
+and `evaluate()` has no idea a lookahead happened inside it at all.
 
 **A `SolverContext` is not thread-safe** (its own C++ contract: one
 context per thread), and `DoubleDummyDefender`/`DoubleDummyBound`/

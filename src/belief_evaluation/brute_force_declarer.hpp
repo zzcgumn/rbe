@@ -127,11 +127,17 @@ auto drop_lowest_posterior_layouts(BeliefNode const& node, std::uint64_t keep) -
 ///   P_make" this strategy's own search would compute against a model
 ///   matching its internal one.
 /// - **The cache this owns is safe to share across this strategy's own
-///   calls** (any number of evaluate() runs, any order, within one
-///   instance's lifetime), **never across two differently-configured
-///   instances** -- a different DeclarerObjective or a different opponent
-///   model corrupts backed-up values silently, the same way mixing
-///   SpreadPolicy values would for DoubleDummyDefender's own
+///   calls only when `max_depth` is absent.** With it absent (any number
+///   of evaluate() runs, any order, within one instance's lifetime), a
+///   node's value depends purely on its own content. With `max_depth`
+///   set, the cutoff it triggers depends on *call-relative* recursion
+///   depth -- the same logical node reached at a different depth by a
+///   later call has a genuinely different correct answer -- so each
+///   `play()` call starts from a clean cache instead; see `as_strategy()`'s
+///   own `.cpp` comment. Never shared across two differently-configured
+///   instances either way -- a different DeclarerObjective or a different
+///   opponent model corrupts backed-up values silently, the same way
+///   mixing SpreadPolicy values would for DoubleDummyDefender's own
 ///   instance-level policy.
 ///
 /// `ctx` is not owned, and not thread-safe -- the same contract

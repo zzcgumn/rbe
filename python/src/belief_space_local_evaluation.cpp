@@ -1997,9 +1997,15 @@ public:
     auto call(be::ObservationState const& state, PyBeliefView const& view) -> be::Card
     {
         be::DeclarerStrategy const strategy = declarer_.as_strategy();
+        // view.raw() must run while the GIL is still held: on an expired
+        // view it raises ExpiredBeliefViewError via Python C-API calls,
+        // which are undefined behaviour without the GIL. Bind the
+        // reference here, before releasing, rather than evaluating it as
+        // an argument expression after release is already constructed.
+        be::BeliefView const& raw_view = view.raw();
         py::gil_scoped_release const release;  // re-acquired inside make_opponent_model's own
                                                 // wrapper if opponent_model is a Python callable
-        return strategy.play(state, view.raw());
+        return strategy.play(state, raw_view);
     }
 
 private:
@@ -2137,9 +2143,13 @@ auto register_solver_seam_bindings(py::module_& module) -> void
         "optimal p_make\" this strategy's own search would compute against a\n"
         "model matching its internal one.\n\n"
         "**The cache this owns is safe to share across this instance's own\n"
-        "calls, never across two differently-configured instances** -- a\n"
-        "different objective or a different opponent_model corrupts\n"
-        "backed-up values silently.\n\n"
+        "calls only when max_depth is left None** -- with it set, the\n"
+        "cutoff it triggers depends on how deep this particular call's own\n"
+        "lookahead is, not on anything inherent to the position, so each\n"
+        "call starts from a clean cache instead. Never shared across two\n"
+        "differently-configured instances either way -- a different\n"
+        "objective or a different opponent_model corrupts backed-up values\n"
+        "silently.\n\n"
         "opponent_model left None resolves to an owned DoubleDummyDefender\n"
         "over the same ctx -- the common case, with no need to construct\n"
         "one yourself. ctx is not owned, and not thread-safe, the same as\n"

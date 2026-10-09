@@ -47,21 +47,29 @@ namespace
         return root;
     }
 
-    // A stable serialisation of BruteForceCacheKey into a StateKey
-    // (std::string): two equal keys must serialise to equal strings, and
-    // nothing else is required -- evaluate() never calls state_key today
-    // (unchanged by this strategy; see DeclarerStrategy::state_key's own
-    // doxygen), so there is no existing format to match, only internal
-    // consistency to keep.
+    // A stable serialisation of BruteForceCacheKey's own belief-space
+    // component *only* into a StateKey (std::string) -- deliberately
+    // omitting position_hash. DeclarerStrategy::state_key's own three-state
+    // contract (declarer_strategy.hpp) asks for what play() consults
+    // *beyond* the position the evaluator already keys on, nothing more;
+    // the evaluator would supply the position component of any future
+    // cache key itself, so including it here would make this strategy's
+    // own declaration needlessly coarser than necessary -- two states
+    // identical in "the rest" but differing only in a position field the
+    // evaluator already keys on separately would wrongly miss each other
+    // once an evaluator-level cache exists. Inert today (evaluate() never
+    // calls state_key at all), but worth getting right now rather than
+    // when it first matters. Two equal keys must serialise to equal
+    // strings, and nothing else is required -- there is no existing format
+    // to match, only internal consistency to keep.
     auto serialize_key(BruteForceCacheKey const& key) -> StateKey
     {
         std::string bytes;
-        bytes.reserve(sizeof(key.position_hash) + key.deal_and_quantized_posterior.size() * 16);
+        bytes.reserve(key.deal_and_quantized_posterior.size() * 16);
         auto const append = [&bytes](auto const& value)
         {
             bytes.append(reinterpret_cast<char const*>(&value), sizeof(value));
         };
-        append(key.position_hash);
         for (auto const& [deal_hash, quantized] : key.deal_and_quantized_posterior)
         {
             append(deal_hash);
@@ -239,6 +247,25 @@ auto BruteForceDeclarer::as_strategy() -> DeclarerStrategy
     strategy.id = 0;
     strategy.play = [this](ObservationState const& state, BeliefView const& view) -> Card
     {
+        // The cutoff a finite max_depth triggers inside search() depends
+        // on *call-relative* recursion depth, not on anything inherent to
+        // a node's own (state, layouts, p) -- the same logical node can be
+        // reached at a different depth by a later call whose own root
+        // happens to be closer to it (a real possibility: this is exactly
+        // the "successive pi calls along one actually-played line revisit
+        // the same node" reuse this strategy's cache otherwise exists
+        // for), with a genuinely different correct cutoff-or-not answer
+        // each time. Carrying cache_ across calls is therefore only sound
+        // when max_depth is absent, where a node's value depends purely on
+        // its own content and never on how this call's own root was
+        // reached. With max_depth set, each call starts from a clean
+        // cache instead -- correct at the cost of the cross-call reuse the
+        // plan's own "Correctness" section otherwise relies on; see this
+        // class's own doxygen.
+        if (options_.max_depth.has_value())
+        {
+            cache_ = BruteForceCache{};
+        }
         BeliefNode const root = make_internal_root(state, view);
         int const seat = seat_on_play(root.state.known_holdings);
         std::vector<Card> const cards = enumerate_legal_cards(root.state.known_holdings, seat);
