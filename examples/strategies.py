@@ -305,7 +305,7 @@ def brute_force_declarer(ctx, objective=None, opponent_model=None, max_depth=Non
     rule.
 
     `bsle.BruteForceDeclarer` is already usable as pi directly; this
-    exists to keep its two caveats next to the call, the same reason
+    exists to keep its own caveats next to the call, the same reason
     `double_dummy_defender`/`heuristic_defender` above do.
 
     **This presumes its own internal `opponent_model` is what the paired
@@ -314,14 +314,32 @@ def brute_force_declarer(ctx, objective=None, opponent_model=None, max_depth=Non
     P_make" this strategy's own search would compute against a model
     matching its internal one.
 
+    **A caller-supplied `opponent_model` must answer from position alone,
+    never from `state`'s `history` or `play_record`** -- even though a
+    legitimate defender callable may read them (a `ScriptedDefender`-style
+    model keying its own response off history is a real example). This
+    strategy's own internal cache omits both fields, which is what lets
+    two different `pi` calls along one actually-played line share a
+    cached value; that is only sound when `opponent_model` cannot tell
+    those two calls apart. Nothing checks this at runtime -- it is a
+    caller obligation, like the `objective`/`opponent_model`
+    instance-locking below.
+
     **The cache this owns is safe to share across this one instance's own
-    calls only when `max_depth` is left `None`** -- with it set, the
-    cutoff it triggers depends on how deep *this particular* search call
-    is into its own lookahead, not on anything inherent to the position,
-    so each call starts from a clean cache instead. Never shared across
-    two differently-configured instances either way -- a different
-    `objective` or a different `opponent_model` corrupts backed-up values
-    silently.
+    calls only when `max_depth` is left `None`** -- though an actual hit
+    *across* two different calls is rare in practice, not the common case
+    "safe to share" might suggest: each call's own root is freshly
+    renormalised to sum to 1, while this search's own internal recursion
+    never renormalises a descendant, so a hit across calls survives only
+    a chain of probability-1 choices on both sides -- not the genuinely
+    uncertain, multi-layout belief space this cache exists to help.
+    Reuse within one call's own internal recursion is unaffected. With
+    `max_depth` set, the cutoff it triggers depends on how deep *this
+    particular* search call is into its own lookahead, not on anything
+    inherent to the position, so each call starts from a clean cache
+    instead. Never shared across two differently-configured instances
+    either way -- a different `objective` or a different `opponent_model`
+    corrupts backed-up values silently.
 
     `opponent_model` left `None` resolves to an owned `DoubleDummyDefender`
     over `ctx` -- the common case, with no need to construct one yourself.

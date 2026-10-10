@@ -57,9 +57,27 @@ struct BruteForceCacheKey
     int declarer = 0;
     int tricks_needed = 0;
     int tricks_won_by_declarer = 0;
+
+    /// The *current* trick's own leader (`Deal::first`, which `play()`
+    /// updates to the winner each time a trick resolves) -- not
+    /// `ObservationState::first`, a different field with the same name:
+    /// see `root_first` below for that one.
     int first = 0;
     int current_trick_suit[3] = {0, 0, 0};
     int current_trick_rank[3] = {0, 0, 0};
+
+    /// `ObservationState::first` -- the seat that led the *first* trick
+    /// of this whole evaluation's own root, fixed for the entire
+    /// recursion (`advance_state`, expand.cpp, never assigns it; a
+    /// node's `state` is always a copy of some ancestor's). A
+    /// caller-supplied opponent model may read any `ObservationState`
+    /// field except `history`/`play_record` (the only two fields this
+    /// key deliberately, documentedly omits) -- so a model conditioning
+    /// on *this* field is within its rights, and two evaluations whose
+    /// roots began with a different opening leader, but which later
+    /// reach "the same" position by every other field here, are not
+    /// actually the same node to such a model.
+    int root_first = 0;
     std::uint64_t declarer_holding_key = 0;
     std::uint64_t dummy_holding_key = 0;
 
@@ -103,21 +121,24 @@ struct BruteForceCacheKey
     auto operator==(BruteForceCacheKey const& other) const -> bool;
 };
 
-/// For BruteForceCache's own unordered_map. May -- and does -- treat two
-/// keys that are merely close as the same bucket (via quantize_posterior()
-/// below): operator== still disambiguates them once there, so a hash
-/// collision here only costs a slower lookup, never a wrong answer.
+/// For BruteForceCache's own unordered_map. Hashes each posterior's own
+/// exact bit pattern, not a rounded approximation: rounding here was an
+/// earlier design's attempt to put "structurally the same, but
+/// floating-point-noisy" derivations of one weight in the same bucket,
+/// but operator== compares the exact posterior either way (see that
+/// field's own doxygen for why), so two merely-close-but-unequal values
+/// can never actually hit once in that bucket -- rounding bought nothing
+/// it claimed to, while actively working against the unordered_map's own
+/// purpose: many small, genuinely distinct posteriors (common at deep
+/// nodes) round to the same quantised value and pile into one bucket,
+/// turning an O(1) lookup into a long chain of guaranteed-false
+/// comparisons. Hashing the exact bits keeps hash/equality consistent
+/// (equal keys must hash equally; this is the minimum any hash function
+/// must uphold) without that self-inflicted cost. A hash collision still
+/// only costs a slower lookup, never a wrong answer -- operator== always
+/// disambiguates -- this just stops manufacturing collisions that help
+/// nothing.
 auto hash_value(BruteForceCacheKey const& key) -> std::size_t;
-
-/// Rounds `posterior` to a fixed relative precision (1e-9), for
-/// hash_value()'s own use only -- never for BruteForceCacheKey's
-/// operator==, which compares the exact posterior (see that field's own
-/// doxygen for why). Close enough that two structurally-identical
-/// derivations of the same weight (floating-point noise from a different
-/// evaluation order, say) hash to the same bucket, far enough apart that
-/// two meaningfully different weightings (0.6 vs. 0.61, say) essentially
-/// never collide.
-auto quantize_posterior(Probability posterior) -> std::int64_t;
 
 /// Builds the key for one node: see BruteForceCacheKey's own doxygen.
 /// `state` and `layouts.front()` together supply every position field;

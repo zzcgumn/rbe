@@ -91,21 +91,43 @@ TEST_F(BruteForceCacheTest, EvenNearIdenticalPosteriorsNeverCompareEqual)
     EXPECT_FALSE(key_1 == key_2);
 }
 
-TEST_F(BruteForceCacheTest, NearIdenticalFloatingPosteriorsStillHashToTheSameBucket)
+TEST_F(BruteForceCacheTest, EqualKeysHashEqually)
 {
-    // hash_value() is allowed to quantise where operator== may not: a
-    // hash collision only costs a slower lookup (operator== still
-    // disambiguates), so two structurally-identical derivations of the
-    // same weight (floating-point noise from a different evaluation
-    // order, say) landing in the same bucket is a performance property,
-    // not a correctness one.
+    // The minimum any hash function must uphold: operator== compares
+    // the exact posterior (see EvenNearIdenticalPosteriorsNeverCompareEqual
+    // just above), so hash_value() must hash that same exact value, not
+    // a rounded approximation of it -- an earlier design quantised
+    // posteriors before hashing, aiming to put "near-identical" values
+    // in the same unordered_map bucket, but operator== would still
+    // reject them as unequal once there, so that rounding bought
+    // nothing it claimed to while actively hurting lookups elsewhere
+    // (many small, genuinely distinct posteriors at deep nodes round to
+    // the same quantised value and pile into one bucket).
+    be::ObservationState const state = make_state(North);
+    Deal const a = make_layout(North, be::holding({2}), be::holding({3}));
+
+    be::BruteForceCacheKey const key_1 = be::make_brute_force_cache_key(state, {a}, {0.5});
+    be::BruteForceCacheKey const key_2 = be::make_brute_force_cache_key(state, {a}, {0.5});
+
+    EXPECT_EQ(key_1, key_2);
+    EXPECT_EQ(be::hash_value(key_1), be::hash_value(key_2));
+}
+
+TEST_F(BruteForceCacheTest, NearIdenticalPosteriorsAreNotRequiredToHashToTheSameBucket)
+{
+    // The flip side of EqualKeysHashEqually: two merely-close-but-unequal
+    // posteriors are *not* required to collide into the same bucket
+    // (unlike the old, quantising design) -- hashing the exact bit
+    // pattern, they generally will not, and that is correct: operator==
+    // would reject them as unequal regardless, so sharing a bucket could
+    // only ever cost a wasted comparison, never gain a hit.
     be::ObservationState const state = make_state(North);
     Deal const a = make_layout(North, be::holding({2}), be::holding({3}));
 
     be::BruteForceCacheKey const key_1 = be::make_brute_force_cache_key(state, {a}, {0.5});
     be::BruteForceCacheKey const key_2 = be::make_brute_force_cache_key(state, {a}, {0.5 + 1e-12});
 
-    EXPECT_EQ(be::hash_value(key_1), be::hash_value(key_2));
+    EXPECT_NE(be::hash_value(key_1), be::hash_value(key_2));
 }
 
 TEST_F(BruteForceCacheTest, MeaningfullyDifferentPosteriorsProduceDifferentKeys)
@@ -178,6 +200,32 @@ TEST_F(BruteForceCacheTest, DifferentNonKeyedDefenderHoldingsProduceDifferentKey
 
     be::BruteForceCacheKey const key_1 = be::make_brute_force_cache_key(state, {a}, {1.0});
     be::BruteForceCacheKey const key_2 = be::make_brute_force_cache_key(state, {b}, {1.0});
+
+    EXPECT_FALSE(key_1 == key_2);
+}
+
+TEST_F(BruteForceCacheTest, DifferentRootFirstProducesDifferentKeys)
+{
+    // ObservationState::first -- the seat that led this whole
+    // evaluation's own root's first trick -- is fixed for the entire
+    // recursion (advance_state, expand.cpp, never assigns it) and is not
+    // one of the two fields the opponent-model restriction excludes
+    // (only history/play_record are): a caller-supplied opponent model
+    // may legitimately read and condition on it. key.first tracks a
+    // different fact -- representative.first, the *current* trick's own
+    // leader, which play() updates to the winner every time a trick
+    // resolves -- so two evaluations whose roots began with a different
+    // opening leader, but which later reach "the same" current-trick
+    // shape, must not collide here.
+    be::ObservationState state_a = make_state(North);
+    state_a.first = North;
+    be::ObservationState state_b = make_state(North);
+    state_b.first = East;
+
+    Deal const a = make_layout(North, be::holding({2}), be::holding({3}));
+
+    be::BruteForceCacheKey const key_1 = be::make_brute_force_cache_key(state_a, {a}, {1.0});
+    be::BruteForceCacheKey const key_2 = be::make_brute_force_cache_key(state_b, {a}, {1.0});
 
     EXPECT_FALSE(key_1 == key_2);
 }

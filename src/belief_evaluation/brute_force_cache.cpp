@@ -1,7 +1,7 @@
 #include <belief_evaluation/brute_force_cache.hpp>
 
 #include <algorithm>
-#include <cmath>
+#include <bit>
 
 #include <api/dds_constants.hpp>
 
@@ -21,6 +21,24 @@ namespace
         seed ^= value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
         return seed;
     }
+
+    // The exact bit pattern of posterior, for hash_value() -- equal keys
+    // must hash equally, and operator== compares the exact posterior, so
+    // this is the only representation consistent with it. Canonicalises
+    // -0.0 to +0.0 first: plain `==` (what operator== uses) treats them
+    // as equal, so their hashes must match too, even though their bit
+    // patterns otherwise differ. Validated posteriors are always
+    // strictly positive in practice (ProbabilityNonPositive), so this
+    // guards a corner this module's own invariants should already rule
+    // out, not a path ever expected to be exercised.
+    auto hash_posterior(Probability posterior) -> std::uint64_t
+    {
+        if (posterior == 0.0)
+        {
+            posterior = 0.0;
+        }
+        return std::bit_cast<std::uint64_t>(posterior);
+    }
 }
 
 auto BruteForceCacheKey::operator==(BruteForceCacheKey const& other) const -> bool
@@ -28,6 +46,7 @@ auto BruteForceCacheKey::operator==(BruteForceCacheKey const& other) const -> bo
     return trump == other.trump && declarer == other.declarer
         && tricks_needed == other.tricks_needed
         && tricks_won_by_declarer == other.tricks_won_by_declarer && first == other.first
+        && root_first == other.root_first
         && std::equal(
                std::begin(current_trick_suit), std::end(current_trick_suit),
                std::begin(other.current_trick_suit))
@@ -46,6 +65,7 @@ auto hash_value(BruteForceCacheKey const& key) -> std::size_t
     h = hash_combine(h, static_cast<std::uint64_t>(key.tricks_needed));
     h = hash_combine(h, static_cast<std::uint64_t>(key.tricks_won_by_declarer));
     h = hash_combine(h, static_cast<std::uint64_t>(key.first));
+    h = hash_combine(h, static_cast<std::uint64_t>(key.root_first));
     for (int slot = 0; slot < 3; ++slot)
     {
         h = hash_combine(h, static_cast<std::uint64_t>(key.current_trick_suit[slot]));
@@ -57,15 +77,9 @@ auto hash_value(BruteForceCacheKey const& key) -> std::size_t
     {
         h = hash_combine(h, defender_key);
         h = hash_combine(h, other_defender_key);
-        h = hash_combine(h, static_cast<std::uint64_t>(quantize_posterior(posterior)));
+        h = hash_combine(h, hash_posterior(posterior));
     }
     return static_cast<std::size_t>(h);
-}
-
-auto quantize_posterior(Probability posterior) -> std::int64_t
-{
-    constexpr double Scale = 1e9;
-    return static_cast<std::int64_t>(std::llround(posterior * Scale));
 }
 
 auto make_brute_force_cache_key(
@@ -83,6 +97,7 @@ auto make_brute_force_cache_key(
     key.tricks_needed = state.tricks_needed;
     key.tricks_won_by_declarer = state.tricks_won_by_declarer;
     key.first = representative.first;
+    key.root_first = state.first;
     for (int slot = 0; slot < 3; ++slot)
     {
         key.current_trick_suit[slot] = representative.currentTrickSuit[slot];
