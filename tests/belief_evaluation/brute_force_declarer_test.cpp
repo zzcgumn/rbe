@@ -130,9 +130,14 @@ TEST_F(BruteForceDeclarerTest, ReusingOneInstanceForASecondDeclarerSeatThrows)
     be::BruteForceDeclarer declarer(ctx);
     be::DeclarerStrategy const pi = declarer.as_strategy();
 
+    // Named, outliving the pi.play() call below -- BeliefEntry::layout is
+    // a Deal const&, so a braced temporary passed straight into
+    // make_entries() would dangle the moment make_entries() returns (see
+    // PicksTheCardThatWinsTheTrickOverTheOneThatLosesIt's own comment on
+    // this same hazard).
     be::ObservationState const first_root = make_one_card_root();  // declarer = North
-    std::vector<be::BeliefEntry> const first_entries =
-        make_entries({first_root.known_holdings}, {1.0});
+    std::vector<Deal> const first_layouts = {first_root.known_holdings};
+    std::vector<be::BeliefEntry> const first_entries = make_entries(first_layouts, {1.0});
     pi.play(first_root, be::BeliefView{first_entries, false, first_entries.size()});
 
     // A second root for a *different* declarer seat -- East/West as
@@ -154,7 +159,8 @@ TEST_F(BruteForceDeclarerTest, ReusingOneInstanceForASecondDeclarerSeatThrows)
     second_root.known_holdings = layout;
     second_root.ranks = be::make_rank_map(layout);
 
-    std::vector<be::BeliefEntry> const second_entries = make_entries({layout}, {1.0});
+    std::vector<Deal> const second_layouts = {layout};
+    std::vector<be::BeliefEntry> const second_entries = make_entries(second_layouts, {1.0});
     EXPECT_THROW(
         pi.play(second_root, be::BeliefView{second_entries, false, second_entries.size()}),
         std::logic_error);
