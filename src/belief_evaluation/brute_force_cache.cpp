@@ -25,13 +25,35 @@ namespace
 
 auto BruteForceCacheKey::operator==(BruteForceCacheKey const& other) const -> bool
 {
-    return position_hash == other.position_hash
+    return trump == other.trump && declarer == other.declarer
+        && tricks_needed == other.tricks_needed
+        && tricks_won_by_declarer == other.tricks_won_by_declarer && first == other.first
+        && std::equal(
+               std::begin(current_trick_suit), std::end(current_trick_suit),
+               std::begin(other.current_trick_suit))
+        && std::equal(
+               std::begin(current_trick_rank), std::end(current_trick_rank),
+               std::begin(other.current_trick_rank))
+        && declarer_holding_key == other.declarer_holding_key
+        && dummy_holding_key == other.dummy_holding_key
         && deal_and_quantized_posterior == other.deal_and_quantized_posterior;
 }
 
 auto hash_value(BruteForceCacheKey const& key) -> std::size_t
 {
-    std::uint64_t h = key.position_hash;
+    std::uint64_t h = 0;
+    h = hash_combine(h, static_cast<std::uint64_t>(key.trump));
+    h = hash_combine(h, static_cast<std::uint64_t>(key.declarer));
+    h = hash_combine(h, static_cast<std::uint64_t>(key.tricks_needed));
+    h = hash_combine(h, static_cast<std::uint64_t>(key.tricks_won_by_declarer));
+    h = hash_combine(h, static_cast<std::uint64_t>(key.first));
+    for (int slot = 0; slot < 3; ++slot)
+    {
+        h = hash_combine(h, static_cast<std::uint64_t>(key.current_trick_suit[slot]));
+        h = hash_combine(h, static_cast<std::uint64_t>(key.current_trick_rank[slot]));
+    }
+    h = hash_combine(h, key.declarer_holding_key);
+    h = hash_combine(h, key.dummy_holding_key);
     for (auto const& [deal_hash, quantized] : key.deal_and_quantized_posterior)
     {
         h = hash_combine(h, deal_hash);
@@ -55,30 +77,27 @@ auto make_brute_force_cache_key(
                                                      // the module's own outstanding-pool invariant
     int const dummy = (state.declarer + 2) % DDS_HANDS;
 
-    std::uint64_t position_hash = 0;
-    position_hash = hash_combine(position_hash, static_cast<std::uint64_t>(state.trump));
-    position_hash = hash_combine(position_hash, static_cast<std::uint64_t>(state.declarer));
-    position_hash = hash_combine(position_hash, static_cast<std::uint64_t>(state.tricks_needed));
-    position_hash =
-        hash_combine(position_hash, static_cast<std::uint64_t>(state.tricks_won_by_declarer));
-    position_hash = hash_combine(position_hash, static_cast<std::uint64_t>(representative.first));
+    BruteForceCacheKey key;
+    key.trump = state.trump;
+    key.declarer = state.declarer;
+    key.tricks_needed = state.tricks_needed;
+    key.tricks_won_by_declarer = state.tricks_won_by_declarer;
+    key.first = representative.first;
     for (int slot = 0; slot < 3; ++slot)
     {
-        position_hash =
-            hash_combine(position_hash, static_cast<std::uint64_t>(representative.currentTrickSuit[slot]));
-        position_hash =
-            hash_combine(position_hash, static_cast<std::uint64_t>(representative.currentTrickRank[slot]));
+        key.current_trick_suit[slot] = representative.currentTrickSuit[slot];
+        key.current_trick_rank[slot] = representative.currentTrickRank[slot];
     }
     // Declarer's and dummy's own exact holdings -- not redundant with the
-    // per-layout entries below, which hash only a defender's split. See
+    // per-layout entries below, which key only a defender's split. See
     // BruteForceCacheKey's own doxygen for why this field is required.
-    position_hash = hash_combine(position_hash, layout_key(representative, state.declarer));
-    position_hash = hash_combine(position_hash, layout_key(representative, dummy));
+    key.declarer_holding_key = layout_key(representative, state.declarer);
+    key.dummy_holding_key = layout_key(representative, dummy);
 
     // One defender's seat fixed for this strategy's whole lifetime (the
     // same declarer, hence the same defender pair, throughout) -- its
     // holding fully determines the other defender's by complement, given
-    // the outstanding pool position_hash above already captures via
+    // the outstanding pool the position fields above already capture via
     // declarer's/dummy's holdings. See layout_key()'s own doxygen.
     int const defender_seat = (state.declarer + 1) % DDS_HANDS;
 
@@ -89,8 +108,9 @@ auto make_brute_force_cache_key(
         pairs.emplace_back(layout_key(layouts[i], defender_seat), quantize_posterior(p[i]));
     }
     std::sort(pairs.begin(), pairs.end());
+    key.deal_and_quantized_posterior = std::move(pairs);
 
-    return BruteForceCacheKey{position_hash, std::move(pairs)};
+    return key;
 }
 
 auto BruteForceCache::find(BruteForceCacheKey const& key) const -> std::optional<double>

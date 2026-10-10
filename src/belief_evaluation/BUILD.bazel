@@ -103,6 +103,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":belief_evaluation",
+        "@dds//library/src/api:api_definitions",  # brute_force_cache.hpp's own <api/dds_data_types.hpp>
         "@dds//library/src/api:dds_constants",
     ],
     include_prefix = "belief_evaluation",
@@ -162,6 +163,7 @@ cc_library(
         ":double_dummy_bound",
         ":double_dummy_defender",
         "@dds//library/src:dds",
+        "@dds//library/src/api:dds_constants",  # brute_force_declarer.cpp's own <api/dds_constants.hpp>
         "@dds//library/src/solver_context",
     ],
     include_prefix = "belief_evaluation",

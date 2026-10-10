@@ -120,14 +120,49 @@ auto cutoff_leaf_value(BeliefNode const& node, LayoutBound const& bound, Declare
 /// Redistributing would instead systematically overweight whichever
 /// layouts happen to survive, the wrong direction for a cap whose purpose
 /// is to keep the search from being misled by a too-small sample. Ties
-/// broken by index, for determinism.
+/// broken by each layout's own exact identity (layout_key), not by its
+/// position in `node.layouts` -- so two belief spaces that are pure
+/// permutations of each other keep the same survivors, matching
+/// state_key's/make_brute_force_cache_key's own order-independence rather
+/// than silently depending on the caller's own enumeration order.
 auto drop_lowest_posterior_layouts(BeliefNode const& node, std::uint64_t keep) -> BeliefNode;
+
+/// What search() decides at one node before it would otherwise look up the
+/// cache and branch: either `node` (or its pruned form) is already a leaf,
+/// with `value` set, or it is not, with `continuation` holding what the
+/// rest of search() must branch from.
+struct LeafCheckResult
+{
+    /// Set when this node is a leaf; empty when search() must branch.
+    std::optional<double> value;
+
+    /// What to continue with when `value` is empty: `node` exactly as
+    /// given (nothing needed pruning, or max_layouts is absent), or its
+    /// pruned form. Also populated, to `node` unchanged, when `value` is
+    /// set because the node was terminal -- a caller that only cares about
+    /// `value` can ignore this field in that case.
+    BeliefNode continuation;
+};
+
+/// The leaf decision search() makes for one node, factored out to a free
+/// function search() itself calls -- not a parallel reimplementation of
+/// its ordering -- so a test can exercise the actual production decision
+/// without driving the whole recursion: is_terminal checked first, against
+/// `node` exactly as given (a terminal leaf has no solver cost for
+/// max_layouts to bound, only mass it would lose with nothing gained); only
+/// then, if not terminal, max_layouts pruning, ahead of the depth-cutoff
+/// check (cutoff_leaf_value's own per-layout DoubleDummyBound call is a
+/// real cost worth bounding, unlike the terminal case). See search()'s own
+/// `.cpp` comment for the full reasoning this mirrors.
+auto check_leaf(
+    BeliefNode const& node, int depth, BruteForceOptions const& options, LayoutBound const& bound,
+    DeclarerObjective objective) -> LeafCheckResult;
 
 /// A DeclarerStrategy backed by an exhaustive (or depth/size-bounded)
 /// lookahead search over the belief space, keeping the best legal card
 /// under a fixed DeclarerObjective -- the first lookahead-based (rather
-/// than fixed-rule) declarer strategy in this module. The two caveats
-/// worth being explicit about on this class itself:
+/// than fixed-rule) declarer strategy in this module. The caveats worth
+/// being explicit about on this class itself:
 ///
 /// - **This presumes its own internal opponent model is what the paired
 ///   delta actually is.** Paired with a different delta, evaluate() still
@@ -147,6 +182,22 @@ auto drop_lowest_posterior_layouts(BeliefNode const& node, std::uint64_t keep) -
 ///   opponent model corrupts backed-up values silently, the same way
 ///   mixing SpreadPolicy values would for DoubleDummyDefender's own
 ///   instance-level policy.
+/// - **The opponent model must answer from position alone, never from
+///   `ObservationState::history` or `::play_record`.** `BruteForceCacheKey`
+///   (brute_force_cache.hpp) deliberately omits both -- that omission is
+///   exactly what lets the cache above reuse one node's value across
+///   *different* calls reached by different real play (two different
+///   `play()` calls along one actually-played line routinely differ in
+///   `history`/`play_record` while sharing every field the key does
+///   track). A `DefenderStrategy` is free, by its own contract, to read
+///   `DefenderQuery::state` in full -- `ScriptedDefender` is a real example
+///   that keys its own response off `state.history` -- but supplying one
+///   as this strategy's `opponent_model` breaks the cache's own soundness:
+///   two calls reaching "the same" node by different play could get
+///   different opponent responses conflated under one cached value.
+///   Nothing here enforces this (an arbitrary `std::function` offers no
+///   seam to check), so it is a caller precondition, not a runtime-checked
+///   one, the same way the two caveats above are.
 ///
 /// `ctx` is not owned, and not thread-safe -- the same contract
 /// DoubleDummyDefender already carries; see that class's own doxygen.

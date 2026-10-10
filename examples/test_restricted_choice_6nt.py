@@ -20,7 +20,7 @@
 | 55/84 | the same, vs a defender who always plays its lowest legal card | golden; the mirror image of the always-shows-the-queen figure above, by the same mirror symmetry row 15 already describes -- not a second coincidence, but not numerically equal either, since the two defenders' own "void" play differs along with their second-seat one |
 | 65/126 | cash the king, then read the beliefs, vs a caller-assembled `HeuristicDefender` chain, `randomize_touching_honors=True` | golden; equal to the `DoubleDummyDefender` row above bit for bit, not a coincidence -- with randomisation on, `second_seat_low` detects every genuine touching pair this ending's own second-seat node reaches and defers there to the chain's own fallback spread, which is exactly `DoubleDummyDefender`'s uniform spread over the same solved position |
 | 15/28 | the same, `randomize_touching_honors=False` | golden; **higher**, not equal -- with randomisation off, the same rule always shows the lower card of a touching pair instead, and the belief-reading declarer is measurably able to exploit it |
-| 0.5159 | a `BruteForceDeclarer` capped to `max_layouts=3, max_depth=3`, vs `DoubleDummyDefender` | golden; equal to the plain `DoubleDummyDefender` row above -- not a closed-form fraction but a direct measurement, since this cap's own interaction with this search is exactly the fact being pinned, not a value with independent meaning. An *unbounded* search over this ending's own belief space was separately measured, once, to answer `0.5952` instead -- see `restricted_choice_6nt_belief_space.py`'s own comment at this row for that figure and its cost (104.18s, 1,759,826 calls) |
+| 5/42 | a `BruteForceDeclarer` capped to `max_layouts=3, max_depth=3`, vs `DoubleDummyDefender` | golden; a direct measurement that happens to simplify to a fraction, far from both the plain `DoubleDummyDefender` row above (0.5159) and the unbounded-search figure below (0.5952) -- capped this aggressively, only 3 of 252 layouts survive at every node that needs pruning, and which 3 is essentially arbitrary (tie-broken by each layout's own content when posteriors tie, as they routinely do in an exhaustively-enumerated space, never by a bridge-meaningful preference), so this cap's own interaction with this search has no reason to land near either anchor. An *unbounded* search over this ending's own belief space was separately measured, once, to answer `0.5952` instead -- see `restricted_choice_6nt_belief_space.py`'s own comment at this row for that figure and its cost (104.18s, 1,759,826 calls) |
 
 A belief-space node sharing a South-honour key with another one is not
 itself a bug -- North voiding out of spades entirely reaches the same key
@@ -632,18 +632,25 @@ class TestPMake(unittest.TestCase):
         self.assertAlmostEqual(without_value["p_make"], 15 / 28)
         self.assertGreater(without_value["p_make"], with_value["p_make"])
 
-    def test_the_brute_force_declarer_capped_this_aggressively_matches_double_dummy_defender(
+    def test_the_brute_force_declarer_capped_this_aggressively_lands_far_from_either_anchor(
         self,
     ) -> None:
-        # A direct measurement, not a closed-form fraction: capped to
-        # max_layouts=3, max_depth=3 (so this test runs in a few seconds,
-        # not the ~104s an unbounded search over this ending's own
-        # 252-layout belief space was separately measured to cost -- see
+        # A direct measurement, not a closed-form derivation of its own,
+        # though it simplifies to one (5/42): capped to max_layouts=3,
+        # max_depth=3 (so this test runs in a few seconds, not the ~104s
+        # an unbounded search over this ending's own 252-layout belief
+        # space was separately measured to cost -- see
         # restricted_choice_6nt_belief_space.py's own comment at this
-        # row), the search cannot discriminate the restricted-choice
-        # signal any better than DoubleDummyDefender's own uniform spread
-        # does here -- the two agree exactly, not merely to four decimal
-        # places.
+        # row), only 3 of 252 layouts survive at every node that needs
+        # pruning, and which 3 is essentially arbitrary -- tie-broken by
+        # each layout's own content when posteriors are equal, as they
+        # routinely are in an exhaustively-enumerated space like this
+        # one, never by any bridge-meaningful preference. The result
+        # lands far from both DoubleDummyDefender's own uniform-spread
+        # figure (0.5159) and the unbounded search's own 0.5952 -- this
+        # cap does not merely lose precision, it can land the answer
+        # anywhere, which is exactly what asserting a specific, measured
+        # value here is pinning down.
         sequence = example.restricted_choice_6nt()
         root = sequence.current_deal
         record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
@@ -657,14 +664,8 @@ class TestPMake(unittest.TestCase):
                 ctx, objective=example.bsle.DeclarerObjective.MaximiseProbabilityToMake,
                 opponent_model=defence, max_layouts=3, max_depth=3),
             defence)
-        # The module's own `DoubleDummyDefender` row, recomputed here
-        # rather than pinned as a bare literal -- cash_the_king_then_read_
-        # the_beliefs paired with double_dummy_defender is exactly what
-        # produces main()'s own `0.5159` figure.
-        double_dummy_row_value = example.evaluate(
-            sequence, source, example.cash_the_king_then_read_the_beliefs, defence)
 
-        self.assertAlmostEqual(brute_force_value["p_make"], double_dummy_row_value["p_make"])
+        self.assertAlmostEqual(brute_force_value["p_make"], 5 / 42)
 
 
 class TestTheScriptRuns(unittest.TestCase):

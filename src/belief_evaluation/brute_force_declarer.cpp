@@ -1,9 +1,9 @@
 #include <belief_evaluation/brute_force_declarer.hpp>
 
 #include <algorithm>
-#include <cassert>
 #include <cstring>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -11,6 +11,7 @@
 
 #include <belief_evaluation/expand.hpp>
 #include <belief_evaluation/kahan.hpp>
+#include <belief_evaluation/layout_key.hpp>
 #include <belief_evaluation/trick.hpp>
 
 namespace dds::belief_evaluation
@@ -110,22 +111,34 @@ auto drop_lowest_posterior_layouts(BeliefNode const& node, std::uint64_t keep) -
         return node;
     }
 
+    // One defender's seat fixed for this node's whole lifetime (the same
+    // declarer throughout), used below purely as a stable tie-break
+    // identity -- not the position-identity role layout_key() otherwise
+    // plays in make_brute_force_cache_key.
+    int const defender_seat = (node.state.declarer + 1) % DDS_HANDS;
+
     std::vector<std::size_t> indices(node.layouts.size());
     for (std::size_t i = 0; i < indices.size(); ++i)
     {
         indices[i] = i;
     }
-    // Descending by posterior, ties broken by index -- a total order, so
-    // the kept set is deterministic regardless of the input's own
-    // ordering (mirroring expand_defender_node's own std::map-ordered
-    // iteration elsewhere in this module, for the same reason).
-    std::sort(indices.begin(), indices.end(), [&node](std::size_t a, std::size_t b)
+    // Descending by posterior, ties broken by each layout's own exact
+    // identity (layout_key), not by input index -- a total order over the
+    // *content*, so the kept set is deterministic regardless of the
+    // input's own enumeration order. Breaking ties by index instead would
+    // let two belief spaces that are pure permutations of each other (the
+    // same set of (deal, posterior) pairs, differently ordered -- which
+    // state_key and make_brute_force_cache_key's own sorted key already
+    // treat as identical) retain a different survivor under a tie, and
+    // therefore potentially choose a different card, solely from source
+    // order.
+    std::sort(indices.begin(), indices.end(), [&node, defender_seat](std::size_t a, std::size_t b)
     {
         if (node.p[a] != node.p[b])
         {
             return node.p[a] > node.p[b];
         }
-        return a < b;
+        return layout_key(node.layouts[a], defender_seat) < layout_key(node.layouts[b], defender_seat);
     });
     indices.resize(static_cast<std::size_t>(keep));
 
@@ -146,11 +159,69 @@ auto drop_lowest_posterior_layouts(BeliefNode const& node, std::uint64_t keep) -
     return pruned;
 }
 
+auto check_leaf(
+    BeliefNode const& node, int depth, BruteForceOptions const& options, LayoutBound const& bound,
+    DeclarerObjective objective) -> LeafCheckResult
+{
+    // is_terminal/terminal_leaf_value checked on the *original* node,
+    // before any pruning: there is no solver call here to bound -- a
+    // terminal leaf is already O(1), reading only common knowledge
+    // (tricks_won_by_declarer) plus node_mass over whatever node.p it is
+    // handed -- so pruning first would buy nothing and cost real
+    // accuracy: drop_lowest_posterior_layouts() never redistributes the
+    // dropped layouts' own mass onto the survivors, so a terminal node
+    // reached with more surviving layouts than max_layouts (the common
+    // case for the very first node search() is ever called on, since
+    // play() builds its root and its declarer children directly from the
+    // full, unpruned BeliefView the caller handed in) would otherwise
+    // silently under-count the true probability/expected-tricks value for
+    // no reason connected to what max_layouts actually exists to bound.
+    if (is_terminal(node))
+    {
+        return LeafCheckResult{terminal_leaf_value(node, objective), node};
+    }
+
+    // A node whose own surviving layout count exceeds max_layouts is
+    // pruned down before anything below this point reads node.layouts/p
+    // -- the depth-cutoff check right after, and (back in search()) the
+    // cache key further down. Pruning before the depth-cutoff check in
+    // particular matters: cutoff_leaf_value calls DoubleDummyBound once
+    // per surviving layout, a real solver call, so a cutoff reached before
+    // any ancestor node had a chance to prune (max_depth of 0 or 1, say)
+    // must still see the capped layout set, not the original, possibly
+    // much larger one -- otherwise max_layouts silently stops bounding
+    // exactly the cost it exists to bound. Unlike the terminal case above,
+    // this one does have a real cost to bound, which is exactly why it is
+    // pruned first and the terminal case is not. drop_lowest_posterior_layouts()
+    // returns its argument unchanged when nothing needs dropping, so this
+    // is safe to call unconditionally once max_layouts is set at all.
+    BeliefNode const pruned =
+        options.max_layouts.has_value() ? drop_lowest_posterior_layouts(node, *options.max_layouts) : node;
+
+    if (options.max_depth.has_value() && depth >= *options.max_depth)
+    {
+        return LeafCheckResult{cutoff_leaf_value(pruned, bound, objective), pruned};
+    }
+
+    return LeafCheckResult{std::nullopt, pruned};
+}
+
 BruteForceDeclarer::BruteForceDeclarer(
     SolverContext& ctx, DeclarerObjective objective, DefenderStrategy opponent_model,
     BruteForceOptions options)
 : ctx_(ctx), objective_(objective), options_(options)
 {
+    // max_layouts = 0 means "keep the 0 highest-posterior layouts" --
+    // every non-terminal node search() ever prunes would collapse to zero
+    // layouts, and make_brute_force_cache_key's own layouts.front() would
+    // then read past an empty vector. Rejected here for the same reason
+    // make_root() rejects sample_size == 0 (node.cpp): there is no useful
+    // non-UB meaning for "cap the search to nothing", so this is a caller
+    // mistake to report, not a degenerate case to special-case through.
+    if (options_.max_layouts.has_value() && *options_.max_layouts == 0)
+    {
+        throw std::invalid_argument("BruteForceOptions::max_layouts must not be 0");
+    }
     if (opponent_model)
     {
         opponent_model_ = std::move(opponent_model);
@@ -169,7 +240,21 @@ auto BruteForceDeclarer::bound_for(ObservationState const& state) -> DoubleDummy
         bound_.emplace(ctx_, state.declarer);
         bound_declarer_ = state.declarer;
     }
-    assert(state.declarer == bound_declarer_);
+    // A real runtime check, not assert(): this guards a caller mistake --
+    // reusing one BruteForceDeclarer instance for a second declarer seat,
+    // which this class's own doxygen already documents as unsupported --
+    // and assert() compiles out entirely under NDEBUG (this repo's own
+    // --config=opt), which would silently keep the first declarer's
+    // DoubleDummyBound and compute wrong cutoff values for the second
+    // rather than failing at all.
+    if (state.declarer != bound_declarer_)
+    {
+        throw std::logic_error(
+            "BruteForceDeclarer reused for a second declarer seat ("
+            + std::to_string(state.declarer) + ") after being bound to the first ("
+            + std::to_string(bound_declarer_)
+            + ") -- one instance is for a single declarer seat for its whole lifetime");
+    }
     return *bound_;
 }
 
@@ -181,47 +266,18 @@ auto BruteForceDeclarer::is_declarer_side(ObservationState const& state, int sea
 
 auto BruteForceDeclarer::search(BeliefNode const& node, int depth) -> double
 {
-    // is_terminal/terminal_leaf_value checked on the *original* node,
-    // before any pruning: there is no solver call here to bound -- a
-    // terminal leaf is already O(1), reading only common knowledge
-    // (tricks_won_by_declarer) plus node_mass over whatever node.p it is
-    // handed -- so pruning first would buy nothing and cost real
-    // accuracy: drop_lowest_posterior_layouts() never redistributes the
-    // dropped layouts' own mass onto the survivors, so a terminal node
-    // reached with more surviving layouts than max_layouts (the common
-    // case for the very first node search() is ever called on, since
-    // play() builds its root and its declarer children directly from the
-    // full, unpruned BeliefView the caller handed in) would otherwise
-    // silently under-count the true probability/expected-tricks value for
-    // no reason connected to what max_layouts actually exists to bound.
-    if (is_terminal(node))
+    // The leaf decision (terminal vs. depth-cutoff vs. neither, and in
+    // which order max_layouts pruning applies) is factored into check_leaf
+    // itself -- called here, not reimplemented -- so a test can exercise
+    // this exact production ordering directly. See check_leaf's own
+    // doxygen for the reasoning.
+    LeafCheckResult const leaf =
+        check_leaf(node, depth, options_, bound_for(node.state).as_bound(), objective_);
+    if (leaf.value.has_value())
     {
-        return terminal_leaf_value(node, objective_);
+        return *leaf.value;
     }
-
-    // A node whose own surviving layout count exceeds max_layouts is
-    // pruned down before anything below this point reads node.layouts/p
-    // -- the depth-cutoff check right after, and the cache key further
-    // down. Pruning before the depth-cutoff check in particular matters:
-    // cutoff_leaf_value calls DoubleDummyBound once per surviving layout,
-    // a real solver call, so a cutoff reached before any ancestor node
-    // had a chance to prune (max_depth of 0 or 1, say) must still see the
-    // capped layout set, not the original, possibly much larger one --
-    // otherwise max_layouts silently stops bounding exactly the cost it
-    // exists to bound. Unlike the terminal case above, this one does have
-    // a real cost to bound, which is exactly why it is pruned first and
-    // the terminal case is not. drop_lowest_posterior_layouts() returns
-    // its argument unchanged when nothing needs dropping, so this is safe
-    // to call unconditionally once max_layouts is set at all.
-    BeliefNode const pruned = options_.max_layouts.has_value()
-        ? drop_lowest_posterior_layouts(node, *options_.max_layouts)
-        : node;
-    BeliefNode const& n = pruned;
-
-    if (options_.max_depth.has_value() && depth >= *options_.max_depth)
-    {
-        return cutoff_leaf_value(n, bound_for(n.state).as_bound(), objective_);
-    }
+    BeliefNode const& n = leaf.continuation;
 
     BruteForceCacheKey const key = make_brute_force_cache_key(n.state, n.layouts, n.p);
     if (std::optional<double> const cached = cache_.find(key); cached.has_value())
