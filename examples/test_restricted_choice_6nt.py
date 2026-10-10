@@ -656,14 +656,14 @@ class TestPMake(unittest.TestCase):
         record = example.bsle.PlayRecord(sequence.history, sequence.opening_leader)
         source = example.bsle.ExhaustiveLayoutSource(root, sequence.declarer, example.SEED, record=record)
         ctx = dds3.SolverContext()
-        defence = double_dummy_defender(ctx)
+        defense = double_dummy_defender(ctx)
 
         brute_force_value = example.evaluate(
             sequence, source,
             brute_force_declarer(
                 ctx, objective=example.bsle.DeclarerObjective.MaximizeProbabilityToMake,
-                opponent_model=defence, max_layouts=3, max_depth=3),
-            defence)
+                opponent_model=defense, max_layouts=3, max_depth=3),
+            defense)
 
         self.assertAlmostEqual(brute_force_value["p_make"], 5 / 42)
 

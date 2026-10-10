@@ -498,16 +498,28 @@ is nothing there for the cap to bound, only mass it would otherwise lose
 for no reason.
 
 **The cache `BruteForceDeclarer` owns internally is private to one
-instance, and reused across calls only when `max_depth` is left `None`.**
-With it absent, safe to reuse across any number of `evaluate()` calls that
-instance is used in. With it set, the cutoff it triggers depends on how
-deep *that one call's own* lookahead is, not on anything inherent to the
-position, so each `play()` call starts from a clean cache instead —
-correct, at the cost of cross-call reuse. Never shared across two
-instances built with a different `DeclarerObjective` or a different
-`opponent_model` either way, which would silently corrupt backed-up
-values. Nothing about this cache is visible to, or shared with,
-`evaluate()` itself: the search is entirely private to one `play()` call,
+instance, and safe to share across calls only when `max_depth` is left
+`None`.** With it absent, sharing across any number of `evaluate()` calls
+that instance is used in never returns a wrong value — but an actual hit
+*across two different calls* is rare in practice, not the common case
+"safe to share" might suggest: each call's own root is freshly
+renormalised to sum to 1, while this search's own internal recursion
+never renormalises a descendant, so a node several plies into one call's
+own exploration is generally scaled differently from the same position
+reached afresh by a later call. A hit across calls only survives a chain
+of probability-1 choices on both sides — not the genuinely uncertain,
+multi-layout belief space this cache exists to help. Reuse *within* one
+call's own internal recursion (a transposition reached by two different
+move orders in the same lookahead) is unaffected. With `max_depth` set,
+the cutoff it triggers depends on how deep *that one call's own*
+lookahead is, not on anything inherent to the position, so each `play()`
+call starts from a clean cache instead — correct, and, given how rarely
+cross-call reuse fires anyway, a smaller cost than it first appears.
+Never shared across two instances built with a different
+`DeclarerObjective` or a different `opponent_model` either way, which
+would silently corrupt backed-up values. Nothing about this cache is
+visible to, or shared with, `evaluate()` itself: the search is entirely
+private to one `play()` call,
 and `evaluate()` has no idea a lookahead happened inside it at all.
 
 **A `SolverContext` is not thread-safe** (its own C++ contract: one

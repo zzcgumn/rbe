@@ -3,8 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <tuple>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include <api/dds_data_types.hpp>
@@ -63,23 +63,42 @@ struct BruteForceCacheKey
     std::uint64_t declarer_holding_key = 0;
     std::uint64_t dummy_holding_key = 0;
 
-    /// One (deal hash, exact posterior) pair per surviving layout, sorted
-    /// by deal hash so that two equal sets built in different insertion
-    /// order produce an identical key (order independence). The posterior
-    /// is stored and compared *exactly* -- `std::vector`'s elementwise
-    /// `==` on this vector therefore requires bit-identical doubles, never
-    /// a quantised approximation. An exhaustive search's own leaf values
-    /// (terminal_leaf_value, cutoff_leaf_value) read every `node.p[i]`
-    /// exactly, so two posterior vectors that are merely *close* -- not
-    /// equal -- can legitimately produce different results; treating them
-    /// as the same cache key would return the wrong value for one of
-    /// them, which is a correctness bug a cache must never cause, not a
-    /// precision trade-off it is allowed to make. hash_value() below is
-    /// free to quantise when combining this same field into one hash
-    /// value, because a hash collision only costs a slower lookup
-    /// (operator== still disambiguates), while an equality collision
-    /// would silently hand back the wrong cached value.
-    std::vector<std::pair<std::uint64_t, Probability>> deal_and_posterior;
+    /// One (defender_seat's own holding, the *other* defender's own
+    /// holding, exact posterior) triple per surviving layout, sorted so
+    /// that two equal sets built in different insertion order produce an
+    /// identical key (order independence). Both defenders' holdings are
+    /// required, not just defender_seat's: layout_key()'s own doxygen is
+    /// explicit that its packing is "unique only among layouts that
+    /// share a node's outstanding-card pool... not a cross-node or
+    /// global layout identity" -- within one node, defender_seat's own
+    /// holding and declarer's/dummy's (above) do determine the other
+    /// defender's by complement, but that complement relies on *this
+    /// node's own* outstanding pool, which is nowhere else recorded in
+    /// this key. Two unrelated searches (or two unrelated layouts handed
+    /// to this same function independently) can agree on declarer's,
+    /// dummy's and defender_seat's own holdings while the other
+    /// defender's own cards genuinely differ -- reachable in practice
+    /// whenever that other defender had an earlier, equally-legal choice
+    /// of which card to part with -- and without this field, those are
+    /// silently treated as the same node. See
+    /// `DifferentNonKeyedDefenderHoldingsProduceDifferentKeys` in
+    /// brute_force_cache_test.cpp.
+    ///
+    /// The posterior is stored and compared *exactly* -- `std::vector`'s
+    /// elementwise `==` on this vector therefore requires bit-identical
+    /// doubles, never a quantised approximation. An exhaustive search's
+    /// own leaf values (terminal_leaf_value, cutoff_leaf_value) read
+    /// every `node.p[i]` exactly, so two posterior vectors that are
+    /// merely *close* -- not equal -- can legitimately produce different
+    /// results; treating them as the same cache key would return the
+    /// wrong value for one of them, which is a correctness bug a cache
+    /// must never cause, not a precision trade-off it is allowed to
+    /// make. hash_value() below is free to quantise when combining this
+    /// same field into one hash value, because a hash collision only
+    /// costs a slower lookup (operator== still disambiguates), while an
+    /// equality collision would silently hand back the wrong cached
+    /// value.
+    std::vector<std::tuple<std::uint64_t, std::uint64_t, Probability>> deal_and_posterior;
 
     auto operator==(BruteForceCacheKey const& other) const -> bool;
 };
@@ -121,6 +140,29 @@ auto make_brute_force_cache_key(
 /// `specs/replenished-belief-evaluation.md`'s own `BruteForceDeclarer`
 /// entry under "Key entry points" for "DeclarerObjective and what is
 /// locked per instance".
+///
+/// Sharing across calls is sound -- a cache hit never returns a wrong
+/// value -- but a hit *across two different real `play()` calls* is rare
+/// in practice, not the common case this sharing might suggest.
+/// `make_belief_view` (belief_view.cpp) renormalises every fresh call's
+/// own root so its `p` sums to 1, but this search's own internal
+/// recursion never renormalises a descendant (`expand.cpp`'s own
+/// `p_i' = p_i * delta(...)`, nothing else) -- so a node several plies
+/// into one call's own internal exploration generally carries a mass
+/// below 1 relative to *that* call's root, while a later call reaching
+/// "the same" position afresh always starts from a renormalised 1 again.
+/// `BruteForceCacheKey` compares the exact posterior (by design -- see
+/// its own doxygen), so these two differently-scaled views of the same
+/// position produce different keys and simply miss each other. A hit
+/// across calls only survives when every choice on the path held
+/// probability exactly 1 on both sides (a forced sequence, or a single-
+/// layout belief with a deterministic opponent model) -- precisely the
+/// cases a genuinely uncertain, multi-layout belief space (the
+/// restricted-choice case this cache exists to help) does not produce.
+/// Reuse *within* one call's own internal recursion (a transposition
+/// reached by two different move orders inside the same `play()` call)
+/// is unaffected by any of this, since every node there is scaled
+/// relative to the same, single root throughout.
 class BruteForceCache
 {
 public:

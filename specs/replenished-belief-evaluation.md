@@ -854,11 +854,16 @@ rename or include-ordering trick anywhere in the module.
   is still, from `evaluate()`'s own point of view, one ordinary
   `DeclarerStrategy`: the search is entirely private to `play()`'s own
   call, with its own instance-owned cache (safe to share across this one
-  instance's own calls only when `max_depth` is absent — with it set, the
-  cutoff it triggers depends on call-relative recursion depth, not on
-  anything inherent to the position, so each call starts from a clean
-  cache instead; never shared across two differently-configured instances
-  either way), and `evaluate()` itself
+  instance's own calls only when `max_depth` is absent, though an actual
+  hit *across* two different calls is rare in practice — each call's own
+  root is freshly renormalised to sum to 1, while this search's own
+  internal recursion never renormalises a descendant, so a hit across
+  calls survives only a chain of probability-1 choices on both sides;
+  reuse *within* one call's own internal recursion is unaffected — with
+  `max_depth` set, the cutoff it triggers depends on call-relative
+  recursion depth, not on anything inherent to the position, so each call
+  starts from a clean cache instead; never shared across two
+  differently-configured instances either way), and `evaluate()` itself
   neither knows nor cares that a lookahead happened inside it. Its result
   is only a faithful stand-in for "the double-dummy-optimal declarer"
   when the paired `delta` matches its own internal `opponent_model`;

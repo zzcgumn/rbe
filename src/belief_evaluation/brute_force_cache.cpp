@@ -53,9 +53,10 @@ auto hash_value(BruteForceCacheKey const& key) -> std::size_t
     }
     h = hash_combine(h, key.declarer_holding_key);
     h = hash_combine(h, key.dummy_holding_key);
-    for (auto const& [deal_hash, posterior] : key.deal_and_posterior)
+    for (auto const& [defender_key, other_defender_key, posterior] : key.deal_and_posterior)
     {
-        h = hash_combine(h, deal_hash);
+        h = hash_combine(h, defender_key);
+        h = hash_combine(h, other_defender_key);
         h = hash_combine(h, static_cast<std::uint64_t>(quantize_posterior(posterior)));
     }
     return static_cast<std::size_t>(h);
@@ -94,20 +95,24 @@ auto make_brute_force_cache_key(
     key.dummy_holding_key = layout_key(representative, dummy);
 
     // One defender's seat fixed for this strategy's whole lifetime (the
-    // same declarer, hence the same defender pair, throughout) -- its
-    // holding fully determines the other defender's by complement, given
-    // the outstanding pool the position fields above already capture via
-    // declarer's/dummy's holdings. See layout_key()'s own doxygen.
+    // same declarer, hence the same defender pair, throughout). Both
+    // defenders' own holdings are packed below, exactly, per layout --
+    // layout_key()'s own complement argument ("one defender's holding
+    // determines the other's") holds only within one node's own shared
+    // outstanding pool, never across two keys built independently (see
+    // BruteForceCacheKey::deal_and_posterior's own doxygen).
     int const defender_seat = (state.declarer + 1) % DDS_HANDS;
+    int const other_defender_seat = (state.declarer + 3) % DDS_HANDS;
 
-    std::vector<std::pair<std::uint64_t, Probability>> pairs;
-    pairs.reserve(layouts.size());
+    std::vector<std::tuple<std::uint64_t, std::uint64_t, Probability>> entries;
+    entries.reserve(layouts.size());
     for (std::size_t i = 0; i < layouts.size(); ++i)
     {
-        pairs.emplace_back(layout_key(layouts[i], defender_seat), p[i]);
+        entries.emplace_back(
+            layout_key(layouts[i], defender_seat), layout_key(layouts[i], other_defender_seat), p[i]);
     }
-    std::sort(pairs.begin(), pairs.end());
-    key.deal_and_posterior = std::move(pairs);
+    std::sort(entries.begin(), entries.end());
+    key.deal_and_posterior = std::move(entries);
 
     return key;
 }

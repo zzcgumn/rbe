@@ -160,6 +160,28 @@ TEST_F(BruteForceCacheTest, DifferentDeclarerHoldingsAtTheSamePlyProduceDifferen
     EXPECT_FALSE(key_1 == key_2);
 }
 
+TEST_F(BruteForceCacheTest, DifferentNonKeyedDefenderHoldingsProduceDifferentKeys)
+{
+    // deal_and_posterior packs *both* defenders' own holdings per
+    // layout, not just defender_seat's (East, here) -- layout_key()'s
+    // own doxygen is explicit that its packing is "unique only among
+    // layouts that share a node's outstanding-card pool... not a
+    // cross-node or global layout identity": within make_layout's own
+    // fixed declarer/dummy holdings (Nine/Eight) and a fixed East
+    // holding, West's own holding is exactly the rest of the pool for
+    // *that one node* -- but two one-layout keys built independently,
+    // as here, are not "one node", so West's own holding must be
+    // compared directly, not inferred by complement.
+    be::ObservationState const state = make_state(North);
+    Deal const a = make_layout(North, be::holding({2}), be::holding({3}));  // West holds Three
+    Deal const b = make_layout(North, be::holding({2}), be::holding({4}));  // West holds Four instead
+
+    be::BruteForceCacheKey const key_1 = be::make_brute_force_cache_key(state, {a}, {1.0});
+    be::BruteForceCacheKey const key_2 = be::make_brute_force_cache_key(state, {b}, {1.0});
+
+    EXPECT_FALSE(key_1 == key_2);
+}
+
 TEST_F(BruteForceCacheTest, RoundTripsThroughFindAndInsert)
 {
     be::BruteForceCache cache;

@@ -66,14 +66,15 @@ namespace
     auto serialize_key(BruteForceCacheKey const& key) -> StateKey
     {
         std::string bytes;
-        bytes.reserve(key.deal_and_posterior.size() * 16);
+        bytes.reserve(key.deal_and_posterior.size() * 24);
         auto const append = [&bytes](auto const& value)
         {
             bytes.append(reinterpret_cast<char const*>(&value), sizeof(value));
         };
-        for (auto const& [deal_hash, posterior] : key.deal_and_posterior)
+        for (auto const& [defender_key, other_defender_key, posterior] : key.deal_and_posterior)
         {
-            append(deal_hash);
+            append(defender_key);
+            append(other_defender_key);
             append(posterior);
         }
         return bytes;
@@ -354,9 +355,29 @@ auto BruteForceDeclarer::as_strategy() -> DeclarerStrategy
             cache_ = BruteForceCache{};
         }
         BeliefNode const root = make_internal_root(state, view);
-        int const seat = seat_on_play(root.state.known_holdings);
-        std::vector<Card> const cards = enumerate_legal_cards(root.state.known_holdings, seat);
-        std::vector<BeliefNode> const children = make_declarer_children(root, cards);
+        // Pruned here, before make_declarer_children, for the same reason
+        // check_leaf() prunes before expanding every other declarer node
+        // in this search: without it, this one call -- the only node
+        // search() itself never sees, since play() builds and branches
+        // over the root's own children directly -- would copy and
+        // transform every surviving layout once per legal card
+        // regardless of max_layouts, doing the full O(layouts * legal
+        // cards) work this option exists to bound before the cap ever
+        // applies. Safe to prune the root itself, unlike check_leaf's own
+        // node, which prunes only after ruling out a terminal leaf: play()
+        // never evaluates the root's own terminal-ness (it always branches
+        // over at least one legal card), so there is no leaf-ordering
+        // concern here to preserve. Declarer's own card choice changes
+        // neither a layout's posterior nor its tie-break key
+        // (layout_key() over the *other* seats' holdings, untouched by
+        // this seat's play), so pruning once here, before any card is
+        // chosen, keeps exactly the same survivors drop_lowest_posterior_
+        // layouts would keep if applied separately to each child.
+        BeliefNode const pruned_root =
+            options_.max_layouts.has_value() ? drop_lowest_posterior_layouts(root, *options_.max_layouts) : root;
+        int const seat = seat_on_play(pruned_root.state.known_holdings);
+        std::vector<Card> const cards = enumerate_legal_cards(pruned_root.state.known_holdings, seat);
+        std::vector<BeliefNode> const children = make_declarer_children(pruned_root, cards);
 
         double best_value = -std::numeric_limits<double>::infinity();
         Card best_card = cards.front();
