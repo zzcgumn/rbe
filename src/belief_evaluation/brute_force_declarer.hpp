@@ -25,8 +25,8 @@ namespace dds::belief_evaluation
 /// instance-level policy.
 enum class DeclarerObjective
 {
-    MaximiseExpectedTricks,
-    MaximiseProbabilityToMake,
+    MaximizeExpectedTricks,
+    MaximizeProbabilityToMake,
 };
 
 /// Escape valves for a belief space or a remaining play too large to
@@ -88,9 +88,9 @@ struct BruteForceOpponentModelError : std::exception
 };
 
 /// The node's value when `is_terminal(node)` already holds: `terminal_value()`
-/// reused verbatim for `MaximiseProbabilityToMake` (made/not-made is
+/// reused verbatim for `MaximizeProbabilityToMake` (made/not-made is
 /// already what that function answers), and the node's own mass-weighted
-/// trick count for `MaximiseExpectedTricks` -- `tricks_won_by_declarer` is
+/// trick count for `MaximizeExpectedTricks` -- `tricks_won_by_declarer` is
 /// common knowledge at a genuine terminal node (nothing is left to play),
 /// so no per-layout loop is needed here, unlike cutoff_leaf_value below.
 ///
@@ -209,8 +209,24 @@ public:
     /// case, with no need for a caller who wants it to construct one
     /// themselves.
     explicit BruteForceDeclarer(
-        SolverContext& ctx, DeclarerObjective objective = DeclarerObjective::MaximiseExpectedTricks,
+        SolverContext& ctx, DeclarerObjective objective = DeclarerObjective::MaximizeExpectedTricks,
         DefenderStrategy opponent_model = nullptr, BruteForceOptions options = {});
+
+    /// Deleted rather than left to the implicit default: when no
+    /// `opponent_model` is supplied, `opponent_model_` is a lambda
+    /// (`DoubleDummyDefender::as_strategy()`) that captures `this` as the
+    /// address of *this instance's own* `default_opponent_` member. A
+    /// copy or move would duplicate or relocate `default_opponent_` but
+    /// leave `opponent_model_` still bound to the original's address --
+    /// the destination would silently call back into the source (or, once
+    /// the source is destroyed, into freed memory) instead of its own
+    /// defender. Nothing about this class needs copying or moving --
+    /// every caller constructs one in place and calls `as_strategy()` on
+    /// it -- so deleting is the whole fix, not a stand-in for a real one.
+    BruteForceDeclarer(BruteForceDeclarer const&) = delete;
+    auto operator=(BruteForceDeclarer const&) -> BruteForceDeclarer& = delete;
+    BruteForceDeclarer(BruteForceDeclarer&&) = delete;
+    auto operator=(BruteForceDeclarer&&) -> BruteForceDeclarer& = delete;
 
     /// The returned DeclarerStrategy captures `this` and must not outlive
     /// this BruteForceDeclarer -- the same contract
@@ -232,10 +248,11 @@ private:
     /// (make_declarer_children, one call, every child), every surviving
     /// layout's own opponent_model_ response grouped and summed at a
     /// defender node (expand_defender_node) -- and the result stored back
-    /// in the cache before returning. See brute_force_strategy.md's own
-    /// "Correctness" section and this header's class doxygen for why a
-    /// plain sum/max needs no normalisation step given this class's own
-    /// root-construction convention (kappa = 1, p = posterior).
+    /// in the cache before returning. See this header's own class doxygen,
+    /// and `specs/replenished-belief-evaluation.md`'s `BruteForceDeclarer`
+    /// entry under "Key entry points", for why a plain sum/max needs no
+    /// normalisation step given this class's own root-construction
+    /// convention (kappa = 1, p = posterior).
     auto search(BeliefNode const& node, int depth) -> double;
 
     /// True when `seat` is declarer or dummy -- the same two-line check

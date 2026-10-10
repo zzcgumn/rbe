@@ -840,15 +840,25 @@ rename or include-ordering trick anywhere in the module.
   `DeclarerObjective` (expected tricks, or probability to make); at a
   defender node it groups and sums each surviving layout's own response
   from a caller-supplied internal `opponent_model` (defaulting to an
-  owned `DoubleDummyDefender`). The first strategy here that searches
-  rather than follows a fixed rule — but it is still, from `evaluate()`'s
-  own point of view, one ordinary `DeclarerStrategy`: the search is
-  entirely private to `play()`'s own call, with its own externally-owned
-  cache (safe to share across this one instance's own calls only when
-  `max_depth` is absent — with it set, the cutoff it triggers depends on
-  call-relative recursion depth, not on anything inherent to the position,
-  so each call starts from a clean cache instead; never shared across
-  two differently-configured instances either way), and `evaluate()` itself
+  owned `DoubleDummyDefender`). **A caller-supplied `opponent_model` must
+  answer from position alone, never from `ObservationState::history` or
+  `::play_record`**, even though `DefenderQuery::state` exposes both in
+  full and a legitimate `DefenderStrategy` such as `ScriptedDefender` may
+  read them: the internal cache's own key (`BruteForceCacheKey`)
+  deliberately omits both fields, which is exactly what lets two
+  different `play()` calls along one actually-played line share a cached
+  node value, and is only sound when the opponent model cannot tell those
+  two calls apart. This is a caller precondition, not a runtime-checked
+  one — see `brute_force_declarer.hpp`'s own class doxygen. The first
+  strategy here that searches rather than follows a fixed rule — but it
+  is still, from `evaluate()`'s own point of view, one ordinary
+  `DeclarerStrategy`: the search is entirely private to `play()`'s own
+  call, with its own instance-owned cache (safe to share across this one
+  instance's own calls only when `max_depth` is absent — with it set, the
+  cutoff it triggers depends on call-relative recursion depth, not on
+  anything inherent to the position, so each call starts from a clean
+  cache instead; never shared across two differently-configured instances
+  either way), and `evaluate()` itself
   neither knows nor cares that a lookahead happened inside it. Its result
   is only a faithful stand-in for "the double-dummy-optimal declarer"
   when the paired `delta` matches its own internal `opponent_model`;
@@ -895,7 +905,7 @@ rename or include-ordering trick anywhere in the module.
   style approximation.
 - No expected-tricks variant — only the probability of making a target number
   of tricks is in scope, at the evaluator level. `BruteForceDeclarer`'s own
-  `DeclarerObjective::MaximiseExpectedTricks` is an internal objective its own
+  `DeclarerObjective::MaximizeExpectedTricks` is an internal objective its own
   search maximises when choosing a card; `evaluate()`'s own `p_make` is still
   always a probability regardless of which objective the strategy it was
   given happens to use internally.

@@ -2136,8 +2136,8 @@ auto register_solver_seam_bindings(py::module_& module) -> void
         "parameter -- mixing objectives within one shared cache corrupts\n"
         "backed-up values the same way mixing SpreadPolicy values would for\n"
         "DoubleDummyDefender's own instance-level policy.")
-        .value("MaximiseExpectedTricks", be::DeclarerObjective::MaximiseExpectedTricks)
-        .value("MaximiseProbabilityToMake", be::DeclarerObjective::MaximiseProbabilityToMake);
+        .value("MaximizeExpectedTricks", be::DeclarerObjective::MaximizeExpectedTricks)
+        .value("MaximizeProbabilityToMake", be::DeclarerObjective::MaximizeProbabilityToMake);
 
     py::class_<PyBruteForceDeclarer>(
         module,
@@ -2167,7 +2167,7 @@ auto register_solver_seam_bindings(py::module_& module) -> void
             py::init<
                 SolverContext&, be::DeclarerObjective, std::optional<py::function> const&,
                 std::optional<int>, std::optional<std::uint64_t>>(),
-            py::arg("ctx"), py::arg("objective") = be::DeclarerObjective::MaximiseExpectedTricks,
+            py::arg("ctx"), py::arg("objective") = be::DeclarerObjective::MaximizeExpectedTricks,
             py::arg("opponent_model") = py::none(), py::arg("max_depth") = py::none(),
             py::arg("max_layouts") = py::none(), py::keep_alive<1, 2>())
         .def("__call__", &PyBruteForceDeclarer::call, py::arg("state"), py::arg("view"));

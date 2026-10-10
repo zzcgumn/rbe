@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 #include <api/dds_constants.hpp>
@@ -100,7 +101,7 @@ TEST_F(BruteForceDeclarerTest, ConstructionAcceptsACallerSuppliedOpponentModel)
     };
     SolverContext ctx;
     EXPECT_NO_THROW(
-        be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximiseExpectedTricks, spy));
+        be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximizeExpectedTricks, spy));
 }
 
 TEST_F(BruteForceDeclarerTest, ConstructionRejectsZeroMaxLayouts)
@@ -114,8 +115,39 @@ TEST_F(BruteForceDeclarerTest, ConstructionRejectsZeroMaxLayouts)
     be::BruteForceOptions options{};
     options.max_layouts = 0;
     EXPECT_THROW(
-        be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximiseExpectedTricks, nullptr, options),
+        be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximizeExpectedTricks, nullptr, options),
         std::invalid_argument);
+}
+
+TEST_F(BruteForceDeclarerTest, ConstructionRejectsNegativeMaxDepth)
+{
+    // max_depth is a ply count from 1 (as_strategy()'s own play lambda),
+    // so a negative value is not a smaller-but-valid budget -- it is
+    // check_leaf's own `depth >= *max_depth` test firing on the very
+    // first node for every negative value alike, silently behaving as an
+    // immediate cutoff rather than reporting the caller's mistake.
+    SolverContext ctx;
+    be::BruteForceOptions options{};
+    options.max_depth = -1;
+    EXPECT_THROW(
+        be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximizeExpectedTricks, nullptr, options),
+        std::invalid_argument);
+}
+
+TEST_F(BruteForceDeclarerTest, IsNeitherCopyableNorMovable)
+{
+    // The default opponent model's lambda (DoubleDummyDefender::as_strategy())
+    // captures `this` as the address of *this instance's own*
+    // `default_opponent_` member -- a copy or move would duplicate or
+    // relocate that member but leave `opponent_model_` still bound to the
+    // original's address. Checked at compile time: there is no runtime
+    // symptom to EXPECT_THROW against, the bug is the callback silently
+    // calling back into the wrong (or, once the source is destroyed,
+    // freed) object.
+    static_assert(! std::is_copy_constructible_v<be::BruteForceDeclarer>);
+    static_assert(! std::is_copy_assignable_v<be::BruteForceDeclarer>);
+    static_assert(! std::is_move_constructible_v<be::BruteForceDeclarer>);
+    static_assert(! std::is_move_assignable_v<be::BruteForceDeclarer>);
 }
 
 TEST_F(BruteForceDeclarerTest, ReusingOneInstanceForASecondDeclarerSeatThrows)
@@ -241,7 +273,7 @@ TEST_F(BruteForceDeclarerTest, TerminalLeafUsesMassDirectlyForProbabilityToMake)
     node.state.tricks_won_by_declarer = 2;  // made, in every layout -- common knowledge at a terminal node
 
     EXPECT_DOUBLE_EQ(
-        be::terminal_leaf_value(node, be::DeclarerObjective::MaximiseProbabilityToMake), 1.0);
+        be::terminal_leaf_value(node, be::DeclarerObjective::MaximizeProbabilityToMake), 1.0);
 }
 
 TEST_F(BruteForceDeclarerTest, TerminalLeafGivesTrickCountForExpectedTricks)
@@ -252,7 +284,7 @@ TEST_F(BruteForceDeclarerTest, TerminalLeafGivesTrickCountForExpectedTricks)
     node.state.tricks_won_by_declarer = 5;
 
     EXPECT_DOUBLE_EQ(
-        be::terminal_leaf_value(node, be::DeclarerObjective::MaximiseExpectedTricks), 5.0);
+        be::terminal_leaf_value(node, be::DeclarerObjective::MaximizeExpectedTricks), 5.0);
 }
 
 TEST_F(BruteForceDeclarerTest, CutoffLeafUsesPerLayoutBoundsNotANodeWideNumber)
@@ -327,14 +359,14 @@ TEST_F(BruteForceDeclarerTest, CutoffLeafUsesPerLayoutBoundsNotANodeWideNumber)
 
     double const expected_expected_tricks = 0.4 * (0 + bound_a) + 0.6 * (0 + bound_b);
     EXPECT_DOUBLE_EQ(
-        be::cutoff_leaf_value(node, bound.as_bound(), be::DeclarerObjective::MaximiseExpectedTricks),
+        be::cutoff_leaf_value(node, bound.as_bound(), be::DeclarerObjective::MaximizeExpectedTricks),
         expected_expected_tricks);
 
     double const expected_p_make =
         0.4 * ((0 + bound_a) >= node.state.tricks_needed ? 1.0 : 0.0)
         + 0.6 * ((0 + bound_b) >= node.state.tricks_needed ? 1.0 : 0.0);
     EXPECT_DOUBLE_EQ(
-        be::cutoff_leaf_value(node, bound.as_bound(), be::DeclarerObjective::MaximiseProbabilityToMake),
+        be::cutoff_leaf_value(node, bound.as_bound(), be::DeclarerObjective::MaximizeProbabilityToMake),
         expected_p_make);
 }
 
@@ -400,7 +432,7 @@ TEST_F(BruteForceDeclarerTest, PicksTheCardThatWinsTheTrickOverTheOneThatLosesIt
 
     SolverContext ctx;
     be::BruteForceDeclarer declarer(
-        ctx, be::DeclarerObjective::MaximiseProbabilityToMake, be::single_card_defender);
+        ctx, be::DeclarerObjective::MaximizeProbabilityToMake, be::single_card_defender);
     be::DeclarerStrategy const pi = declarer.as_strategy();
 
     be::Card const chosen = pi.play(state, be::BeliefView{entries, false, entries.size()});
@@ -482,7 +514,7 @@ TEST_F(BruteForceDeclarerTest, ACacheHitSkipsRecomputingASubtreeReachedByTranspo
     };
 
     SolverContext ctx;
-    be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximiseExpectedTricks, spy);
+    be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximizeExpectedTricks, spy);
     be::DeclarerStrategy const pi = declarer.as_strategy();
 
     pi.play(state, be::BeliefView{entries, false, entries.size()});
@@ -525,7 +557,7 @@ TEST_F(BruteForceDeclarerTest, AMalformedOpponentModelThrowsRatherThanMiscomputi
     };
 
     SolverContext ctx;
-    be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximiseExpectedTricks, broken);
+    be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximizeExpectedTricks, broken);
     be::DeclarerStrategy const pi = declarer.as_strategy();
 
     try
@@ -674,7 +706,7 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsAbsentChangesNothing)
 
     SolverContext ctx;
     be::BruteForceDeclarer declarer(
-        ctx, be::DeclarerObjective::MaximiseProbabilityToMake, be::single_card_defender);
+        ctx, be::DeclarerObjective::MaximizeProbabilityToMake, be::single_card_defender);
     be::DeclarerStrategy const pi = declarer.as_strategy();
 
     be::Card const chosen = pi.play(state, be::BeliefView{entries, false, entries.size()});
@@ -728,7 +760,7 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsCapsHowManyLayoutsTheOpponentModelIsQue
     be::BruteForceOptions options{};
     options.max_layouts = 1;
     SolverContext ctx;
-    be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximiseProbabilityToMake, spy, options);
+    be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximizeProbabilityToMake, spy, options);
     be::DeclarerStrategy const pi = declarer.as_strategy();
 
     pi.play(state, be::BeliefView{entries, false, entries.size()});
@@ -771,7 +803,7 @@ TEST_F(BruteForceDeclarerTest, EndToEndMatchesDoubleDummyBoundsOwnCeiling)
     SolverContext ctx;
     be::DoubleDummyDefender dd(ctx);
     be::BruteForceDeclarer brute_force(
-        ctx, be::DeclarerObjective::MaximiseProbabilityToMake, dd.as_strategy());
+        ctx, be::DeclarerObjective::MaximizeProbabilityToMake, dd.as_strategy());
 
     be::DoubleDummyBound bound(ctx, North);
     int const true_ceiling = bound.as_bound()(layout);
@@ -871,7 +903,7 @@ TEST_F(BruteForceDeclarerTest, MaxDepthDoesNotCarryTheCacheAcrossSeparatePlayCal
     options.max_depth = 5;  // cuts off at trick 2's East response -- see the fixture's own
                              // sibling test for the exact depth-by-depth layout
     SolverContext ctx;
-    be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximiseExpectedTricks, spy, options);
+    be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximizeExpectedTricks, spy, options);
     be::DeclarerStrategy const pi = declarer.as_strategy();
 
     call_count = 0;
@@ -971,7 +1003,7 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsMustBeAppliedBeforeCutoffLeafValueNotAf
     options.max_layouts = 1;
 
     be::LeafCheckResult const result = be::check_leaf(
-        node, /*depth=*/1, options, bound.as_bound(), be::DeclarerObjective::MaximiseExpectedTricks);
+        node, /*depth=*/1, options, bound.as_bound(), be::DeclarerObjective::MaximizeExpectedTricks);
 
     ASSERT_TRUE(result.value.has_value()) << "depth 1 >= max_depth 1 must select the cutoff leaf";
     EXPECT_DOUBLE_EQ(*result.value, 0.0);  // only the well-formed layout's own mass contributes
@@ -987,7 +1019,7 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsMustBeAppliedBeforeCutoffLeafValueNotAf
     // itself a check on check_leaf()'s own ordering, which the assertion
     // above already is.)
     double const wrong_order_value = be::cutoff_leaf_value(
-        node, bound.as_bound(), be::DeclarerObjective::MaximiseExpectedTricks);
+        node, bound.as_bound(), be::DeclarerObjective::MaximizeExpectedTricks);
     EXPECT_NEAR(wrong_order_value, 1.4, 1e-9);
     EXPECT_GT(wrong_order_value, 1.0);
 }
@@ -1034,16 +1066,16 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsMustNotBeAppliedBeforeATerminalLeaf)
 
     // check_leaf() itself, called the exact way search() calls it: both
     // layouts' mass counts, 0.9 + 0.1 = 1.0 of kappa, so
-    // MaximiseProbabilityToMake's own node_mass is 1.0 and
-    // MaximiseExpectedTricks's own mass-weighted trick count is
+    // MaximizeProbabilityToMake's own node_mass is 1.0 and
+    // MaximizeExpectedTricks's own mass-weighted trick count is
     // 1.0 * 3 = 3.0 -- neither pruned down to just the 0.9 survivor.
     be::LeafCheckResult const p_make_result =
-        be::check_leaf(node, /*depth=*/1, options, unused_bound, be::DeclarerObjective::MaximiseProbabilityToMake);
+        be::check_leaf(node, /*depth=*/1, options, unused_bound, be::DeclarerObjective::MaximizeProbabilityToMake);
     ASSERT_TRUE(p_make_result.value.has_value()) << "a terminal node must always select the terminal leaf";
     EXPECT_DOUBLE_EQ(*p_make_result.value, 1.0);
 
     be::LeafCheckResult const expected_tricks_result = be::check_leaf(
-        node, /*depth=*/1, options, unused_bound, be::DeclarerObjective::MaximiseExpectedTricks);
+        node, /*depth=*/1, options, unused_bound, be::DeclarerObjective::MaximizeExpectedTricks);
     ASSERT_TRUE(expected_tricks_result.value.has_value());
     EXPECT_DOUBLE_EQ(*expected_tricks_result.value, 3.0);
 
@@ -1057,12 +1089,12 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsMustNotBeAppliedBeforeATerminalLeaf)
     // check_leaf()'s own ordering, which the assertions above already are.)
     be::BeliefNode const wrongly_pruned_first = be::drop_lowest_posterior_layouts(node, 1);
     double const wrong_p_make = be::terminal_leaf_value(
-        wrongly_pruned_first, be::DeclarerObjective::MaximiseProbabilityToMake);
+        wrongly_pruned_first, be::DeclarerObjective::MaximizeProbabilityToMake);
     EXPECT_DOUBLE_EQ(wrong_p_make, 0.9);
     EXPECT_LT(wrong_p_make, *p_make_result.value);
 
     double const wrong_expected_tricks = be::terminal_leaf_value(
-        wrongly_pruned_first, be::DeclarerObjective::MaximiseExpectedTricks);
+        wrongly_pruned_first, be::DeclarerObjective::MaximizeExpectedTricks);
     EXPECT_DOUBLE_EQ(wrong_expected_tricks, 2.7);
     EXPECT_LT(wrong_expected_tricks, *expected_tricks_result.value);
 }

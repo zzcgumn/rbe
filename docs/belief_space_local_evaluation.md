@@ -453,13 +453,13 @@ above are usable directly as `delta`:
 
 ```python
 pi = bsle.BruteForceDeclarer(
-    ctx, bsle.DeclarerObjective.MaximiseProbabilityToMake)   # opponent_model defaults to
+    ctx, bsle.DeclarerObjective.MaximizeProbabilityToMake)   # opponent_model defaults to
                                                               # an owned DoubleDummyDefender
 ```
 
 At a declarer/dummy node it tries every legal card and keeps the best
-under its fixed `DeclarerObjective` (`MaximiseExpectedTricks` or
-`MaximiseProbabilityToMake`, locked for the instance's whole lifetime);
+under its fixed `DeclarerObjective` (`MaximizeExpectedTricks` or
+`MaximizeProbabilityToMake`, locked for the instance's whole lifetime);
 at a defender node it sums each surviving layout's own response from its
 own internal `opponent_model` — a second `delta`-shaped callable, separate
 from whatever `delta` is paired with it in the `evaluate()` call itself.
@@ -472,6 +472,16 @@ does: solving a position directly (via its own internal
 `DoubleDummyBound`, when `max_depth` is reached) and, when `opponent_model`
 is left unset, backing the owned `DoubleDummyDefender` the search falls
 back to by default.
+
+**A caller-supplied `opponent_model` must answer from position alone,
+never from the `state` argument's history or play-record fields**, even
+though a legitimate `delta`-shaped callable may read them (`ScriptedDefender`
+is a real example that keys its own response off history). The internal
+cache's own key omits both, which is what lets two different `pi` calls
+along one actually-played line share a cached value — sound only when
+`opponent_model` cannot tell those two calls apart. Nothing checks this
+at runtime; it is a caller obligation, like the `DeclarerObjective`/
+`opponent_model` instance-locking below.
 
 `max_depth` and `max_layouts` bound an otherwise-exhaustive search — both
 `None` by default, which searches to a genuine terminal over the whole

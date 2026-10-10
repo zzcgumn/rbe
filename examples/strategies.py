@@ -332,7 +332,7 @@ def brute_force_declarer(ctx, objective=None, opponent_model=None, max_depth=Non
     import belief_space_local_evaluation as bsle
 
     if objective is None:
-        objective = bsle.DeclarerObjective.MaximiseExpectedTricks
+        objective = bsle.DeclarerObjective.MaximizeExpectedTricks
     return bsle.BruteForceDeclarer(ctx, objective, opponent_model, max_depth, max_layouts)
 
 

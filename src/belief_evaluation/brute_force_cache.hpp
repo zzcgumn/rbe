@@ -22,8 +22,9 @@ namespace dds::belief_evaluation
 /// produces the same surviving deal *set* with different relative weights,
 /// reached by different real play), and two such belief spaces can have
 /// genuinely different best cards -- so a key built from deal identity alone
-/// would silently conflate them. See brute_force_strategy.md's own
-/// "Correctness" section.
+/// would silently conflate them. See `specs/replenished-belief-evaluation.md`'s
+/// own `BruteForceDeclarer` entry under "Key entry points" for the fuller
+/// correctness rationale.
 ///
 /// Deliberately omits `ObservationState::history` and `::play_record` --
 /// this is what lets two different real `play()` calls along one
@@ -62,44 +63,64 @@ struct BruteForceCacheKey
     std::uint64_t declarer_holding_key = 0;
     std::uint64_t dummy_holding_key = 0;
 
-    /// One (deal hash, quantised posterior) pair per surviving layout,
-    /// sorted by deal hash so that two equal sets built in different
-    /// insertion order produce an identical key (order independence). Each
-    /// deal hash is layout_key()'s own exact packing too, not a lossy hash,
-    /// so this vector's own equality (std::vector's elementwise ==) is
-    /// exact as well.
-    std::vector<std::pair<std::uint64_t, std::int64_t>> deal_and_quantized_posterior;
+    /// One (deal hash, exact posterior) pair per surviving layout, sorted
+    /// by deal hash so that two equal sets built in different insertion
+    /// order produce an identical key (order independence). The posterior
+    /// is stored and compared *exactly* -- `std::vector`'s elementwise
+    /// `==` on this vector therefore requires bit-identical doubles, never
+    /// a quantised approximation. An exhaustive search's own leaf values
+    /// (terminal_leaf_value, cutoff_leaf_value) read every `node.p[i]`
+    /// exactly, so two posterior vectors that are merely *close* -- not
+    /// equal -- can legitimately produce different results; treating them
+    /// as the same cache key would return the wrong value for one of
+    /// them, which is a correctness bug a cache must never cause, not a
+    /// precision trade-off it is allowed to make. hash_value() below is
+    /// free to quantise when combining this same field into one hash
+    /// value, because a hash collision only costs a slower lookup
+    /// (operator== still disambiguates), while an equality collision
+    /// would silently hand back the wrong cached value.
+    std::vector<std::pair<std::uint64_t, Probability>> deal_and_posterior;
 
     auto operator==(BruteForceCacheKey const& other) const -> bool;
 };
 
-/// For BruteForceCache's own unordered_map.
+/// For BruteForceCache's own unordered_map. May -- and does -- treat two
+/// keys that are merely close as the same bucket (via quantize_posterior()
+/// below): operator== still disambiguates them once there, so a hash
+/// collision here only costs a slower lookup, never a wrong answer.
 auto hash_value(BruteForceCacheKey const& key) -> std::size_t;
 
-/// Rounds `posterior` to a fixed relative precision (1e-9) before packing
-/// it for use in a cache key: close enough that two structurally-identical
+/// Rounds `posterior` to a fixed relative precision (1e-9), for
+/// hash_value()'s own use only -- never for BruteForceCacheKey's
+/// operator==, which compares the exact posterior (see that field's own
+/// doxygen for why). Close enough that two structurally-identical
 /// derivations of the same weight (floating-point noise from a different
-/// evaluation order, say) always produce the same quantised value, far
-/// enough apart that two meaningfully different weightings (0.6 vs. 0.61,
-/// say) never collapse to the same one.
+/// evaluation order, say) hash to the same bucket, far enough apart that
+/// two meaningfully different weightings (0.6 vs. 0.61, say) essentially
+/// never collide.
 auto quantize_posterior(Probability posterior) -> std::int64_t;
 
 /// Builds the key for one node: see BruteForceCacheKey's own doxygen.
-/// `state` and `layouts.front()` together supply every field
-/// `position_hash` reads; `layouts`/`p` are parallel, as everywhere else in
-/// this module.
+/// `state` and `layouts.front()` together supply every position field;
+/// `layouts`/`p` are parallel, as everywhere else in this module.
 auto make_brute_force_cache_key(
     ObservationState const& state, std::vector<Deal> const& layouts,
     std::vector<Probability> const& p) -> BruteForceCacheKey;
 
-/// The externally-owned transposition table BruteForceDeclarer's own
-/// internal search shares across every evaluate() call that one strategy
-/// instance is used in. Never shared across two differently-configured
-/// instances (a different DeclarerObjective or a different opponent model
-/// corrupts backed-up values the same way mixing search objectives would
-/// in the BridgeLibraries original this ports -- see
-/// brute_force_strategy.md's own "DeclarerObjective and what is locked per
-/// instance").
+/// The instance-owned transposition table BruteForceDeclarer's own
+/// internal search shares across every `play()` call made on that one
+/// `BruteForceDeclarer` instance -- except when `BruteForceOptions::max_depth`
+/// is set, where `as_strategy()`'s own `play` lambda clears it at the start
+/// of each call instead, since a depth cutoff depends on call-relative
+/// recursion depth, not on anything inherent to the position (see that
+/// lambda's own `.cpp` comment). Never shared across two
+/// differently-configured instances either way -- a different
+/// DeclarerObjective or a different opponent model corrupts backed-up
+/// values the same way mixing search objectives would in the
+/// BridgeLibraries original this ports -- see
+/// `specs/replenished-belief-evaluation.md`'s own `BruteForceDeclarer`
+/// entry under "Key entry points" for "DeclarerObjective and what is
+/// locked per instance".
 class BruteForceCache
 {
 public:

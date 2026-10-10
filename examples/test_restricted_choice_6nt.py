@@ -661,7 +661,7 @@ class TestPMake(unittest.TestCase):
         brute_force_value = example.evaluate(
             sequence, source,
             brute_force_declarer(
-                ctx, objective=example.bsle.DeclarerObjective.MaximiseProbabilityToMake,
+                ctx, objective=example.bsle.DeclarerObjective.MaximizeProbabilityToMake,
                 opponent_model=defence, max_layouts=3, max_depth=3),
             defence)
 

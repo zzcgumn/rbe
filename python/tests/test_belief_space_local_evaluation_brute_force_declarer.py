@@ -57,7 +57,7 @@ def lowest_eligible_defender(layout, seat, state):
 class TestBruteForceDeclarerIsUsableDirectlyAsPi(unittest.TestCase):
     def test_brute_force_declarer_is_directly_usable_as_pi(self) -> None:
         ctx = dds3.SolverContext()
-        pi = BruteForceDeclarer(ctx, DeclarerObjective.MaximiseProbabilityToMake)
+        pi = BruteForceDeclarer(ctx, DeclarerObjective.MaximizeProbabilityToMake)
         root = make_one_card_root()
         source = ExhaustiveLayoutSource(root, North, 1)
         result = evaluate(root, North, 1, source, pi, lowest_eligible_defender)
@@ -65,9 +65,9 @@ class TestBruteForceDeclarerIsUsableDirectlyAsPi(unittest.TestCase):
 
     def test_opponent_model_defaults_to_double_dummy_defender(self) -> None:
         ctx = dds3.SolverContext()
-        pi_default = BruteForceDeclarer(ctx, DeclarerObjective.MaximiseProbabilityToMake)
+        pi_default = BruteForceDeclarer(ctx, DeclarerObjective.MaximizeProbabilityToMake)
         dd = DoubleDummyDefender(ctx)
-        pi_explicit = BruteForceDeclarer(ctx, DeclarerObjective.MaximiseProbabilityToMake, dd)
+        pi_explicit = BruteForceDeclarer(ctx, DeclarerObjective.MaximizeProbabilityToMake, dd)
 
         root = make_one_card_root()
         source = ExhaustiveLayoutSource(root, North, 1)
@@ -85,7 +85,7 @@ class TestBruteForceDeclarerIsUsableDirectlyAsPi(unittest.TestCase):
     def test_a_python_callable_opponent_model_is_accepted(self) -> None:
         ctx = dds3.SolverContext()
         pi = BruteForceDeclarer(
-            ctx, DeclarerObjective.MaximiseProbabilityToMake, lowest_eligible_defender)
+            ctx, DeclarerObjective.MaximizeProbabilityToMake, lowest_eligible_defender)
 
         root = make_one_card_root()
         source = ExhaustiveLayoutSource(root, North, 1)

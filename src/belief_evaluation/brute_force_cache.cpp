@@ -35,8 +35,7 @@ auto BruteForceCacheKey::operator==(BruteForceCacheKey const& other) const -> bo
                std::begin(current_trick_rank), std::end(current_trick_rank),
                std::begin(other.current_trick_rank))
         && declarer_holding_key == other.declarer_holding_key
-        && dummy_holding_key == other.dummy_holding_key
-        && deal_and_quantized_posterior == other.deal_and_quantized_posterior;
+        && dummy_holding_key == other.dummy_holding_key && deal_and_posterior == other.deal_and_posterior;
 }
 
 auto hash_value(BruteForceCacheKey const& key) -> std::size_t
@@ -54,10 +53,10 @@ auto hash_value(BruteForceCacheKey const& key) -> std::size_t
     }
     h = hash_combine(h, key.declarer_holding_key);
     h = hash_combine(h, key.dummy_holding_key);
-    for (auto const& [deal_hash, quantized] : key.deal_and_quantized_posterior)
+    for (auto const& [deal_hash, posterior] : key.deal_and_posterior)
     {
         h = hash_combine(h, deal_hash);
-        h = hash_combine(h, static_cast<std::uint64_t>(quantized));
+        h = hash_combine(h, static_cast<std::uint64_t>(quantize_posterior(posterior)));
     }
     return static_cast<std::size_t>(h);
 }
@@ -101,14 +100,14 @@ auto make_brute_force_cache_key(
     // declarer's/dummy's holdings. See layout_key()'s own doxygen.
     int const defender_seat = (state.declarer + 1) % DDS_HANDS;
 
-    std::vector<std::pair<std::uint64_t, std::int64_t>> pairs;
+    std::vector<std::pair<std::uint64_t, Probability>> pairs;
     pairs.reserve(layouts.size());
     for (std::size_t i = 0; i < layouts.size(); ++i)
     {
-        pairs.emplace_back(layout_key(layouts[i], defender_seat), quantize_posterior(p[i]));
+        pairs.emplace_back(layout_key(layouts[i], defender_seat), p[i]);
     }
     std::sort(pairs.begin(), pairs.end());
-    key.deal_and_quantized_posterior = std::move(pairs);
+    key.deal_and_posterior = std::move(pairs);
 
     return key;
 }

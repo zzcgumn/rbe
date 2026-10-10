@@ -50,7 +50,7 @@ namespace
 
     // A stable serialisation of BruteForceCacheKey's own belief-space
     // component *only* into a StateKey (std::string) -- deliberately
-    // omitting position_hash. DeclarerStrategy::state_key's own three-state
+    // omitting the position fields. DeclarerStrategy::state_key's own three-state
     // contract (declarer_strategy.hpp) asks for what play() consults
     // *beyond* the position the evaluator already keys on, nothing more;
     // the evaluator would supply the position component of any future
@@ -66,15 +66,15 @@ namespace
     auto serialize_key(BruteForceCacheKey const& key) -> StateKey
     {
         std::string bytes;
-        bytes.reserve(key.deal_and_quantized_posterior.size() * 16);
+        bytes.reserve(key.deal_and_posterior.size() * 16);
         auto const append = [&bytes](auto const& value)
         {
             bytes.append(reinterpret_cast<char const*>(&value), sizeof(value));
         };
-        for (auto const& [deal_hash, quantized] : key.deal_and_quantized_posterior)
+        for (auto const& [deal_hash, posterior] : key.deal_and_posterior)
         {
             append(deal_hash);
-            append(quantized);
+            append(posterior);
         }
         return bytes;
     }
@@ -82,7 +82,7 @@ namespace
 
 auto terminal_leaf_value(BeliefNode const& node, DeclarerObjective objective) -> double
 {
-    if (objective == DeclarerObjective::MaximiseExpectedTricks)
+    if (objective == DeclarerObjective::MaximizeExpectedTricks)
     {
         return node_mass(node) * static_cast<double>(node.state.tricks_won_by_declarer);
     }
@@ -96,7 +96,7 @@ auto cutoff_leaf_value(BeliefNode const& node, LayoutBound const& bound, Declare
     for (std::size_t i = 0; i < node.layouts.size(); ++i)
     {
         int const declarer_total_tricks = node.state.tricks_won_by_declarer + bound(node.layouts[i]);
-        double const per_layout_value = (objective == DeclarerObjective::MaximiseExpectedTricks)
+        double const per_layout_value = (objective == DeclarerObjective::MaximizeExpectedTricks)
             ? static_cast<double>(declarer_total_tricks)
             : (declarer_total_tricks >= node.state.tricks_needed ? 1.0 : 0.0);
         total.add(node.p[i] * per_layout_value);
@@ -221,6 +221,16 @@ BruteForceDeclarer::BruteForceDeclarer(
     if (options_.max_layouts.has_value() && *options_.max_layouts == 0)
     {
         throw std::invalid_argument("BruteForceOptions::max_layouts must not be 0");
+    }
+    // max_depth is a ply count counted from 1 (the first searched child,
+    // per as_strategy()'s own play lambda) -- a negative value is not a
+    // smaller-but-valid budget, it is check_leaf's own
+    // `depth >= *max_depth` test firing on the very first node for every
+    // negative value alike, silently behaving as an immediate cutoff
+    // rather than reporting the caller's mistake.
+    if (options_.max_depth.has_value() && *options_.max_depth < 0)
+    {
+        throw std::invalid_argument("BruteForceOptions::max_depth must not be negative");
     }
     if (opponent_model)
     {

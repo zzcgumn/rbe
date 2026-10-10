@@ -873,7 +873,7 @@ def main() -> None:
     brute_force_value = evaluate(
         sequence, source,
         brute_force_declarer(
-            ctx, objective=bsle.DeclarerObjective.MaximiseProbabilityToMake,
+            ctx, objective=bsle.DeclarerObjective.MaximizeProbabilityToMake,
             opponent_model=_counting_double_dummy_defender, max_layouts=3, max_depth=3),
         double_dummy_defender(ctx))
     brute_force_seconds = time.perf_counter() - brute_force_start
