@@ -1,5 +1,8 @@
 #include <belief_evaluation/double_dummy_defender.hpp>
 
+#include <cstdio>
+
+#include <api/dds_constants.hpp>
 #include <api/solve_board.hpp>
 #include <solver_context/solver_context.hpp>
 
@@ -32,6 +35,28 @@ auto DoubleDummyDefender::as_strategy() -> DefenderStrategy
             solve_board(ctx_, query.layout, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &fut);
         if (status != RETURN_NO_FAULT)
         {
+            // TEMP DIAGNOSTIC -- not for merge. Pinning down a CI-only
+            // (both Linux and macOS, local always green) failure on the
+            // very first solve_board call in a process. Revert before PR
+            // merge regardless of outcome.
+            std::fprintf(
+                stderr, "TEMP DIAGNOSTIC: solve_board status=%d trump=%d first=%d\n", status,
+                query.layout.trump, query.layout.first);
+            for (int h = 0; h < DDS_HANDS; ++h)
+            {
+                for (int s = 0; s < DDS_SUITS; ++s)
+                {
+                    std::fprintf(
+                        stderr, "TEMP DIAGNOSTIC: remainCards[%d][%d]=%u\n", h, s,
+                        query.layout.remainCards[h][s]);
+                }
+            }
+            for (int k = 0; k < 3; ++k)
+            {
+                std::fprintf(
+                    stderr, "TEMP DIAGNOSTIC: currentTrick[%d] suit=%d rank=%d\n", k,
+                    query.layout.currentTrickSuit[k], query.layout.currentTrickRank[k]);
+            }
             // Not silently empty-and-ignored: expand_defender_node reports
             // an empty distribution as ValidationError::DistributionEmpty
             // directly, so this surfaces as a real
