@@ -64,20 +64,23 @@ struct BruteForceOptions
 /// evaluate()'s own outer level, carried here via the same ValidationError
 /// enum and offending layout ExpandDefenderResult already provides.
 ///
-/// DeclarerStrategy::play returns a bare Card, with no error channel at
-/// this interface the way evaluate()'s own EvaluationResult has -- this is
-/// caller input (a substituted opponent_model), not an internal invariant,
-/// so it is reported, the same way this module's own convention already
-/// treats caller input elsewhere, by the only means actually available at
-/// this interface: throwing a specific, inspectable type rather than
-/// miscomputing silently or throwing something generic.
-struct BruteForceOpponentModelError : std::exception
+/// Derives from DeclarerStrategyContractViolation (declarer_strategy.hpp),
+/// not std::exception directly: expand_declarer_node catches that base
+/// type at evaluate()'s own call boundary and converts it into an ordinary
+/// ValidationError-carrying EvaluationResult, so this exception never
+/// reaches evaluate()'s own public entry point -- only a caller invoking
+/// play() directly, bypassing evaluate(), sees it propagate as a C++
+/// exception (see that base type's own doxygen for the full reasoning, and
+/// AMalformedOpponentModelThrowsRatherThanMiscomputing for that
+/// direct-caller case, which is what offending_layout below -- a field
+/// evaluate()'s own error path never needs, since it already has
+/// node.state.known_holdings -- exists for).
+struct BruteForceOpponentModelError : DeclarerStrategyContractViolation
 {
-    ValidationError validation;
     Deal offending_layout;
 
     BruteForceOpponentModelError(ValidationError validation, Deal const& offending_layout)
-    : validation(validation), offending_layout(offending_layout)
+    : DeclarerStrategyContractViolation(validation), offending_layout(offending_layout)
     {
     }
 

@@ -572,6 +572,52 @@ TEST_F(BruteForceDeclarerTest, AMalformedOpponentModelThrowsRatherThanMiscomputi
     }
 }
 
+TEST_F(BruteForceDeclarerTest, AMalformedInternalOpponentModelIsReportedNotThrownThroughEvaluate)
+{
+    // The same fixture and the same broken internal opponent model as
+    // AMalformedOpponentModelThrowsRatherThanMiscomputing just above, but
+    // driven through evaluate() -- the public entry point this capability's
+    // own spec says must never let a callback's contract violation escape
+    // as a C++ exception -- rather than through a bare pi.play() call.
+    // expand_declarer_node's own catch for DeclarerStrategyContractViolation
+    // is what makes this the case: without it, this test would terminate
+    // the process on an uncaught exception instead of merely failing an
+    // assertion.
+    Deal layout{};
+    layout.trump = DDS_NOTRUMP;
+    layout.first = North;
+    layout.remainCards[North][Spades] = be::holding({Ace});
+    layout.remainCards[South][Spades] = be::holding({Two});
+    layout.remainCards[East][Spades] = be::holding({Three});
+    layout.remainCards[West][Spades] = be::holding({Four});
+
+    be::DefenderStrategy const broken_internal_opponent_model =
+        [](be::DefenderQuery const&) -> std::vector<be::WeightedCard>
+    {
+        return {};
+    };
+
+    SolverContext ctx;
+    be::BruteForceDeclarer declarer(
+        ctx, be::DeclarerObjective::MaximizeExpectedTricks, broken_internal_opponent_model);
+
+    // The outer delta evaluate() itself drives is a perfectly ordinary,
+    // working one -- single_card_defender -- so the only broken callable
+    // anywhere in this call is BruteForceDeclarer's own internal delegate,
+    // reached only once pi.play() is called for the root's own declarer
+    // node and recurses internally.
+    be::VectorLayoutSource const source({layout});
+    be::EvaluationResult result{};
+    EXPECT_NO_THROW(
+        result = be::evaluate(
+            layout, /*declarer=*/North, /*tricks_needed=*/1, source, declarer.as_strategy(),
+            be::single_card_defender));
+
+    ASSERT_TRUE(result.error.has_value());
+    EXPECT_EQ(result.error->validation, be::ValidationError::DistributionEmpty);
+    EXPECT_EQ(result.error->callback, be::EvaluationCallback::DeclarerPlay);
+}
+
 // --- max_layouts: the lowest-posterior-first cap --------------------------
 
 TEST_F(BruteForceDeclarerTest, DropLowestPosteriorLayoutsKeepsTheHighestWeightedOnes)

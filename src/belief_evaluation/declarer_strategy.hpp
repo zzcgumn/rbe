@@ -1,8 +1,10 @@
 #pragma once
 
+#include <exception>
 #include <functional>
 
 #include <belief_evaluation/types.hpp>
+#include <belief_evaluation/validation.hpp>
 
 namespace dds::belief_evaluation
 {
@@ -50,6 +52,48 @@ struct DeclarerStrategy
     /// probability, not a slow one, and nothing checks it — so this must be
     /// pure on the same terms as `play`.
     std::function<StateKey(ObservationState const&, BeliefView const&)> state_key;
+};
+
+/// Thrown from a `DeclarerStrategy::play` implementation -- never by the
+/// evaluator itself -- to report that it could not produce a card at all,
+/// because of a `ValidationError`-shaped contract violation it detected in
+/// one of its own internal, caller-configured delegates. Never for a
+/// malformed `state`/`view` argument, which `play` must still handle like
+/// any other input, and never for anything the evaluator's own validation
+/// already covers (a card `play` itself returns is checked by
+/// `validate_declarer_card` regardless; throwing has nothing to add there).
+///
+/// `expand_declarer_node` (expand.cpp) catches exactly this type at
+/// `evaluate()`'s own call boundary and converts it into the same
+/// `ValidationError`-carrying `EvaluationResult` any other declarer-side
+/// contract violation produces -- so this never crosses `evaluate()`'s own
+/// public entry point, upholding "a user callback's contract violation is
+/// reported in the result, never thrown"
+/// (`specs/replenished-belief-evaluation.md`) for every caller who reaches
+/// a `DeclarerStrategy` only through `evaluate()`. A caller invoking `play`
+/// directly, bypassing `evaluate()` -- as this module's own tests do, to
+/// exercise exactly this path -- sees it propagate as an ordinary C++
+/// exception instead. There is no third option with `play`'s own
+/// `Card(ObservationState const&, BeliefView const&)` signature, which has
+/// no error channel of its own; changing that signature is a larger,
+/// cross-cutting interface decision this type deliberately avoids forcing.
+///
+/// A concrete `DeclarerStrategy` implementation may derive from this to add
+/// its own richer context for that direct-caller case -- see
+/// `BruteForceDeclarer`'s own `BruteForceOpponentModelError`, which adds
+/// which layout was the offending one.
+struct DeclarerStrategyContractViolation : std::exception
+{
+    ValidationError validation;
+
+    explicit DeclarerStrategyContractViolation(ValidationError validation) : validation(validation)
+    {
+    }
+
+    auto what() const noexcept -> char const* override
+    {
+        return "a DeclarerStrategy's own internal delegate violated its contract";
+    }
 };
 
 }  // namespace dds::belief_evaluation

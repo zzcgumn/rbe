@@ -175,7 +175,28 @@ auto expand_declarer_node(BeliefNode const& node, DeclarerStrategy const& pi) ->
 
     std::vector<BeliefEntry> scratch;
     BeliefView const view = make_belief_view(node, scratch);
-    Card const card = pi.play(node.state, view);
+
+    // A DeclarerStrategy implementation (BruteForceDeclarer, concretely)
+    // may throw DeclarerStrategyContractViolation to report that it could
+    // not produce a card at all, because one of its own internal,
+    // caller-configured delegates violated its contract. Caught here,
+    // at evaluate()'s own call boundary into pi, and converted into the
+    // same ValidationError this function already returns for a card pi
+    // itself returned that fails validate_declarer_card below -- so the
+    // exception never reaches evaluate()'s own public entry point,
+    // upholding "a user callback's contract violation is reported in the
+    // result, never thrown" (specs/replenished-belief-evaluation.md) for
+    // every caller who reaches pi only through evaluate(). See that
+    // exception type's own doxygen (declarer_strategy.hpp).
+    Card card;
+    try
+    {
+        card = pi.play(node.state, view);
+    }
+    catch (DeclarerStrategyContractViolation const& violation)
+    {
+        return ExpandResult{std::nullopt, Card{}, violation.validation};
+    }
 
     ValidationError const error = validate_declarer_card(node.state.known_holdings, seat, card);
     if (error != ValidationError::None)
