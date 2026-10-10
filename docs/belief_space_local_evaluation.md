@@ -447,12 +447,76 @@ spread, so such a rule would silently win instead, regardless of this
 setting. Put `second_seat_low` last among any rules that could fire
 where it does (see `second_seat_low.hpp`'s own doxygen).
 
+`BruteForceDeclarer` is this module's first lookahead `pi`, usable
+directly as `evaluate()`'s `pi` argument the same way the two defenders
+above are usable directly as `delta`:
+
+```python
+pi = bsle.BruteForceDeclarer(
+    ctx, bsle.DeclarerObjective.MaximizeProbabilityToMake)   # opponent_model defaults to
+                                                              # an owned DoubleDummyDefender
+```
+
+At a declarer/dummy node it tries every legal card and keeps the best
+under its fixed `DeclarerObjective` (`MaximizeExpectedTricks` or
+`MaximizeProbabilityToMake`, locked for the instance's whole lifetime);
+at a defender node it sums each surviving layout's own response from its
+own internal `opponent_model` — a second `delta`-shaped callable, separate
+from whatever `delta` is paired with it in the `evaluate()` call itself.
+**Its result is only a faithful stand-in for "the double-dummy-optimal
+declarer" when `opponent_model` matches the outer `delta`** — paired with
+anything else, `evaluate()` still returns a well-defined `P_make`, just
+for that specific pairing, not for "optimal play" in general. `ctx` here
+plays the same two roles `double_dummy_defender`'s own `ctx` already
+does: solving a position directly (via its own internal
+`DoubleDummyBound`, when `max_depth` is reached) and, when `opponent_model`
+is left unset, backing the owned `DoubleDummyDefender` the search falls
+back to by default.
+
+**A caller-supplied `opponent_model` must answer from position alone,
+never from the `state` argument's history or play-record fields**, even
+though a legitimate `delta`-shaped callable may read them (`ScriptedDefender`
+is a real example that keys its own response off history). The internal
+cache's own key omits both, which is what lets two different `pi` calls
+along one actually-played line share a cached value — sound only when
+`opponent_model` cannot tell those two calls apart. Nothing checks this
+at runtime; it is a caller obligation, like the `DeclarerObjective`/
+`opponent_model` instance-locking below.
+
+`max_depth` and `max_layouts` bound an otherwise-exhaustive search — both
+`None` by default, which searches to a genuine terminal over the whole
+belief space every time. Affordable on a small, fully-enumerable ending;
+measured directly on one such ending with a real, non-trivial belief
+space (252 layouts): over 100 seconds and 1.7 million calls into
+`opponent_model` for the unbounded search. `max_layouts`, when set, drops
+a node's lowest-posterior layouts rather than searching all of them before
+a depth cutoff's own per-layout solver cost is paid — the dropped mass is
+never redistributed onto the survivors, a deliberate under-count rather
+than an approximation that could go either way. Does not apply to a
+genuine terminal node, which calls no solver and is already cheap: there
+is nothing there for the cap to bound, only mass it would otherwise lose
+for no reason.
+
+**The cache `BruteForceDeclarer` owns internally is private to one
+instance, and reused across calls only when `max_depth` is left `None`.**
+With it absent, safe to reuse across any number of `evaluate()` calls that
+instance is used in. With it set, the cutoff it triggers depends on how
+deep *that one call's own* lookahead is, not on anything inherent to the
+position, so each `play()` call starts from a clean cache instead —
+correct, at the cost of cross-call reuse. Never shared across two
+instances built with a different `DeclarerObjective` or a different
+`opponent_model` either way, which would silently corrupt backed-up
+values. Nothing about this cache is visible to, or shared with,
+`evaluate()` itself: the search is entirely private to one `play()` call,
+and `evaluate()` has no idea a lookahead happened inside it at all.
+
 **A `SolverContext` is not thread-safe** (its own C++ contract: one
 context per thread), and `DoubleDummyDefender`/`DoubleDummyBound`/
-`HeuristicDefender` release the GIL around the actual solve — so, unlike
-most of this module, two Python threads really do run concurrently here
-if they share one. Build one `SolverContext` (and one of whichever
-defender/bound types) per worker; do not share either across threads.
+`HeuristicDefender`/`BruteForceDeclarer` release the GIL around the
+actual solve — so, unlike most of this module, two Python threads really
+do run concurrently here if they share one. Build one `SolverContext`
+(and one of whichever defender/bound/declarer types) per worker; do not
+share either across threads.
 
 ### Where Python is deliberately stricter than C++
 

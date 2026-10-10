@@ -15,6 +15,7 @@
 
 #include <api/dds_constants.hpp>
 #include <belief_evaluation/belief_view.hpp>
+#include <belief_evaluation/brute_force_declarer.hpp>
 #include <belief_evaluation/declarer_strategy.hpp>
 #include <belief_evaluation/default_defender_heuristics.hpp>
 #include <belief_evaluation/defender_heuristic.hpp>
@@ -520,6 +521,16 @@ public:
     {
         check_valid();
         return view_->space_size;
+    }
+
+    /// Not exposed to Python -- a C++-side escape hatch for a bound object
+    /// that needs the real be::BeliefView, the way BruteForceDeclarer's
+    /// own __call__ (registered as a usable pi) does to hand it straight
+    /// to DeclarerStrategy::play without re-deriving it from entries().
+    auto raw() const -> be::BeliefView const&
+    {
+        check_valid();
+        return *view_;
     }
 
 private:
@@ -1928,6 +1939,124 @@ private:
     be::HeuristicDefender defender_;
 };
 
+// BruteForceDeclarer's own opponent_model parameter needs no *new guard
+// flag* of its own -- not because play_record is never set on the states
+// built here, but because every one of them is a copy of whatever `state`
+// this strategy's own play() was called with (make_internal_root's own
+// `root.state = state;`), and a copy carries play_record_valid right
+// along with it. When this strategy is used as evaluate()'s own pi
+// through the Python binding, that `state` already has play_record_valid
+// set to the *outer* call's own call_valid flag (state_for_python,
+// installed before pi(...) is ever invoked) -- so whatever guard the
+// outer evaluate() call installed is inherited through every copy this
+// strategy's internal recursion makes, not dropped. There is nothing
+// *new* here for a guard to protect against, which is why reusing
+// make_defender_strategy as-is would still be wrong, not just redundant,
+// since that function expects a call_valid this strategy has no
+// equivalent of (it would need its own, separate flag, not the inherited
+// one already riding along on `state`).
+//
+// This is independent of, and does not excuse, copying the *state object
+// itself*: query.state is Deal const&/ObservationState const& into a
+// BeliefNode this search's own recursion owns and keeps mutating, so a
+// Python opponent_model that retains its `state` argument past this one
+// call -- exactly as a Python pi/delta author is otherwise free to do --
+// would keep a wrapper over memory the recursion has since reused or
+// freed. py::return_value_policy::copy forces pybind11 to copy-construct
+// a fresh ObservationState for Python to own, the same policy
+// make_defender_strategy's own cast already uses for the same reason.
+auto make_opponent_model(std::optional<py::function> const& opponent_model) -> be::DefenderStrategy
+{
+    if (! opponent_model.has_value()) {
+        // Falsy -- BruteForceDeclarer's own constructor resolves this to
+        // an owned DoubleDummyDefender over the same ctx.
+        return nullptr;
+    }
+    py::function const delta = *opponent_model;
+    return [delta](be::DefenderQuery const& query) -> std::vector<be::WeightedCard> {
+        py::gil_scoped_acquire gil;
+        py::object const result = delta(
+            dds3_python::deal_to_dict(query.layout), query.seat,
+            py::cast(query.state, py::return_value_policy::copy));
+
+        std::vector<be::WeightedCard> weighted;
+        for (py::handle const item : py::cast<py::sequence>(result)) {
+            py::sequence const pair = py::cast<py::sequence>(item);
+            if (pair.size() != 2) {
+                throw py::value_error(
+                    "each defender distribution entry must be a (card, probability) pair");
+            }
+            weighted.push_back(be::WeightedCard{py::cast<be::Card>(pair[0]), py::cast<double>(pair[1])});
+        }
+        return weighted;
+    };
+}
+
+/// A DeclarerStrategy backed by BruteForceDeclarer, exposed to Python as a
+/// plain callable object -- __call__(state, view), the same shape every
+/// Python pi already has, so this is usable directly as evaluate()'s own
+/// pi argument with no wrapper function needed around it (the same way
+/// DoubleDummyDefender/HeuristicDefender are already usable directly as
+/// delta). state arrives already converted to be::ObservationState and
+/// view to the bound PyBeliefView wrapper -- pybind11's own argument
+/// conversion handles both, since each is already a registered type.
+class PyBruteForceDeclarer
+{
+public:
+    PyBruteForceDeclarer(
+        SolverContext& ctx, be::DeclarerObjective objective,
+        std::optional<py::function> const& opponent_model, std::optional<int> max_depth,
+        std::optional<std::uint64_t> max_layouts)
+        : declarer_(
+              ctx, objective, make_opponent_model(opponent_model),
+              be::BruteForceOptions{max_depth, max_layouts})
+    {
+    }
+
+    auto call(be::ObservationState const& state, PyBeliefView const& view) -> be::Card
+    {
+        be::DeclarerStrategy const strategy = declarer_.as_strategy();
+        // view.raw() must run while the GIL is still held: on an expired
+        // view it raises ExpiredBeliefViewError via Python C-API calls,
+        // which are undefined behaviour without the GIL. Bind the
+        // reference here, before releasing, rather than evaluating it as
+        // an argument expression after release is already constructed.
+        be::BeliefView const& raw_view = view.raw();
+        try {
+            py::gil_scoped_release const release;  // re-acquired inside make_opponent_model's own
+                                                    // wrapper if opponent_model is a Python callable
+            return strategy.play(state, raw_view);
+        } catch (be::DeclarerStrategyContractViolation const& violation) {
+            // expand_declarer_node's own catch (expand.cpp) only helps a
+            // caller who reaches this strategy's play() through evaluate()
+            // entirely in C++. This object is itself exposed to Python as
+            // __call__ -- a pybind11-bound method -- so when it is used as
+            // evaluate()'s own pi *from Python*, the call into it crosses
+            // the pybind boundary before expand_declarer_node ever gets a
+            // chance: pybind11's own dispatch for this bound method would
+            // otherwise catch the raw C++ exception right here and
+            // translate it to a generic RuntimeError, with
+            // validation/seat/offending_layout all lost and no chance for
+            // expand_declarer_node's own catch to run at all. Caught here
+            // instead, and re-raised through the same
+            // raise_validation_error machinery evaluate()'s own C++-side
+            // ValidationError reporting already uses -- DefenderStrategy,
+            // not DeclarerPlay, for the same reason declarer_expand_error
+            // (evaluate.cpp) prefers it: the violating callback genuinely
+            // was a DefenderStrategy-shaped one (this strategy's own
+            // internal opponent model), just not the outer delta. The GIL
+            // is held again here: `release`'s destructor ran during this
+            // exception's own unwinding, before this handler started.
+            raise_validation_error(
+                be::EvaluationCallback::DefenderStrategy, violation.seat, violation.offending_layout,
+                violation.validation);
+        }
+    }
+
+private:
+    be::BruteForceDeclarer declarer_;
+};
+
 auto register_solver_seam_bindings(py::module_& module) -> void
 {
     py::enum_<be::SpreadPolicy>(
@@ -2034,6 +2163,50 @@ auto register_solver_seam_bindings(py::module_& module) -> void
             py::arg("chain"), py::arg("fallback_policy") = be::SpreadPolicy::TouchingSequence,
             py::keep_alive<1, 2>())
         .def("__call__", &PyHeuristicDefender::call, py::arg("layout"), py::arg("seat"), py::arg("state"));
+
+    py::enum_<be::DeclarerObjective>(
+        module,
+        "DeclarerObjective",
+        "Which quantity BruteForceDeclarer's own internal search maximises.\n"
+        "Locked for one instance's whole lifetime, never a per-call\n"
+        "parameter -- mixing objectives within one shared cache corrupts\n"
+        "backed-up values the same way mixing SpreadPolicy values would for\n"
+        "DoubleDummyDefender's own instance-level policy.")
+        .value("MaximizeExpectedTricks", be::DeclarerObjective::MaximizeExpectedTricks)
+        .value("MaximizeProbabilityToMake", be::DeclarerObjective::MaximizeProbabilityToMake);
+
+    py::class_<PyBruteForceDeclarer>(
+        module,
+        "BruteForceDeclarer",
+        "A declarer strategy backed by an exhaustive (or depth/size-bounded)\n"
+        "lookahead search over the belief space, keeping the best legal\n"
+        "card under a fixed DeclarerObjective. Usable directly as\n"
+        "evaluate()'s own pi argument.\n\n"
+        "**This presumes its own internal opponent_model is what the paired\n"
+        "delta actually is.** Paired with a different delta, evaluate()\n"
+        "still returns a well-defined p_make -- just not \"the double-dummy-\n"
+        "optimal p_make\" this strategy's own search would compute against a\n"
+        "model matching its internal one.\n\n"
+        "**The cache this owns is safe to share across this instance's own\n"
+        "calls only when max_depth is left None** -- with it set, the\n"
+        "cutoff it triggers depends on how deep this particular call's own\n"
+        "lookahead is, not on anything inherent to the position, so each\n"
+        "call starts from a clean cache instead. Never shared across two\n"
+        "differently-configured instances either way -- a different\n"
+        "objective or a different opponent_model corrupts backed-up values\n"
+        "silently.\n\n"
+        "opponent_model left None resolves to an owned DoubleDummyDefender\n"
+        "over the same ctx -- the common case, with no need to construct\n"
+        "one yourself. ctx is not owned, and not thread-safe, the same as\n"
+        "DoubleDummyDefender's own contract.")
+        .def(
+            py::init<
+                SolverContext&, be::DeclarerObjective, std::optional<py::function> const&,
+                std::optional<int>, std::optional<std::uint64_t>>(),
+            py::arg("ctx"), py::arg("objective") = be::DeclarerObjective::MaximizeExpectedTricks,
+            py::arg("opponent_model") = py::none(), py::arg("max_depth") = py::none(),
+            py::arg("max_layouts") = py::none(), py::keep_alive<1, 2>())
+        .def("__call__", &PyBruteForceDeclarer::call, py::arg("state"), py::arg("view"));
 }
 
 // Internal: exercises the converters above end to end, ahead of the real

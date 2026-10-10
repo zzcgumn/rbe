@@ -185,6 +185,56 @@ cc_test(
     local_defines = DDS_LOCAL_DEFINES,
 )
 
+# Solver-free, mirroring defender_heuristic_test's own separation above:
+# the cache's key construction and quantisation are the correctness-
+# critical piece and need no solver to test in isolation.
+cc_test(
+    name = "brute_force_cache_test",
+    size = "small",
+    srcs = [
+        "brute_force_cache_test.cpp",
+        "test_support.hpp",
+    ],
+    deps = [
+        "//src/belief_evaluation",
+        "//src/belief_evaluation:brute_force_cache",
+        "@dds//library/src/api:api_definitions",
+        "@dds//library/src/api:dds_constants",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# Sibling of double_dummy_defender_test: BruteForceDeclarer calls the
+# solver internally (via DoubleDummyBound, and its own default opponent
+# model), so this needs solver_context the way heuristic_defender_test
+# does below.
+cc_test(
+    name = "brute_force_declarer_test",
+    size = "small",
+    srcs = [
+        "brute_force_declarer_test.cpp",
+        "test_support.hpp",
+    ],
+    deps = [
+        "//src/belief_evaluation",
+        "//src/belief_evaluation:brute_force_cache",
+        "//src/belief_evaluation:brute_force_declarer",
+        "//src/belief_evaluation:double_dummy_bound",
+        "//src/belief_evaluation:double_dummy_defender",
+        "@dds//library/src:dds",
+        "@dds//library/src/api:api_definitions",
+        "@dds//library/src/solver_context",
+        "@dds//library/src/api:dds_constants",
+        "@googletest//:gtest_main",
+    ],
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
 # Sibling of double_dummy_defender_test, mirroring
 # //src/belief_evaluation:heuristic_defender's own separation from the
 # solver-free defender_heuristic library.
