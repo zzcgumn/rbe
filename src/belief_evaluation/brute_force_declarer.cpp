@@ -314,7 +314,7 @@ auto BruteForceDeclarer::search(BeliefNode const& node, int depth) -> double
         ExpandDefenderResult const result = expand_defender_node(n, opponent_model_);
         if (! result.children.has_value())
         {
-            throw BruteForceOpponentModelError{result.error, result.offending_layout};
+            throw BruteForceOpponentModelError{result.error, seat, result.offending_layout};
         }
         KahanAccumulator total;
         for (BeliefNode const& child : *result.children)

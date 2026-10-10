@@ -1939,10 +1939,10 @@ private:
     be::HeuristicDefender defender_;
 };
 
-// BruteForceDeclarer's own opponent_model parameter needs no guard of its
-// own -- not because play_record is never set on the states built here,
-// but because every one of them is a copy of whatever `state` this
-// strategy's own play() was called with (make_internal_root's own
+// BruteForceDeclarer's own opponent_model parameter needs no *new guard
+// flag* of its own -- not because play_record is never set on the states
+// built here, but because every one of them is a copy of whatever `state`
+// this strategy's own play() was called with (make_internal_root's own
 // `root.state = state;`), and a copy carries play_record_valid right
 // along with it. When this strategy is used as evaluate()'s own pi
 // through the Python binding, that `state` already has play_record_valid
@@ -1950,12 +1950,21 @@ private:
 // installed before pi(...) is ever invoked) -- so whatever guard the
 // outer evaluate() call installed is inherited through every copy this
 // strategy's internal recursion makes, not dropped. There is nothing
-// *new* here for a guard to protect against, which is why a plain,
-// un-guarded wrapper is correct, not merely simpler -- reusing
+// *new* here for a guard to protect against, which is why reusing
 // make_defender_strategy as-is would still be wrong, not just redundant,
 // since that function expects a call_valid this strategy has no
 // equivalent of (it would need its own, separate flag, not the inherited
 // one already riding along on `state`).
+//
+// This is independent of, and does not excuse, copying the *state object
+// itself*: query.state is Deal const&/ObservationState const& into a
+// BeliefNode this search's own recursion owns and keeps mutating, so a
+// Python opponent_model that retains its `state` argument past this one
+// call -- exactly as a Python pi/delta author is otherwise free to do --
+// would keep a wrapper over memory the recursion has since reused or
+// freed. py::return_value_policy::copy forces pybind11 to copy-construct
+// a fresh ObservationState for Python to own, the same policy
+// make_defender_strategy's own cast already uses for the same reason.
 auto make_opponent_model(std::optional<py::function> const& opponent_model) -> be::DefenderStrategy
 {
     if (! opponent_model.has_value()) {
@@ -1966,8 +1975,9 @@ auto make_opponent_model(std::optional<py::function> const& opponent_model) -> b
     py::function const delta = *opponent_model;
     return [delta](be::DefenderQuery const& query) -> std::vector<be::WeightedCard> {
         py::gil_scoped_acquire gil;
-        py::object const result =
-            delta(dds3_python::deal_to_dict(query.layout), query.seat, py::cast(query.state));
+        py::object const result = delta(
+            dds3_python::deal_to_dict(query.layout), query.seat,
+            py::cast(query.state, py::return_value_policy::copy));
 
         std::vector<be::WeightedCard> weighted;
         for (py::handle const item : py::cast<py::sequence>(result)) {
@@ -2012,9 +2022,35 @@ public:
         // reference here, before releasing, rather than evaluating it as
         // an argument expression after release is already constructed.
         be::BeliefView const& raw_view = view.raw();
-        py::gil_scoped_release const release;  // re-acquired inside make_opponent_model's own
-                                                // wrapper if opponent_model is a Python callable
-        return strategy.play(state, raw_view);
+        try {
+            py::gil_scoped_release const release;  // re-acquired inside make_opponent_model's own
+                                                    // wrapper if opponent_model is a Python callable
+            return strategy.play(state, raw_view);
+        } catch (be::DeclarerStrategyContractViolation const& violation) {
+            // expand_declarer_node's own catch (expand.cpp) only helps a
+            // caller who reaches this strategy's play() through evaluate()
+            // entirely in C++. This object is itself exposed to Python as
+            // __call__ -- a pybind11-bound method -- so when it is used as
+            // evaluate()'s own pi *from Python*, the call into it crosses
+            // the pybind boundary before expand_declarer_node ever gets a
+            // chance: pybind11's own dispatch for this bound method would
+            // otherwise catch the raw C++ exception right here and
+            // translate it to a generic RuntimeError, with
+            // validation/seat/offending_layout all lost and no chance for
+            // expand_declarer_node's own catch to run at all. Caught here
+            // instead, and re-raised through the same
+            // raise_validation_error machinery evaluate()'s own C++-side
+            // ValidationError reporting already uses -- DefenderStrategy,
+            // not DeclarerPlay, for the same reason declarer_expand_error
+            // (evaluate.cpp) prefers it: the violating callback genuinely
+            // was a DefenderStrategy-shaped one (this strategy's own
+            // internal opponent model), just not the outer delta. The GIL
+            // is held again here: `release`'s destructor ran during this
+            // exception's own unwinding, before this handler started.
+            raise_validation_error(
+                be::EvaluationCallback::DefenderStrategy, violation.seat, violation.offending_layout,
+                violation.validation);
+        }
     }
 
 private:

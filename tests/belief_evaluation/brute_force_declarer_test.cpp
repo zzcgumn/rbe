@@ -582,7 +582,11 @@ TEST_F(BruteForceDeclarerTest, AMalformedInternalOpponentModelIsReportedNotThrow
     // expand_declarer_node's own catch for DeclarerStrategyContractViolation
     // is what makes this the case: without it, this test would terminate
     // the process on an uncaught exception instead of merely failing an
-    // assertion.
+    // assertion. The error it reports is DefenderStrategy, East, and
+    // East's own layout -- the internal opponent model's own seat and
+    // exact layout, carried through from the exception rather than
+    // substituted with the root's own DeclarerPlay/North/known_holdings,
+    // which would misreport where the violation actually happened.
     Deal layout{};
     layout.trump = DDS_NOTRUMP;
     layout.first = North;
@@ -615,7 +619,9 @@ TEST_F(BruteForceDeclarerTest, AMalformedInternalOpponentModelIsReportedNotThrow
 
     ASSERT_TRUE(result.error.has_value());
     EXPECT_EQ(result.error->validation, be::ValidationError::DistributionEmpty);
-    EXPECT_EQ(result.error->callback, be::EvaluationCallback::DeclarerPlay);
+    EXPECT_EQ(result.error->callback, be::EvaluationCallback::DefenderStrategy);
+    EXPECT_EQ(result.error->seat, East);
+    EXPECT_EQ(result.error->layout.remainCards[East][Spades], be::holding({Three}));
 }
 
 // --- max_layouts: the lowest-posterior-first cap --------------------------

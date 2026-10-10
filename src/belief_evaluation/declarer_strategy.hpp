@@ -63,30 +63,44 @@ struct DeclarerStrategy
 /// already covers (a card `play` itself returns is checked by
 /// `validate_declarer_card` regardless; throwing has nothing to add there).
 ///
+/// `seat` and `offending_layout` name *that internal delegate's own* seat
+/// and the exact layout it was asked to decide for -- not `play`'s own
+/// seat or the node's `known_holdings`, which `evaluate()` already has
+/// without this type's help and which would misreport where the violation
+/// actually happened (a declarer-side strategy's internal delegate is
+/// typically itself a defender-shaped callback, deciding for a different
+/// seat over a more specific layout than the outer node's own).
+///
 /// `expand_declarer_node` (expand.cpp) catches exactly this type at
 /// `evaluate()`'s own call boundary and converts it into the same
 /// `ValidationError`-carrying `EvaluationResult` any other declarer-side
-/// contract violation produces -- so this never crosses `evaluate()`'s own
-/// public entry point, upholding "a user callback's contract violation is
-/// reported in the result, never thrown"
-/// (`specs/replenished-belief-evaluation.md`) for every caller who reaches
-/// a `DeclarerStrategy` only through `evaluate()`. A caller invoking `play`
-/// directly, bypassing `evaluate()` -- as this module's own tests do, to
-/// exercise exactly this path -- sees it propagate as an ordinary C++
-/// exception instead. There is no third option with `play`'s own
-/// `Card(ObservationState const&, BeliefView const&)` signature, which has
-/// no error channel of its own; changing that signature is a larger,
-/// cross-cutting interface decision this type deliberately avoids forcing.
+/// contract violation produces -- carrying `seat`/`offending_layout`
+/// through rather than substituting the node's own, so this never crosses
+/// `evaluate()`'s own public entry point, upholding "a user callback's
+/// contract violation is reported in the result, never thrown" *with
+/// accurate context* (`specs/replenished-belief-evaluation.md`) for every
+/// caller who reaches a `DeclarerStrategy` only through `evaluate()`. A
+/// caller invoking `play` directly, bypassing `evaluate()` -- as this
+/// module's own tests do, to exercise exactly this path -- sees it
+/// propagate as an ordinary C++ exception instead. There is no third
+/// option with `play`'s own `Card(ObservationState const&, BeliefView
+/// const&)` signature, which has no error channel of its own; changing
+/// that signature is a larger, cross-cutting interface decision this type
+/// deliberately avoids forcing.
 ///
 /// A concrete `DeclarerStrategy` implementation may derive from this to add
-/// its own richer context for that direct-caller case -- see
+/// its own richer context for the direct-caller case -- see
 /// `BruteForceDeclarer`'s own `BruteForceOpponentModelError`, which adds
-/// which layout was the offending one.
+/// nothing beyond a more specific `what()`, `seat`/`offending_layout`
+/// already living here.
 struct DeclarerStrategyContractViolation : std::exception
 {
     ValidationError validation;
+    int seat;
+    Deal offending_layout;
 
-    explicit DeclarerStrategyContractViolation(ValidationError validation) : validation(validation)
+    DeclarerStrategyContractViolation(ValidationError validation, int seat, Deal const& offending_layout)
+    : validation(validation), seat(seat), offending_layout(offending_layout)
     {
     }
 

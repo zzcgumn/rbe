@@ -62,25 +62,26 @@ struct BruteForceOptions
 /// opponent_model violates DefenderStrategy's own contract -- the same
 /// violations validate_defender_distribution already catches at
 /// evaluate()'s own outer level, carried here via the same ValidationError
-/// enum and offending layout ExpandDefenderResult already provides.
+/// enum, seat and offending layout ExpandDefenderResult already provides
+/// (base class fields; see DeclarerStrategyContractViolation's own doxygen
+/// for why these are the *opponent model's* seat and layout, not this
+/// strategy's own).
 ///
 /// Derives from DeclarerStrategyContractViolation (declarer_strategy.hpp),
 /// not std::exception directly: expand_declarer_node catches that base
 /// type at evaluate()'s own call boundary and converts it into an ordinary
-/// ValidationError-carrying EvaluationResult, so this exception never
-/// reaches evaluate()'s own public entry point -- only a caller invoking
-/// play() directly, bypassing evaluate(), sees it propagate as a C++
-/// exception (see that base type's own doxygen for the full reasoning, and
+/// ValidationError-carrying EvaluationResult, carrying seat/offending_layout
+/// through rather than substituting this strategy's own node, so this
+/// exception never reaches evaluate()'s own public entry point with
+/// inaccurate context -- only a caller invoking play() directly, bypassing
+/// evaluate(), sees it propagate as a C++ exception (see that base type's
+/// own doxygen for the full reasoning, and
 /// AMalformedOpponentModelThrowsRatherThanMiscomputing for that
-/// direct-caller case, which is what offending_layout below -- a field
-/// evaluate()'s own error path never needs, since it already has
-/// node.state.known_holdings -- exists for).
+/// direct-caller case).
 struct BruteForceOpponentModelError : DeclarerStrategyContractViolation
 {
-    Deal offending_layout;
-
-    BruteForceOpponentModelError(ValidationError validation, Deal const& offending_layout)
-    : DeclarerStrategyContractViolation(validation), offending_layout(offending_layout)
+    BruteForceOpponentModelError(ValidationError validation, int seat, Deal const& offending_layout)
+    : DeclarerStrategyContractViolation(validation, seat, offending_layout)
     {
     }
 
