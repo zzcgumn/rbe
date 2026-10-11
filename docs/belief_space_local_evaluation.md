@@ -524,11 +524,13 @@ and `evaluate()` has no idea a lookahead happened inside it at all.
 
 **A `SolverContext` is not thread-safe** (its own C++ contract: one
 context per thread), and `DoubleDummyDefender`/`DoubleDummyBound`/
-`HeuristicDefender`/`BruteForceDeclarer` release the GIL around the
-actual solve — so, unlike most of this module, two Python threads really
-do run concurrently here if they share one. Build one `SolverContext`
-(and one of whichever defender/bound/declarer types) per worker; do not
-share either across threads.
+`HeuristicDefender` release the GIL around the actual solve, while
+`BruteForceDeclarer` releases it around its whole search (every
+`DoubleDummyBound`/`DoubleDummyDefender` call its own recursion makes,
+not just one) — so, unlike most of this module, two Python threads
+really do run concurrently here if they share one. Build one
+`SolverContext` (and one of whichever defender/bound/declarer types)
+per worker; do not share either across threads.
 
 ### Where Python is deliberately stricter than C++
 
