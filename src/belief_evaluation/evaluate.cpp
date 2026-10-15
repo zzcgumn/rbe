@@ -19,6 +19,32 @@ namespace
         return seat == state.declarer || seat == dummy;
     }
 
+    /// Builds the EvaluationError for a declarer-side ExpandResult whose
+    /// `child` is empty -- called from both of this file's own
+    /// expand_declarer_node call sites (p_make()'s own recursion and
+    /// evaluate()'s root-handling block). Prefers `result`'s own
+    /// nested_seat/nested_layout, set only when `pi` itself threw
+    /// DeclarerStrategyContractViolation: that names the internal
+    /// delegate's own seat and exact layout, which `evaluate()` has no
+    /// other way to learn and which is strictly more specific than
+    /// `seat`/`known_holdings` below. Reports EvaluationCallback::
+    /// DefenderStrategy in that case -- the violating callback genuinely
+    /// was a DefenderStrategy-shaped one, just not the outer `delta`
+    /// evaluate() was itself given -- and EvaluationCallback::DeclarerPlay,
+    /// with this node's own seat/known_holdings, otherwise (pi itself
+    /// returned a card that failed validate_declarer_card).
+    auto declarer_expand_error(
+        ExpandResult const& result, int seat, Deal const& known_holdings) -> EvaluationError
+    {
+        if (result.nested_seat.has_value())
+        {
+            return EvaluationError{
+                result.error, EvaluationCallback::DefenderStrategy, *result.nested_seat,
+                *result.nested_layout};
+        }
+        return EvaluationError{result.error, EvaluationCallback::DeclarerPlay, seat, known_holdings};
+    }
+
     /// The card whose history entry a defender child just recorded — the
     /// trailing entry advance_state() (expand.cpp) appended when building
     /// it. BeliefNode itself does not track "which card led here" any more
@@ -356,8 +382,7 @@ namespace
             ExpandResult const result = expand_declarer_node(n, ctx.pi);
             if (! result.child.has_value())
             {
-                error = EvaluationError{
-                    result.error, EvaluationCallback::DeclarerPlay, seat, n.state.known_holdings};
+                error = declarer_expand_error(result, seat, n.state.known_holdings);
                 return 0.0;
             }
             return p_make(*result.child, ctx, depth + 1, error);
@@ -516,8 +541,7 @@ auto evaluate(
             ExpandResult const chosen = expand_declarer_node(root, pi);
             if (! chosen.child.has_value())
             {
-                error = EvaluationError{
-                    chosen.error, EvaluationCallback::DeclarerPlay, seat, root.state.known_holdings};
+                error = declarer_expand_error(chosen, seat, root.state.known_holdings);
                 return EvaluationResult{{}, error};
             }
 

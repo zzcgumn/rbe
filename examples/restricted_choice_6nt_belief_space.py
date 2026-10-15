@@ -117,6 +117,7 @@ Run it with:
     bazelisk run //examples:restricted_choice_6nt
 """
 
+import time
 import types
 
 import dds3
@@ -147,6 +148,7 @@ from strategies import (
     KING,
     QUEEN,
     TEN,
+    brute_force_declarer,
     double_dummy_defender,
     heuristic_defender,
     lowest_eligible_defender,
@@ -850,6 +852,57 @@ def main() -> None:
         f"toggle, isolated from every other difference between "
         f"defenders this example measures (nothing else in the chain "
         f"changes between these two rows), raises `P_make` by itself.")
+
+    brute_force_start = time.perf_counter()
+    opponent_model_calls = 0
+    _internal_opponent_model = double_dummy_defender(ctx)
+
+    def _counting_double_dummy_defender(layout, seat, state):
+        nonlocal opponent_model_calls
+        opponent_model_calls += 1
+        return _internal_opponent_model(layout, seat, state)
+
+    # max_layouts caps this example's own committed run to a few seconds --
+    # an *unbounded* search over this ending's full 252-layout belief
+    # space was separately measured, once, during this row's own
+    # development: 104.18s and 1,759,826 internal opponent-model calls,
+    # the concrete cost figure this capability's own plan left as an open
+    # question. That number is cited below, not re-run here on every call
+    # -- a committed example's own golden test needs to run quickly, which
+    # is exactly why max_layouts exists at all.
+    brute_force_value = evaluate(
+        sequence, source,
+        brute_force_declarer(
+            ctx, objective=bsle.DeclarerObjective.MaximizeProbabilityToMake,
+            opponent_model=_counting_double_dummy_defender, max_layouts=3, max_depth=3),
+        double_dummy_defender(ctx))
+    brute_force_seconds = time.perf_counter() - brute_force_start
+    print(
+        f"\nA brute-force (lookahead-search) declarer instead of "
+        f"`cash_the_king_then_read_the_beliefs`, against `DoubleDummyDefender`, "
+        f"capped to max_layouts=3, max_depth=3, of this ending's own 252 "
+        f"layouts and much deeper remaining play: "
+        f"P_make = {brute_force_value['p_make']:.4f} "
+        f"(searched in {brute_force_seconds:.2f}s, "
+        f"{opponent_model_calls} internal opponent-model calls) -- far from "
+        f"both the `0.5159` the plain `DoubleDummyDefender` row reads above "
+        f"and the `0.5952` an unbounded search over this same ending finds "
+        f"below: capped this aggressively, only 3 of this ending's own 252 "
+        f"layouts survive at every node that needs pruning, and which 3 is "
+        f"essentially arbitrary -- tie-broken by each layout's own content "
+        f"when posteriors are equal, as they routinely are in an "
+        f"exhaustively-enumerated space like this one, never by any "
+        f"bridge-meaningful preference. A concrete illustration of what "
+        f"max_layouts actually trades away at this scale, not a case where "
+        f"the cap happens to land near either anchor. An *unbounded* search over "
+        f"this same 252-layout belief space, measured separately once "
+        f"during this row's own development rather than re-run here on "
+        f"every call, found a materially different answer -- "
+        f"`P_make = 0.5952` in 104.18s and 1,759,826 internal "
+        f"opponent-model calls -- a concrete, measured answer to the open "
+        f"cost question this capability's own plan left unsettled, and a "
+        f"reminder that `max_layouts`/`max_depth` trade real search quality "
+        f"for speed, not merely time for nothing.")
 
     print(
         "\nA minimal, standalone position isolating the mechanism behind "

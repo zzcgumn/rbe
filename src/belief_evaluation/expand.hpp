@@ -32,6 +32,19 @@ struct ExpandResult
     std::optional<BeliefNode> child;
     Card card{};                                     ///< the card pi returned; meaningful only when child has a value
     ValidationError error = ValidationError::None;  ///< meaningful only when child is nullopt
+
+    /// Set only when `pi` itself threw `DeclarerStrategyContractViolation`
+    /// (rather than returning a card that failed `validate_declarer_card`):
+    /// that exception's own seat/layout, naming *the internal delegate's*
+    /// seat and the exact layout it was asked to decide for -- more
+    /// specific than this node's own `seat`/`known_holdings`, which is all
+    /// a caller would otherwise have to report. `evaluate.cpp` prefers
+    /// these over the node's own seat/known_holdings, and reports
+    /// `EvaluationCallback::DefenderStrategy`, when present -- the
+    /// violating callback genuinely was a `DefenderStrategy`-shaped one,
+    /// just not the outer `delta` `evaluate()` was itself given.
+    std::optional<int> nested_seat;
+    std::optional<Deal> nested_layout;
 };
 
 /// Expands a node where declarer or dummy is on play: calls `pi` once,

@@ -90,6 +90,28 @@ cc_library(
 # solver to get the evaluator), and this is where a future GIL-release
 # boundary for the Python binding needs to live, cleanly separated from the
 # callback boundary that runs on the calling thread.
+# Solver-free, like belief_evaluation itself -- the key-construction and
+# quantisation logic needs no solver, and keeping it out of
+# brute_force_declarer's own target (below) means a caller supplying their
+# own opponent model to BruteForceDeclarer still needs the solver (via
+# DoubleDummyBound inside that class), but a test of the cache alone does
+# not.
+cc_library(
+    name = "brute_force_cache",
+    srcs = ["brute_force_cache.cpp"],
+    hdrs = ["brute_force_cache.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":belief_evaluation",
+        "@dds//library/src/api:api_definitions",  # brute_force_cache.hpp's own <api/dds_data_types.hpp>
+        "@dds//library/src/api:dds_constants",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
 cc_library(
     name = "double_dummy_defender",
     srcs = ["double_dummy_defender.cpp"],
@@ -118,6 +140,31 @@ cc_library(
         ":belief_evaluation",
         "@dds//library/src:dds",
         "@dds//library/src/api:dds_constants",
+    ],
+    include_prefix = "belief_evaluation",
+    copts = DDS_CPPOPTS,
+    linkopts = DDS_LINKOPTS,
+    local_defines = DDS_LOCAL_DEFINES,
+)
+
+# Sibling of double_dummy_defender/double_dummy_bound, same reasoning for
+# staying out of the core library's own deps: this is the one piece that
+# calls the solver (directly, via DoubleDummyBound for its own depth-cutoff
+# leaves, and indirectly, via an owned DoubleDummyDefender when the caller
+# supplies no opponent model of their own).
+cc_library(
+    name = "brute_force_declarer",
+    srcs = ["brute_force_declarer.cpp"],
+    hdrs = ["brute_force_declarer.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":belief_evaluation",
+        ":brute_force_cache",
+        ":double_dummy_bound",
+        ":double_dummy_defender",
+        "@dds//library/src:dds",
+        "@dds//library/src/api:dds_constants",  # brute_force_declarer.cpp's own <api/dds_constants.hpp>
+        "@dds//library/src/solver_context",
     ],
     include_prefix = "belief_evaluation",
     copts = DDS_CPPOPTS,

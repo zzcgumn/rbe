@@ -10,6 +10,7 @@ try:
     from ._belief_space_local_evaluation import BeliefEntry
     from ._belief_space_local_evaluation import BeliefSpaceLocalEvaluationError
     from ._belief_space_local_evaluation import BeliefView
+    from ._belief_space_local_evaluation import BruteForceDeclarer
     from ._belief_space_local_evaluation import CallbackContractError
     from ._belief_space_local_evaluation import Card
     from ._belief_space_local_evaluation import CardIllegalForTrickError
@@ -18,6 +19,7 @@ try:
     from ._belief_space_local_evaluation import ConstrainedSpaceEmptyError
     from ._belief_space_local_evaluation import ConstrainedSpaceStatus
     from ._belief_space_local_evaluation import ContradictoryVoidError
+    from ._belief_space_local_evaluation import DeclarerObjective
     from ._belief_space_local_evaluation import DefenderHeuristic
     from ._belief_space_local_evaluation import DefenderHeuristicChain
     from ._belief_space_local_evaluation import DefenderHeuristicContext
@@ -74,6 +76,7 @@ except ImportError:
     from _belief_space_local_evaluation import BeliefEntry
     from _belief_space_local_evaluation import BeliefSpaceLocalEvaluationError
     from _belief_space_local_evaluation import BeliefView
+    from _belief_space_local_evaluation import BruteForceDeclarer
     from _belief_space_local_evaluation import CallbackContractError
     from _belief_space_local_evaluation import Card
     from _belief_space_local_evaluation import CardIllegalForTrickError
@@ -82,6 +85,7 @@ except ImportError:
     from _belief_space_local_evaluation import ConstrainedSpaceEmptyError
     from _belief_space_local_evaluation import ConstrainedSpaceStatus
     from _belief_space_local_evaluation import ContradictoryVoidError
+    from _belief_space_local_evaluation import DeclarerObjective
     from _belief_space_local_evaluation import DefenderHeuristic
     from _belief_space_local_evaluation import DefenderHeuristicChain
     from _belief_space_local_evaluation import DefenderHeuristicContext
@@ -147,6 +151,7 @@ __all__ = [
     "BeliefEntry",
     "BeliefSpaceLocalEvaluationError",
     "BeliefView",
+    "BruteForceDeclarer",
     "CallbackContractError",
     "Card",
     "CardIllegalForTrickError",
@@ -155,6 +160,7 @@ __all__ = [
     "ConstrainedSpaceEmptyError",
     "ConstrainedSpaceStatus",
     "ContradictoryVoidError",
+    "DeclarerObjective",
     "DefenderHeuristic",
     "DefenderHeuristicChain",
     "DefenderHeuristicContext",

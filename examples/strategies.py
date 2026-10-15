@@ -298,6 +298,62 @@ def heuristic_defender(ctx, chain, fallback_policy=None):
     return bsle.HeuristicDefender(ctx, chain, fallback_policy)
 
 
+def brute_force_declarer(ctx, objective=None, opponent_model=None, max_depth=None, max_layouts=None):
+    """pi: an exhaustive (or depth/size-bounded) lookahead search over the
+    belief space, keeping the best legal card under `objective` -- the
+    first lookahead-based declarer strategy here, rather than a fixed
+    rule.
+
+    `bsle.BruteForceDeclarer` is already usable as pi directly; this
+    exists to keep its own caveats next to the call, the same reason
+    `double_dummy_defender`/`heuristic_defender` above do.
+
+    **This presumes its own internal `opponent_model` is what the paired
+    delta actually is.** Paired with a different delta, `evaluate()` still
+    returns a well-defined `P_make` -- just not "the double-dummy-optimal
+    P_make" this strategy's own search would compute against a model
+    matching its internal one.
+
+    **A caller-supplied `opponent_model` must answer from position alone,
+    never from `state`'s `history` or `play_record`** -- even though a
+    legitimate defender callable may read them (a `ScriptedDefender`-style
+    model keying its own response off history is a real example). This
+    strategy's own internal cache omits both fields, which is what lets
+    two different `pi` calls along one actually-played line share a
+    cached value; that is only sound when `opponent_model` cannot tell
+    those two calls apart. Nothing checks this at runtime -- it is a
+    caller obligation, like the `objective`/`opponent_model`
+    instance-locking below.
+
+    **The cache this owns is safe to share across this one instance's own
+    calls only when `max_depth` is left `None`** -- though an actual hit
+    *across* two different calls is rare in practice, not the common case
+    "safe to share" might suggest: each call's own root is freshly
+    renormalised to sum to 1, while this search's own internal recursion
+    never renormalises a descendant, so a hit across calls survives only
+    a chain of probability-1 choices on both sides -- not the genuinely
+    uncertain, multi-layout belief space this cache exists to help.
+    Reuse within one call's own internal recursion is unaffected. With
+    `max_depth` set, the cutoff it triggers depends on how deep *this
+    particular* search call is into its own lookahead, not on anything
+    inherent to the position, so each call starts from a clean cache
+    instead. Never shared across two differently-configured instances
+    either way -- a different `objective` or a different `opponent_model`
+    corrupts backed-up values silently.
+
+    `opponent_model` left `None` resolves to an owned `DoubleDummyDefender`
+    over `ctx` -- the common case, with no need to construct one yourself.
+    Both of `double_dummy_defender`'s own caveats apply here unchanged:
+    **a `SolverContext` is not thread-safe**, and the solve releases the
+    GIL, so one context (and one of these) per worker.
+    """
+    import belief_space_local_evaluation as bsle
+
+    if objective is None:
+        objective = bsle.DeclarerObjective.MaximizeExpectedTricks
+    return bsle.BruteForceDeclarer(ctx, objective, opponent_model, max_depth, max_layouts)
+
+
 def remembers_whether_a_heart_was_already_pitched(state, view):
     """Whether declarer's choice depends on a heart already having been
     discarded before the root -- something state.history cannot show
