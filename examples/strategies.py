@@ -1,43 +1,36 @@
 """Strategies to evaluate against each other, and the empty templates to
 copy when writing your own.
 
-`evaluate()` takes a declarer strategy pi and a defender strategy delta and
-computes `P_make` for *that pair*. Both are plain callables:
+`evaluate()` computes `P_make` for one pair: a declarer strategy pi and a
+defender strategy delta. Both are plain callables:
 
     pi(state, view) -> Card
     delta(layout, seat, state) -> [(Card, probability), ...]
 
-**Both must be pure functions of their arguments.** The evaluator walks the
-tree in its own order and revisits sibling subtrees, so a strategy that
-carries state between calls -- a PRNG stream being the usual one -- returns
-different cards for the same node and silently corrupts the result. Neither
-strategy here holds any state; derive variety from the arguments if you need
-it.
+**Both must be pure functions of their arguments.** A strategy that keeps
+state between calls, such as a random stream, corrupts the result silently.
+See "π and δ" in docs/belief_space_local_evaluation.md.
 
-The asymmetry in the two signatures is not an oversight. pi sees `state` (what
-is *commonly known*) and a `BeliefView` (the belief space, as probabilities),
-because declarer does not know the layout. delta is handed `layout` itself --
-the actual deal -- because a defender's own cards are not hidden from them,
-and is called once per layout.
+The two signatures differ on purpose. Declarer does not know the layout, so
+pi gets `state` (public knowledge) and a `BeliefView` (the belief space).
+A defender sees their own cards, so delta gets the real `layout`. The
+evaluator calls delta once per layout.
 """
 
 from bridge_notation import HEARTS, SPADES
 from belief_space_local_evaluation import legal_cards, seat_on_play
 
-# The defender below works from its own `layout`, not from `state`, so it needs
-# the trick read off a deal rather than off an ObservationState. Declarer's
-# strategies read state.current_trick instead.
+# The defenders below read the trick from `layout`, not from `state`.
+# Declarer strategies read state.current_trick instead.
 from belief_space_local_evaluation.play_sequence import cards_on_trick
 
 
 def lowest_eligible_card(deal: dict, seat: int):
-    """The lowest legal card, ranks compared first and suits used only to
-    break a tie (spades lowest).
+    """The lowest legal card. Compare ranks first. Break a tie by suit,
+    spades lowest.
 
-    "Lowest" is unambiguous while following suit and a choice when
-    discarding, where nothing makes one four lower than another. Ties going
-    to spades is arbitrary but fixed -- the point is that it is a function of
-    the position alone, so the same node always yields the same card.
+    The tie-break matters only when discarding. It is arbitrary but fixed,
+    so the same node always gives the same card.
     """
     legal = legal_cards(deal, seat)
     if not legal:
@@ -46,33 +39,29 @@ def lowest_eligible_card(deal: dict, seat: int):
 
 
 def lowest_eligible_declarer(state, view):
-    """pi: declarer (and dummy) always play the lowest eligible card.
+    """pi: declarer and dummy always play the lowest eligible card.
 
-    A deliberately terrible declarer, and a useful one: it makes no use of
-    `view` at all, so `P_make` under it is a reference value every other
-    strategy here can be read against, and any difference between two runs
-    is down to delta alone. Not a floor -- a strategy can do worse than
-    playing low, and one that leads its own winners will.
+    A poor declarer, but a useful reference. It ignores `view`, so any
+    difference between two runs comes from delta alone. It is not a lower
+    bound: a strategy that leads its own winners does worse.
 
-    `state.known_holdings` is exact for declarer and dummy, which are the only
-    seats pi is ever asked about -- a defender's entry there is the *pool* of
-    both defenders' cards, not one hand, and reading it as a hand is the
-    classic way to write a pi that quietly cheats.
+    `state.known_holdings` is exact for declarer and dummy. A defender entry
+    is the pool of both defenders' cards, not one hand. **Do not read it as
+    a hand:** that makes pi cheat without any error.
     """
     del view  # A lowest-card rule conditions on the position, not the beliefs.
     return lowest_eligible_card(state.known_holdings, state.seat_on_play)
 
 
 def lowest_eligible_defender(layout, seat, state):
-    """delta: both defenders always play the lowest eligible card, with
-    certainty.
+    """delta: both defenders always play the lowest eligible card.
 
-    The returned list is a distribution over the cards this defender might
-    play. A card the defender will never play is **left out**, not given
-    probability 0: the evaluator treats "probability > 0" as the test for
-    whether a layout survives, so a zero-weighted card is not a no-op.
+    The list is a distribution over the cards this defender might play.
+    **Leave out a card the defender never plays.** Do not give it
+    probability 0. The evaluator keeps a layout only if its card has
+    probability > 0.
     """
-    del state  # Deterministic: this defender conditions on their own cards only.
+    del state  # This defender uses only their own cards.
     return [(lowest_eligible_card(layout, seat), 1.0)]
 
 
@@ -84,7 +73,7 @@ def _lowest(legal):
 
 
 def pick(legal, suit, rank):
-    """That card, if it is one of the legal ones -- else None."""
+    """The card with this suit and rank if it is legal, else None."""
     for card in legal:
         if card.suit == suit and card.rank == rank:
             return card
@@ -92,28 +81,22 @@ def pick(legal, suit, rank):
 
 
 def _spade_queen_cannot_be_beaten(layout: dict) -> bool:
-    """Whether the spade queen, played now by the seat on play, takes the
-    trick. The seat is derived from `layout` rather than passed: it is
-    `first` advanced by the cards already on the trick, and taking it as an
-    argument would let a caller disagree with the position.
+    """Whether the spade queen, played now by the seat on play, wins the
+    trick. The seat comes from `layout`, so it cannot disagree with the
+    position.
 
-    Three things have to hold. Spades must be the suit of the trick --
-    contract 6NT, so there is no trump to ruff with, and a queen thrown on
-    another suit's trick never wins. Nothing already played can be higher.
-    And no seat still to play can beat it, which in spades means holding the
-    ace or the king.
+    The queen wins if all three hold:
 
-    That last test reads the other hands out of `layout`, which a defender
-    strategy is given in full. It is the same licence `DoubleDummyDefender`
-    takes: a model defender is allowed to see through the cards, and the
-    result is a statement about the position rather than a guess from one
-    seat's knowledge. A strategy meant to be realistic would have to work
-    from `state` instead.
+    1. Spades were led. The contract is 6NT, so nothing can ruff.
+    2. No higher spade is already on the trick.
+    3. No seat still to play holds the ace or the king.
 
-    It asks whether the queen *can* be beaten, not whether it will be --
-    a seat holding the king might play low. Assuming otherwise would make
-    this claim depend on declarer's strategy, and a defender that is only
-    right against one declarer is not much of a defender.
+    Test 3 reads the other hands from `layout`. A model defender may see
+    all the cards, as `DoubleDummyDefender` does. A realistic defender would
+    use `state` instead.
+
+    The test asks whether the queen *can* be beaten, not whether it will
+    be. Otherwise the answer would depend on declarer's strategy.
     """
     on_trick = cards_on_trick(layout)
     if on_trick and on_trick[0].suit != SPADES:
@@ -130,12 +113,11 @@ def _spade_queen_cannot_be_beaten(layout: dict) -> bool:
 
 
 def queen_of_spades_when_it_wins(layout, seat, state):
-    """delta: play the spade queen when it takes the trick, otherwise low.
+    """delta: play the spade queen when it wins the trick, otherwise low.
 
-    Written against this example's ending, where locating that one card is
-    the whole problem -- not a general defensive rule.
+    Written for this example's ending only. It is not a general rule.
     """
-    del state  # Conditions on the layout alone.
+    del state  # Uses the layout only.
     legal = legal_cards(layout, seat)
     queen = pick(legal, SPADES, QUEEN)
     if queen is not None and _spade_queen_cannot_be_beaten(layout):
@@ -144,26 +126,21 @@ def queen_of_spades_when_it_wins(layout, seat, state):
 
 
 def finesse_the_queen_from_the_beliefs(state, view):
-    """pi: as `cash_two_hearts_and_play_a_spade`, but the spade guess is read
-    off the belief space instead of fixed in advance.
+    """pi: as `cash_two_hearts_and_play_a_spade`, but read the spade guess
+    from the belief space.
 
-    The only strategy here that touches `view` -- and the reason the library
-    exists. The two hearts are forced (nothing to decide), and covering a
-    played queen is certain, so the one real decision is which defender to
-    play for the queen. That is a probability, not a card, and it is sitting
-    in `view`.
+    This is the only strategy here that reads `view`. The hearts are forced,
+    and covering the queen is automatic. The one real decision is which
+    defender to play for the queen. `view` holds that probability.
 
-    `entry.posterior` is the probability of that layout given everything
-    observed. Summing it over the layouts in which the queen sits with a
-    particular defender gives the probability that defender holds it. On this
-    ending the two are 0.5 each at the root, so the choice only becomes
-    informative once the defenders' own play has narrowed the space -- which
-    is exactly what a belief space is for.
+    `entry.posterior` is the probability of one layout, given the play so
+    far. Sum it over the layouts where a defender holds the queen. The
+    result is the probability that this defender holds it. At the root both
+    defenders have 0.5. The probabilities change only after the defenders'
+    play narrows the belief space.
 
-    **`view` is valid only for this call.** Read what is needed and return;
-    storing it, or an entry from it, and touching either afterwards raises
-    `ExpiredBeliefViewError`. A `layout` dict already read stays usable, but
-    there is no reason to keep one here.
+    **`view` is valid only during this call.** After the call, any access to
+    it, or to an entry from it, raises `ExpiredBeliefViewError`.
     """
     legal = state.legal_cards
     on_trick = state.current_trick
@@ -172,8 +149,8 @@ def finesse_the_queen_from_the_beliefs(state, view):
         lead = pick(legal, HEARTS, ACE) or pick(legal, HEARTS, TEN)
         if lead is not None:
             return lead
-        # Leading spades. Play the low card from the hand that has one, so
-        # the queen has to commit before the honour behind it does.
+        # Leading spades. Lead low, so that the defender with the queen must
+        # play before the honour behind them.
         return min(legal, key=lambda card: (card.rank, card.suit))
 
     if any(c.suit == SPADES and c.rank == QUEEN for c in on_trick):
@@ -181,16 +158,12 @@ def finesse_the_queen_from_the_beliefs(state, view):
         if king is not None:
             return king
 
-    # Third hand on a spade: finesse or play for the drop, according to which
-    # defender the beliefs put the queen with. `rho` is the defender who has
-    # already played to this trick; if the queen is more likely to be over
-    # there it is already committed and the jack is safe, so play low --
-    # otherwise the king is the card that cannot be beaten by it.
+    # Third hand on a spade: finesse, or play for the drop. `rho` is the
+    # defender who has already played to this trick. If rho more likely holds
+    # the queen, play the jack. Otherwise play the king.
     if on_trick[0].suit == SPADES:
-        # `trick_leader`, not `first`: `first` is the root's leader and does
-        # not move, so it would name the wrong defender from the second trick
-        # on. The library derives both, which is why this reads as a fact
-        # about the position rather than as arithmetic to get right.
+        # Use `trick_leader`, not `first`. `first` is the root leader and
+        # never changes, so it names the wrong defender after trick one.
         rho = (state.trick_leader + state.position_in_trick - 1) % 4
         queen_with_rho = sum(
             entry.posterior for entry in view.entries
@@ -207,31 +180,28 @@ def finesse_the_queen_from_the_beliefs(state, view):
 
 # --- templates ------------------------------------------------------------
 #
-# The shape of each callback, with the body left out. Copy one of these
-# rather than a working strategy above when the rule you want has nothing to
-# do with playing low.
+# The shape of each callback, with no body. Copy one to start a new
+# strategy.
 
 
 def empty_declarer(state, view):
-    """pi, unimplemented. Return one Card: what declarer or dummy -- whichever
-    of the two is on play -- plays at this node.
+    """pi, not implemented. Return one Card for the seat on play, declarer
+    or dummy.
 
-    It must be legal for *every* layout the node holds. That is automatic if
-    it is chosen from `state.known_holdings`, since the seats pi plays for
-    hold the same cards in every layout of the belief space; it is not
-    automatic if chosen any other way.
+    The card must be legal in *every* layout at this node. Choose it from
+    `state.known_holdings` and it will be: declarer and dummy hold the same
+    cards in every layout.
     """
     raise NotImplementedError("declarer strategy")
 
 
 def empty_defender(layout, seat, state):
-    """delta, unimplemented. Return the cards `seat` might play from `layout`,
-    with the probability of each, summing to 1.
+    """delta, not implemented. Return the cards `seat` might play from
+    `layout`, each with its probability. The probabilities sum to 1.
 
-    Every card returned must be legal for `seat` in `layout`, and every card
-    that could be played must be listed -- a card omitted is a card this
-    defender will never play, which is a claim about the strategy, not a
-    shortcut.
+    Every card must be legal for `seat` in `layout`. List every card the
+    defender might play. Leaving a card out means the defender never plays
+    it.
     """
     raise NotImplementedError("defender strategy")
 
@@ -240,30 +210,19 @@ def empty_defender(layout, seat, state):
 
 
 def double_dummy_defender(ctx, policy=None):
-    """delta: both defenders play double dummy -- they see all four hands.
+    """delta: both defenders play double dummy. They see all four hands.
 
-    `bsle.DoubleDummyDefender` is already usable as delta directly; this
-    exists to keep its two caveats next to the call rather than in a
-    docstring you have to go and find.
+    `bsle.DoubleDummyDefender` works as delta directly. This wrapper keeps
+    its caveats next to the call:
 
-    **It is not best defence against the contract.** It maximises tricks,
-    and will sometimes concede the contract to hold the trick count down.
-    The gap between maximising tricks and minimising `P_make` is the thing
-    this library exists to measure, not a defect to work around.
+    - **It is not best defence against the contract.** It maximises tricks,
+      and sometimes gives up the contract to do so.
+    - **A `SolverContext` is not thread-safe.** The solve releases the GIL.
+      Use one context, and one of these, per thread.
 
-    **A `SolverContext` is not thread-safe**, and the solve releases the
-    GIL, so two Python threads sharing one really do run concurrently. One
-    context, and one of these, per worker.
-
-    Not paired here with `DoubleDummyBound`, which is the configuration the
-    library documents as the intended one, only because this example has no
-    use for pruning -- 70 layouts and a four-card ending. The pairing is
-    sound: on positions where `solve_board` at `solutions=1` answers -2
-    ("not evaluated" rather than a trick count), `DoubleDummyBound` returns
-    its too-high sentinel instead, so the cut cannot fire on a live node.
-    That costs pruning on those positions and nothing else. Which positions
-    they are is not established -- see "Known gaps" in
-    docs/belief_space_local_evaluation.md.
+    The examples do not pair it with `DoubleDummyBound`, because a
+    four-card ending with 70 layouts does not need pruning. The pair is
+    sound. See "Known gaps" in docs/belief_space_local_evaluation.md.
     """
     import belief_space_local_evaluation as bsle
 
@@ -273,23 +232,15 @@ def double_dummy_defender(ctx, policy=None):
 
 
 def heuristic_defender(ctx, chain, fallback_policy=None):
-    """delta: a caller-assembled chain of small, independently-testable
-    conventions (second-hand low, third-hand high/low, fourth-hand low,
-    ruff small, discard keeping winners) -- falling back to
-    `DoubleDummyDefender`'s own uniform spread only when every rule in
-    `chain` defers.
+    """delta: double-dummy candidates, filtered by a chain of defensive
+    rules. If every rule in `chain` defers, it falls back to the even spread
+    of `DoubleDummyDefender`.
 
-    `bsle.HeuristicDefender` is already usable as delta directly; this
-    exists for the same reason `double_dummy_defender` above does -- to
-    keep its caveats next to the call. Both of that function's own
-    caveats apply here unchanged: **a `SolverContext` is not
-    thread-safe**, and the solve releases the GIL, so one context (and
-    one of these) per worker.
+    `bsle.HeuristicDefender` works as delta directly. This wrapper keeps its
+    caveats next to the call. The caveats of `double_dummy_defender` apply.
 
-    **`chain` is entirely caller-assembled.** This function never builds
-    one implicitly -- pass `bsle.make_default_defender_heuristics(trump)`
-    for the shipped order, or a `bsle.DefenderHeuristicChain` built by
-    hand for anything else; neither is a second-class argument here.
+    **You build `chain`.** Pass `bsle.make_default_defender_heuristics(trump)`
+    for the shipped order, or a `bsle.DefenderHeuristicChain` built by hand.
     """
     import belief_space_local_evaluation as bsle
 
@@ -299,53 +250,22 @@ def heuristic_defender(ctx, chain, fallback_policy=None):
 
 
 def brute_force_declarer(ctx, objective=None, opponent_model=None, max_depth=None, max_layouts=None):
-    """pi: an exhaustive (or depth/size-bounded) lookahead search over the
-    belief space, keeping the best legal card under `objective` -- the
-    first lookahead-based declarer strategy here, rather than a fixed
-    rule.
+    """pi: a lookahead search over the belief space. It keeps the best legal
+    card for `objective`. `max_depth` and `max_layouts` limit the search.
 
-    `bsle.BruteForceDeclarer` is already usable as pi directly; this
-    exists to keep its own caveats next to the call, the same reason
-    `double_dummy_defender`/`heuristic_defender` above do.
+    `bsle.BruteForceDeclarer` works as pi directly. This wrapper keeps its
+    caveats next to the call:
 
-    **This presumes its own internal `opponent_model` is what the paired
-    delta actually is.** Paired with a different delta, `evaluate()` still
-    returns a well-defined `P_make` -- just not "the double-dummy-optimal
-    P_make" this strategy's own search would compute against a model
-    matching its internal one.
+    - **Match `opponent_model` to the paired delta.** Otherwise `P_make`
+      is valid only for that pairing, not for optimal play.
+    - **An `opponent_model` you supply must answer from the position
+      only.** It must not read `state.history` or `state.play_record`.
+      Nothing checks this.
+    - With `opponent_model=None`, it owns a `DoubleDummyDefender` over
+      `ctx`. The caveats of `double_dummy_defender` apply.
 
-    **A caller-supplied `opponent_model` must answer from position alone,
-    never from `state`'s `history` or `play_record`** -- even though a
-    legitimate defender callable may read them (a `ScriptedDefender`-style
-    model keying its own response off history is a real example). This
-    strategy's own internal cache omits both fields, which is what lets
-    two different `pi` calls along one actually-played line share a
-    cached value; that is only sound when `opponent_model` cannot tell
-    those two calls apart. Nothing checks this at runtime -- it is a
-    caller obligation, like the `objective`/`opponent_model`
-    instance-locking below.
-
-    **The cache this owns is safe to share across this one instance's own
-    calls only when `max_depth` is left `None`** -- though an actual hit
-    *across* two different calls is rare in practice, not the common case
-    "safe to share" might suggest: each call's own root is freshly
-    renormalised to sum to 1, while this search's own internal recursion
-    never renormalises a descendant, so a hit across calls survives only
-    a chain of probability-1 choices on both sides -- not the genuinely
-    uncertain, multi-layout belief space this cache exists to help.
-    Reuse within one call's own internal recursion is unaffected. With
-    `max_depth` set, the cutoff it triggers depends on how deep *this
-    particular* search call is into its own lookahead, not on anything
-    inherent to the position, so each call starts from a clean cache
-    instead. Never shared across two differently-configured instances
-    either way -- a different `objective` or a different `opponent_model`
-    corrupts backed-up values silently.
-
-    `opponent_model` left `None` resolves to an owned `DoubleDummyDefender`
-    over `ctx` -- the common case, with no need to construct one yourself.
-    Both of `double_dummy_defender`'s own caveats apply here unchanged:
-    **a `SolverContext` is not thread-safe**, and the solve releases the
-    GIL, so one context (and one of these) per worker.
+    For the internal cache and the search limits, see `BruteForceDeclarer`
+    in docs/belief_space_local_evaluation.md.
     """
     import belief_space_local_evaluation as bsle
 
@@ -355,13 +275,12 @@ def brute_force_declarer(ctx, objective=None, opponent_model=None, max_depth=Non
 
 
 def remembers_whether_a_heart_was_already_pitched(state, view):
-    """Whether declarer's choice depends on a heart already having been
-    discarded before the root -- something state.history cannot show
-    (root-relative), and state.play_record can (the full record).
+    """pi: play high if a heart was played before the root, otherwise low.
 
-    Not a serious bridge rule. A minimal, mechanically checkable
-    demonstration that play_record reaches pi and changes its answer --
-    see examples/test_strategies.py's test using it.
+    `state.history` starts at the root, so it cannot show this.
+    `state.play_record` holds the full record, so it can. This is not a
+    real bridge rule. It shows that `play_record` reaches pi.
+    examples/test_strategies.py uses it.
     """
     del view
     deal = state.known_holdings
