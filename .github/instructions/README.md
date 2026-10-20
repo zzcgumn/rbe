@@ -12,12 +12,15 @@ Provenance
   about the solver.
 - When dds changes one of these files, the change has to be brought over by
   hand. The same is true of the build glue; see `bazel.instructions.md`.
+- `writing.instructions.md` is written for this repository. It is not
+  copied from dds.
 
 Files
 - `bazel.instructions.md` — Bazel/build guidance
 - `cpp.instructions.md` — C++/clangd/Serena guidance
 - `git.instructions.md` — Git/MCP usage
 - `github.instructions.md` — Branching and PR rules
+- `writing.instructions.md` — How to write docs, docstrings and comments
 
 Usage
 - Agents should read these files to apply repository-specific context. Humans can use this README as a quick pointer.

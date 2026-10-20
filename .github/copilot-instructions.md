@@ -13,6 +13,7 @@ which it consumes as a Bazel module dependency.
 - The implemented contract, and the reasoning behind it, is `specs/replenished-belief-evaluation.md`
 - The algorithm is `docs/replenished_belief_evaluation/algorithm.md`
 - The measurements behind its defaults are `docs/replenished_belief_evaluation/benchmarks.md`
+- How to write docs and comments is `.github/instructions/writing.instructions.md`
 
 **Read the spec before changing behaviour.** It is not a summary written after
 the fact; it is what the tests encode, and a change that contradicts it is a
