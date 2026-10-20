@@ -187,4 +187,4 @@ construction.
 that δ is double-dummy optimal for trick count, and a source presenting a
 randomised order. Each is silently wrong rather than an error. The caller's
 guide states all four and what each one costs when it is wrong:
-[the four obligations nothing here can validate](belief_space_local_evaluation.md#the-four-obligations-nothing-here-can-validate).
+[four obligations the library cannot check](belief_space_local_evaluation.md#four-obligations-the-library-cannot-check).

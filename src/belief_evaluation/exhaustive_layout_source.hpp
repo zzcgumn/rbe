@@ -24,7 +24,7 @@ namespace dds::belief_evaluation
 /// establishes. A caller with *inferred* information — what the bidding
 /// ruled out, say — supplies their own tighter `LayoutSource`, and needs to
 /// know which side of that line their information falls on. See the
-/// caller's guide, "The play history: needed, not merely optional".
+/// caller's guide, "Supply the play history".
 ///
 /// `record` is defaulted; its absence applies no void constraint and
 /// reproduces the unconstrained enumeration. A supplied record's cards are

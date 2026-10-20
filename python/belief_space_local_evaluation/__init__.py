@@ -1,9 +1,6 @@
-# dds3 must be imported before the extension below. pybind11 shares a single
-# interpreter-level type registry across extensions built by the same
-# toolchain; SolverContext is registered once, in dds3, and this module only
-# *uses* that registration (see the solver seam) rather than repeating it.
-# Importing dds3 first here makes that ordering guaranteed rather than
-# dependent on what a caller happened to import first.
+# Import dds3 before the extension. dds3 registers SolverContext, and this
+# extension only uses that registration. pybind11 shares registrations between
+# extensions, but only if dds3 is imported first.
 import dds3  # noqa: F401
 
 try:
@@ -71,8 +68,7 @@ try:
     from ._belief_space_local_evaluation import ValidationError
     from ._belief_space_local_evaluation import VoidContradictionError
 except ImportError:
-    # Fallback for environments where _belief_space_local_evaluation is
-    # available as a top-level module.
+    # Fallback for environments where the extension is a top-level module.
     from _belief_space_local_evaluation import BeliefEntry
     from _belief_space_local_evaluation import BeliefSpaceLocalEvaluationError
     from _belief_space_local_evaluation import BeliefView
@@ -137,14 +133,9 @@ except ImportError:
     from _belief_space_local_evaluation import ValidationError
     from _belief_space_local_evaluation import VoidContradictionError
 
-# Not from the compiled extension, so not part of either branch above:
-# play_sequence.py is plain Python with no compiled-extension dependency of
-# its own. It does `import belief_space_local_evaluation` (this package,
-# still initialising at this point), but only inside function bodies -- no
-# module-level code in play_sequence.py calls back into this package eagerly,
-# so the partially-initialised module object already in sys.modules is
-# sufficient, and by the time any caller actually invokes a PlaySequence
-# method, this __init__ has long finished running.
+# Plain Python, not from the extension. play_sequence.py imports this
+# package only inside function bodies, so importing it while this package is
+# still initialising is safe.
 from .play_sequence import PlaySequence  # noqa: E402
 
 __all__ = [

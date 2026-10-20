@@ -1,7 +1,5 @@
-// The belief_space_local_evaluation extension module. Its own distinct
-// import, not folded into dds3: this capability has its own vocabulary (a
-// belief space, a layout source, replenishment) and a caller solving a
-// board has no reason to import belief evaluation to do it.
+// The belief_space_local_evaluation extension module. It is separate from
+// dds3, so that a caller who solves one board need not import it.
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -49,43 +47,23 @@ namespace be = dds::belief_evaluation;
 namespace
 {
 
-// The one root every exception this module raises intentionally derives
-// from -- a rejected history, a root construction failure, a callback
-// contract violation. `except BeliefSpaceLocalEvaluationError` catches
-// any of those without also catching a Python exception merely
-// *propagating through* evaluate() from inside a callback: that keeps
-// its own original type entirely (see evaluate()'s own comment on the
-// two mechanisms), never becomes one of this hierarchy's members, and is
-// not something this module's own exception design touches at all.
-//
-// Settled here, in one sitting, for all three of the mechanisms that
-// converge on this module's error surface -- a history/constrained-space
-// rejection (from a source's constructor), a RootFailure (from
-// evaluate()'s own root construction), and a ValidationError (from
-// evaluate() validating a callback's return) -- rather than accreting
-// one exception at a time across unrelated tasks, which is how a
-// hierarchy ends up with cousins that should have been siblings.
+// The base of every exception this module raises: a rejected history, a
+// RootFailure, or a ValidationError. A Python exception raised inside a
+// callback keeps its own type as it passes out of evaluate(), so this base
+// does not catch it.
 py::object belief_space_local_evaluation_error;
 
-// Python's own `type(name, bases, namespace)` metaclass call.
-// py::exception<> only supports a single base; two causes in this
-// hierarchy need a second one (ValueError) alongside their own family's
-// base, so existing `except ValueError` code keeps working alongside
-// `except <the specific cause>`. The result is diamond-shaped (both
-// bases eventually reach Exception), which Python's own C3
-// linearisation resolves exactly as it would for a `class Foo(A, B):`
-// statement written by hand.
+// Creates an exception type with several bases, through Python's
+// `type(name, bases, namespace)`. py::exception<> allows only one base.
+// Two causes also derive from ValueError, so that `except ValueError`
+// still catches them. Python resolves the diamond as it would for
+// `class Foo(A, B):`.
 auto make_exception_with_bases(py::module_& module, char const* name, py::tuple const& bases) -> py::object
 {
     py::object const type_builtin = py::module_::import("builtins").attr("type");
-    // py::exception<> sets __module__ to the extension itself
-    // automatically; this hand-rolled path (needed at all only because
-    // py::exception<> supports a single base) must do the same
-    // explicitly, in the namespace dict passed to type() -- Python's own
-    // type() does not infer it from the caller the way a `class` statement
-    // does, and without this it defaults to whatever module the type()
-    // call itself happens to be reached through (importlib's own bootstrap
-    // machinery, observed directly), not this extension.
+    // Set __module__ by hand. py::exception<> does this itself, but type()
+    // does not: it would use the module that happens to call it
+    // (importlib's bootstrap code, observed).
     py::dict ns;
     ns["__module__"] = module.attr("__name__");
     py::object const cls = type_builtin(name, bases, ns);
@@ -98,11 +76,10 @@ auto register_root_exception_bindings(py::module_& module) -> void
     belief_space_local_evaluation_error = py::exception<void>(module, "BeliefSpaceLocalEvaluationError");
 }
 
-// The history representation used both ways: ObservationState::history comes
-// out through history_to_list, and a caller-supplied history
-// (PlayRecord's constructor) goes in through list_to_history.
-// Same representation both directions, so sequence -> PlayTraceBin ->
-// sequence round-trips.
+// A history as a list of Card, in both directions:
+// ObservationState::history goes out through history_to_list, and the
+// PlayRecord constructor takes one in through list_to_history. The two
+// round-trip.
 
 auto history_to_list(PlayTraceBin const& history) -> py::list
 {
@@ -113,32 +90,19 @@ auto history_to_list(PlayTraceBin const& history) -> py::list
     return result;
 }
 
-// Forward-declared: raises InvalidHistoryInputError (defined alongside
-// history_rejected_exceptions, in register_history_error_bindings, well
-// after this point in the file) with a caller-supplied detail message.
-// list_to_history needs this rather than register_history_error_bindings'
-// own generic raise_history_rejected(HistoryVerdict::InvalidInput): a
-// malformed card names which index and which field, detail
-// history_verdict_message's one fixed string for the whole verdict cannot
-// carry.
+// Raises InvalidHistoryInputError with a detail message. Defined in
+// register_history_error_bindings. list_to_history uses it instead of
+// raise_history_rejected, because its message names the bad index and
+// field.
 [[noreturn]] auto raise_invalid_history_input(std::string const& detail) -> void;
 
-// Validated at this boundary rather than left to the C++ side's own
-// asserted-or-clamped defences: those exist as a last resort against
-// undefined behaviour, not as a diagnostic, and a clamped card would
-// silently change which suit or rank was played. A Python caller can build
-// a malformed sequence far more easily than a C++ one can.
+// Validates each card here. The C++ side only asserts or clamps, as a last
+// defence against undefined behaviour, and a clamped card would silently
+// change the play.
 //
-// Raises InvalidHistoryInputError, not a bare ValueError: this is exactly
-// the shape of thing verify_history's own HistoryVerdict::InvalidInput
-// names ("history is malformed... or some card's own suit/rank is out of
-// range") when reached from PlayRecord's constructor, and a caller
-// catching that type around construction must not have a malformed
-// *card* slip past it just because this earlier check caught it first
-// instead of verify_history. InvalidHistoryInputError is itself a
-// ValueError (see register_history_error_bindings), so this is a strict
-// widening of what a caller who only wrote `except ValueError` already
-// catches, not a narrowing.
+// Raises InvalidHistoryInputError, the same type verify_history raises for
+// HistoryVerdict::InvalidInput. So a caller who catches that type also
+// catches a bad card found here. It is a ValueError too.
 auto list_to_history(py::sequence const& cards) -> PlayTraceBin
 {
     constexpr std::size_t deck_size = DDS_SUITS * 13;
@@ -176,10 +140,10 @@ auto register_card_bindings(py::module_& module) -> void
         module,
         "Card",
         "A single card. suit is 0=S, 1=H, 2=D, 3=C. rank is **absolute**,\n"
-        "2..14 -- never relative to a node's outstanding-card pool. This is\n"
-        "the type a declarer strategy's play() returns and a defender\n"
-        "strategy's weighted cards carry; a strategy reasoning in relative\n"
-        "ranks must convert to absolute before returning one.")
+        "2..14, never relative to a node's outstanding cards.\n\n"
+        "A declarer strategy returns a Card, and a defender strategy returns\n"
+        "weighted Cards. A strategy that reasons in relative ranks must\n"
+        "convert to absolute first.")
         .def(py::init<int, int>(), py::arg("suit"), py::arg("rank"))
         .def_readwrite("suit", &be::Card::suit)
         .def_readwrite("rank", &be::Card::rank)
@@ -188,17 +152,12 @@ auto register_card_bindings(py::module_& module) -> void
             [](be::Card const& self, be::Card const& other) {
                 return self.suit == other.suit && self.rank == other.rank;
             })
-        // Defining __eq__ alone makes a type unhashable -- a Python language
-        // rule, not a pybind11 quirk -- so a Card could not be a dict key or a
-        // set member, and a caller memoising by played card had to convert to
-        // (suit, rank) first. Hashing that same tuple rather than combining the
-        // fields by hand keeps "equal cards hash equal" true by construction
-        // and stops the two drifting apart.
+        // Python makes a type with only __eq__ unhashable. Hash the
+        // (suit, rank) tuple, so that equal cards always hash equal.
         //
-        // Card is mutable, so this is a hashable mutable type: the hash follows
-        // the fields, and mutating a Card already used as a key loses it. The
-        // alternative -- an immutable Card -- would break the field assignment
-        // this binding has always allowed.
+        // Card is mutable. The hash follows the fields, so changing a Card
+        // that is already a key loses it. Making Card immutable would break
+        // field assignment.
         .def(
             "__hash__",
             [](be::Card const& self) {
@@ -210,54 +169,47 @@ auto register_card_bindings(py::module_& module) -> void
         });
 }
 
-// A value type -- aggr plus two pure functions reading only it and static
-// lookup tables, no ownership or per-call lifetime the way BeliefView has
-// -- so bound the same way Card is: read-only, freely copyable, no
-// validity flag needed. Read-only for the same reason ObservationState
-// itself is: a strategy receives one, nothing constructs one from Python.
+// A plain value type, with no per-call lifetime like BeliefView. So it is
+// bound read-only and copyable, with no validity flag. A strategy receives
+// one; Python never constructs one.
 auto register_rank_map_bindings(py::module_& module) -> void
 {
     py::class_<be::RankMap>(
         module,
         "RankMap",
-        "The outstanding-card pool and the absolute/relative rank mapping\n"
-        "over it, for one belief-evaluation node -- ObservationState.ranks.\n"
-        "Layout-invariant across the node: every layout shares the same\n"
-        "outstanding cards per suit, differing only in how the defenders'\n"
-        "cards are split.")
+        "The outstanding cards at one node, and the mapping between absolute\n"
+        "and relative ranks (ObservationState.ranks).\n\n"
+        "It is the same in every layout of the node: the layouts differ only\n"
+        "in how the defenders' cards are split.")
         .def_property_readonly(
             "aggr",
             [](be::RankMap const& self) {
                 return py::make_tuple(self.aggr[0], self.aggr[1], self.aggr[2], self.aggr[3]);
             },
-            "Outstanding pool per suit, one unsigned int each -- the\n"
-            "compacted convention (bit rank-2), not remain_cards' own\n"
-            "(bit rank). Four-element tuple, indexed by suit.")
+            "The outstanding cards per suit: a four-element tuple of unsigned\n"
+            "ints, indexed by suit. Bit (rank - 2) is set for each card. Note:\n"
+            "remain_cards uses bit rank instead.")
         .def(
             "to_relative", &be::RankMap::to_relative, py::arg("suit"), py::arg("rank"),
-            "Absolute rank -> relative, 1 = highest, 0 if not outstanding\n"
-            "(also 0, not an error, for a suit/rank out of range).")
+            "Absolute rank -> relative ordinal, 1 = highest. Returns 0 if the\n"
+            "card is not outstanding, or if suit or rank is out of range.")
         .def(
             "to_absolute", &be::RankMap::to_absolute, py::arg("suit"), py::arg("ordinal"),
-            "Relative ordinal (1 = highest) -> absolute rank (also 0 for a\n"
-            "suit/ordinal out of range). The conversion play() needs before\n"
-            "returning a Card, if it reasoned in relative terms -- Card's\n"
-            "own rank is always absolute.");
+            "Relative ordinal (1 = highest) -> absolute rank. Returns 0 if\n"
+            "suit or ordinal is out of range. Use it before returning a Card,\n"
+            "because a Card rank is always absolute.");
 }
 
 auto register_observation_state_bindings(py::module_& module) -> void
 {
-    // Read-only: a strategy receives one, nothing constructs one from
-    // Python. Every field ObservationState defines that a declarer strategy
-    // may condition on directly.
+    // Read-only: a strategy receives one; Python never constructs one.
     py::class_<be::ObservationState>(
         module,
         "ObservationState",
-        "The commonly-known part of a belief-evaluation node, handed to a\n"
-        "declarer strategy's play() at every call (and, in the type's own\n"
-        "shape, to state_key() too -- but state_key() is never actually\n"
-        "called yet, there is no cache to key): identical across every\n"
-        "layout of the current belief space.")
+        "The public part of a belief-evaluation node. It is the same in every\n"
+        "layout of the belief space. A declarer strategy's play() receives it\n"
+        "on every call. state_key() takes it too, but nothing calls\n"
+        "state_key() yet.")
         .def_property_readonly(
             "trump", [](be::ObservationState const& self) { return self.trump; })
         .def_property_readonly(
@@ -265,7 +217,7 @@ auto register_observation_state_bindings(py::module_& module) -> void
             "Seat on lead at the root.")
         .def_property_readonly(
             "history", [](be::ObservationState const& self) { return history_to_list(self.history); },
-            "Every card played so far, in order, as a list of Card.")
+            "Every card played since the root, in order, as a list of Card.")
         .def_property_readonly(
             "declarer", [](be::ObservationState const& self) { return self.declarer; },
             "Seat; dummy is (declarer + 2) % 4.")
@@ -277,40 +229,34 @@ auto register_observation_state_bindings(py::module_& module) -> void
         .def_property_readonly(
             "known_holdings",
             [](be::ObservationState const& self) { return dds3_python::deal_to_dict(self.known_holdings); },
-            "A deal dict. declarer's and dummy's entries are exact; a\n"
-            "defender's entry is the **union pool** of both defenders'\n"
-            "outstanding cards, not that defender's own actual holding.")
-        // --- derived, not stored: computed on access from known_holdings.
+            "A deal dict. Declarer's and dummy's entries are exact. Each\n"
+            "defender's entry is the **union** of both defenders' cards, not\n"
+            "that defender's actual hand.")
+        // --- derived on access from known_holdings, not stored.
         //
-        // Every one of these is something a strategy would otherwise work out
-        // for itself on every call, and two of them are the derivations that
-        // are wrong in the obvious way. Computed here rather than eagerly in
-        // the binding because pi is called thousands of times for even a small
-        // ending (3487 for a four-card one, measured) and most calls read one
-        // or two of these, not all seven.
+        // Two of these are easy to derive wrongly by hand. They are lazy
+        // because pi is called thousands of times even for a small ending
+        // (3487 for a four-card one, measured), and most calls read one or
+        // two of them.
         .def_property_readonly(
             "seat_on_play",
             [](be::ObservationState const& self) { return be::seat_on_play(self.known_holdings); },
-            "The seat (0..3) whose card this call is being asked for.\n\n"
-            "A strategy is not told its seat any other way.")
+            "The seat (0..3) this call is for. A strategy has no other way\n"
+            "to learn its seat.")
         .def_property_readonly(
             "trick_leader",
             [](be::ObservationState const& self) { return self.known_holdings.first; },
             "The seat that led to the trick **in progress**.\n\n"
-            "Not `first`, which is the seat on lead at the *root* and never\n"
-            "moves for the whole evaluation. This one is reassigned to the\n"
-            "winner every time a trick resolves. They agree at the root and\n"
-            "diverge from the second trick on, so a strategy that reaches for\n"
-            "`first` is right in testing and wrong in play.")
+            "Do not use `first` for this. `first` is the root leader and never\n"
+            "changes. The two agree at the root and differ from the second\n"
+            "trick on.")
         .def_property_readonly(
             "current_trick",
             [](be::ObservationState const& self) {
                 py::list cards;
                 for (int i = 0; i < 3; ++i) {
-                    // Rank 0 is the empty-slot sentinel. It is the *rank*
-                    // array that says whether a slot is filled: suit 0 is
-                    // spades, so a zeroed suit array is indistinguishable
-                    // from a spade lead.
+                    // Rank 0 marks an empty slot. Test the rank, not the
+                    // suit: suit 0 is spades.
                     if (self.known_holdings.currentTrickRank[i] == 0) {
                         break;
                     }
@@ -319,11 +265,10 @@ auto register_observation_state_bindings(py::module_& module) -> void
                 }
                 return cards;
             },
-            "The cards already played to the trick in progress, in play\n"
-            "order. **Empty means this seat is leading.**\n\n"
-            "These are in nobody's known_holdings: a card leaves the hand\n"
-            "that played it as it is played, and the trick in progress lives\n"
-            "only here.")
+            "The cards already played to the trick in progress, in order.\n"
+            "**Empty means this seat is leading.**\n\n"
+            "These cards are in no hand in known_holdings. A played card\n"
+            "leaves the hand at once.")
         .def_property_readonly(
             "position_in_trick",
             [](be::ObservationState const& self) {
@@ -333,20 +278,19 @@ auto register_observation_state_bindings(py::module_& module) -> void
                 }
                 return played;
             },
-            "0 when leading, 1..3 otherwise -- how many cards are already on\n"
-            "the trick.")
+            "How many cards are already on the trick: 0 when leading, else\n"
+            "1..3.")
         .def_property_readonly(
             "legal_cards",
             [](be::ObservationState const& self) {
                 return be::enumerate_legal_cards(self.known_holdings,
                                                  be::seat_on_play(self.known_holdings));
             },
-            "Every Card the seat on play may legally return, follow-suit rule\n"
-            "already applied. Ordered suit ascending, then rank within a\n"
-            "suit.\n\n"
-            "A card from this list is legal in every layout of the node, not\n"
-            "merely this one: the follow-suit rule reads only the seat's own\n"
-            "holding, which is common knowledge for declarer and dummy.")
+            "Every Card the seat on play may legally play, with follow-suit\n"
+            "applied. Sorted by suit, then rank, ascending.\n\n"
+            "Each card is legal in every layout of the node. Follow-suit\n"
+            "depends only on the seat's hand, and declarer's and dummy's\n"
+            "hands are public.")
         .def_property_readonly(
             "can_follow_led_suit",
             [](be::ObservationState const& self) {
@@ -357,10 +301,9 @@ auto register_observation_state_bindings(py::module_& module) -> void
                 int const seat = be::seat_on_play(self.known_holdings);
                 return self.known_holdings.remainCards[seat][led] != 0;
             },
-            "Whether the seat on play holds any card of the suit led.\n\n"
-            "**False when leading**, there being no suit to follow -- so\n"
-            "`if not state.can_follow_led_suit` reads as \"I am free to play\n"
-            "anything\", which is true both when leading and when void.")
+            "Whether the seat on play holds a card of the suit led.\n\n"
+            "**False when leading.** So `not state.can_follow_led_suit` means\n"
+            "\"free to play any card\": true when leading and when void.")
         .def_property_readonly(
             "is_declaring_side",
             [](be::ObservationState const& self) {
@@ -368,26 +311,19 @@ auto register_observation_state_bindings(py::module_& module) -> void
                 int const dummy = (self.declarer + 2) % DDS_HANDS;
                 return seat == self.declarer || seat == dummy;
             },
-            "Whether the seat on play is declarer **or dummy**. A declarer\n"
-            "strategy plays for both, so this is true at every play() call;\n"
-            "it is meaningful for a strategy shared between the two sides.")
+            "Whether the seat on play is declarer **or dummy**. Always true in\n"
+            "play(). Useful for a strategy shared by both sides.")
         .def_property_readonly(
             "ranks", [](be::ObservationState const& self) { return self.ranks; },
-            "A RankMap -- the precomputed absolute/relative rank mapping\n"
-            "over this node's outstanding pool, the same one a C++ strategy\n"
-            "conditions on directly. A fresh copy per access, like every\n"
-            "other property here; RankMap is a plain value with no\n"
-            "lifetime of its own to protect.")
+            "A RankMap for this node: the mapping between absolute and\n"
+            "relative ranks. Each access returns a fresh copy.")
         .def_property_readonly(
             "play_record",
             [](be::ObservationState const& self) -> py::object {
-                // play_record_valid is set only by this binding's own
-                // evaluate()/HeuristicDefender call sites, exactly when a
-                // caller might retain this ObservationState copy past the
-                // one call that produced it -- see its own doxygen
-                // (types.hpp). Empty means no such guard applies (every
-                // state a plain C++ caller sees, and every live read
-                // during the call that produced this copy either way).
+                // Only this binding's evaluate() and HeuristicDefender set
+                // play_record_valid, because a Python caller may keep the
+                // state after the call (see types.hpp). Empty means no guard
+                // applies.
                 if (self.play_record_valid && ! *self.play_record_valid) {
                     throw py::value_error(
                         "play_record is only valid for the duration of the call that "
@@ -399,40 +335,27 @@ auto register_observation_state_bindings(py::module_& module) -> void
                 }
                 return py::cast(*self.play_record);
             },
-            "Every card played before this evaluation's root, or None if\n"
-            "the caller supplied no PlayRecord. Distinct from history:\n"
-            "play_record is invariant for the whole evaluation, history is\n"
-            "root-relative and grows during the search. Reading this after\n"
-            "retaining `state` past the call that handed it to you raises\n"
-            "ValueError rather than returning stale data.");
+            "Every card played before the root, or None if the caller passed\n"
+            "no PlayRecord.\n\n"
+            "Not the same as history. play_record is fixed for the whole\n"
+            "evaluation. history starts at the root and grows during the\n"
+            "search. If you keep `state` after the call, reading this raises\n"
+            "ValueError.");
 }
 
-// BeliefView holds a std::span into caller-owned scratch and node.layouts,
-// live only for the call it was built for -- see make_belief_view's own
-// doxygen. A Python strategy is handed one at every declarer node; Python
-// users store things ("self.last_view = view" is an entirely ordinary
-// thing to write), and a naive non-owning binding would hand out an object
-// reading freed memory the moment the callback returns, silently, with
-// plausible-looking values.
+// A BeliefView points into memory that lives only for one call (see
+// make_belief_view). Python code often stores objects
+// (`self.last_view = view`). Without a guard, a stored view would read
+// freed memory and return plausible values.
 //
-// The fix is a validity flag the *binding* owns (nothing in src/
-// changes for this): a shared_ptr<bool>, one per call, set false when the
-// callback returns -- including when it raises, which is why invalidation
-// is scope-bound (BeliefViewInvalidator's destructor) rather than placed on
-// a success-only path. Every accessor checks it first.
+// The guard is a validity flag owned by this binding: one
+// shared_ptr<bool> per call. BeliefViewGuard clears it when the callback
+// returns or raises. Every accessor checks it first.
 //
-// The half a naive implementation misses: invalidating the view object
-// itself does not save `layout = view.entries[0].layout` stashed past the
-// callback, if entries hand out something that itself references node
-// memory. PyBeliefEntry carries the same shared flag as its view, so
-// accessing a stashed *entry*'s properties after expiry raises too -- but
-// `layout` itself, once read, is dict_to_deal's ordinary materialised
-// copy: a Deal is small (a handful of ints and a 4x4 array), so copying it
-// per access is affordable in exactly the way copying the whole belief set
-// per node is not ("no copy of the belief set" is about that, not about a
-// single Deal), and a dict already obtained while the view was live needs
-// no flag of its own -- it is a plain value from then
-// on, not a reference to anything.
+// PyBeliefEntry shares the flag of its view, so a stored entry expires
+// too. A `layout` already read is a copied dict, not a reference, so it
+// stays valid. A Deal is small, so copying one per access is cheap.
+//
 // Set once, in register_belief_view_bindings, before anything can raise it.
 py::object expired_belief_view_error;
 
@@ -445,12 +368,9 @@ py::object expired_belief_view_error;
     throw py::error_already_set();
 }
 
-// One place for the "valid until the callback returns" pattern, used by
-// every callback kind that hands a BeliefView to Python (the probe below,
-// and both of pi's own callbacks) -- not scattered across each one, so a
-// future callback added here cannot forget to invalidate on the way out.
-// Scope-bound rather than a success-only clear: the destructor runs
-// whether the callback returned normally or raised.
+// Makes a BeliefView valid until the callback returns. Every callback that
+// hands a view to Python uses it, so none can forget to invalidate. The
+// destructor runs whether the callback returns or raises.
 struct BeliefViewGuard
 {
     std::shared_ptr<bool> valid = std::make_shared<bool>(true);
@@ -523,10 +443,9 @@ public:
         return view_->space_size;
     }
 
-    /// Not exposed to Python -- a C++-side escape hatch for a bound object
-    /// that needs the real be::BeliefView, the way BruteForceDeclarer's
-    /// own __call__ (registered as a usable pi) does to hand it straight
-    /// to DeclarerStrategy::play without re-deriving it from entries().
+    /// Not exposed to Python. Gives C++ code the real be::BeliefView.
+    /// BruteForceDeclarer.__call__ uses it to pass the view to
+    /// DeclarerStrategy::play directly.
     auto raw() const -> be::BeliefView const&
     {
         check_valid();
@@ -553,48 +472,38 @@ auto register_belief_view_bindings(py::module_& module) -> void
     py::class_<PyBeliefEntry>(
         module,
         "BeliefEntry",
-        "One layout in a belief view, paired with its normalised posterior\n"
-        "(the entries of one BeliefView sum to 1). Valid only while the\n"
-        "BeliefView it came from is: accessing either property after the\n"
-        "callback that received the view returns raises ExpiredBeliefViewError.")
+        "One layout in a belief view, with its normalised posterior. The\n"
+        "posteriors of one BeliefView sum to 1.\n\n"
+        "Valid only while its BeliefView is valid. After the callback\n"
+        "returns, either property raises ExpiredBeliefViewError.")
         .def_property_readonly("layout", &PyBeliefEntry::layout, "A deal dict, freshly copied on every access.")
         .def_property_readonly("posterior", &PyBeliefEntry::posterior);
 
     py::class_<PyBeliefView>(
         module,
         "BeliefView",
-        "What a declarer strategy reasons over: the belief space as\n"
-        "declarer currently knows it, handed to play() at every call (and,\n"
-        "in the type's own shape, to state_key() too -- but state_key() is\n"
-        "never actually called yet, there is no cache to key). Valid only\n"
-        "for the duration of that one call --\n"
-        "accessing any property afterwards raises ExpiredBeliefViewError,\n"
-        "and so does accessing an entry obtained from it (a *layout*\n"
-        "already read from an entry is a plain copy and remains valid\n"
-        "forever; the entry object itself is not). Storing this view, or\n"
-        "anything obtained from it apart from an already-read layout,\n"
-        "beyond the call it was handed to is always a mistake.")
+        "The belief space as declarer knows it now. play() receives one on\n"
+        "every call. state_key() takes one too, but nothing calls it yet.\n\n"
+        "**Valid only during that call.** Afterwards, any property of the\n"
+        "view or of an entry from it raises ExpiredBeliefViewError. A layout\n"
+        "already read is a copy and stays valid. Do not store the view or\n"
+        "its entries.")
         .def_property_readonly("entries", &PyBeliefView::entries)
         .def_property_readonly(
             "is_sample", &PyBeliefView::is_sample,
             "False only when this node holds the whole remaining belief\n"
-            "space rather than a sample of it.")
+            "space, not a sample.")
         .def_property_readonly(
             "space_size", &PyBeliefView::space_size,
-            "Layouts believed consistent, if known; 0 when is_sample is\n"
-            "true -- the true count is genuinely unknown then, and\n"
-            "reporting len(entries) instead would hand a strategy a false\n"
-            "certainty. len(entries) is always the count actually being\n"
-            "reasoned over, sampled or not.");
+            "The number of consistent layouts, or 0 when is_sample is true.\n"
+            "In a sample the true count is unknown. len(entries) is always\n"
+            "the number of layouts in this view.");
 }
 
-// Internal: stands in for the real caller (a later task's evaluate(),
-// which hands a BeliefView to a Python declarer strategy at every node)
-// so the guard above can be tested now. Builds a small BeliefNode from
-// the given layouts/weights, calls callback with the resulting view, and
-// invalidates it on the way out -- exactly the lifetime evaluate() will
-// eventually give a real one, just constructed by hand here instead of by
-// the search. Testing support only.
+// Testing support only. Builds a BeliefNode from the given layouts and
+// weights, calls callback with its view, and invalidates the view on the
+// way out. This is the same lifetime evaluate() gives a view, so the guard
+// can be tested without a search.
 auto probe_with_belief_view(
     py::list const& layout_dicts, py::list const& weights, bool is_sample, py::function const& callback)
     -> py::object
@@ -618,24 +527,17 @@ auto probe_with_belief_view(
     return callback(py::cast(PyBeliefView(&view, guard.valid)));
 }
 
-// pi and delta as Python callables, and the GIL discipline the whole
-// evaluate() binding (below) runs on: the GIL is released for the
-// duration of the C++ recursion and acquired in every trampoline that
-// calls back into Python -- these two, and the layout source's
-// size()/at() (already GIL-acquiring). One acquire site per callback
-// *kind*, here, rather than one per call site scattered through the
-// recursion: a callback kind that forgets to acquire is a callback kind
-// that corrupts the interpreter the first time two threads exercise it,
-// and there must be exactly one place per kind that could get this wrong.
+// pi and delta as Python callables. The GIL rule for evaluate(): release
+// the GIL for the C++ recursion, and acquire it in every trampoline that
+// calls Python. These two do, and so do the layout source's size() and
+// at(). There is one acquire site per callback kind, so there is one place
+// to get it right. A missing acquire corrupts the interpreter as soon as
+// two threads run.
 //
-// Attaches play_record_valid to a copy of state, so the play_record
-// property (registered above) can tell a copy a Python caller might
-// retain past the evaluate() call that produced it from one read live,
-// during that call -- see ObservationState::play_record_valid's own
-// doxygen (types.hpp). evaluate()'s own binding creates one call_valid
-// flag per call and flips it false when that call returns (regardless of
-// how it returns), shared across every state copy handed to pi/state_key/
-// delta during it.
+// Attaches play_record_valid to a copy of state (see types.hpp). The
+// evaluate() binding creates one call_valid flag per call, shares it with
+// every state copy it hands out, and clears it when the call returns by
+// any path. So play_record raises on a copy kept after the call.
 auto state_for_python(be::ObservationState const& state, std::shared_ptr<bool> const& call_valid)
     -> be::ObservationState
 {
@@ -644,14 +546,10 @@ auto state_for_python(be::ObservationState const& state, std::shared_ptr<bool> c
     return copy;
 }
 
-// A Python pi/delta author can reach for `random.choice` without a second
-// thought; DeclarerStrategy::play's own doxygen is emphatic that play
-// must be a pure function of its arguments (state, view) alone, since the
-// evaluator revisits sibling subtrees and a seeded strategy's card would
-// then depend on how many decisions preceded it in traversal order rather
-// than on the node itself -- silently wrong under any cut or future
-// cache. `hash(seed, state) mod n` is the honest way to get variety
-// without breaking purity.
+// play must be a pure function of (state, view); see DeclarerStrategy::play.
+// A Python author can easily use `random.choice`. Then the card depends on
+// the traversal order, not the node, and the result is silently wrong. Use
+// `hash(seed, state) mod n` for variety.
 auto make_declarer_strategy(
     be::StrategyId id, py::function const& play, std::optional<py::function> const& state_key,
     std::shared_ptr<bool> const& call_valid) -> be::DeclarerStrategy
@@ -678,27 +576,21 @@ auto make_declarer_strategy(
             return std::string(py::cast<py::bytes>(result));
         };
     }
-    // Unset (state_key stays its default-constructed empty std::function)
-    // when no Python callable was supplied -- DeclarerStrategy::state_key's
-    // own doxygen: "unset disables reuse for this strategy entirely".
+    // With no Python callable, state_key stays empty, which disables reuse
+    // (see DeclarerStrategy::state_key).
     return strategy;
 }
 
-// delta receives (layout: dict, seat: int, state: ObservationState) rather
-// than a single bundled object: DefenderQuery holds Deal const& and
-// ObservationState const&, references with no lifetime a Python object
-// could safely carry past this call, and there is nothing here worth a
-// dedicated bound type for -- three positional arguments, in the same
-// flattened spirit the whole of this module's options surface takes.
+// delta receives three arguments: (layout: dict, seat: int,
+// state: ObservationState). DefenderQuery is not bound, because it holds
+// references that a Python object must not keep after the call.
 //
-// Every returned card must be held by seat in layout and legal there;
-// probabilities strictly positive and summing to one within tolerance. A
-// card the strategy will never play must be **omitted**, not given zero
-// probability -- the evaluator treats "probability > 0" as the survival
-// test for a layout, so a zero-probability entry keeps a layout alive
-// with no mass, which is not the same thing as leaving it out. This is
-// the single most likely way a Python delta is subtly wrong; validated
-// server-side by validate_defender_distribution, not re-derived here.
+// Each returned card must be held by seat in layout, and legal. The
+// probabilities must be positive and sum to one. **Omit a card the
+// strategy never plays.** Do not give it probability 0: the evaluator
+// keeps a layout alive if its card has probability > 0, so a zero entry
+// is not the same as no entry. This is the most likely mistake in a
+// Python delta. validate_defender_distribution checks the result.
 auto make_defender_strategy(py::function const& delta, std::shared_ptr<bool> const& call_valid)
     -> be::DefenderStrategy
 {
@@ -745,14 +637,12 @@ auto register_strategy_error_bindings(py::module_& module) -> void
         .value("SampleSizeZero", be::RootFailure::SampleSizeZero);
 }
 
-// bound (EvaluateOptions::bound) is a Python callable taking a deal dict
-// and returning a trick count, called under the same GIL discipline as
-// every other callback. Carries an obligation nothing here can validate:
-// a bound too *low* makes tier2_dead() fire when it should not and
-// silently reports zero for a contract that makes; too high only loses
-// pruning, never soundness. Absent by default, which leaves the cut
-// disabled -- an empty std::function, matching LayoutBound's own
-// doxygen.
+// bound (EvaluateOptions::bound) is a Python callable: deal dict in, trick
+// count out. It follows the same GIL rule as the other callbacks.
+// Nothing can check it. A bound that is too *low* makes tier2_dead() fire
+// wrongly and reports zero for a contract that makes. A bound that is too
+// high only loses pruning. None gives an empty LayoutBound, which disables
+// the cut.
 auto make_layout_bound(py::object const& bound) -> be::LayoutBound
 {
     if (bound.is_none()) {
@@ -775,13 +665,11 @@ auto register_root_failure_error_bindings(py::module_& module) -> void
     root_failure_exceptions.emplace(
         be::RootFailure::SourceNotEnumerable,
         py::exception<void>(module, "SourceNotEnumerableError", root_failure_base));
-    // NoLayoutSurvived vs ScanBudgetExhausted: the first means the whole
-    // source was checked and rejected everything (fix your source); the
-    // second means the budget ran out before a single consistent layout
-    // was found, with the source not yet exhausted (raise the budget
-    // instead). RootFailure's own doxygen says collapsing them "would
-    // send them to debug the wrong thing" -- kept as two exception types
-    // here for the same reason.
+    // Two types, because the fixes differ:
+    // - NoLayoutSurvived: the whole source was checked and nothing was
+    //   consistent. Fix the source.
+    // - ScanBudgetExhausted: the budget ran out before any consistent
+    //   layout was found. Raise the budget.
     root_failure_exceptions.emplace(
         be::RootFailure::NoLayoutSurvived,
         py::exception<void>(module, "NoLayoutSurvivedError", root_failure_base));
@@ -789,14 +677,11 @@ auto register_root_failure_error_bindings(py::module_& module) -> void
         be::RootFailure::ScanBudgetExhausted,
         py::exception<void>(module, "ScanBudgetExhaustedError", root_failure_base));
 
-    // sample_size=0 is a directly out-of-range argument value -- the same
-    // class of thing bindings.cpp's own "trump has invalid value 5"
-    // raises as -- unlike the two above, which are about the *source's
-    // content*, not a malformed literal, so this is the one RootFailure
-    // that also derives from ValueError. Distinct from NoLayoutSurvived
-    // on purpose (see RootFailure::SampleSizeZero's own doxygen): a
-    // request for a sample of nothing is rejected before a single at()
-    // call, regardless of what the source holds.
+    // sample_size=0 is a bad argument value, like "trump has invalid value
+    // 5" in dds3. The causes above are about the source content. So this is
+    // the only RootFailure that also derives from ValueError. It is
+    // rejected before any at() call, whatever the source holds (see
+    // RootFailure::SampleSizeZero).
     py::object const sample_size_zero_error = make_exception_with_bases(
         module, "SampleSizeZeroError",
         py::make_tuple(root_failure_base, py::reinterpret_borrow<py::object>(PyExc_ValueError)));
@@ -867,15 +752,10 @@ auto validation_error_message(be::ValidationError cause) -> std::string
     return "callback contract violated";
 }
 
-// Carries which callback, which seat, and the layout -- the context
-// EvaluationError already holds -- as instance attributes rather than
-// through a custom __init__: the exception type is called with just the
-// message (inheriting Exception's own __init__, so args/str() work
-// exactly as any other exception's do), then the three extra fields are
-// set directly on that one instance before it is raised. The cause
-// itself is not repeated as an attribute -- the exception's own type
-// already names it, the same choice the history/root-failure families
-// make.
+// Adds callback, seat and layout from EvaluationError as instance
+// attributes. The exception is constructed with the message only, so
+// args and str() behave normally. The cause is not an attribute, because
+// the exception type names it.
 [[noreturn]] auto raise_validation_error(
     be::EvaluationCallback callback, int seat, Deal const& layout, be::ValidationError cause) -> void
 {
@@ -888,27 +768,18 @@ auto validation_error_message(be::ValidationError cause) -> std::string
     throw py::error_already_set();
 }
 
-// The entry point: the first place a Python caller can evaluate anything.
-// The six positional arguments are the call's actual subject, always
-// supplied; every EvaluateOptions field crosses as a keyword-only
-// argument (py::kw_only()) with its C++ default, so a caller cannot
-// accidentally pass sample_size into bound's position, and the signature
-// can grow later without breaking anyone. EvaluateOptions itself is not
-// bound -- binding both shapes would give a caller two ways to say the
-// same thing and guarantee they diverge.
+// The entry point. Six positional arguments are always supplied. Each
+// EvaluateOptions field is a keyword-only argument with its C++ default.
+// So a caller cannot pass an option in the wrong position, and new options
+// break nobody. EvaluateOptions itself is not bound, so there is only one
+// way to pass an option.
 //
-// state_key is not an EvaluateOptions field (it belongs to
-// DeclarerStrategy, alongside play), but pi crosses as a bare callable
-// rather than a bundled object, so it is exposed as its own keyword-only
-// argument here instead. bytes-returning and pure, like play; see
-// make_declarer_strategy's own comment for both obligations.
+// state_key belongs to DeclarerStrategy in C++. pi is a bare callable here,
+// so state_key is a separate keyword-only argument. It must return bytes
+// and be pure, like play.
 //
-// **This is the one place (with replenish_below below) the Python surface
-// is deliberately stricter than the C++ one.** sample_size=0 raises
-// SampleSizeZeroError rather than returning a result whose error names
-// the same cause -- a later task designs the full exception hierarchy
-// this joins; the routing here is only the one cause this task's own
-// scope requires.
+// Python is stricter than C++ here: an error result raises. For example,
+// sample_size=0 raises SampleSizeZeroError. See also replenish_below below.
 auto evaluate(
     py::dict const& root,
     int declarer,
@@ -926,27 +797,18 @@ auto evaluate(
     py::object const& state_key,
     py::object const& play_record) -> py::dict
 {
-    // Checked here, unconditionally, before declarer ever reaches the C++
-    // evaluator: make_root() indexes remainCards[declarer] (and, via
-    // dummy = (declarer + 2) % DDS_HANDS, remainCards[dummy] too) with no
-    // range check of its own -- src/ has no RootFailure cause for
-    // this, since it is not a runtime condition on a valid root, it is a
-    // malformed argument, the same class of thing ExhaustiveLayoutSource's
-    // own constructor pre-checks declarer/opening_leader for before ever
-    // reaching derive_voids.
+    // Check declarer before the C++ evaluator sees it. make_root() indexes
+    // remainCards[declarer] and remainCards[dummy] with no range check, and
+    // there is no RootFailure for a bad argument.
     if (declarer < 0 || declarer >= DDS_HANDS) {
         throw py::value_error(
             "declarer has invalid value " + std::to_string(declarer) + " (expected range 0.." +
             std::to_string(DDS_HANDS - 1) + ")");
     }
 
-    // already_made() is tricks_won_by_declarer >= tricks_needed, and
-    // tricks_won_by_declarer starts at 0 -- a negative tricks_needed
-    // therefore satisfies it before either strategy is ever called,
-    // silently returning p_make=1.0 for a nonsensical request instead of
-    // raising. 0 itself is legitimate (a real, if degenerate, already-made
-    // case), so only strictly negative and above-the-most-tricks-in-a-deal
-    // are rejected.
+    // A negative tricks_needed would satisfy already_made() at once
+    // (tricks_won_by_declarer starts at 0), and silently return p_make=1.0.
+    // 0 is valid: the contract is already made.
     constexpr int MaxTricksInADeal = 13;
     if (tricks_needed < 0 || tricks_needed > MaxTricksInADeal) {
         throw py::value_error(
@@ -954,13 +816,10 @@ auto evaluate(
             " (expected range 0.." + std::to_string(MaxTricksInADeal) + ")");
     }
 
-    // replenish_below without sample_size is documented in C++ as "treated
-    // as absent too" -- a silent no-op, safe for a C++ caller who can read
-    // that on the field. A Python caller cannot, and is far more likely to
-    // have made a mistake than to have meant it -- raise rather than
-    // silently doing nothing. scan_budget without sample_size is
-    // deliberately *not* checked here: it legitimately caps a scan that
-    // would otherwise run to the source's end, on its own.
+    // In C++, replenish_below without sample_size does nothing, as
+    // documented. In Python the option is a flat keyword argument, so this
+    // is most likely a mistake: raise. scan_budget without sample_size is
+    // valid on its own, so it is not checked.
     if (replenish_below.has_value() && ! sample_size.has_value()) {
         throw py::value_error(
             "replenish_below requires sample_size -- without it there is no "
@@ -972,12 +831,9 @@ auto evaluate(
     std::optional<py::function> const state_key_fn =
         state_key.is_none() ? std::nullopt : std::make_optional(py::cast<py::function>(state_key));
 
-    // Shared across every ObservationState copy pi/state_key/delta see
-    // during this one evaluate() call (state_for_python, above), and
-    // flipped false when this call returns -- by any path, including an
-    // exception -- so a retained copy's play_record property raises
-    // rather than reading freed memory afterwards. See
-    // ObservationState::play_record_valid's own doxygen (types.hpp).
+    // Shared by every state copy handed out during this call (see
+    // state_for_python). Cleared when the call returns by any path, so
+    // play_record on a kept copy raises instead of reading freed memory.
     auto const call_valid = std::make_shared<bool>(true);
     struct CallValidInvalidator
     {
@@ -1005,29 +861,19 @@ auto evaluate(
 
     be::EvaluationResult result;
     {
-        // Released for the whole recursion: every trampoline above (pi's
-        // two callbacks, delta, bound, and the layout source's
-        // size()/at()) reacquires it only for as long as it runs. When
-        // delta or bound is a DoubleDummyDefender/DoubleDummyBound, its
-        // own __call__ nests a second, narrower release around just the
-        // solve inside the acquire this trampoline already holds -- not a
-        // second independent release of this one, so a solver call still
-        // runs without the GIL, which is the whole point of releasing it
-        // here in the first place.
+        // Release the GIL for the whole recursion. Each trampoline
+        // reacquires it only while it runs. A DoubleDummyDefender or
+        // DoubleDummyBound releases it again around its solve, so the
+        // solver still runs without the GIL.
         py::gil_scoped_release const release;
         result = be::evaluate(root_deal, declarer, tricks_needed, source, strategy, delta_fn, options);
     }
 
-    // The evaluator itself never throws across a callback boundary -- a
-    // callback's contract violation, or an unusable source, is *reported*
-    // in EvaluationResult::error, precisely because a callback is user
-    // input rather than an internal. Constructed into an exception here,
-    // at this boundary, rather than propagated: an EvaluationError is
-    // data this binding turns into a raise, never a C++ exception someone
-    // threw. That is the opposite direction from a Python exception a
-    // callback itself raises (see the trampolines above), which crosses
-    // this same call unchanged -- own type, own message, own traceback --
-    // and never becomes one of this module's own exception types.
+    // The evaluator reports a callback contract violation, or an unusable
+    // source, in EvaluationResult::error. It does not throw. Turn that
+    // report into an exception here. A Python exception raised inside a
+    // callback is different: it passes through unchanged, with its own
+    // type, message and traceback.
     if (result.error.has_value()) {
         be::EvaluationError const& error = *result.error;
         if (error.callback == be::EvaluationCallback::RootConstruction) {
@@ -1039,21 +885,16 @@ auto evaluate(
     return dds3_python::evaluation_result_to_dict(result);
 }
 
-// A rejected play history raises from the constructor rather than
-// mirroring history_verdict()/constrained_space_status()'s own C++-side
-// "a constructor cannot report" accessor pattern. One exception type per
-// cause, rather than one type with a cause attribute, so
-// `except DuplicatedCardError` reads the way `except FileNotFoundError`
-// does. Every cause here derives from BeliefSpaceLocalEvaluationError, the
-// one root every exception this module raises intentionally shares (see
-// register_root_exception_bindings) -- but deliberately *not* from
-// RootFailureError or ValidationError (the sibling families
-// register_root_failure_error_bindings/register_validation_error_bindings
-// build below): a history failure must never be catchable as the same
-// thing as an ordinary evaluate() failure (see this module's own
-// history_verdict()/constrained_space_status() ordering: the first
-// non-Consistent verdict is the only one ever raised for a given
-// construction, never both).
+// A rejected play history raises from the constructor. In C++ the
+// constructor cannot report, so it uses the history_verdict() and
+// constrained_space_status() accessors instead.
+//
+// There is one exception type per cause, so `except DuplicatedCardError`
+// reads like `except FileNotFoundError`. Each derives from
+// BeliefSpaceLocalEvaluationError, but not from RootFailureError or the
+// callback contract errors. So a history failure is never caught as an
+// evaluate() failure. One construction raises at most one of them: the
+// first verdict that is not Consistent.
 std::map<be::HistoryVerdict, py::object> history_rejected_exceptions;
 std::map<be::ConstrainedSpaceStatus, py::object> constrained_space_exceptions;
 
@@ -1109,17 +950,10 @@ auto register_history_error_bindings(py::module_& module) -> void
 {
     py::exception<void> history_base(module, "HistoryRejectedError", belief_space_local_evaluation_error);
 
-    // InvalidInput alone is input-shaped -- a malformed PlayTraceBin (an
-    // out-of-range declarer/opening_leader, or a malformed card), checkable
-    // independent of which root it is checked against -- so it derives
-    // from ValueError too, the same class of thing bindings.cpp's own
-    // "trump has invalid value 5" already raises as. The other seven
-    // causes are a *well-formed* history that simply does not fit this
-    // particular root: a different kind of wrong, deliberately not
-    // ValueError-derived, and a caller writing `except` around
-    // construction must still be able to tell a rejected history apart
-    // from NoLayoutSurvived (register_root_failure_error_bindings) -- both
-    // derive from the one common root and neither from the other.
+    // Only InvalidInput derives from ValueError too. It is a malformed
+    // argument (a bad declarer, opening_leader or card), wrong whatever the
+    // root. The other seven causes are a well-formed history that does not
+    // fit this root, so they are not ValueErrors.
     py::object const invalid_history_input_error = make_exception_with_bases(
         module, "InvalidHistoryInputError",
         py::make_tuple(history_base, py::reinterpret_borrow<py::object>(PyExc_ValueError)));
@@ -1151,12 +985,9 @@ auto register_history_error_bindings(py::module_& module) -> void
     throw py::error_already_set();
 }
 
-// Defined here (forward-declared at list_to_history, well above this
-// point) since it reads the same history_rejected_exceptions map
-// raise_history_rejected does -- one InvalidHistoryInputError object,
-// reached two ways: verify_history's own InvalidInput verdict, at a fixed
-// message, or a malformed card caught earlier by list_to_history itself,
-// at a message naming the specific index and field.
+// Declared before list_to_history. Raises the same InvalidHistoryInputError
+// as the InvalidInput verdict, but with a message that names the bad index
+// and field.
 [[noreturn]] auto raise_invalid_history_input(std::string const& detail) -> void
 {
     py::set_error(history_rejected_exceptions.at(be::HistoryVerdict::InvalidInput), detail.c_str());
@@ -1169,8 +1000,7 @@ auto register_history_error_bindings(py::module_& module) -> void
     throw py::error_already_set();
 }
 
-// A LayoutSource holding one layout -- see the binding below for why it is
-// worth shipping rather than left to each caller.
+// A LayoutSource holding one layout. See the binding below.
 class SingleLayoutSource final : public be::LayoutSource
 {
 public:
@@ -1185,8 +1015,8 @@ public:
 
     auto at(std::uint64_t index) const -> Deal override
     {
-        // The binding range-checks before reaching here; this is the C++-side
-        // contract, for the evaluator calling through LayoutSource&.
+        // The binding checks the range first. This assert is the C++
+        // contract, for calls through LayoutSource&.
         assert(index == 0);
         (void)index;
         return layout_;
@@ -1196,22 +1026,15 @@ private:
     Deal layout_;
 };
 
-// The trampoline: LayoutSource is not a callable, it is an abstract class,
-// so a Python subclass needs one. Every override acquires the GIL --
-// PYBIND11_OVERRIDE's own mechanism does this already, which is exactly
-// what lets this trampoline be called safely once evaluate() (a later
-// task) releases the GIL for the whole call and Python callbacks each
-// re-acquire it only for as long as they run.
+// The trampoline that lets Python subclass the abstract LayoutSource. Each
+// override acquires the GIL, because evaluate() releases it.
 //
-// Written by hand rather than via PYBIND11_OVERRIDE_PURE: Deal is not a
-// bound pybind11 type (it crosses as a dict, via converters, matching how
-// ObservationState's own known_holdings already crosses), so the return
-// value needs dict_to_deal, not a generic cast. A subclass that omits an
-// override, returns something that
-// is not dict-shaped, or returns a dict that is not a valid deal each fail
-// with a distinct, comprehensible Python-side error rather than a crash --
-// a missing override is RuntimeError, a non-dict return is pybind11's own
-// TypeError, and a malformed dict is dict_to_deal's own ValueError.
+// Written by hand, not with PYBIND11_OVERRIDE_PURE: Deal is passed as a
+// dict, so the return value needs dict_to_deal. Each mistake in a subclass
+// gives a clear Python error, not a crash:
+// - a missing override: RuntimeError
+// - a return that is not a dict: TypeError
+// - a dict that is not a valid deal: ValueError
 class PyLayoutSource final : public be::LayoutSource
 {
 public:
@@ -1243,19 +1066,14 @@ public:
     }
 };
 
-// Mirrors defender_pool_decomposition's own count exactly (that function
-// itself is not exposed to Python, and src/ has no public
-// accessor for a pool's size in isolation) -- the total number of
-// distinct cards either defender's remain_cards claims. dict_to_deal only
-// validates each value's own bit shape, not that the two defender hands
-// together stay within the 26-card domain binomial_coefficient (and so
-// both size() and at()) is documented for; checked at this binding's own
-// boundary, in ExhaustiveLayoutSource's py::init below -- *after*
-// constructing the C++ object and confirming both history_verdict() and
-// constrained_space_status() are the ordinary passing values, not before,
-// so a root that is also independently rejected for one of those two
-// reasons still reports that reason rather than this one (see the
-// call site's own comment for why that order matters).
+// The number of distinct cards in the two defender hands. It matches the
+// count in defender_pool_decomposition, which src/ does not expose.
+//
+// dict_to_deal checks only the bits of each value. binomial_coefficient,
+// and so size() and at(), work only up to 26 cards. The
+// ExhaustiveLayoutSource constructor below checks this limit after the
+// history checks, so a root rejected for a history reason reports that
+// reason.
 auto defender_pool_card_count(Deal const& root, int declarer) -> int
 {
     int const fixed_seat = (declarer + 1) % DDS_HANDS;
@@ -1268,25 +1086,21 @@ auto defender_pool_card_count(Deal const& root, int declarer) -> int
     return count;
 }
 
-// PlayRecord reuses list_to_history/history_to_list (the same
-// sequence<->PlayTraceBin conversion ExhaustiveLayoutSource's own history
-// argument already uses) and raise_history_rejected (the same
-// verdict-to-exception mapping ExhaustiveLayoutSource's constructor already
-// raises through) -- not a second copy of either for a type carrying the
-// identical shape of input.
+// PlayRecord reuses list_to_history, history_to_list and
+// raise_history_rejected, so it converts and raises exactly like
+// ExhaustiveLayoutSource.
 auto register_play_record_bindings(py::module_& module) -> void
 {
     py::class_<be::PlayRecord>(
         module,
         "PlayRecord",
-        "Every card played before an evaluation's root, and the seat that\n"
-        "opened it -- common knowledge, immutable. Construction guarantees\n"
-        "only that the cards are shape-valid and no card repeats, and that\n"
-        "opening_leader is a seat in range (raises on any of those, the\n"
-        "same exception types ExhaustiveLayoutSource's own history argument\n"
-        "already raises); it does NOT guarantee opening_leader actually led\n"
-        "cards' first trick -- that needs a root to check against, and is\n"
-        "checked only once this record reaches ExhaustiveLayoutSource.")
+        "Every card played before an evaluation's root, and the opening\n"
+        "leader. Public knowledge, and immutable.\n\n"
+        "The constructor checks that each card is valid, that no card\n"
+        "repeats, and that opening_leader is a seat. It raises the same\n"
+        "exceptions as ExhaustiveLayoutSource. It does NOT check that\n"
+        "opening_leader led the first trick: that needs a root, so\n"
+        "ExhaustiveLayoutSource checks it.")
         .def(
             py::init([](py::sequence const& cards, int opening_leader) {
                 PlayTraceBin const trace = list_to_history(cards);
@@ -1326,47 +1140,30 @@ auto register_layout_source_bindings(py::module_& module) -> void
     py::class_<be::LayoutSource, PyLayoutSource>(
         module,
         "LayoutSource",
-        "A dumb, ordered, restartable index space over candidate layouts.\n"
-        "Subclass and override size() and at(i) to supply a belief space\n"
-        "narrower than the root alone implies -- what the bidding ruled\n"
-        "out, say. at(i) must return a deal dict (see the module's deal\n"
-        "dict shape) and repeated calls with the same index must return the\n"
-        "same layout.\n\n"
-        "**A caller obligation this type cannot check or enforce**: sampling\n"
-        "takes a *prefix* of this order rather than drawing from it at\n"
-        "random, on the premise the order is already effectively random\n"
-        "with respect to which layouts are consistent with any given root.\n"
-        "A source that is sorted, or grouped by anything correlated with\n"
-        "consistency, yields a systematically biased sample with no\n"
-        "diagnostic anywhere. ExhaustiveLayoutSource is a correct\n"
-        "implementation of this obligation; a Python subclass returning\n"
-        "self._deals[i] from a list built in assembly order is the most\n"
-        "likely way to get this wrong.")
+        "An ordered, indexed list of candidate layouts.\n\n"
+        "Subclass it and override size() and at(i) to supply a belief space\n"
+        "narrower than the root gives, for example to apply the bidding.\n"
+        "at(i) must return a deal dict, and the same layout for the same i.\n\n"
+        "**The order must be random. Nothing can check this.** Sampling\n"
+        "takes a prefix of the order. A sorted or grouped order gives a\n"
+        "biased sample, with no warning. ExhaustiveLayoutSource meets this\n"
+        "obligation. A common mistake is to return self._deals[i] from a\n"
+        "list in the order it was built.")
         .def(py::init<>());
 
-    // A source over exactly one layout. Defined here rather than in
-    // src/belief_evaluation/ because its whole purpose is to save a *Python*
-    // caller from writing a trampoline subclass; a C++ caller can write the
-    // three lines directly, and the module's test support already does.
-    //
-    // It is also the one LayoutSource trivially exempt from the randomised
-    // order obligation LayoutSource's own docstring describes, one element
-    // having only one order -- so it doubles as a correct-by-construction
-    // starting point, where the pattern that obligation warns against
-    // (returning self._deals[i] from a list in assembly order) is the most
-    // likely thing a caller writes instead.
+    // A source over exactly one layout. It lives here, not in src/, because
+    // it saves a Python caller from writing a subclass. A C++ caller can
+    // write it in three lines.
     py::class_<SingleLayoutSource, be::LayoutSource>(
         module,
         "SingleLayoutSource",
         "A LayoutSource over exactly one layout: size() is 1 and at(0) is\n"
         "that layout.\n\n"
-        "For evaluating one layout on its own -- which is how P_make over a\n"
-        "belief space gets cross-checked against the mean of P_make over\n"
-        "each layout alone, the check that is worth making about any strategy\n"
-        "pair and that has already caught one library defect.\n\n"
-        "Exempt from the randomised-order obligation in LayoutSource's own\n"
-        "docstring, since one element has only one order. Sampling a\n"
-        "one-layout space is a no-op rather than a biased draw.")
+        "Use it to evaluate one layout alone. For example, check that\n"
+        "P_make over a belief space equals the mean of P_make over each\n"
+        "layout. This check is worth making for any strategy pair.\n\n"
+        "One layout has only one order, so the random-order rule of\n"
+        "LayoutSource does not apply.")
         .def(py::init([](py::dict const& layout) {
                  return SingleLayoutSource(dds3_python::dict_to_deal(layout));
              }),
@@ -1375,11 +1172,9 @@ auto register_layout_source_bindings(py::module_& module) -> void
         .def(
             "at",
             [](SingleLayoutSource const& self, py::object const& index_obj) {
-                // Same contract, and the same reasoning, as
-                // ExhaustiveLayoutSource::at below: an out-of-range index is a
-                // Python IndexError on every build, and the index is compared
-                // as a Python int so a negative or oversized one never has to
-                // be represented as uint64_t at all.
+                // As for ExhaustiveLayoutSource.at below: an out-of-range
+                // index raises IndexError, and the index is compared as a
+                // Python int.
                 py::object const index_int =
                     py::reinterpret_steal<py::object>(PyNumber_Index(index_obj.ptr()));
                 if (! index_int) {
@@ -1397,29 +1192,19 @@ auto register_layout_source_bindings(py::module_& module) -> void
     py::class_<be::ExhaustiveLayoutSource, be::LayoutSource>(
         module,
         "ExhaustiveLayoutSource",
-        "Enumerates every layout consistent with root and, when a record is\n"
-        "supplied, with the voids that record establishes.\n\n"
-        "record is optional: omitting it applies no void constraint at all,\n"
-        "which is correct at trick one and **silently wrong at a mid-play\n"
-        "root** -- there is no way for this type to tell 'no record' from\n"
-        "'declarer chose not to supply one'. A supplied record is checked\n"
-        "against root: history_verdict() is checked first, and when it is\n"
-        "not Consistent the constrained decomposition is never attempted --\n"
-        "the raised exception (a HistoryRejectedError subclass) reports only\n"
-        "that first failure, never a second one from constrained_space_status(),\n"
-        "which reports the meaningless default (Ok) in that case. A\n"
-        "well-formed record that nonetheless leaves no legal split raises a\n"
-        "ConstrainedSpaceEmptyError subclass instead.")
+        "Lists every layout consistent with root, and with the voids that\n"
+        "record shows, if a record is given.\n\n"
+        "record is optional. Without it, no voids apply. That is correct at\n"
+        "trick one and **silently wrong at a mid-play root**.\n\n"
+        "A record is checked against root, and the constructor raises:\n\n"
+        "- a HistoryRejectedError subclass if the history does not fit root.\n"
+        "  The void check is then skipped, so only this error is raised.\n"
+        "- a ConstrainedSpaceEmptyError subclass if the history fits but\n"
+        "  leaves no legal layout.")
         .def(
             py::init([](py::dict const& root, int declarer, std::uint64_t seed, py::object const& record) {
-                // ExhaustiveLayoutSource's own history_verdict() cannot be
-                // trusted to catch an out-of-range declarer here:
-                // verify_history (and so InvalidInput) only runs at all
-                // when a record is supplied -- an absent one is, by this
-                // type's own design, "not checked against root at all".
-                // Checked here instead, unconditionally, so this binding
-                // never depends on whether the caller happened to also
-                // supply a record.
+                // Check declarer here. history_verdict() checks it only
+                // when a record is given.
                 if (declarer < 0 || declarer >= DDS_HANDS) {
                     raise_history_rejected(be::HistoryVerdict::InvalidInput);
                 }
@@ -1435,20 +1220,11 @@ auto register_layout_source_bindings(py::module_& module) -> void
                 if (status != be::ConstrainedSpaceStatus::Ok) {
                     raise_constrained_space_empty(status);
                 }
-                // Only reachable, and only needed, once both checks above
-                // have already passed: constrained_space_size (size())
-                // returns 0 without calling binomial_coefficient at all
-                // when status is not Ok, and a non-Ok status has already
-                // raised above -- so free_cards (not itself exposed to
-                // Python) is only ever what size()/at() actually read
-                // from this point on. See defender_pool_card_count's own
-                // comment for why pool_count, not free_cards.size()
-                // directly, is what is checked: free_cards is always a
-                // subset of the pool, so this bound is conservative
-                // (never a false negative) even though a caller whose
-                // voids happen to shrink free_cards back under 26 despite
-                // a larger pool is rejected too -- a root that shape is
-                // already not one a real 52-card deal could produce.
+                // Needed only after both checks above pass: otherwise
+                // size() never calls binomial_coefficient. The free cards
+                // are a subset of the pool, so checking the pool is safe.
+                // It also rejects a pool over 26 that voids would shrink,
+                // but no real deal has such a pool.
                 constexpr int MaxOutstandingCards = 26;
                 int const pool_count = defender_pool_card_count(root_deal, declarer);
                 if (pool_count > MaxOutstandingCards) {
@@ -1472,37 +1248,19 @@ auto register_layout_source_bindings(py::module_& module) -> void
         .def(
             "at",
             [](be::ExhaustiveLayoutSource const& self, py::object const& index_obj) {
-                // ExhaustiveLayoutSource::at()'s own precondition is an
-                // assert(index < total) -- a last resort against
-                // undefined behaviour once built -c opt (where it is
-                // compiled out entirely), not a diagnostic. Checked here
-                // instead, so an out-of-range index is a Python
-                // IndexError on every build, not an aborted debug
-                // process or silent undefined behaviour in release.
+                // Check the range here. The C++ at() only asserts, and
+                // -c opt compiles the assert out. So an out-of-range index
+                // raises IndexError on every build.
                 //
-                // index arrives as py::object, not std::uint64_t: a
-                // negative Python int, or one too large for uint64_t, has
-                // no valid uint64_t representation at all, so binding the
-                // parameter as uint64_t directly would fail pybind11's
-                // own argument conversion (TypeError/OverflowError,
-                // depending on the value) before this function's own
-                // range check ever ran -- the same "every out-of-range
-                // index raises IndexError" contract this comment already
-                // claims, silently broken for exactly the inputs most
-                // likely to reach it by mistake. Compared as Python ints
-                // throughout, so no C++ integer ever has to represent an
-                // out-of-range value in the first place.
+                // index is a py::object, not a uint64_t. A negative or
+                // too-large int has no uint64_t form, so pybind11 would
+                // raise TypeError or OverflowError before this check.
+                // Compare as Python ints instead.
                 //
-                // PyNumber_Index, not py::cast<py::int_>: that cast goes
-                // through PyNumber_Long (int()'s own conversion), which
-                // truncates a float or parses a numeric string -- at(1.5)
-                // would silently become at(1), a different, real layout,
-                // rather than the caller's mistake it actually is.
-                // PyNumber_Index is operator.index()'s own C-level
-                // implementation: accepts only an int (or an __index__
-                // implementer), rejects everything else with TypeError,
-                // matching what real Python indexing ([1, 2, 3][1.5])
-                // already does.
+                // Use PyNumber_Index (operator.index), not a cast to
+                // py::int_. The cast truncates floats, so at(1.5) would
+                // silently become at(1). PyNumber_Index raises TypeError,
+                // as Python list indexing does.
                 py::object const index_int =
                     py::reinterpret_steal<py::object>(PyNumber_Index(index_obj.ptr()));
                 if (! index_int) {
@@ -1518,42 +1276,26 @@ auto register_layout_source_bindings(py::module_& module) -> void
             })
         .def(
             "history_verdict", &be::ExhaustiveLayoutSource::history_verdict,
-            "Consistent, or when it is not, the specific cause -- see\n"
-            "HistoryVerdict. On a successfully constructed source this is\n"
-            "always Consistent: a non-Consistent verdict raises from the\n"
-            "constructor rather than being left for this accessor to report.")
+            "Consistent, or the cause (see HistoryVerdict). On a constructed\n"
+            "source this is always Consistent, because any other verdict\n"
+            "raises in the constructor.")
         .def(
             "constrained_space_status", &be::ExhaustiveLayoutSource::constrained_space_status,
-            "Ok, or when it is not, the specific cause -- see\n"
-            "ConstrainedSpaceStatus. Meaningless (reports the default, Ok)\n"
-            "unless history_verdict() is Consistent; on a successfully\n"
-            "constructed source this is always Ok, for the same reason\n"
-            "history_verdict() is always Consistent there.");
+            "Ok, or the cause (see ConstrainedSpaceStatus). On a constructed\n"
+            "source this is always Ok, because any other status raises in the\n"
+            "constructor.");
 }
 
-// SolverContext crosses from dds3 into this module without this module
-// ever registering py::class_<SolverContext> itself. pybind11 registers
-// types per module; registering it a second time here would produce two
-// distinct Python types that look identical and cannot be passed between
-// modules -- the standard cross-module pitfall, and the first thing a
-// caller who already has a context from solving will try. The fix is the
-// standard cross-module pattern: dds3 keeps the registration (its own
-// bindings.cpp), this module only *uses* the type, accepting it as a
-// constructor argument and storing a reference exactly as the C++ types
-// below already do. pybind11 shares its type registry between extensions
-// built by the same toolchain through an interpreter-level capsule, which
-// requires the registering module (dds3) to have been imported first --
-// this package's own __init__.py does that (see its own comment) before
-// this extension is ever imported, so the registration already exists by
-// the time a constructor here is called.
+// SolverContext comes from dds3. This module never registers
+// py::class_<SolverContext> itself. pybind11 registers types per module, so
+// a second registration would create a second, incompatible Python type.
+// dds3 registers it, and this module only uses it. pybind11 shares
+// registrations between extensions built with the same toolchain, if dds3
+// is imported first. The package __init__.py does that.
 //
-// Converts a solved FutureTricks into the same dict shape dds3.solve_board()
-// already returns to Python ({'nodes', 'cards', 'suit', 'rank', 'equals',
-// 'score'}), truncated to fut.cards entries -- the meaningful ones; indices
-// at or past fut.cards carry no defined value in this module's own C++ code
-// either. No existing converter does this: DoubleDummyDefender's own binding
-// never exposes a raw FutureTricks to Python, only the final WeightedCard
-// list spread() computes from one.
+// Converts a FutureTricks to the dict shape dds3.solve_board() returns:
+// {'nodes', 'cards', 'suit', 'rank', 'equals', 'score'}. Only the first
+// fut.cards entries are defined, so only those are copied.
 auto future_tricks_to_dict(FutureTricks const& fut) -> py::dict
 {
     py::dict result;
@@ -1576,12 +1318,10 @@ auto future_tricks_to_dict(FutureTricks const& fut) -> py::dict
     return result;
 }
 
-// DefenderHeuristicContext holds references (layout, state, fut) that are
-// only valid for the duration of one HeuristicDefender call -- the same
-// lifetime problem BeliefView has (see BeliefViewGuard above). A Python
-// rule stashing "self.last_context = context" must not read freed memory
-// afterwards; every accessor below checks the same kind of per-call
-// validity flag PyBeliefEntry/PyBeliefView already use.
+// DefenderHeuristicContext holds references that are valid only during one
+// HeuristicDefender call, like BeliefView. Each accessor checks a per-call
+// validity flag, so a stored context raises instead of reading freed
+// memory.
 class PyDefenderHeuristicContext
 {
 public:
@@ -1602,18 +1342,10 @@ public:
         return future_tricks_to_dict(ctx_->fut);
     }
 
-    /// A copy, via the same py::class_<be::ObservationState> binding
-    /// query.state is already exposed through elsewhere in this file --
-    /// safe to retain past this call's own lifetime for every field,
-    /// `play_record` included: `play_record_valid` is set here to the
-    /// same `valid_` flag that already governs every other accessor on
-    /// this context, so a rule that stashes this copy and reads
-    /// `.play_record` after the one rule call it was handed to returns
-    /// raises `ValueError` the same way `layout`/`fut`/etc. already do
-    /// here, rather than reading freed memory. See
-    /// `ObservationState::play_record_valid`'s own doxygen (types.hpp)
-    /// and `evaluate()`'s own binding, which sets the same field for the
-    /// same reason at a different (whole-call) granularity.
+    /// A copy of the state. Every field is safe to keep after the call.
+    /// `play_record_valid` shares this context's flag, so `.play_record`
+    /// on a kept copy raises ValueError, like the other accessors here.
+    /// See `ObservationState::play_record_valid` (types.hpp).
     auto state() const -> be::ObservationState
     {
         check_valid();
@@ -1678,11 +1410,9 @@ private:
     std::shared_ptr<bool> valid_;
 };
 
-// Wraps a Python-authored rule -- a plain callable of shape
-// (context, best_cards) -> Card | None -- into a be::DefenderHeuristic,
-// mirroring make_defender_strategy's own wrapping pattern below (GIL
-// reacquired per call, since this is always invoked from inside C++ code
-// that itself runs with the GIL released around the owning solve).
+// Wraps a Python rule, (context, best_cards) -> Card | None, as a
+// be::DefenderHeuristic. Like make_defender_strategy, it reacquires the
+// GIL per call, because the caller runs with the GIL released.
 auto wrap_python_heuristic(py::function rule) -> be::DefenderHeuristic
 {
     return [rule = std::move(rule)](
@@ -1710,60 +1440,54 @@ auto wrap_python_heuristic(py::function rule) -> be::DefenderHeuristic
 
 auto register_defender_heuristic_bindings(py::module_& module) -> void
 {
-    // Opaque from Python: nothing calls a DefenderHeuristic directly --
-    // it is always threaded through a DefenderHeuristicChain, which calls
-    // it from C++. Produced by the six factory functions below, and
-    // accepted by DefenderHeuristicChain.add() on equal footing with a
-    // plain Python callable of the same shape.
+    // Opaque from Python. Only a DefenderHeuristicChain calls one, from C++.
+    // The six factory functions below create them.
     py::class_<be::DefenderHeuristic>(
         module,
         "DefenderHeuristic",
-        "One rule in a defender heuristic chain, produced by second_seat_low,\n"
+        "One rule in a defender heuristic chain. Created by second_seat_low,\n"
         "high_in_third, third_seat_low, fourth_seat_low, ruff_small or\n"
-        "discard_keep_winners. Pass it to DefenderHeuristicChain.add() --\n"
-        "nothing else accepts or calls one directly. add() also accepts a\n"
-        "plain Python function of shape (context, best_cards) -> Card | None\n"
-        "on exactly the same footing.");
+        "discard_keep_winners. Pass it to DefenderHeuristicChain.add().\n\n"
+        "add() also accepts a plain Python function,\n"
+        "(context, best_cards) -> Card | None.");
 
     module.def(
         "second_seat_low", &be::second_seat_low, py::arg("randomize_touching_honors") = true,
-        "In second seat, following suit, as a defender -- the lowest optimal\n"
-        "card, unless it touches another optimal candidate of the same suit\n"
-        "and randomize_touching_honors (default True), in which case this\n"
-        "rule defers so the chain's own fallback spread -- restricted choice --\n"
-        "picks between them instead.");
+        "A defender in second seat, following suit: play the lowest optimal\n"
+        "card.\n\n"
+        "If that card touches another optimal card of the suit, and\n"
+        "randomize_touching_honors is True (the default), defer. The\n"
+        "fallback spread of the chain then picks between them: restricted\n"
+        "choice.");
     module.def(
         "high_in_third", &be::high_in_third,
-        "In third seat, after partner's lead, as a defender -- the highest\n"
-        "optimal card, when it beats the second player's already-played\n"
-        "card (not necessarily dummy's -- see the C++ doxygen on this same\n"
-        "rule for why).");
+        "A defender in third seat, after partner's lead: play the highest\n"
+        "optimal card, if it beats the card of the second player. The\n"
+        "second player is not always dummy (see the C++ doxygen).");
     module.def(
         "third_seat_low", &be::third_seat_low,
-        "In third seat, after partner's lead, as a defender -- the lowest\n"
-        "optimal card, exactly when high_in_third defers (the second\n"
-        "player's card already beats every candidate).");
+        "A defender in third seat, after partner's lead: play the lowest\n"
+        "optimal card when high_in_third defers, because the second\n"
+        "player's card beats every candidate.");
     module.def(
         "fourth_seat_low", &be::fourth_seat_low,
-        "In fourth seat, following suit, as a defender -- the lowest optimal\n"
+        "A defender in fourth seat, following suit: play the lowest optimal\n"
         "card.");
     module.def(
         "ruff_small", &be::ruff_small,
-        "Void in the led suit, in a trump contract -- ruff with the smallest\n"
-        "optimal trump, unless a not-yet-played declaring-side seat could\n"
-        "overruff.");
+        "A defender void in the led suit, in a trump contract: ruff with the\n"
+        "smallest optimal trump. Defer if declarer or dummy, still to play,\n"
+        "could overruff.");
     module.def(
         "discard_keep_winners", &be::discard_keep_winners,
-        "On a genuine discard, as a defender -- the lowest optimal card from\n"
-        "the suit with the fewest remaining tricks for the defending side.");
+        "A defender discarding: play the lowest optimal card from the suit\n"
+        "with the fewest remaining tricks for the defenders.");
 
     py::class_<PyDefenderHeuristicContext>(
         module,
         "DefenderHeuristicContext",
-        "All state a Python-authored rule needs, handed to it for the\n"
-        "duration of one call only -- see ExpiredBeliefViewError's own\n"
-        "docstring for the same \"valid only for the call\" discipline this\n"
-        "type follows (a separate error, not that one, but the same reason).")
+        "Everything a Python rule needs. **Valid only during one rule call**,\n"
+        "like a BeliefView. Afterwards, any property raises ValueError.")
         .def_property_readonly("layout", &PyDefenderHeuristicContext::layout)
         .def_property_readonly("fut", &PyDefenderHeuristicContext::fut)
         .def_property_readonly("state", &PyDefenderHeuristicContext::state)
@@ -1778,11 +1502,9 @@ auto register_defender_heuristic_bindings(py::module_& module) -> void
     py::class_<be::DefenderHeuristicChain>(
         module,
         "DefenderHeuristicChain",
-        "An ordered sequence of DefenderHeuristic rules, tried in add()\n"
-        "order. The one and only way a chain is built -- there is no\n"
-        "denomination argument and no enum of \"which built-ins to\n"
-        "include\": a caller's chain is entirely and exactly whatever\n"
-        "sequence of add() calls they make.")
+        "An ordered list of defender rules, tried in the order added. The\n"
+        "chain is exactly the add() calls you make. There are no other\n"
+        "options.")
         .def(py::init<>())
         .def(
             "add",
@@ -1794,29 +1516,24 @@ auto register_defender_heuristic_bindings(py::module_& module) -> void
                 }
             },
             py::arg("heuristic"),
-            "Appends heuristic to the end of the chain -- either a\n"
-            "DefenderHeuristic (from one of the factory functions) or a\n"
-            "plain Python function of shape (context, best_cards) ->\n"
-            "Card | None, on equal footing.");
+            "Appends heuristic to the chain. It is a DefenderHeuristic from a\n"
+            "factory function, or a Python function,\n"
+            "(context, best_cards) -> Card | None.");
 
     module.def(
         "make_default_defender_heuristics", &be::make_default_defender_heuristics, py::arg("trump"),
         py::arg("randomize_touching_honors") = true,
-        "Convenience only -- not the only way to build a chain. Equivalent\n"
-        "to add()-ing second_seat_low(randomize_touching_honors),\n"
-        "high_in_third(), third_seat_low(), fourth_seat_low(), ruff_small()\n"
-        "(only when trump names a real suit) and discard_keep_winners(), in\n"
-        "that order. A caller wanting a different order, a subset, or their\n"
-        "own rule spliced in builds a DefenderHeuristicChain directly\n"
-        "instead.");
+        "Builds the shipped chain, for convenience. Equivalent to adding, in\n"
+        "order: second_seat_low(randomize_touching_honors), high_in_third(),\n"
+        "third_seat_low(), fourth_seat_low(), ruff_small() (only if trump is a\n"
+        "suit), and discard_keep_winners().\n\n"
+        "For another order, a subset, or your own rules, build a\n"
+        "DefenderHeuristicChain directly.");
 }
 
-// Both DoubleDummyDefender and DoubleDummyBound hold SolverContext& --
-// a reference, not owned. A Python object outliving the context it was
-// built from would dangle it: py::keep_alive<1, 2>() on both constructors
-// ties the context's Python lifetime to the object holding it (argument
-// index 1 is the object being constructed, 2 is ctx), the same way
-// pybind11 documents for any object holding a reference to another.
+// DoubleDummyDefender and DoubleDummyBound hold a SolverContext& that they
+// do not own. py::keep_alive<1, 2>() on both constructors keeps ctx
+// (argument 2) alive as long as the new object (argument 1).
 class PyDoubleDummyDefender
 {
 public:
@@ -1824,12 +1541,8 @@ public:
     {
     }
 
-    // Usable directly as delta: same (layout, seat, state) shape
-    // make_defender_strategy already gives a Python-authored one. seat
-    // and state are accepted but unused -- DoubleDummyDefender's own
-    // as_strategy() only ever reads query.layout, since solve_board
-    // determines who is on play from the deal itself (its own trump/
-    // first fields), not from a separate seat argument.
+    // Works directly as delta: (layout, seat, state). state is unused.
+    // solve_board finds the seat on play from the deal itself.
     auto call(py::dict const& layout, int seat, py::object const& state) -> py::list
     {
         (void)state;
@@ -1838,14 +1551,8 @@ public:
 
         std::vector<be::WeightedCard> weighted;
         {
-            // Released for the solve itself -- the one piece of this
-            // module that actually calls into the solver, so this is
-            // where a caller's SolverContext gets to use whatever
-            // internal parallelism it has. Already re-acquired by the
-            // trampoline that called this __call__ in the first place
-            // (make_defender_strategy's own gil_scoped_acquire), so this
-            // is a release nested inside that acquire, not a second
-            // independent one.
+            // Release the GIL for the solve. This release is nested inside
+            // the acquire in make_defender_strategy.
             py::gil_scoped_release const release;
             be::ObservationState const unused_state{};
             weighted = strategy(be::DefenderQuery{deal, seat, unused_state});
@@ -1869,8 +1576,7 @@ public:
     {
     }
 
-    // Usable directly as bound: same (deal dict) -> int shape
-    // make_layout_bound already gives a Python-authored one.
+    // Works directly as bound: (deal dict) -> int.
     auto call(py::dict const& layout) -> int
     {
         Deal const deal = dds3_python::dict_to_deal(layout);
@@ -1883,18 +1589,11 @@ private:
     be::DoubleDummyBound bound_;
 };
 
-// Sibling of PyDoubleDummyDefender -- same SolverContext& contract (not
-// owned, not thread-safe). Unlike DoubleDummyDefender, HeuristicDefender's
-// own chain genuinely reads state.declarer (defending_side depends on it)
-// and a caller-authored Python rule may want the rest of it too (a C++
-// rule sees the whole thing: ctx.state is a plain field, not gated by any
-// accessor) -- so, unlike PyDoubleDummyDefender::call, which ignores
-// state entirely, this binding accepts either a real, fully-populated
-// ObservationState (from evaluate()'s own machinery, already bound via
-// the py::class_<be::ObservationState> above) or a minimal stand-in
-// exposing only ".declarer" for a direct, standalone call: the former is
-// used whole, by py::cast through that existing binding; only the latter
-// falls back to a declarer-only value.
+// HeuristicDefender has the same SolverContext& contract as
+// DoubleDummyDefender. Unlike it, the chain reads state.declarer
+// (defending_side depends on it), and a Python rule may read the rest.
+// So this accepts either a real ObservationState, used whole, or any object
+// with a `.declarer` attribute, for a direct call.
 auto observation_state_from(py::object const& state) -> be::ObservationState
 {
     if (py::isinstance<be::ObservationState>(state)) {
@@ -1921,9 +1620,8 @@ public:
 
         std::vector<be::WeightedCard> weighted;
         {
-            // Released for the solve itself; a chain rule wrapped by
-            // wrap_python_heuristic re-acquires the GIL on its own before
-            // calling back into Python -- see that function's own comment.
+            // Release the GIL for the solve. A Python rule reacquires it
+            // (see wrap_python_heuristic).
             py::gil_scoped_release const release;
             weighted = strategy(be::DefenderQuery{deal, seat, state_value});
         }
@@ -1939,37 +1637,21 @@ private:
     be::HeuristicDefender defender_;
 };
 
-// BruteForceDeclarer's own opponent_model parameter needs no *new guard
-// flag* of its own -- not because play_record is never set on the states
-// built here, but because every one of them is a copy of whatever `state`
-// this strategy's own play() was called with (make_internal_root's own
-// `root.state = state;`), and a copy carries play_record_valid right
-// along with it. When this strategy is used as evaluate()'s own pi
-// through the Python binding, that `state` already has play_record_valid
-// set to the *outer* call's own call_valid flag (state_for_python,
-// installed before pi(...) is ever invoked) -- so whatever guard the
-// outer evaluate() call installed is inherited through every copy this
-// strategy's internal recursion makes, not dropped. There is nothing
-// *new* here for a guard to protect against, which is why reusing
-// make_defender_strategy as-is would still be wrong, not just redundant,
-// since that function expects a call_valid this strategy has no
-// equivalent of (it would need its own, separate flag, not the inherited
-// one already riding along on `state`).
+// The opponent_model wrapper needs no new play_record guard. Each state
+// here is a copy of the state play() received (make_internal_root), and a
+// copy keeps its play_record_valid. Through evaluate(), that is the outer
+// call's flag (state_for_python), so the guard carries through. Do not
+// reuse make_defender_strategy: it expects a call_valid of its own.
 //
-// This is independent of, and does not excuse, copying the *state object
-// itself*: query.state is Deal const&/ObservationState const& into a
-// BeliefNode this search's own recursion owns and keeps mutating, so a
-// Python opponent_model that retains its `state` argument past this one
-// call -- exactly as a Python pi/delta author is otherwise free to do --
-// would keep a wrapper over memory the recursion has since reused or
-// freed. py::return_value_policy::copy forces pybind11 to copy-construct
-// a fresh ObservationState for Python to own, the same policy
-// make_defender_strategy's own cast already uses for the same reason.
+// The state must still be copied. query.state refers into a BeliefNode
+// that the search keeps changing, so a Python opponent_model that keeps
+// `state` would read reused memory. py::return_value_policy::copy gives
+// Python its own copy, as in make_defender_strategy.
 auto make_opponent_model(std::optional<py::function> const& opponent_model) -> be::DefenderStrategy
 {
     if (! opponent_model.has_value()) {
-        // Falsy -- BruteForceDeclarer's own constructor resolves this to
-        // an owned DoubleDummyDefender over the same ctx.
+        // Empty: BruteForceDeclarer then owns a DoubleDummyDefender over
+        // the same ctx.
         return nullptr;
     }
     py::function const delta = *opponent_model;
@@ -1992,14 +1674,9 @@ auto make_opponent_model(std::optional<py::function> const& opponent_model) -> b
     };
 }
 
-/// A DeclarerStrategy backed by BruteForceDeclarer, exposed to Python as a
-/// plain callable object -- __call__(state, view), the same shape every
-/// Python pi already has, so this is usable directly as evaluate()'s own
-/// pi argument with no wrapper function needed around it (the same way
-/// DoubleDummyDefender/HeuristicDefender are already usable directly as
-/// delta). state arrives already converted to be::ObservationState and
-/// view to the bound PyBeliefView wrapper -- pybind11's own argument
-/// conversion handles both, since each is already a registered type.
+/// A BruteForceDeclarer as a Python callable, __call__(state, view). It
+/// works directly as evaluate()'s pi. pybind11 converts state and view,
+/// because both types are registered.
 class PyBruteForceDeclarer
 {
 public:
@@ -2016,37 +1693,24 @@ public:
     auto call(be::ObservationState const& state, PyBeliefView const& view) -> be::Card
     {
         be::DeclarerStrategy const strategy = declarer_.as_strategy();
-        // view.raw() must run while the GIL is still held: on an expired
-        // view it raises ExpiredBeliefViewError via Python C-API calls,
-        // which are undefined behaviour without the GIL. Bind the
-        // reference here, before releasing, rather than evaluating it as
-        // an argument expression after release is already constructed.
+        // Call view.raw() before releasing the GIL. On an expired view it
+        // raises through the Python C API, which needs the GIL.
         be::BeliefView const& raw_view = view.raw();
         try {
-            py::gil_scoped_release const release;  // re-acquired inside make_opponent_model's own
-                                                    // wrapper if opponent_model is a Python callable
+            py::gil_scoped_release const release;  // a Python opponent_model reacquires it
+                                                    // (make_opponent_model)
             return strategy.play(state, raw_view);
         } catch (be::DeclarerStrategyContractViolation const& violation) {
-            // expand_declarer_node's own catch (expand.cpp) only helps a
-            // caller who reaches this strategy's play() through evaluate()
-            // entirely in C++. This object is itself exposed to Python as
-            // __call__ -- a pybind11-bound method -- so when it is used as
-            // evaluate()'s own pi *from Python*, the call into it crosses
-            // the pybind boundary before expand_declarer_node ever gets a
-            // chance: pybind11's own dispatch for this bound method would
-            // otherwise catch the raw C++ exception right here and
-            // translate it to a generic RuntimeError, with
-            // validation/seat/offending_layout all lost and no chance for
-            // expand_declarer_node's own catch to run at all. Caught here
-            // instead, and re-raised through the same
-            // raise_validation_error machinery evaluate()'s own C++-side
-            // ValidationError reporting already uses -- DefenderStrategy,
-            // not DeclarerPlay, for the same reason declarer_expand_error
-            // (evaluate.cpp) prefers it: the violating callback genuinely
-            // was a DefenderStrategy-shaped one (this strategy's own
-            // internal opponent model), just not the outer delta. The GIL
-            // is held again here: `release`'s destructor ran during this
-            // exception's own unwinding, before this handler started.
+            // The catch in expand_declarer_node (expand.cpp) works only in
+            // pure C++. From Python, this __call__ is a pybind11 method, and
+            // pybind11 would turn the exception into a plain RuntimeError,
+            // losing validation, seat and offending_layout. So catch it
+            // here and raise through raise_validation_error.
+            //
+            // Report DefenderStrategy, not DeclarerPlay, as
+            // declarer_expand_error (evaluate.cpp) does: the internal
+            // opponent model broke the contract. The GIL is held again
+            // here, because `release` was destroyed during unwinding.
             raise_validation_error(
                 be::EvaluationCallback::DefenderStrategy, violation.seat, violation.offending_layout,
                 violation.validation);
@@ -2062,47 +1726,35 @@ auto register_solver_seam_bindings(py::module_& module) -> void
     py::enum_<be::SpreadPolicy>(
         module,
         "SpreadPolicy",
-        "How DoubleDummyDefender spreads probability over a solved\n"
-        "position's tied-for-best candidates. The two values differ in\n"
-        "what justifies them, not merely in behaviour -- see each one's\n"
-        "own docstring.")
+        "How DoubleDummyDefender spreads probability over the cards tied for\n"
+        "best. The two values have different justifications; see each one.")
         .value(
             "TouchingSequence", be::SpreadPolicy::TouchingSequence,
-            "Uniform over the single canonical best card's own touching-card\n"
-            "group. The cards in one touching-card group are literally\n"
-            "interchangeable given the layout, so this is the canonical\n"
-            "distribution over an equivalence class the underlying theory\n"
-            "already licenses -- restricted choice, not a modelling guess.")
+            "Even over the touching sequence of the single best card. Those\n"
+            "cards are interchangeable in the layout, so this is restricted\n"
+            "choice, not a modelling guess.")
         .value(
             "AllOptimal", be::SpreadPolicy::AllOptimal,
-            "Uniform over the union of every tied-for-best candidate's own\n"
-            "touching-card group, across suits. These cards are equally\n"
-            "*good* but not otherwise equivalent -- the resulting positions\n"
-            "are not isomorphic, and the distribution's shape depends on how\n"
-            "many suits happen to tie. Selecting this moves to the more\n"
-            "advanced justification algorithm.md describes.");
+            "Even over the touching sequences of every card tied for best,\n"
+            "across suits. These cards are equally good but not equivalent:\n"
+            "the positions differ, and the spread depends on how many suits\n"
+            "tie. This needs the advanced justification in algorithm.md.");
 
     py::class_<PyDoubleDummyDefender>(
         module,
         "DoubleDummyDefender",
-        "A defender strategy backed by the solver: solves a layout double\n"
-        "dummy and spreads probability over the tied-for-best cards via\n"
-        "policy. Usable directly as evaluate()'s own delta argument.\n\n"
-        "**This is not best defence against a contract.** It maximises\n"
-        "tricks (target = -1), not the contract threshold, and will\n"
-        "sometimes concede the contract to hold the trick count down --\n"
-        "the gap between maximising tricks and minimising P_make this\n"
-        "whole capability exists to quantify, not a defect. It does\n"
-        "satisfy delta_is_double_dummy_optimal regardless: that\n"
-        "declaration is about trick count, which trick-maximising play\n"
-        "delivers for both sides, not about matching a contract.\n\n"
-        "ctx is not owned -- create, configure and outlive it yourself.\n"
-        "**ctx is not thread-safe** (SolverContext's own contract: one\n"
-        "context per thread) and __call__ releases the GIL around the\n"
-        "actual solve, so two Python threads genuinely run concurrently if\n"
-        "they share one -- construct one DoubleDummyDefender (and one\n"
-        "SolverContext) per worker rather than sharing either across\n"
-        "threads.")
+        "A defender strategy backed by the solver. It solves a layout double\n"
+        "dummy and spreads probability over the cards tied for best,\n"
+        "according to policy. Use it directly as evaluate()'s delta.\n\n"
+        "**It is not best defence against a contract.** It maximises tricks\n"
+        "(target = -1), and sometimes gives up the contract to do so. It\n"
+        "still satisfies delta_is_double_dummy_optimal, which is about\n"
+        "trick count.\n\n"
+        "**ctx is not thread-safe.** Use one SolverContext per thread.\n"
+        "__call__ releases the GIL during the solve, so two threads sharing\n"
+        "ctx really do run at the same time. Create one DoubleDummyDefender\n"
+        "and one SolverContext per thread. You own ctx: create it,\n"
+        "configure it, and keep it alive.")
         .def(
             py::init<SolverContext&, be::SpreadPolicy>(), py::arg("ctx"),
             py::arg("policy") = be::SpreadPolicy::TouchingSequence, py::keep_alive<1, 2>())
@@ -2111,29 +1763,20 @@ auto register_solver_seam_bindings(py::module_& module) -> void
     py::class_<PyDoubleDummyBound>(
         module,
         "DoubleDummyBound",
-        "A LayoutBound backed by the solver: declarer's own double-dummy\n"
-        "trick count from a given layout, regardless of who is actually on\n"
-        "lead there. Usable directly as evaluate()'s own bound argument.\n\n"
-        "**declarer is fixed for this object's whole lifetime -- not\n"
-        "reusable across declarers.** Reusing one across two declarers\n"
-        "produces a wrong bound silently, which then feeds tier2_dead(),\n"
-        "whose whole soundness rests on the bound being right for the\n"
-        "declarer actually being evaluated.\n\n"
-        "The precondition this bound carries: R <= DD (the reason a cut\n"
-        "may use it at all) holds only when the paired delta is\n"
-        "double-dummy optimal for trick count -- pass\n"
-        "delta_is_double_dummy_optimal=True to evaluate() and pair this\n"
-        "with a DoubleDummyDefender, the intended sound configuration.\n\n"
-        "ctx is not owned, and not thread-safe, the same as\n"
-        "DoubleDummyDefender's own contract -- see its docstring.")
+        "A layout bound backed by the solver: declarer's double-dummy trick\n"
+        "count from a layout, whoever is on lead. Use it directly as\n"
+        "evaluate()'s bound.\n\n"
+        "**declarer is fixed for the life of this object.** Do not reuse it\n"
+        "for another declarer. The bound would be wrong, and the\n"
+        "bound-gated cut would give a wrong answer.\n\n"
+        "The cut is sound (R <= DD) only if delta is double-dummy optimal\n"
+        "for trick count. Pair this with a DoubleDummyDefender, and pass\n"
+        "delta_is_double_dummy_optimal=True to evaluate().\n\n"
+        "The ctx rules of DoubleDummyDefender apply.")
         .def(
             py::init([](SolverContext& ctx, int declarer) {
-                // declarer is fixed for this object's whole lifetime (see
-                // the docstring above), and as_bound() later indexes
-                // remainCards[declarer_] through tricks_remaining with no
-                // range check of its own -- checked here, once, at
-                // construction, rather than left unchecked the way
-                // storing it would otherwise leave it.
+                // Check declarer once here. as_bound() indexes
+                // remainCards[declarer_] with no range check.
                 if (declarer < 0 || declarer >= DDS_HANDS) {
                     throw py::value_error(
                         "declarer has invalid value " + std::to_string(declarer) +
@@ -2147,17 +1790,11 @@ auto register_solver_seam_bindings(py::module_& module) -> void
     py::class_<PyHeuristicDefender>(
         module,
         "HeuristicDefender",
-        "A defender strategy backed by a caller-assembled\n"
-        "DefenderHeuristicChain, falling back to DoubleDummyDefender's own\n"
-        "spread() when every rule in the chain defers. A second\n"
-        "DefenderStrategy implementation, not a replacement for\n"
-        "DoubleDummyDefender -- both are usable anywhere evaluate()'s delta\n"
-        "argument is accepted.\n\n"
-        "**The chain is entirely caller-assembled.** This class never calls\n"
-        "make_default_defender_heuristics() implicitly and has no notion\n"
-        "of \"the default chain\" to special-case.\n\n"
-        "ctx is not owned, and not thread-safe, the same as\n"
-        "DoubleDummyDefender's own contract -- see its docstring.")
+        "A defender strategy that applies a DefenderHeuristicChain. If every\n"
+        "rule defers, it uses the spread of DoubleDummyDefender. It is a\n"
+        "second delta, not a replacement for DoubleDummyDefender.\n\n"
+        "**You build the chain.** This class never builds a default chain.\n\n"
+        "The ctx rules of DoubleDummyDefender apply.")
         .def(
             py::init<SolverContext&, be::DefenderHeuristicChain, be::SpreadPolicy>(), py::arg("ctx"),
             py::arg("chain"), py::arg("fallback_policy") = be::SpreadPolicy::TouchingSequence,
@@ -2167,57 +1804,37 @@ auto register_solver_seam_bindings(py::module_& module) -> void
     py::enum_<be::DeclarerObjective>(
         module,
         "DeclarerObjective",
-        "Which quantity BruteForceDeclarer's own internal search maximises.\n"
-        "Locked for one instance's whole lifetime, never a per-call\n"
-        "parameter -- mixing objectives within one shared cache corrupts\n"
-        "backed-up values the same way mixing SpreadPolicy values would for\n"
-        "DoubleDummyDefender's own instance-level policy.")
+        "The quantity BruteForceDeclarer maximises. Fixed for the life of an\n"
+        "instance, because all its searches share one cache. Mixing\n"
+        "objectives would corrupt the cached values.")
         .value("MaximizeExpectedTricks", be::DeclarerObjective::MaximizeExpectedTricks)
         .value("MaximizeProbabilityToMake", be::DeclarerObjective::MaximizeProbabilityToMake);
 
     py::class_<PyBruteForceDeclarer>(
         module,
         "BruteForceDeclarer",
-        "A declarer strategy backed by an exhaustive (or depth/size-bounded)\n"
-        "lookahead search over the belief space, keeping the best legal\n"
-        "card under a fixed DeclarerObjective. Usable directly as\n"
-        "evaluate()'s own pi argument.\n\n"
-        "**This presumes its own internal opponent_model is what the paired\n"
-        "delta actually is.** Paired with a different delta, evaluate()\n"
-        "still returns a well-defined p_make -- just not \"the double-dummy-\n"
-        "optimal p_make\" this strategy's own search would compute against a\n"
-        "model matching its internal one.\n\n"
-        "**The cache this owns is safe to share across this instance's own\n"
-        "calls only when max_depth is left None** -- though an actual hit\n"
-        "*across* two different calls is rare in practice, not the common\n"
-        "case \"safe to share\" might suggest: each call's own root is\n"
-        "freshly renormalised to sum to 1, while this search's own internal\n"
-        "recursion never renormalises a descendant, so a hit across calls\n"
-        "survives only a chain of probability-1 choices on both sides --\n"
-        "not the genuinely uncertain, multi-layout belief space this cache\n"
-        "exists to help. Reuse within one call's own internal recursion (a\n"
-        "transposition reached by two different move orders in the same\n"
-        "lookahead) is unaffected. With max_depth set, the\n"
-        "cutoff it triggers depends on how deep this particular call's own\n"
-        "lookahead is, not on anything inherent to the position, so each\n"
-        "call starts from a clean cache instead. Never shared across two\n"
-        "differently-configured instances either way -- a different\n"
-        "objective or a different opponent_model corrupts backed-up values\n"
-        "silently.\n\n"
-        "**A caller-supplied opponent_model must answer from position\n"
-        "alone, never from the state argument's history or play-record\n"
-        "fields** -- even though a legitimate defender callable may read\n"
-        "them (a ScriptedDefender-style model keying its own response off\n"
-        "history is a real example). This cache's own key omits both,\n"
-        "which is what lets two different play() calls along one\n"
-        "actually-played line share a cached value; that is only sound\n"
-        "when opponent_model cannot tell those two calls apart. Nothing\n"
-        "checks this at runtime; it is a caller obligation, like the\n"
-        "objective/opponent_model instance-locking above.\n\n"
-        "opponent_model left None resolves to an owned DoubleDummyDefender\n"
-        "over the same ctx -- the common case, with no need to construct\n"
-        "one yourself. ctx is not owned, and not thread-safe, the same as\n"
-        "DoubleDummyDefender's own contract.")
+        "A declarer strategy that searches ahead over the belief space and\n"
+        "keeps the best legal card for its DeclarerObjective. max_depth and\n"
+        "max_layouts limit the search. Use it directly as evaluate()'s pi.\n\n"
+        "**Match opponent_model to the paired delta.** With another delta,\n"
+        "evaluate() still returns a well-defined p_make, but only for that\n"
+        "pairing, not for double-dummy-optimal play.\n\n"
+        "**An opponent_model you supply must answer from the position only.**\n"
+        "It must not read the history or play_record of state, although an\n"
+        "ordinary delta may. The cache key leaves them out, so that two\n"
+        "play() calls on one line of play can share a value. Nothing checks\n"
+        "this.\n\n"
+        "The cache belongs to this instance:\n\n"
+        "- With max_depth=None, it is kept between calls and is never wrong.\n"
+        "  Hits between calls are rare: each call scales its root to sum to\n"
+        "  1, and the search never rescales below that.\n"
+        "- Within one call, transpositions still hit the cache.\n"
+        "- With max_depth set, a cutoff depends on the depth of the current\n"
+        "  call, so each call starts with an empty cache.\n"
+        "- objective and opponent_model are fixed per instance, so one cache\n"
+        "  never mixes them.\n\n"
+        "With opponent_model=None, it owns a DoubleDummyDefender over ctx.\n"
+        "The ctx rules of DoubleDummyDefender apply.")
         .def(
             py::init<
                 SolverContext&, be::DeclarerObjective, std::optional<py::function> const&,
@@ -2228,11 +1845,8 @@ auto register_solver_seam_bindings(py::module_& module) -> void
         .def("__call__", &PyBruteForceDeclarer::call, py::arg("state"), py::arg("view"));
 }
 
-// Internal: exercises the converters above end to end, ahead of the real
-// callers (the layout source binds the inward history conversion; evaluate()
-// constructs the ObservationState this same known_holdings/history logic
-// serves). Not part of the public surface -- leading underscore, not
-// re-exported from the package's own __init__.py.
+// Testing support: probes for the converters and the trampoline. Not public:
+// the names start with an underscore, and __init__.py does not re-export them.
 auto register_converter_probes(py::module_& module) -> void
 {
     module.def(
@@ -2246,17 +1860,10 @@ auto register_converter_probes(py::module_& module) -> void
         "Round-trips a card sequence through the internal PlayTraceBin\n"
         "representation. Raises ValueError if malformed. Testing support only.");
 
-    // Calling source.size()/.at(i) directly from Python never reaches
-    // PyLayoutSource's C++ overrides at all: Python's own method
-    // resolution finds a subclass's plain Python method first, regardless
-    // of what the base class binds. The trampoline is only exercised when
-    // C++ code holds a LayoutSource& and calls through it -- which
-    // evaluate() (below) now does for real, through make_root(), for
-    // whatever source a caller passes it. These two probes call through a
-    // be::LayoutSource const& the same way, as an additional, narrower
-    // direct test of the trampoline itself -- a Python subclass "consumed
-    // by C++" in isolation, independent of evaluate()'s own much larger
-    // surface. Testing support only.
+    // A Python call to source.size() finds the Python method first and
+    // never reaches the trampoline. Only C++ code calling through a
+    // LayoutSource& does, as evaluate() does. These two probes call through
+    // a LayoutSource const&, to test the trampoline without evaluate().
     module.def(
         "_layout_source_size_from_cpp",
         [](be::LayoutSource const& source) -> py::object {
@@ -2275,10 +1882,9 @@ auto register_converter_probes(py::module_& module) -> void
         py::arg("weights"),
         py::arg("is_sample"),
         py::arg("callback"),
-        "Builds a BeliefNode from layouts/weights, calls callback(view),\n"
-        "and invalidates the view on the way out -- standing in for\n"
-        "evaluate() so the validity guard can be tested against a fixture\n"
-        "smaller than a real recursion. Testing support only.");
+        "Builds a BeliefNode from layouts and weights, calls callback(view),\n"
+        "then invalidates the view. Tests the validity guard without\n"
+        "evaluate(). Testing support only.");
 }
 
 }  // namespace
@@ -2287,8 +1893,7 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
 {
     module.doc() = "belief_space_local_evaluation Python extension";
 
-    // The exception hierarchy's one root first: everything else below
-    // that raises derives from it.
+    // The base exception first: every other exception derives from it.
     register_root_exception_bindings(module);
 
     register_card_bindings(module);
@@ -2299,13 +1904,12 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
     register_root_failure_error_bindings(module);
     register_validation_error_bindings(module);
     register_history_error_bindings(module);
-    // After register_history_error_bindings: raise_history_rejected reads
-    // the exception-map that call populates.
+    // After register_history_error_bindings, which fills the map that
+    // raise_history_rejected reads.
     register_play_record_bindings(module);
     register_layout_source_bindings(module);
-    // Before register_solver_seam_bindings: HeuristicDefender's own
-    // constructor takes a DefenderHeuristicChain by value, so that type
-    // must already be registered.
+    // Before register_solver_seam_bindings: the HeuristicDefender
+    // constructor takes a DefenderHeuristicChain, which must be registered.
     register_defender_heuristic_bindings(module);
     register_solver_seam_bindings(module);
     register_converter_probes(module);
@@ -2329,33 +1933,49 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
         py::arg("replenish_below") = std::nullopt,
         py::arg("state_key") = py::none(),
         py::arg("play_record") = py::none(),
-        "Evaluates P_make for pi against delta over the belief space "
-        "source enumerates from root. See the module's own capability "
-        "document for the option coupling this binding validates that "
-        "the C++ type's own doxygen states but a Python caller cannot "
-        "read on the field.");
+        "Computes P_make for pi against delta, over the belief space that\n"
+        "source lists for root.\n\n"
+        "Arguments:\n"
+        "    root: the deal dict at the root.\n"
+        "    declarer: declarer's seat, 0..3.\n"
+        "    tricks_needed: tricks declarer still needs, 0..13.\n"
+        "    source: a LayoutSource.\n"
+        "    pi: the declarer strategy, pi(state, view) -> Card.\n"
+        "    delta: the defender strategy,\n"
+        "        delta(layout, seat, state) -> [(Card, probability), ...].\n\n"
+        "Keyword-only options, with the defaults of EvaluateOptions in C++:\n"
+        "retain_root, collect_counters, bound, delta_is_double_dummy_optimal,\n"
+        "sample_size, scan_budget, replenish_below, play_record. Also\n"
+        "state_key, which belongs to the declarer strategy in C++ (default\n"
+        "None).\n\n"
+        "Returns a dict. result['by_strategy'][1] holds 'p_make',\n"
+        "'root_children' and 'root_is_declaring_side'.\n\n"
+        "Raises:\n"
+        "    ValueError: for a bad argument, or replenish_below without\n"
+        "        sample_size.\n"
+        "    RootFailureError subclasses: if no root can be built.\n"
+        "    CallbackContractError subclasses: if pi or delta breaks its\n"
+        "        contract.\n"
+        "An exception raised inside pi, delta or the source passes through\n"
+        "unchanged.\n\n"
+        "See docs/belief_space_local_evaluation.md.");
 
-    // The trick primitives, bound from trick.hpp rather than reimplemented.
-    // These are the four the evaluator itself uses to walk a position
-    // (evaluate.cpp, expand.cpp), exposed so a Python caller reaching a
-    // mid-play root uses the *same* follow-suit and trick-winner rules the
-    // evaluator will apply to the root they hand it. A caller's own copy that
-    // disagrees produces a wrong root, and every number computed from it is
-    // confidently about a different position, with nothing raised anywhere.
+    // The trick primitives from trick.hpp: the four functions the evaluator
+    // uses to walk a position. A Python caller who reaches a mid-play root
+    // with them applies the same rules as the evaluator. A caller's own
+    // version that differs gives a wrong root, with no error.
     //
-    // All four take and return `deal` dicts, the same shape
-    // ObservationState.known_holdings hands out, so they compose with what a
-    // strategy is already given.
+    // All four take and return deal dicts, the shape of
+    // ObservationState.known_holdings.
     module.def(
         "seat_on_play",
         [](py::dict const& deal) { return be::seat_on_play(dds3_python::dict_to_deal(deal)); },
         py::arg("deal"),
-        "The seat (0..3) on play at deal: its `first` advanced by however\n"
-        "many cards have been played to the trick in progress.\n\n"
-        "Note this is deal['first'], the *current trick's* leader, advanced --\n"
-        "not ObservationState.first, which is the root's leader and never\n"
-        "moves. A strategy given an ObservationState should pass\n"
-        "state.known_holdings here.");
+        "The seat (0..3) on play at deal: deal['first'] advanced by the\n"
+        "number of cards on the trick in progress.\n\n"
+        "deal['first'] is the leader of the current trick. It is not\n"
+        "ObservationState.first, the root leader. From a strategy, pass\n"
+        "state.known_holdings.");
 
     module.def(
         "legal_cards",
@@ -2364,14 +1984,11 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
         },
         py::arg("deal"),
         py::arg("seat"),
-        "Every Card seat may legally play at deal, honouring the suit led to\n"
-        "the trick in progress when seat holds any card of it.\n\n"
-        "Ordered suit ascending, then rank ascending within a suit -- the same\n"
-        "order evaluate()'s root_children key uses, since that key is built by\n"
-        "indexing into this list.\n\n"
-        "Returns Cards, not the per-suit bitmasks the C++ legal_cards()\n"
-        "returns: a strategy has to return a Card, so the bitmask form only\n"
-        "ever gets expanded again by the caller.");
+        "Every Card seat may legally play at deal, with follow-suit applied.\n\n"
+        "Sorted by suit, then rank, ascending. evaluate() builds root_children\n"
+        "by indexing into this list, so it uses the same order.\n\n"
+        "Returns Cards, not the per-suit bitmasks of the C++ legal_cards(),\n"
+        "because a strategy must return a Card.");
 
     module.def(
         "trick_complete_winner",
@@ -2380,12 +1997,11 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
         },
         py::arg("deal"),
         py::arg("card"),
-        "The seat that wins the trick in progress once card is played as its\n"
-        "fourth card. deal must already carry exactly three played cards in\n"
-        "current_trick_suit / current_trick_rank.\n\n"
-        "Highest trump if any were played, else highest card of the led suit:\n"
-        "a discard never wins, however high, and a ruff beats any card of the\n"
-        "suit led.");
+        "The seat that wins the trick in progress when card is played fourth.\n"
+        "deal must hold exactly three played cards in current_trick_suit and\n"
+        "current_trick_rank.\n\n"
+        "The highest trump wins. With no trump, the highest card of the led\n"
+        "suit wins. A discard never wins.");
 
     module.def(
         "play",
@@ -2394,25 +2010,20 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
         },
         py::arg("deal"),
         py::arg("card"),
-        "The deal after the seat on play plays card: removed from that seat's\n"
-        "remain_cards, and either appended to the trick in progress or -- when\n"
-        "card completes the trick -- the trick resolved, current_trick_*\n"
-        "cleared and 'first' reassigned to the winner.\n\n"
-        "Pure: the deal passed in is not modified, a new dict is returned.\n"
-        "Carries no trick counter -- who won, and what that makes the running\n"
-        "total, is the caller's business.");
+        "Returns the deal after the seat on play plays card. The card leaves\n"
+        "that seat's remain_cards and joins the trick in progress. If it\n"
+        "completes the trick, the trick is cleared and 'first' becomes the\n"
+        "winner.\n\n"
+        "The deal passed in is not changed. There is no trick counter: use\n"
+        "play_out to count tricks.");
 
-    // The one piece of arithmetic evaluate() takes on trust. The evaluator
-    // carries no trick counter (trick.hpp says so), so tricks_needed is
-    // caller-written -- and an off-by-one there does not fail, it evaluates a
-    // different contract and reports a confident number for it.
+    // evaluate() trusts tricks_needed, because the evaluator has no trick
+    // counter (trick.hpp). An off-by-one does not fail: it evaluates a
+    // different contract.
     //
-    // The root and the count come back together because the hazard is the two
-    // disagreeing: there is deliberately no way to obtain one without the
-    // other. Implemented over the bound primitives rather than as a new C++
-    // function because the defect class is caller-written arithmetic *in
-    // Python*; a C++ caller reaches a root by constructing one, not by
-    // replaying a hand.
+    // play_out returns the root and the count together, so they cannot
+    // disagree. It lives here, not in C++, because the risk is Python code
+    // that replays a hand. A C++ caller builds a root directly.
     module.def(
         "play_out",
         [](py::dict const& deal, py::sequence const& history, int opening_leader,
@@ -2438,11 +2049,9 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
                 be::Card const card = py::cast<be::Card>(item);
                 int const seat = be::seat_on_play(current);
 
-                // be::play has a precondition, not a check: an illegal card
-                // would yield a nonsense position rather than an error. A
-                // history is caller data -- usually a transcribed hand record
-                // -- so it is validated here, naming the card and the index
-                // that a reader can find in their own source.
+                // be::play does not check legality: an illegal card gives a
+                // nonsense position. A history is caller data, often a
+                // transcribed hand, so check it here and name the index.
                 std::array<unsigned, DDS_SUITS> const legal = be::legal_cards(current, seat);
                 if (card.suit < 0 || card.suit >= DDS_SUITS || card.rank < 2 || card.rank > 14 ||
                     (legal[static_cast<std::size_t>(card.suit)] & (1u << card.rank)) == 0) {
@@ -2453,10 +2062,8 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
 
                 bool const completes_the_trick = current.currentTrickRank[2] != 0;
                 current = be::play(current, card);
-                // A completed trick is the only one with a winner, and
-                // be::play has just reassigned `first` to it. A trailing
-                // incomplete trick therefore counts for nobody, which is
-                // right: it has no winner yet.
+                // Only a completed trick has a winner, and be::play has set
+                // `first` to it. An incomplete last trick counts for nobody.
                 if (completes_the_trick && (current.first == declarer || current.first == dummy)) {
                     ++won;
                 }
@@ -2469,17 +2076,16 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
         py::arg("history"),
         py::arg("opening_leader"),
         py::arg("declarer"),
-        "Replay `history` onto `deal` from `opening_leader`, and return\n"
+        "Replays `history` onto `deal` from `opening_leader`. Returns\n"
         "`(root, tricks_won_by_declarer)`.\n\n"
-        "`root` is the position after the last card, ready to hand to\n"
-        "evaluate(); the count is what evaluate()'s `tricks_needed` has to be\n"
-        "measured against -- `level + 6 - tricks_won_by_declarer`. Tricks won\n"
-        "by **dummy** count for declarer.\n\n"
-        "A trailing incomplete trick is replayed and counts for nobody: it has\n"
-        "no winner yet. Its cards are on `root`'s trick in progress.\n\n"
-        "Raises ValueError naming the index if a card is not a legal play at\n"
-        "the point it is reached -- which is what catches a transcription\n"
-        "mistake, or an `opening_leader` that does not match the history.");
+        "`root` is the position after the last card, ready for evaluate().\n"
+        "Compute tricks_needed as `level + 6 - tricks_won_by_declarer`.\n"
+        "Tricks won by **dummy** count for declarer.\n\n"
+        "An incomplete last trick is replayed but counts for nobody. Its cards\n"
+        "are on the trick in progress of `root`.\n\n"
+        "Raises ValueError, naming the index, if a card is not legal when it\n"
+        "is played. This catches a transcription mistake, or an\n"
+        "`opening_leader` that does not match the history.");
 
     module.def("module_name", []() {
         return "_belief_space_local_evaluation";

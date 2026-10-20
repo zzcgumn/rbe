@@ -9,44 +9,31 @@ pybind_extension(
         "src/belief_converters.cpp",
         "src/belief_converters.hpp",
         "src/belief_space_local_evaluation.cpp",
-        # The Deal converters, compiled into this extension rather than
-        # linked: pybind_extension compiles its own srcs with
-        # -fvisibility=hidden, and a cc_library dependency would not inherit
-        # that, so dds3_python's symbols would be exported from both this
-        # .so and dds3's own and could interpose at load time. dds exposes
-        # them as a filegroup for exactly this reason.
+        # The Deal converters, compiled in rather than linked. Only srcs get
+        # -fvisibility=hidden. As a cc_library, their symbols would be
+        # exported from both this .so and dds3's, and could clash at load
+        # time.
         "@dds//python:converters_srcs",
     ],
     copts = DDS_CPPOPTS,
     deps = [
-        # converters.hpp on an include path, as <dds3/converters.hpp>. The
-        # filegroup alone is not enough: converters.cpp's own quoted include
-        # resolves next to itself, but this extension's own sources have no
-        # way to name the header otherwise.
+        # Puts converters.hpp on the include path as <dds3/converters.hpp>,
+        # so that this extension's sources can include it.
         "@dds//python:converters_hdrs",
-        # converters.hpp's own #include <dds/dds.hpp>, for the dds3-specific
-        # types its other functions convert.
+        # converters.hpp includes <dds/dds.hpp>.
         "@dds//library/src:dds",
         "//src/belief_evaluation",
-        # The solver seam: DoubleDummyDefender and DoubleDummyBound, both
-        # solver-linked, unlike the rest of this extension. SolverContext
-        # itself is never registered here -- dds3 keeps that registration
-        # (see belief_space_local_evaluation.cpp's own comment on the
-        # cross-module pattern), so no dep on dds3's extension is needed for
-        # that; these two are what actually need the solver.
+        # The solver seam. These two link the solver; the rest of the
+        # extension does not. dds3 registers SolverContext, so no dependency
+        # on the dds3 extension is needed.
         "//src/belief_evaluation:double_dummy_bound",
         "//src/belief_evaluation:double_dummy_defender",
-        # The heuristic defender chain: defender_heuristic is solver-free
-        # (the rules themselves), heuristic_defender is the one piece that
-        # calls the solver, mirroring the double_dummy_bound/double_dummy_defender
-        # pairing immediately above.
+        # The heuristic defender: the rules (solver-free) and the defender
+        # (calls the solver).
         "//src/belief_evaluation:defender_heuristic",
         "//src/belief_evaluation:heuristic_defender",
-        # The lookahead declarer strategy: brute_force_cache is solver-free
-        # (key construction alone), brute_force_declarer is the one piece
-        # that calls the solver (via its own DoubleDummyBound and its
-        # default DoubleDummyDefender opponent model), mirroring the same
-        # pairing pattern as the two groups immediately above.
+        # The lookahead declarer: the cache (solver-free) and the declarer
+        # (calls the solver).
         "//src/belief_evaluation:brute_force_cache",
         "//src/belief_evaluation:brute_force_declarer",
     ],
@@ -86,21 +73,18 @@ py_library(
     ],
     data = [":_belief_space_local_evaluation_in_package"],
     imports = ["."],
-    # __init__.py imports dds3 before this module's own extension, so that
-    # SolverContext's pybind registration is in place first. Both extensions
-    # resolve one pybind11 through the module graph, so the interpreter-level
-    # type registry is shared exactly as it was inside dds.
+    # __init__.py imports dds3 first, so that SolverContext is registered.
+    # Both extensions use the same pybind11, so they share the type registry.
     deps = [
         "@dds//python:dds3_lib",
-        # play_sequence.py's own bridge-notation imports.
+        # Imported by play_sequence.py.
         ":bridge_notation_lib",
     ],
     visibility = ["//visibility:public"],
 )
 
-# Zero dependencies -- own top-level package rather than a submodule of
-# belief_space_local_evaluation, so a caller who only wants to format a dds3
-# result does not have to import through a package they don't otherwise need.
+# No dependencies. A top-level package, so that a caller who only formats a
+# dds3 result need not import belief_space_local_evaluation.
 py_library(
     name = "bridge_notation_lib",
     srcs = ["bridge_notation/__init__.py"],
@@ -108,9 +92,8 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
-# Guard: CI builds and tests this tree under -c opt on every platform that
-# carries a different build config from the default (Linux and macOS; macOS
-# additionally carries ThinLTO).
+# Guard: CI must build and test under -c opt on every platform whose config
+# differs from the default (Linux and macOS; macOS also uses ThinLTO).
 py_test(
     name = "ci_belief_evaluation_opt_test",
     size = "small",
@@ -297,12 +280,10 @@ py_test(
     ],
 )
 
-# dds3's extension, staged into its package directory here rather than
-# depended on through dds's own :_dds3_in_package -- that alias is
-# package-private, while the extension itself is public. Without this the
-# wheel ships dds3/__init__.py and no dds3/_dds3.so, which imports cleanly
-# right up until the first call. Mirrors dds's own genrule pair, including
-# the Windows filename.
+# Copies the dds3 extension into its package directory. dds has the same
+# genrules, but its :_dds3_in_package alias is private. Without this, the
+# wheel ships dds3/__init__.py without dds3/_dds3.so, which fails on the
+# first call.
 genrule(
     name = "_dds3_in_package_unix",
     srcs = ["@dds//python:_dds3"],
@@ -326,11 +307,9 @@ alias(
     }),
 )
 
-# One wheel, two top-level imports (dds3 and belief_space_local_evaluation).
-# Both extensions link the same static solver library, so two wheels would
-# duplicate it on disk and double the install step for a caller who wants
-# both -- and every caller wants both, since this package's __init__ imports
-# dds3 before its own extension to get SolverContext registered first.
+# One wheel, two top-level imports: dds3 and belief_space_local_evaluation.
+# Both extensions link the same static solver, so two wheels would duplicate
+# it. Every caller needs both anyway, because __init__.py imports dds3.
 py_wheel(
     name = "rbe_wheel",
     distribution = "rbe",
@@ -339,12 +318,10 @@ py_wheel(
     homepage = "https://github.com/zzcgumn/rbe",
     license = "Apache-2.0",
     python_requires = ">=3.10",
-    # NOTE: this is tagged py3-none-any while shipping two compiled
-    # extensions, so pip will install it on a platform it cannot import on.
-    # Inherited from dds's own wheel rather than introduced here. Fixing it
-    # means real python_tag/abi/platform tags, which is a distribution
-    # decision (which interpreters and platforms are published), not a
-    # mechanical change.
+    # NOTE: tagged py3-none-any, although it ships compiled extensions. So
+    # pip installs it on platforms where it cannot import. dds has the same
+    # problem. The fix needs real python/abi/platform tags, which is a
+    # decision about which platforms to publish.
     deps = [
         ":belief_space_local_evaluation_lib",
         ":_belief_space_local_evaluation_in_package",
@@ -356,11 +333,9 @@ py_wheel(
     entry_points = {},
 )
 
-# Guard: the wheel must carry both packages *and* both compiled extensions.
-# py_wheel takes a py_library's srcs but not the extension its data points
-# at, so a wheel that ships dds3/__init__.py without dds3/_dds3.so builds
-# clean, installs clean, imports clean, and fails on the first call. That
-# happened while this target was being written.
+# Guard: the wheel must hold both packages and both compiled extensions.
+# py_wheel packages srcs, not data. A wheel without dds3/_dds3.so builds,
+# installs and imports, then fails on the first call.
 py_test(
     name = "wheel_contents_test",
     size = "small",
