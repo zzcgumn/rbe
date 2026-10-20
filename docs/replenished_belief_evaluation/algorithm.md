@@ -7,16 +7,20 @@ We will use the term belief space for the set of all layouts that we think are p
 Declarer will typically consider only layouts in which the contract can be made. Playing for a layout other than the actual one can still be good play. 
 
 The discussion in this note focuses on scenarios where making the contract is clearly the primary objective. We do not consider matchpoint scoring, or IMP situations where extra undertricks can be expensive.
+
 ## Declarer play plan definition
+
 A declarer play plan is a decision strategy $\pi$ that prescribes which card to play when declarer or dummy is in turn given all available information. The defender's strategy will be denoted by $\delta$. Both defenders use the same strategy but feed different information into it to reach a decision. Strategies can be stochastic and $\pi\left(\cdot \mid a, b, c, \cdots \right)$ is the probability distribution. 
 
-The set $\mathbf{C}$ are the cards yet to be played by the defenders, indexed by $a, b, c, \cdots$. The function $c_\pi\left(a,b,c, \cdots\right)$ returns the action prescribed by $\pi$ given the observed cards. It can happen that $c_\pi$ has to return two cards at a trick boundary. We use the computer science style notation $c_\pi\left(\right)$ for the first card to play. This note will is restricted to deterministic declarer play strategies, but defender strategies may be stochastic. $c_\pi$ will be deterministic only when $\pi$ is.
+The set $\mathbf{C}$ are the cards yet to be played by the defenders, indexed by $a, b, c, \cdots$. The function $c_\pi\left(a,b,c, \cdots\right)$ returns the action prescribed by $\pi$ given the observed cards. It can happen that $c_\pi$ has to return two cards at a trick boundary. We use the computer science style notation $c_\pi\left(\right)$ for the first card to play. This note is restricted to deterministic declarer play strategies, but defender strategies may be stochastic. $c_\pi$ will be deterministic only when $\pi$ is.
 
 The notation $(a, b, c \cdots \mid \pi)$ will be used for observing defender cards $a, b, c \cdots$ given declarer follows $\pi$. Whether the first card is played by declarer or a defender follows from the problem. For a full hand it will always be a defender, but for a partial problem it might declarer or a defender. This notation is convenient as we don't have to write all declarer cards explicitly. The same side will, however, play two cards in a row at the end of each trick. This can be indicated by grouping cards: $(a, b,, c, (d,e), \cdots \mid \pi)$ and a double $,,$ indicates that declarer played two cards. As it happens we will not need to worry about this when deriving the results reported in this note.
+
 ## Describing a declarer play problem
+
 Declarer play plans specify a sequence of actions that depend on what declarer observes. Declarer knows which cards the defenders could play next, but not which one they will play. Each card played by the opposition reduces the belief space. We write  $\mathbf{B}$ for the set of plausible layouts. A plain letter $B$ denotes an individual layout, indexed $i,j,k,\cdots$. We also need a probability distribution $P_\mathbf{B}$ over the possible layouts. The pair $\left\\{ \mathbf{C},  P_\mathbf{B} \right\\}$ describes the unknown part of the state completely since $P_{\mathbf{B}}$ has $\mathbf{B}$ as its explicit domain. The commonly known part of the state - the auction, player on lead, tricks won so far and cards played to the current trick - is identical in every layout of the belief space, and is suppressed from the notation. It still has to be carried forward to score the result.
 
-Defenders are always adversarial, but  different defender models choose differently between cards. How this affects declarer's planning is discussed later, when we examine different defender models. Note that a defender can introduce a stochastic element by randomising the choice.
+Defenders are always adversarial, but  different defender models choose differently between cards. How this affects declarer's planning is discussed later, when we examine different defender models. Note that a defender can introduce a stochastic element by randomising their choice.
 
 Declarer plays a card $c_\pi\left(\right)$ and then observes the card $C_a$ played by the defender in turn. This action induces a change
 
@@ -34,13 +38,18 @@ P_{\mathbf{B}'}\left ( B_i\right) &= \frac{\delta \left(C_a \mid c_\pi\left(\rig
 \end{aligned}
 $$
 
-Here $``\delta \left(C_a \mid c_\pi\left(\right) \right) = \sum_i{\delta \left(C_a \mid c_\pi\left(\right), B_i \right)P_{\mathbf{B}}\left ( B_i\right)}``$. Given a layout $B_i$, both declarer and defenders can deduce the contents of their opponents' $\mathbf{B}$, provided the inference rules and the defender model are common knowledge.This is the reason that declarer can calculate $\delta$. Most of the work in this note presumes perfect-information defenders, which collapses their belief space to $\left \\{ B_i \right \\}$. 
+Here $``\delta \left(C_a \mid c_\pi\left(\right) \right) = \sum_i{\delta \left(C_a \mid c_\pi\left(\right), B_i \right)P_{\mathbf{B}}\left ( B_i\right)}``$. Given a layout $B_i$, both declarer and defenders can deduce the contents of their opponents' $\mathbf{B}$, provided the inference rules and the defender model are common knowledge. This is the reason that declarer can calculate $\delta$. Most of the work in this note presumes perfect-information defenders, which collapses their belief space to $\left \\{ B_i \right \\}$. 
 
 Declarer takes a series of decisions, each leading to a new state, but never knows the actual layout. Decision-making of this kind is known as a Partially Observable Markov Decision Process (POMDP). Converting to a belief space is the standard trick that turns a POMDP over hidden layouts into a belief MDP. Solving a POMDP is usually computationally intractable, but it is encouraging to be working within a class of problems that has an established literature.
+
 ## Recursive evaluation
+
 Declarer plays a card $``c_\pi\left(a,b,c, \cdots\right)``$, observes the defender in turn play $C_d$, and now faces a decision in the new state $\left\\{ \mathbf{C'}, P_\mathbf{B'} \right\\}$. If this is the last trick — four cards left to play — the score can simply be totalled. Otherwise, by the Markov property, we feed $\left\\{ \mathbf{C'}, P_{\mathbf{B}'}\right\\}$ into the same algorithm we used for $\left\\{ \mathbf{C},P_\mathbf{B} \right\\}$.
+
 ## Inductive reasoning
+
 Observing a card played by a defender narrows the belief space to the layouts in which that defender holds the card. Further deductions follow from the requirement that the defender considers the card optimal. Declarer might, for instance, rule out any layout in which the defender could instead have cashed a setting trick. Assuming the defender's choice was double-dummy optimal is a plausible approximation. Defender models are discussed in more detail below, once the algorithm for evaluating a declarer play plan has been developed.
+
 ## Searching for an optimal declarer play plan
 
 Declarer wants to maximise the probability that the contract makes; the defenders want the opposite. Declarer does not know the actual layout, but assumes that a defender always plays an optimal card, and that it is common knowledge which cards count as optimal in a given layout.
@@ -62,7 +71,9 @@ This indicates that our task is to identify at least one declarer play plan $\pi
 There is a subtle assumption about $\delta$ lurking here. The outcome must not change with the sequence in which defender cards are played. This will hold if $\delta$ is deterministic or randomises only between cards that are equivalent against $\pi$. Randomising between equivalent cards requires only local knowledge, and reduces declarer's ability to read the layout exactly. This restriction can be lifted, but doing so requires advanced probability theory. We will develop the algorithm for evaluating the probability that a declarer play plan makes using more accessible notation before strengthening the results.
 
 Algorithms for searching for an optimal strategy are beyond the scope of this note. In what follows we focus on evaluating the probability that a given strategy $\pi$ succeeds.
+
 ## Aggregating probability to make the contract
+
 Say that declarer's first observation is the defender in turn playing $C_a$. This reduces the belief space to the layouts in which the defender to play holds $C_a$, considers it optimal, and elects to play it. 
 
 The updated probability of making the contract is
@@ -115,10 +126,13 @@ $$
 $$
 
 ## Defender models
+
 The algorithms discussed in this note have been researched using perfect-information defender models. There is, as far as we know, no feasible algorithm for constructing a defender model that is optimal against $\pi$. Double-dummy defenders with heuristics, discussed below, are intended as a sufficient approximation.
 
 A realistic defender model would be based on the defender's current belief about the cards held by partner and by declarer, refined by observing the actions of both, and by the partnership's agreements on leads and signals. Building such a model is a harder research task than modelling declarer play, and will have to wait until we know how to model declarer play.
+
 ### Double-dummy defenders with heuristics
+
 Treating all cards that are double-dummy optimal as equivalent can be too pessimistic from a defender's point of view as it assumes declarer omniscience.
 
 ![deal](diagrams/deal-1783686538441.png)
@@ -128,27 +142,31 @@ South is declaring and plays the ace of spades. Double-dummy analysis treats the
 The research in this note uses double-dummy defenders with heuristics that select from a subset of double-dummy optimal cards to avoid the worst of these problems. The heuristics resemble "low in second seat", "high in third seat" and other defensive rules of thumb. When they are a good enough approximation of a perfect-information defender requires further research.
 
 Note that these heuristics are not guaranteed to stay within the requirements for the $\mathbf{W}_{\pi,\delta}$ based formulation above. The advanced probability theory formulation is needed to demonstrate that the recursive algorithm is still sound.
+
 ### Scanning declarer's belief space
+
 Perfect-information defenders have access to the current layout as well as the information available to declarer and can thus deduce declarer's belief space. They can also deduce declarer's optimal plan $\pi$ for each possible card and can thus choose the card that minimises declarer's number of tricks. They may, however, choose a play that concedes declarer a chance of overtricks in exchange for a greater probability that declarer misjudges the layout and fails to make the contract. Deceptive plays are discussed further below.
 
 Perfect-information defenders that scan the belief space, and adapt to $\pi$, are not fixed throughout as is assumed in the rest of this note. This is not a problem for a fixed $\pi$ but would be fatal for the brute force search sketched below.
 
 A subtle decision remains: whether to minimise declarer's tricks for the current layout or across the belief space. Both are approximations of what a realistic defender would do, and which of them makes the better adversarial model for building solid declarer-play algorithms requires further research.
+
 ### Deceptive plays
+
 We shall define a deceptive play as an action that is expected, or even well known, to be non-optimal double-dummy on the actual layout but gains value from what declarer does next. This requires that the defenders are aware of $\pi$. Deceptive plays targeted at the actual $\pi$ are therefore inexpressible if $\delta$ is independent of $\pi$. Defenders may still carry out some deceptive plays, targeted at some fixed declarer play plan $\pi_0$ that is deemed likely to be close to the actual plan. 
 
-A classic example arises in 4NT. West leads the queen of hearts and dummy appears with ♠T73 ♥8 ♦64 ♣AQJ9543. Declarer wins the heart ace and, needing the club suit, leads a small club from hand and calls for the queen.
+A classic example is a 4NT contract declared by my old friend Peter Gregorsson. West led the queen of hearts and dummy appeared with ♠T73 ♥8 ♦64 ♣AQJ9543. Declarer won the heart ace and, needing the club suit, led a small club from hand and called for the queen.
 
-East, sitting over dummy with ♣K7 doubleton, ducks smoothly, and the queen wins. Taking the king at once would have secured that trick; ducking risks it, since the king must fall under the ace on the second round. East is playing for declarer to hold two small clubs. That would leave two clubs outstanding after the first round, so declarer would have a genuine guess on the second — and on a lucky day would read the first round as a successful finesse, cross back to hand and finesse again, giving East's king a trick that was never coming.
-
-That is what makes it a deceptive play: it is not double-dummy optimal on the actual layout, and gains only from what declarer chooses to do next. Here it gained nothing. Declarer was the author's old friend Peter Gregorsson, who held three small clubs. With ten clubs between the two hands, only one club remained outstanding once the queen had won, so he called for the ace and the bare king fell.
+East, sitting over dummy with ♣K7 doubleton, ducked smoothly, and the queen won. Unfortunately for east, declarer had three rather than two small clubs. Declarer called for the ace and that was that, but Peter would probably have repeated the spade finesse only two small clubs.
 
 A partial-information defender will try a deceptive play whenever it is optimal against declarer's actual plan $\pi$, because it works in other layouts — whether or not it happens to work on the actual layout. Such a defender will never try a deceptive play when a standard play offers a higher probability of defeating the contract.
 
-Opportunities to execute successful deceptive plays are in practice very rare. Existing declarer-play algorithms do not, to the author's knowledge, guard against them. It is thus reasonable to expect that we can construct declarer-play algorithms that beat the existing ones by optimising against defender models that exclude deceptive plays. These improved models would still be exploitable by defenders capable of deception, but since such opportunities are rare, the practical cost is small.
+Opportunities to execute successful deceptive plays are in practice very rare. Existing declarer-play algorithms do not, to the author's knowledge, guard against them. It is thus reasonable to expect that we can construct declarer-play algorithms that beat the existing ones by optimising against defender models that exclude deceptive plays. These improved models would still be exploitable by defenders capable of deception, but the practical cost is expected to be small.
 
 There is an asymmetry here that needs to be noted. Declarer may also choose to execute a deceptive play to boost the probability to make the contract, not worrying about extra undertricks. Declarer's deceptive plays can, however, never succeed against perfect-information defenders.
+
 ## Pruning the a priori belief space
+
 Layouts that are already doomed before a single card is played can be removed, which reduces the cost of calculating the probability that the contract makes. This requires that the probability of the contract being doomed before declarer plays a card is known.
 
 $$
@@ -156,7 +174,9 @@ P_{\text{make}} = P(\text{make} \mid \text{not doomed}) \times P(\text{not doome
 $$
 
 This formula holds because $P(make \mid doomed)$ is zero by definition. Formally this should be doomed given $\delta$, but any method which is guaranteed to only remove doomed layouts is acceptable. Doomed layouts would in any case be removed later in the search, when they are marked as lost.
+
 ## Early cuts
+
 Against perfect-information defenders, declarer will never make the contract in a layout when the double-dummy result is enough to defeat it. Such layouts can be skipped completely.
 
 Similarly, there is no need to continue searching a layout in which declarer is known to make the contract. Such layouts must be added in with their current weight.
@@ -164,7 +184,9 @@ Similarly, there is no need to continue searching a layout in which declarer is 
 Nodes at which it is known whether the contract makes can be evaluated immediately. 
 
 The bound for when declarer is known to make the contract can be improved by adding a top-trick analyser. These early cuts speed up the search significantly.
+
 ## Sampling and replenishing
+
 Searching the full belief space is infeasible for a full bridge deal, so we have to sample it.
 
 Running the evaluation algorithm over a sample means the calculation might end prematurely, because the sample may contain only one layout consistent with the observed play. The sample can, however, be replenished between each defender move as each recursive search step can be evaluated locally and contains the entire history.
@@ -203,15 +225,21 @@ $$
 Rescaling is only needed after replenishing.
 
 The size at which replenishment should be triggered requires empirical data. The rule to trigger replenishment must only depend on the sample size or total probability mass. Including other criteria, like how many times the contract makes, would add bias. Triggering on a single remaining layout is a reasonable starting point. Since sub-nodes are only created for valid defender moves, it is impossible for the sample size to drop to zero.
+
 ## Lookup tables
+
 A given node can be reached through several routes, so a lookup table can save calculation time. Each node is a subset of the belief space, which makes a good lookup table harder to design. Renumbering the remaining cards so that there are no gaps between them increases the chance of a hit. DDS, the double-dummy solver, uses an aggressive small-card approximation. This might be a valid approach for building approximate equivalence classes for belief space subsets, but more research is needed. Realistic defenders might have to use small cards to signal strength and shape to their partner, but this is not a concern when optimising against perfect-information defenders.
 
 Another way to reuse previous results would be to record which strategies worked best for a belief space subset and try them first on the next subset. It might be possible to predict which strategy will work again by applying some similarity score based on outstanding honour cards and known facts about the shape.
+
 ## Limited search depth and strategy fusion
+
 Another possible approximation is to base each declarer decision on a limited number of plays and the double-dummy result at a leaf node. PIMC, as used by GIB for instance, is equivalent to belief space search with a maximum depth of one declarer play decision. The problem with a limited search depth is that it allows strategy fusion, which we can think of as kicking the can down the road.
 
 A guess can then be scored as a certainty, provided it can be postponed until beyond the search depth. Take a trump suit missing the queen, with four cards out, where the finesse can be taken in either direction. Each layout in the sample is solved by whichever finesse works in that layout, so the guess appears to succeed every time.
+
 ## Precise derivation
+
 Several formulations in the section "Aggregating probability to make the contract" leave subtle details about how the probabilities are calculated implicit. The advantage of that treatment is that it develops the theory using concepts familiar to readers with a basic knowledge of probability theory. To sharpen the precision we will start by studying subsets of $\mathbf{B}$ that appear when cards from $\mathbf{C}$ are observed. We presume a fixed declarer play strategy $\pi$; searching for an optimal one is a separate problem.
 
 Declarer's first observation will be one out of the optimal cards the defender can play. Two sources of non-determinism stop declarer from knowing which card it will be: the actual layout, and the defender's freedom to choose randomly among optimal cards. We model this by a probability space
@@ -333,11 +361,15 @@ $$
 $$
 
 shows how each step narrows down the possible outcome.
+
 ## Brute force search for best declarer strategy
+
 It is tempting to look for an optimal strategy $\pi$ by trying each possible card at every node in the recursive structure.This requires that each node in the Markov structure can be treated as an independent declarer play problem. This is true when the defender strategy $\delta$ is independent of $\pi$. Defenders aware of $\pi$ choose their cards in response to declarer's whole plan, so which sub-tree a layout is steered into depends on what declarer would do in another part of the tree. The value of a node can no longer be calculated by examining this sub-tree only.
 
  What is always possible is to take two fixed declarer play strategies and compare them. How to identify optimal declarer play strategies requires much further research. One outstanding question is how close local search alone can get to optimal strategies while handling strategy fusion correctly.
+
 ## Comparison with αμ-search
+
 Cazenave and Ventos have published an algorithm for finding an optimal declarer play plan that they call $\alpha\mu$-search. It is an anytime heuristic search algorithm for incomplete information games which, given enough time and all possible layouts, converges to a single-dummy solver for declarer play at bridge. From each search node the algorithm returns a set of indicator functions over possible layouts. Each indicator function corresponds to a declarer play strategy for the next $M$ moves. Strategies that are dominated by another strategy are dropped from the returned set.
 
 At the root node, declarer then chooses a strategy that maximises the probability that the contract makes. This approach handles both strategy fusion and non-locality correctly when searching for an optimal declarer play plan, provided that the search depth and sample size are large enough.
@@ -349,7 +381,9 @@ Note that Cazenave and Ventos use the term vector instead of indicator function.
  $\alpha\mu$-search does not allow the sample to be replenished, and the recursion stops when at most one useful layout remains — Cazenave and Ventos use the term "world cut". A leaf node with one surviving layout is evaluated as declarer's double-dummy score. There is a risk that strategy fusion is reintroduced if this happens too early in the search tree.
 
 The advantage of the algorithm developed in this note lies in how the belief space can be sampled when searching the full space is infeasible. Chance nodes return an expectation and can be estimated from any representative sample. Min nodes return a per-layout minimum and cannot be resampled as layout identity is part of the value.
+
 ## Summary
+
 This note derives a recursive algorithm for calculating the probability that a declarer play plan succeeds. It handles strategy fusion correctly, but without backwards induction on $\pi$ there is no non-locality, which an algorithm for searching for an optimal declarer play plan would need. The author hopes that this can unlock research into finding optimal declarer play algorithms, or at least methods to compare suggested declarer play plans.
 
 The approach can succeed because strategy fusion is ubiquitous, while the deceptive plays it does not model are not. A deceptive play that concedes at least one overtrick when declarer reads the layout correctly, but is likely to win against a plausible plan, is rare in the author's experience. They differ from restricting declarer's read on the layout by randomising cards in that the defender needs to have information about what declarer's belief space and plan might be.
