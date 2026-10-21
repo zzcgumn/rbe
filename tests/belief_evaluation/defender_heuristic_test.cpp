@@ -192,7 +192,7 @@ TEST_F(MakeDefenderHeuristicContextTest, FutIsCarriedThroughUnchanged)
     be::DefenderHeuristicContext const ctx =
         be::make_defender_heuristic_context(deal, state, East, fut);
 
-    // Same object, not merely an equal-looking copy.
+    // The same object, not an equal copy.
     EXPECT_EQ(&ctx.fut, &fut);
     EXPECT_EQ(ctx.fut.equals[0], 1 << Queen);
 }
@@ -237,9 +237,8 @@ TEST_F(SecondSeatLowTest, FiresOnlyInSecondSeatFollowingSuitAsADefender)
         EXPECT_EQ(result->rank, Two);
     }
 
-    // Negative: wrong position -- the seat on play is the trick leader
-    // itself (position 0), a defender who simply has not been passed the
-    // trick yet.
+    // Negative: wrong position. The seat on play leads the trick (position
+    // 0): a defender the trick has not reached yet.
     {
         Deal deal{};
         deal.trump = NoTrump;
@@ -291,8 +290,8 @@ TEST_F(SecondSeatLowTest, FiresOnlyInSecondSeatFollowingSuitAsADefender)
         EXPECT_FALSE(rule(ctx, best_cards).has_value());
     }
 
-    // Negative: declaring side -- the seat at this trick position is the
-    // declarer itself, not a defender.
+    // Negative: declaring side. The seat at this position is declarer, not a
+    // defender.
     {
         Deal deal{};
         deal.trump = NoTrump;
@@ -321,9 +320,8 @@ TEST_F(SecondSeatLowTest, ReturnsTheLowestCandidateWhenNoTouchingGroup)
     be::ObservationState state{};
     state.declarer = Declarer;
 
-    // Two and King are not adjacent in rank, so no "gap closed by a card
-    // being gone" story could ever put them in the same touching group --
-    // equals left at zero for both reflects that directly.
+    // Two and King are not adjacent in rank, so no gone card can join them
+    // into one touching group. equals is zero for both.
     FutureTricks fut{};
     fut.cards = 2;
     fut.suit[0] = Spades;
@@ -354,9 +352,8 @@ TEST_F(SecondSeatLowTest, DefersWhenTheLowestTouchesAnotherCandidateAndRandomizi
     state.declarer = Declarer;
 
     // best_cards[0] (Queen, the lowest) touches best_cards[1] (Ace): the
-    // Ace's own equals bit names the Queen, as dds reports it for the
-    // king-gone-from-play case -- see the Ace/Queen empirical check this
-    // plan's own analysis ran against the real solver.
+    // Ace's equals bit names the Queen, as dds reports it when the king is
+    // gone from play (checked against the real solver).
     FutureTricks fut{};
     fut.cards = 2;
     fut.suit[0] = Spades;
@@ -375,14 +372,13 @@ TEST_F(SecondSeatLowTest, DefersWhenTheLowestTouchesAnotherCandidateAndRandomizi
 
 TEST_F(SecondSeatLowTest, DoesNotDeferWhenTheFallbackPolicyIsNotTouchingSequence)
 {
-    // The identical fixture as the deferring test above, differing only
-    // in the fallback policy passed to make_defender_heuristic_context:
-    // SpreadPolicy::AllOptimal instead of the default TouchingSequence.
-    // Deferring here would hand the decision to spread(fut, AllOptimal),
-    // which spreads over every tied candidate across every suit rather
-    // than restricting to this queen/ace group alone -- not restricted
-    // choice at all, so this rule must return its own answer directly,
-    // exactly as randomize_touching_honors=false would.
+    // The same fixture as the deferring test above, except the fallback
+    // policy passed to make_defender_heuristic_context is
+    // SpreadPolicy::AllOptimal, not the default TouchingSequence. Deferring
+    // would hand the choice to spread(fut, AllOptimal), which spreads over
+    // every tied candidate in every suit, not this queen/ace group: not
+    // restricted choice. So the rule must return its own answer, as with
+    // randomize_touching_honors=false.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = Leader;
@@ -412,9 +408,8 @@ TEST_F(SecondSeatLowTest, DoesNotDeferWhenTheFallbackPolicyIsNotTouchingSequence
 
 TEST_F(SecondSeatLowTest, AlwaysReturnsTheLowestWhenRandomizingIsOff)
 {
-    // The identical fixture as the test above, differing only in the one
-    // constructor argument -- this is what proves the argument does
-    // something, not merely that it compiles.
+    // The same fixture as the test above except for the one constructor
+    // argument. This shows the argument has an effect.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = Leader;
@@ -445,19 +440,14 @@ TEST_F(SecondSeatLowTest, AlwaysReturnsTheLowestWhenRandomizingIsOff)
 
 TEST_F(SecondSeatLowTest, DetectsTouchingWhenSolveBoardCollapsesTheGroupToOneEntry)
 {
-    // The shape solve_board actually returns for a plain touching pair --
-    // not the two-separate-entries shape the tests above construct by
-    // hand: ONE fut entry (dds reports the *highest* card of a touching
-    // run as the representative), with the lower card folded into that
-    // one entry's own equals field. best_cards, built one entry per fut
-    // index exactly as HeuristicDefender builds it, therefore has only
-    // one member here too -- confirmed directly against a real
-    // solve_board call (not asserted by construction) while building the
-    // minimal example in restricted_choice_6nt_belief_space.py's own
-    // main(), where this was first caught: a chain carrying this bug
-    // returns the queen at probability 1.0 under both
-    // randomize_touching_honors settings, never detecting the fold at
-    // all.
+    // The shape solve_board returns for a plain touching pair, unlike the
+    // two-entry shape built by hand above. There is ONE fut entry (dds lists
+    // the highest card of a touching run), and the lower card is folded into
+    // that entry's equals. best_cards, built one entry per fut index as
+    // HeuristicDefender builds it, also has one member. Checked against a real
+    // solve_board call (in main() of restricted_choice_6nt_belief_space.py).
+    // A chain with this bug returns the queen at probability 1.0 under both
+    // randomize_touching_honors settings: it never sees the fold.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = Leader;
@@ -490,16 +480,14 @@ TEST_F(SecondSeatLowTest, DetectsTouchingWhenSolveBoardCollapsesTheGroupToOneEnt
 
 TEST_F(SecondSeatLowTest, DoesNotDeferWhenTheLowestGroupIsNotTheOneSpreadWouldPick)
 {
-    // Two disjoint touching groups tied for best score: ace-with-king
-    // at fut index 0 (the representative dds lists first), queen-with-jack
-    // at index 1. The lowest candidate by rank is the queen -- this
-    // rule's own pick, which does touch (the jack) -- but
+    // Two separate touching groups tie for best score: ace-king at fut index
+    // 0 (dds lists it first) and queen-jack at index 1. The lowest candidate
+    // is the queen, this rule's pick, which does touch the jack. But
     // spread(fut, SpreadPolicy::TouchingSequence) always resolves to
-    // canonical_best(fut)'s own entry, index 0 here (first entry reached
-    // among those tied for the top score), which is the ace/king pair,
-    // not this one. Deferring would silently randomise the wrong pair;
-    // this rule must return its own answer (the jack) directly instead,
-    // exactly as randomize_touching_honors=false would.
+    // canonical_best(fut), index 0 here (the first entry tied for the top
+    // score): the ace-king pair. Deferring would randomise the wrong pair, so
+    // the rule must return its own answer (the jack), as with
+    // randomize_touching_honors=false.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = Leader;
@@ -536,10 +524,9 @@ TEST_F(SecondSeatLowTest, DoesNotDeferWhenTheLowestGroupIsNotTheOneSpreadWouldPi
 
 // --- high_in_third / third_seat_low ---------------------------------------
 //
-// South leads, West (dummy) plays second, North (a defender) is third to
-// act, East (declarer) plays last. South and North are partners (both
-// defenders); East and West are partners (declarer and dummy) -- chosen
-// so dummy's card is already visible by North's turn, which is what
+// South leads, West (dummy) plays second, North (a defender) third, East
+// (declarer) last. South and North are the defenders; East and West are
+// declarer and dummy. Dummy's card is visible by North's turn, which
 // "high in third" needs.
 
 namespace
@@ -576,7 +563,7 @@ TEST_F(HighInThirdAndThirdSeatLowTest, HighInThirdFiresWhenPartnerLedAndDummysCa
     ASSERT_TRUE(high_result.has_value());
     EXPECT_EQ(high_result->rank, Ace);
 
-    // Same context: third_seat_low must defer, proving the partition.
+    // Same context: third_seat_low must defer, so the rules partition the cases.
     EXPECT_FALSE(be::third_seat_low()(ctx, best_cards).has_value());
 }
 
@@ -608,11 +595,11 @@ TEST_F(HighInThirdAndThirdSeatLowTest, ThirdSeatLowFiresWhenDummysCardAlreadyBea
 
 TEST_F(HighInThirdAndThirdSeatLowTest, ThirdSeatLowReturnsTheTrueLowestCandidateWhenSolveBoardCollapsesTheGroupToOneEntry)
 {
-    // Same collapsing shape as fourth_seat_low's own regression test: one
-    // fut entry (the king, dds's representative), with the queen folded
-    // into its equals. Dummy's ace beats the king, so high_in_third
-    // defers and third_seat_low must fire -- the true lowest card in the
-    // group is the queen, not the king it is written down as.
+    // The collapsed shape of fourth_seat_low's regression test: one fut entry
+    // (the king, dds's representative) with the queen folded into its equals.
+    // Dummy's ace beats the king, so high_in_third defers and third_seat_low
+    // must fire. The group's true lowest card is the queen, not the king it is
+    // listed as.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = ThirdSeatLeader;
@@ -647,16 +634,13 @@ TEST_F(HighInThirdAndThirdSeatLowTest, ThirdSeatLowReturnsTheTrueLowestCandidate
 
 TEST_F(HighInThirdAndThirdSeatLowTest, ComparesAgainstTheSecondPlayersCardWhenItIsDeclarerNotDummy)
 {
-    // The fixture above always has EAST declare, which puts WEST (dummy)
-    // at the trick's second position -- the only case a seat-derived
-    // "dummy's position" calculation happens to land safely inside
-    // currentTrickRank's three-element bound. Declaring WEST instead
-    // puts EAST (dummy) at the *fourth* position and WEST (declarer) at
-    // the second: the same partner-led, third-seat gate holds (the
-    // rotation does not care who declares), but a prior version of this
-    // rule computed dummy's seat and derived position 3 from it here --
-    // one past the bound. This fixture exists to prove the fix compares
-    // against trick index 1 directly, regardless of who's sitting there.
+    // The fixture above has EAST declare, which puts WEST (dummy) second on
+    // the trick: the only case where deriving dummy's position from its seat
+    // stays inside currentTrickRank's three elements. With WEST declaring,
+    // EAST (dummy) plays fourth and WEST (declarer) second. The partner-led,
+    // third-seat gate still holds, but deriving dummy's position from its seat
+    // gives 3, one past the bound. This fixture checks that the rule compares
+    // against trick index 1 directly, whoever sits there.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = ThirdSeatLeader;
@@ -682,10 +666,9 @@ TEST_F(HighInThirdAndThirdSeatLowTest, ComparesAgainstTheSecondPlayersCardWhenIt
 
 TEST_F(HighInThirdAndThirdSeatLowTest, ASecondHandRuffBeatsEveryCandidateRegardlessOfRank)
 {
-    // West, void in the led suit (spades), ruffs with a trump instead of
-    // following -- nothing that merely follows suit can beat a trump, so
-    // high_in_third must defer (rising cannot help) and third_seat_low
-    // must fire, no matter how high North's own candidates rank.
+    // West, void in spades, ruffs with a trump. No card that follows suit can
+    // beat a trump, so high_in_third must defer (rising cannot help) and
+    // third_seat_low must fire, however high North's candidates are.
     Deal deal{};
     deal.trump = Hearts;
     deal.first = ThirdSeatLeader;
@@ -712,10 +695,9 @@ TEST_F(HighInThirdAndThirdSeatLowTest, ASecondHandRuffBeatsEveryCandidateRegardl
 
 TEST_F(HighInThirdAndThirdSeatLowTest, ASecondHandDiscardOfAThirdSuitBeatsNoCandidate)
 {
-    // West, void in the led suit, discards a plain card of a third suit
-    // (not trump -- there is none here) instead of following: that card
-    // does not contest the trick at all, so high_in_third must fire
-    // regardless of how low North's own candidate ranks.
+    // West, void in spades, discards a card of a third suit (there is no
+    // trump). That card does not contest the trick, so high_in_third must fire
+    // however low North's candidate is.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = ThirdSeatLeader;
@@ -783,8 +765,8 @@ TEST_F(HighInThirdAndThirdSeatLowTest, NeitherFiresWhenVoid)
 
 TEST_F(HighInThirdAndThirdSeatLowTest, NeitherFiresOnTheDeclaringSide)
 {
-    // Identical to the first test's own fixture, except the third seat
-    // (North) is itself declared the declarer -- no longer a defender.
+    // The first test's fixture, except the third seat (North) is declarer,
+    // not a defender.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = ThirdSeatLeader;
@@ -824,10 +806,9 @@ TEST_F(FourthSeatLowTest, FiresOnlyInFourthSeatFollowingSuitAsADefender)
 {
     be::DefenderHeuristic const rule = be::fourth_seat_low();
 
-    // Positive: fourth seat, following suit, defending. Three cards
-    // already on the trick (ranks irrelevant beyond being non-zero,
-    // i.e. actually played) so seat_on_play(deal) genuinely reaches the
-    // fourth seat.
+    // Positive: fourth seat, following suit, defending. Three cards are
+    // already on the trick (any non-zero ranks), so seat_on_play(deal) reaches
+    // the fourth seat.
     {
         Deal deal{};
         deal.trump = NoTrump;
@@ -938,12 +919,11 @@ TEST_F(FourthSeatLowTest, ReturnsTheLowestCandidate)
 
 TEST_F(FourthSeatLowTest, ReturnsTheTrueLowestCandidateWhenSolveBoardCollapsesTheGroupToOneEntry)
 {
-    // The same collapsing shape second_seat_low's own regression test
-    // reproduces: solve_board folds a touching run (queen and jack, king
-    // gone) to one canonical entry (the queen, dds's own representative),
-    // with the jack folded into that entry's equals. best_cards therefore
-    // has only this one member, and the true lowest card in the group --
-    // the jack -- is nowhere written down as its own rank.
+    // The collapsed shape of second_seat_low's regression test: solve_board
+    // folds a touching run (queen and jack, king gone) into one entry (the
+    // queen, dds's representative), with the jack in its equals. best_cards
+    // has one member, and the group's true lowest card, the jack, is not
+    // listed as its own rank.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = FourthSeatLeader;
@@ -1066,12 +1046,11 @@ TEST_F(DiscardKeepWinnersTest, FiresOnlyOnAGenuineDiscardAsADefender)
 
 TEST_F(DiscardKeepWinnersTest, DiscardsFromTheSuitWithTheFewestDefendingSideTopTricks)
 {
-    // Spades: East (an opponent) holds the ace, so North's own spade is
-    // not a winner -- zero top tricks there. Diamonds: North holds the
-    // ace and South (partner) holds the king, nothing else outstanding
-    // in the suit -- one top trick (the ace and king are consumed in
-    // the same round), still worth more than zero. The rule must
-    // discard the spade, not the diamond ace.
+    // Spades: East holds the ace, so North's spade is not a winner: zero top
+    // tricks. Diamonds: North holds the ace and South (partner) the king, with
+    // nothing else out. One top trick, since the ace and king fall in the same
+    // round, which is still more than zero. The rule must discard the spade,
+    // not the diamond ace.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = DiscardLeader;
@@ -1098,11 +1077,10 @@ TEST_F(DiscardKeepWinnersTest, DiscardsFromTheSuitWithTheFewestDefendingSideTopT
 
 TEST_F(DiscardKeepWinnersTest, BreaksATieByRankThenSuit)
 {
-    // Clubs and diamonds both give zero top tricks (East holds the ace of
-    // each). best_cards offers a higher club and a lower diamond first --
-    // rank breaks the tie (the diamond, lower, wins) -- and then a second
-    // comparison where both suits offer the same rank, where suit itself
-    // (diamonds < clubs) breaks the tie.
+    // Clubs and diamonds both give zero top tricks (East holds both aces).
+    // First best_cards offers a higher club and a lower diamond: rank breaks
+    // the tie (the lower diamond wins). Then both suits offer the same rank:
+    // suit breaks the tie (diamonds < clubs).
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = DiscardLeader;
@@ -1140,21 +1118,18 @@ TEST_F(DiscardKeepWinnersTest, BreaksATieByRankThenSuit)
 
 TEST_F(DiscardKeepWinnersTest, ResolvesTrueRankBeforeComparingAcrossDifferentSuits)
 {
-    // Unlike second/third/fourth-seat low, this rule compares candidates
-    // from *different* suits -- so, unlike those rules, comparing by raw
-    // (representative) rank is not merely cosmetically wrong when a
-    // candidate's group is collapsed, it can pick the wrong suit
-    // outright. Both suits give zero top tricks: East holds the ace of
-    // diamonds (beating North's only diamond outright), and *both* the
-    // ace and king of spades (so neither of North's two spades gets
-    // through -- one ace could only stop one of the two, which is not
-    // zero; this is why suit_top_tricks's own regression tests require
-    // two genuine stoppers here, not one). So the tie is broken by rank
-    // alone. Spades collapses to one fut entry, the six, with the two
-    // folded into its equals -- the true lowest card there is the two.
-    // Diamonds is a plain five, no fold. Comparing *representative*
-    // ranks (six vs five) picks diamonds; the true lowest ranks (two vs
-    // five) must pick spades instead.
+    // Unlike the second, third and fourth-seat rules, this one compares cards
+    // from different suits. So comparing representative ranks of a collapsed
+    // group can pick the wrong suit outright.
+    //
+    // Both suits give zero top tricks. East holds the diamond ace, which beats
+    // North's only diamond, and both the spade ace and king, so neither of
+    // North's spades gets through. (One ace stops only one spade, which is not
+    // zero; that is why suit_top_tricks's regression tests need two stoppers.)
+    // So rank alone breaks the tie. Spades collapse to one fut entry, the six,
+    // with the two in its equals: the true lowest spade is the two. Diamonds
+    // are a plain five. Representative ranks (six against five) pick
+    // diamonds; true lowest ranks (two against five) must pick spades.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = DiscardLeader;
@@ -1193,9 +1168,9 @@ TEST_F(DiscardKeepWinnersTest, ResolvesTrueRankBeforeComparingAcrossDifferentSui
 
 namespace
 {
-    // Trump is hearts. West leads a spade; North (seat 0), one card into
-    // the trick, is void in spades and holds two low hearts. East (the
-    // declarer) and South have not yet played to this trick.
+    // Trump is hearts. West leads a spade. North (seat 0), one card into the
+    // trick, is void in spades and holds two low hearts. East (declarer) and
+    // South have not yet played.
     constexpr int RuffTrump = Hearts;
     constexpr int RuffLeader = West;
     constexpr int RuffSeat = North;
@@ -1236,8 +1211,8 @@ TEST_F(RuffSmallTest, ReturnsTheSmallestTrumpWhenNoOverruffIsPossible)
     deal.currentTrickSuit[0] = Spades;
     deal.currentTrickRank[0] = Three;
     deal.remainCards[RuffSeat][Hearts] = be::holding({Two, Three});
-    // Neither not-yet-played seat can overruff: East can follow suit
-    // (holds a spade), South holds no hearts at all.
+    // Neither seat still to play can overruff: East can follow suit (it holds
+    // a spade), and South holds no hearts.
     deal.remainCards[RuffNotYetPlayedDeclaringSide][Spades] = be::holding({Four});
 
     be::ObservationState state{};
@@ -1255,15 +1230,13 @@ TEST_F(RuffSmallTest, ReturnsTheSmallestTrumpWhenNoOverruffIsPossible)
 
 TEST_F(RuffSmallTest, DoesNotFireOnTheDeclaringSide)
 {
-    // Identical fixture to ReturnsTheSmallestTrumpWhenNoOverruffIsPossible
-    // above -- same void, same trumps, same absence of any overruff --
-    // except RuffSeat is declarer rather than a defender. Every sibling
-    // rule (second_seat_low, high_in_third, third_seat_low, fourth_seat_low,
-    // discard_keep_winners) additionally gates on ctx.defending_side;
-    // this rule must too, since a DefenderHeuristicContext can be built by
-    // hand for any seat (Tasks 2/4), and nothing else stops this rule from
-    // handing back a defensive ruff for a seat that is, by this context,
-    // on the declaring side.
+    // The fixture of ReturnsTheSmallestTrumpWhenNoOverruffIsPossible (same
+    // void, same trumps, no overruff), except RuffSeat is declarer, not a
+    // defender. Every other rule (second_seat_low, high_in_third,
+    // third_seat_low, fourth_seat_low, discard_keep_winners) also gates on
+    // ctx.defending_side, and this one must too. A DefenderHeuristicContext
+    // can be built by hand for any seat, and nothing else stops this rule
+    // returning a defensive ruff for a seat on the declaring side.
     Deal deal{};
     deal.trump = RuffTrump;
     deal.first = RuffLeader;
@@ -1285,14 +1258,12 @@ TEST_F(RuffSmallTest, DoesNotFireOnTheDeclaringSide)
 
 TEST_F(RuffSmallTest, DetectsAnOverruffAgainstTheTrueLowestTrumpNotTheCollapsedRepresentative)
 {
-    // North's trumps collapse to one fut entry: the jack (dds's own
-    // representative), with the nine folded into its equals -- nothing
-    // holds the ten between them. The true lowest trump North would
-    // actually play is the nine, not the jack. East's own ten sits
-    // strictly between the two: it overruffs the nine but not the jack.
-    // A rule that computed the overruff mask from the uncollapsed
-    // representative rank (the jack) would miss this threat entirely and
-    // wrongly return a card instead of deferring.
+    // North's trumps collapse to one fut entry: the jack (dds's
+    // representative), with the nine in its equals, since no one holds the
+    // ten between them. The trump North would play is the nine, not the jack.
+    // East's ten sits between them: it overruffs the nine but not the jack. A
+    // rule that built the overruff mask from the representative rank (the
+    // jack) would miss the threat and return a card instead of deferring.
     Deal deal{};
     deal.trump = RuffTrump;
     deal.first = RuffLeader;
@@ -1350,8 +1321,8 @@ TEST_F(RuffSmallTest, DoesNotDeferToADefendingSideSeatsOverruffPotential)
     deal.currentTrickSuit[0] = Spades;
     deal.currentTrickRank[0] = Three;
     deal.remainCards[RuffSeat][Hearts] = be::holding({Two, Three});
-    // South, the *defending* side, is void in spades and holds a much
-    // higher trump -- irrelevant to this rule's own declaring-side gate.
+    // South, on the defending side, is void in spades and holds a much higher
+    // trump. That does not matter to this rule's declaring-side gate.
     deal.remainCards[RuffNotYetPlayedDefendingSide][Hearts] = be::holding({Ace});
     // East (declaring) can follow suit, so cannot overruff either.
     deal.remainCards[RuffNotYetPlayedDeclaringSide][Spades] = be::holding({Four});
@@ -1397,12 +1368,11 @@ class MakeDefaultDefenderHeuristicsTest : public ::testing::Test
 
 TEST_F(MakeDefaultDefenderHeuristicsTest, TheNotrumpChainWorksEndToEndThroughADiscard)
 {
-    // ruff_small defers unconditionally whenever ctx.trump == NoTrump
-    // (see its own gate), whether or not it is present in the chain --
-    // its exclusion from the notrump chain is therefore not separately
-    // observable by behaviour alone. What *is* observable, and is what
-    // this test actually checks: the notrump chain still reaches and
-    // fires discard_keep_winners, its last rule, on a genuine discard.
+    // ruff_small always defers when ctx.trump == NoTrump (see its gate),
+    // whether or not it is in the chain. So leaving it out of the notrump
+    // chain cannot be seen in behaviour. This test checks what can be seen:
+    // the notrump chain still reaches its last rule, discard_keep_winners,
+    // and fires it on a real discard.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = DiscardLeader;
@@ -1428,13 +1398,12 @@ TEST_F(MakeDefaultDefenderHeuristicsTest, TheNotrumpChainWorksEndToEndThroughADi
 
 TEST_F(MakeDefaultDefenderHeuristicsTest, InsertsRuffSmallBeforeDiscardKeepWinnersForATrumpContract)
 {
-    // Hearts is trump. North, void in spades (the led suit), holds the
-    // two of hearts (a trump) and is offered a club ace as an
-    // alternative candidate. Clubs gives zero top tricks for the
-    // defending side (East holds the ace); hearts gives one (nothing
-    // else is in the deal to beat North's own lone heart). If
-    // discard_keep_winners ran first, it would pick the club (fewer top
-    // tricks) -- ruff_small running first instead must return the trump.
+    // Hearts are trump. North, void in spades (the led suit), holds the heart
+    // two and is offered a club ace as an alternative. Clubs give the
+    // defenders zero top tricks (East holds the ace); hearts give one (nothing
+    // beats North's lone heart). If discard_keep_winners ran first it would
+    // pick the club (fewer top tricks). ruff_small runs first and must return
+    // the trump.
     Deal deal{};
     deal.trump = RuffTrump;
     deal.first = RuffLeader;

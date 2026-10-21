@@ -64,14 +64,13 @@ namespace
     constexpr int South = 2;  // dummy
     constexpr int West = 3;   // a defender
 
-    /// A two-trick ending. Trick 1 (spades) is always won by North's ace,
-    /// whichever of two spade fillers ({three, five}, split between East
-    /// and West) the layout happens to carry -- a harmless split that
-    /// drops a node's layout count without deciding anything. Trick 2
-    /// (hearts) is the decision: North's nine beats every east_heart
-    /// except ten, exactly as reproduction_test.cpp's own finesse fixture
-    /// reasons out, just reached one ply later here so it lands at a node
-    /// p_make() visits rather than at evaluate()'s own root block.
+    /// A two-trick ending. North's ace always wins trick 1 (spades), whichever
+    /// of two spade fillers ({three, five}, split between East and West) the
+    /// layout carries. That harmless split lowers a node's layout count
+    /// without deciding anything. Trick 2 (hearts) decides: North's nine beats
+    /// every east_heart except the ten, as in reproduction_test.cpp's finesse
+    /// fixture. Here it comes one ply later, at a node p_make() visits rather
+    /// than in evaluate()'s root handling.
     auto make_layout(int east_spade, int east_heart) -> Deal
     {
         Deal deal{};
@@ -102,16 +101,15 @@ class ReplenishmentTest : public ::testing::Test
 };
 
 // ===========================================================================
-// End to end: p_make moves from a false-certainty 1.0 (no replenishment) to
-// the true 3/4 (with it) on the fixture above.
+// End to end: p_make moves from a false certainty of 1.0 (no
+// replenishment) to the true 3/4 (with it).
 // ===========================================================================
 
 TEST_F(ReplenishmentTest, PMakeMovesFromFalseCertaintyToTheHandDerivedTrueValue)
 {
-    // Eight root-space layouts: three winning hearts under each spade
-    // filler (six total), then the one losing heart (ten) under each
-    // filler, last in source order -- so sample_size = 6 draws exactly the
-    // six winning layouts and misses both "ten" variants entirely.
+    // Eight layouts: three winning hearts under each spade filler (six), then
+    // the losing heart (ten) under each filler, last in source order. So
+    // sample_size = 6 draws the six winners and misses both Ten layouts.
     std::vector<Deal> layouts{
         make_layout(Three, Two),
         make_layout(Three, Three),
@@ -127,16 +125,16 @@ TEST_F(ReplenishmentTest, PMakeMovesFromFalseCertaintyToTheHandDerivedTrueValue)
     VectorLayoutSource const source(layouts);
     DeclarerStrategy const pi{.id = 1, .play = single_card_declarer_play, .state_key = nullptr};
 
-    // The hand-derived true answer, over the full 8-layout space: 6 of 8
-    // win (every heart but the two "ten"s), 2 of 8 lose -- 6/8 = 3/4.
+    // The hand-derived answer over all 8 layouts: 6 win (every heart but the
+    // two Tens) and 2 lose, so 6/8 = 3/4.
     EvaluationResult const exhaustive =
         evaluate(layouts.front(), North, /*tricks_needed=*/2, source, pi, single_card_defender);
     ASSERT_FALSE(exhaustive.error.has_value());
     EXPECT_NEAR(exhaustive.by_strategy.at(1u).p_make, 0.75, 1e-9);
 
-    // Without replenishment: sample_size = 6 draws only the six winning
-    // layouts, so both spade branches see nothing but wins -- a false
-    // certainty, exactly reproduction_test.cpp's own M = 6 result.
+    // Without replenishment: sample_size = 6 draws only the winners, so both
+    // spade branches see only wins. A false certainty, as in the M = 6 result
+    // of reproduction_test.cpp.
     EvaluationResult const no_replenish = evaluate(
         layouts.front(),
         North,
@@ -148,11 +146,10 @@ TEST_F(ReplenishmentTest, PMakeMovesFromFalseCertaintyToTheHandDerivedTrueValue)
     ASSERT_FALSE(no_replenish.error.has_value());
     EXPECT_DOUBLE_EQ(no_replenish.by_strategy.at(1u).p_make, 1.0);
 
-    // With replenishment: each spade branch collapses to 3 layouts at its
-    // own node (East's spade ply splits the sampled 6 into two groups of
-    // 3), triggering a top-up towards sample_size = 6 there -- each finds
-    // its own "ten" variant (the only new candidate matching that branch's
-    // own spade ply) and adds it, recovering the true 3/4 exactly.
+    // With replenishment: East's spade ply splits the 6 sampled layouts into
+    // two branches of 3, each below sample_size = 6, so each is topped up. Each
+    // finds its Ten layout (the only new candidate matching its spade ply) and
+    // adds it, giving exactly 3/4.
     EvaluationResult const replenished = evaluate(
         layouts.front(),
         North,
@@ -167,21 +164,20 @@ TEST_F(ReplenishmentTest, PMakeMovesFromFalseCertaintyToTheHandDerivedTrueValue)
 
 // ===========================================================================
 // A supplied EvaluateOptions::play_record must reach delta's DefenderQuery
-// unchanged during a replenishment scan, not just during ordinary
-// expansion: replay_candidate() (replenishment.cpp) rebuilds its own
-// ObservationState via root_observation_state() rather than reusing the
-// node's, and that rebuild has to carry the record forward like every
-// other root_observation_state() call site does.
+// unchanged during a replenishment scan too. replay_candidate()
+// (replenishment.cpp) rebuilds its ObservationState with
+// root_observation_state() instead of reusing the node's, so that rebuild
+// must carry the record, as every other root_observation_state() call
+// does.
 // ===========================================================================
 
 TEST_F(ReplenishmentTest, PlayRecordReachesADefenderQueryMadeDuringAReplenishmentScan)
 {
-    // The same eight-layout fixture and options as
-    // PMakeMovesFromFalseCertaintyToTheHandDerivedTrueValue above, proven
-    // there to actually trigger scan_for_replenishment (sample_size = 6,
-    // replenish_below = 6) -- reused here rather than a new fixture, since
-    // the property under test is "the record reaches this defender query",
-    // not "replenishment fires", which that test already established.
+    // The eight-layout fixture and options of
+    // PMakeMovesFromFalseCertaintyToTheHandDerivedTrueValue, which shows that
+    // they trigger scan_for_replenishment (sample_size = 6,
+    // replenish_below = 6). The property here is that the record reaches this
+    // defender query.
     std::vector<Deal> const layouts{
         make_layout(Three, Two),
         make_layout(Three, Three),
@@ -229,18 +225,17 @@ TEST_F(ReplenishmentTest, PlayRecordReachesADefenderQueryMadeDuringAReplenishmen
 }
 
 // ===========================================================================
-// A direct check of the rescale itself: a hand-built node shaped like one
-// of the fixture's own depth-2 spade branches, replenished via the public
-// scan_for_replenishment plus the rescale EvaluateOptions::replenish_below's
-// own doxygen documents (kappa' = kappa * E / E'), independent of p_make.
+// The rescale checked directly, independent of p_make: a hand-built node
+// shaped like one depth-2 spade branch of the fixture, replenished with the
+// public scan_for_replenishment and the rescale documented on
+// EvaluateOptions::replenish_below (kappa' = kappa * E / E').
 // ===========================================================================
 
 TEST_F(ReplenishmentTest, ReplenishingByHandGrowsTheNodeAndConservesMassToADerivedTolerance)
 {
-    // The "spade = three" branch's own node, right after East's spade ply:
-    // three layouts (hearts two, three, four -- all winning), kappa = 1/6
-    // inherited unchanged from a six-layout root, p_i = 1 each (no
-    // defender ply has multiplied anything in yet).
+    // The "spade = three" branch right after East's spade ply: three layouts
+    // (hearts two, three and four, all winning), kappa = 1/6 from a six-layout
+    // root, and p_i = 1 each (no defender ply has multiplied anything yet).
     Deal const root_layout = make_layout(Three, Two);
     be::Card const norths_ace{Spades, Ace};
     be::Card const easts_spade{Spades, Three};
@@ -263,8 +258,8 @@ TEST_F(ReplenishmentTest, ReplenishingByHandGrowsTheNodeAndConservesMassToADeriv
     double const mass_before = node_mass(node);
     EXPECT_DOUBLE_EQ(mass_before, 0.5);  // (1/6) * 3
 
-    // The full 8-layout source, so the scan can find the "ten" variant
-    // this branch is missing.
+    // The full 8-layout source, so the scan can find this branch's missing Ten
+    // layout.
     std::vector<Deal> const source_layouts{
         make_layout(Three, Two),
         make_layout(Three, Three),
@@ -281,13 +276,13 @@ TEST_F(ReplenishmentTest, ReplenishingByHandGrowsTheNodeAndConservesMassToADeriv
         scan_for_replenishment(node, root_layout, source, single_card_defender, /*wanted=*/3, std::nullopt);
     ASSERT_EQ(scan.error, be::ValidationError::None);
     ASSERT_EQ(scan.candidates.size(), 1u);  // only "three, ten" matches this branch's own spade ply
-    // Hand-derived: the one defender ply crossed so far (East's spade) is
-    // forced and identical for every layout sharing this branch, including
-    // "ten" -- delta's reply is certain, so it multiplies p_j by exactly 1.
+    // Hand-derived: the one defender ply so far (East's spade) is forced and
+    // the same for every layout in this branch, including the Ten. delta's
+    // reply is certain, so it multiplies p_j by exactly 1.
     EXPECT_DOUBLE_EQ(scan.candidates[0].p_j, 1.0);
 
-    // Apply the rescale exactly as EvaluateOptions::replenish_below's own
-    // doxygen documents it: kappa' = kappa * E / E'.
+    // The rescale as documented on EvaluateOptions::replenish_below:
+    // kappa' = kappa * E / E'.
     KahanAccumulator mass_before_sum;
     for (Probability const p_i : node.p)
     {
@@ -311,20 +306,18 @@ TEST_F(ReplenishmentTest, ReplenishingByHandGrowsTheNodeAndConservesMassToADeriv
     EXPECT_EQ(replenished.root_keys.size(), 4u);
     EXPECT_DOUBLE_EQ(replenished.kappa, (1.0 / 6.0) * (3.0 / 4.0));  // 1/8, hand-derived
 
-    // Mass conservation, to a tolerance derived by hand rather than tuned:
-    // this computation is a handful of additions (Kahan-accumulated, so
-    // each contributes at most a couple of ULPs) and one division-then-
-    // multiplication round trip, whose own relative error is of order
-    // machine epsilon (~2e-16) applied to a magnitude bounded by 1 -- many
-    // orders of magnitude below 1e-12, which is what is asserted here.
+    // Mass conservation, to a tolerance derived by hand, not tuned. The
+    // computation is a few Kahan-summed additions (a couple of ULPs each) and
+    // one divide-then-multiply, whose relative error is of order machine
+    // epsilon (~2e-16) on a magnitude at most 1. That is far below the 1e-12
+    // asserted here.
     double const mass_after = node_mass(replenished);
     EXPECT_NEAR(mass_after, mass_before, 1e-12);
 }
 
 // ===========================================================================
-// With replenish_below absent, nothing about this fixture's
-// own evaluation changes -- verified directly, not only inferred from the
-// rest of the suite staying green.
+// With replenish_below absent, this fixture's evaluation does not change.
+// Checked directly here.
 // ===========================================================================
 
 TEST_F(ReplenishmentTest, AbsentReplenishBelowLeavesTheFixtureBitIdenticalToASampleSizeOnlyRun)
@@ -357,7 +350,7 @@ TEST_F(ReplenishmentTest, AbsentReplenishBelowLeavesTheFixtureBitIdenticalToASam
         source,
         pi,
         single_card_defender,
-        EvaluateOptions{.sampling = {.sample_size = 6u}});  // replenish_below left absent, same as first
+        EvaluateOptions{.sampling = {.sample_size = 6u}});  // replenish_below absent, as in the first run
 
     ASSERT_FALSE(first.error.has_value());
     ASSERT_FALSE(second.error.has_value());
@@ -365,20 +358,19 @@ TEST_F(ReplenishmentTest, AbsentReplenishBelowLeavesTheFixtureBitIdenticalToASam
 }
 
 // ===========================================================================
-// Exhaustion at depth: one node whose own scan exhausts source, one
-// sibling whose own scan does not -- both descend from a root that IS a
-// genuine sample, both built by hand the same way the mass-conservation
-// test above builds one, so tier2_dead() can be checked directly.
+// Exhaustion at depth: one node whose scan exhausts the source, and a
+// sibling whose scan does not. Both descend from a sampled root and are
+// built by hand, like the node in the rescale test above, so tier2_dead()
+// can be checked directly.
 // ===========================================================================
 
 TEST_F(ReplenishmentTest, ExhaustedNodeIsNoLongerASampleAndItsSiblingStays)
 {
-    // Five root-space layouts: two share spade = three (hearts two,
-    // three), two share spade = five (heart five, six), and one more
-    // spade = three entry (heart four) sits last in source order. A
-    // sample_size = 3 root draws only the first three (spade = three
-    // twice, spade = five once); East's spade ply then splits that into
-    // a 2-layout "three" branch and a 1-layout "five" branch.
+    // Five layouts: two with spade = three (hearts two, three), two with
+    // spade = five (hearts five, six), and one more spade = three (heart four)
+    // last in source order. sample_size = 3 draws the first three (spade =
+    // three twice, spade = five once). East's spade ply splits them into a
+    // 2-layout "three" branch and a 1-layout "five" branch.
     std::vector<Deal> const source_layouts{
         make_layout(Three, Two),
         make_layout(Three, Three),
@@ -406,7 +398,7 @@ TEST_F(ReplenishmentTest, ExhaustedNodeIsNoLongerASampleAndItsSiblingStays)
         branch.state = be::advance_state(branch.state, norths_ace);
         be::Card const easts_spade{Spades, east_spade};
         branch.state = be::advance_state(branch.state, easts_spade);
-        branch.is_sample = true;  // inherited from the sampled root, through both plies above
+        branch.is_sample = true;  // inherited from the sampled root through both plies
         for (int heart : drawn_hearts)
         {
             Deal layout = play(make_layout(east_spade, heart), norths_ace);
@@ -422,8 +414,8 @@ TEST_F(ReplenishmentTest, ExhaustedNodeIsNoLongerASampleAndItsSiblingStays)
     BeliefNode three_branch = build_branch(Three, {Two, Three});
     BeliefNode five_branch = build_branch(Five, {Five});
 
-    // Replenish both by hand, exactly as replenish_node() does: scan,
-    // rescale if anything was found, flip is_sample on SourceExhausted.
+    // Replenish both by hand, as replenish_node() does: scan, rescale if
+    // anything was found, and clear is_sample on SourceExhausted.
     auto const replenish = [&](BeliefNode& branch, std::uint64_t wanted) -> ScanResult
     {
         ScanResult const scan =
@@ -457,36 +449,34 @@ TEST_F(ReplenishmentTest, ExhaustedNodeIsNoLongerASampleAndItsSiblingStays)
         return scan;
     };
 
-    // three_branch wants 1 (3 - 2) and finds it (spade = three, heart =
-    // four) before the source runs out -- SampleFilled, not exhausted.
+    // three_branch wants 1 (3 - 2) and finds it (spade three, heart four)
+    // before the source ends: SampleFilled, not exhausted.
     ScanResult const three_scan = replenish(three_branch, /*wanted=*/1);
     EXPECT_EQ(three_scan.outcome, be::ScanOutcome::SampleFilled);
     EXPECT_EQ(three_branch.layouts.size(), 3u);
     EXPECT_TRUE(three_branch.is_sample);
 
-    // five_branch wants 2 (3 - 1) but only one more spade = five layout
-    // exists anywhere in source -- it finds that one and then runs out:
-    // SourceExhausted, with something found, not nothing.
+    // five_branch wants 2 (3 - 1), but the source has only one more spade =
+    // five layout. It finds that one and then runs out: SourceExhausted,
+    // having found something.
     ScanResult const five_scan = replenish(five_branch, /*wanted=*/2);
     EXPECT_EQ(five_scan.outcome, be::ScanOutcome::SourceExhausted);
     EXPECT_EQ(five_branch.layouts.size(), 2u);
     EXPECT_FALSE(five_branch.is_sample);
 
-    // The root itself is untouched by either child's own scan.
+    // Neither child's scan touches the root.
     EXPECT_TRUE(root_result.node->is_sample);
 
-    // The same injected (dead) bound, the same
-    // declaration, one node fires and the other does not, and the only
-    // difference between them is is_sample.
+    // The same dead bound and declaration: one node fires and the other does
+    // not, and they differ only in is_sample.
     auto const always_dead = [](Deal const&) -> int { return 0; };
     be::EvaluateOptions const options{.bound = always_dead, .delta_is_double_dummy_optimal = true};
 
     EXPECT_TRUE(tier2_dead(five_branch, options));    // exhausted: the gate fires
     EXPECT_FALSE(tier2_dead(three_branch, options));  // still a sample: the gate stays off
 
-    // space_size -- make_belief_view needs no change at all,
-    // and this is worth pinning directly: the exhausted node reports its
-    // true size, the sampled sibling reports 0.
+    // space_size: make_belief_view needs no change. The exhausted node reports
+    // its true size, and the sampled sibling reports 0.
     std::vector<be::BeliefEntry> scratch_five;
     be::BeliefView const five_view = be::make_belief_view(five_branch, scratch_five);
     EXPECT_EQ(five_view.space_size, five_branch.layouts.size());
@@ -497,23 +487,21 @@ TEST_F(ReplenishmentTest, ExhaustedNodeIsNoLongerASampleAndItsSiblingStays)
 }
 
 // ===========================================================================
-// The no-more-available flag: once a node's own scan exhausts source, every
-// descendant below it skips its own replenishment scan entirely, rather
-// than repeating a full source scan that can only ever find nothing.
+// The no-more-available flag: once a node's scan exhausts the source, its
+// descendants skip their scans instead of repeating a full scan that can
+// only find nothing.
 // ===========================================================================
 
 TEST_F(ReplenishmentTest, ADescendantOfANodeThatCannotBeToppedUpMakesNoFurtherAtCalls)
 {
-    // A single forced trick. East's spade ply (depth 1) splits the root's
-    // two drawn layouts (one per spade filler) into two one-layout
-    // branches -- only a split can make replenishment have anything to
-    // do, since a declarer ply never changes a node's own layout count.
-    // A third source entry (spade = three again, a different heart filler)
-    // gives the "three" branch something new to find; the "five" branch
-    // has nothing waiting for it anywhere in source. North holds only the
-    // spade ace -- unlike make_layout's own two-trick shape -- so
-    // evaluate()'s root block has no alternative first card to explore
-    // alongside it, keeping this fixture to the one line being counted.
+    // One forced trick. East's spade ply (depth 1) splits the root's two drawn
+    // layouts (one per spade filler) into two one-layout branches. Only a split
+    // gives replenishment work, since a declarer ply never changes a node's
+    // layout count. A third source entry (spade three again, another heart
+    // filler) gives the "three" branch something to find; the "five" branch
+    // has nothing waiting. North holds only the spade ace, unlike make_layout's
+    // two-trick shape, so evaluate()'s root has no other first card to explore
+    // and the fixture stays on the one line being counted.
     auto const make_fixture = [](int east_spade, int east_heart_filler) -> Deal
     {
         Deal deal{};
@@ -523,10 +511,9 @@ TEST_F(ReplenishmentTest, ADescendantOfANodeThatCannotBeToppedUpMakesNoFurtherAt
         deal.remainCards[South][Spades] = holding({Two});
         deal.remainCards[East][Spades] = holding({east_spade});
         deal.remainCards[West][Spades] = holding({east_spade == Three ? Five : Three});
-        // Never played in this single-trick fixture: purely a root-space
-        // identity distinguisher, the same way east_spade's own complement
-        // distinguishes the spade split. Kept consistent across candidates
-        // via the same fixed 2-card pool split as the spades above.
+        // Never played in this one-trick fixture: it only tells root layouts
+        // apart, as the spade split does. It uses the same fixed two-card pool
+        // split as the spades.
         deal.remainCards[East][Hearts] = holding({east_heart_filler});
         deal.remainCards[West][Hearts] = holding({east_heart_filler == Two ? Three : Two});
         return deal;
@@ -551,21 +538,17 @@ TEST_F(ReplenishmentTest, ADescendantOfANodeThatCannotBeToppedUpMakesNoFurtherAt
         EvaluateOptions{.sampling = {.sample_size = 2u, .replenish_below = 2u}});
     ASSERT_FALSE(result.error.has_value());
 
-    // The answer is exactly what it must be regardless of how
-    // many (redundant) scans ran -- North's ace is forced and unbeatable,
-    // so the contract always makes.
+    // The answer is fixed however many redundant scans ran: North's ace is
+    // forced and unbeatable, so the contract always makes.
     EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);
 
-    // Hand-derived: root's own scan stops after 2 of the 3
-    // entries (2 at() calls). At depth 2, the "three" branch's own scan
-    // examines all 3 entries once (3 at() calls) to find its one new
-    // "three" layout, exhausting in the process; the "five" branch's own
-    // scan also examines all 3 (3 at() calls) and finds nothing, also
-    // exhausting. 2 + 3 + 3 = 8 total. Every node below that point on
-    // either branch is still below replenish_below (the "five" branch
-    // never grows past 1) and would cost 3 more at() calls apiece
-    // scanning for nothing -- three such nodes on the "five" branch alone
-    // (South's play, West's play, the already_made() terminal) would add
-    // 9 more, for 17 total, were the flag not stopping them.
+    // Hand-derived: the root scan stops after 2 of the 3 entries (2 at()
+    // calls). At depth 2 the "three" branch scans all 3 entries (3 at() calls)
+    // to find its new layout, exhausting the source. The "five" branch also
+    // scans all 3 (3 at() calls), finds nothing and exhausts. 2 + 3 + 3 = 8.
+    // Every node below on either branch is still below replenish_below (the
+    // "five" branch stays at 1). Without the flag, each would scan again for
+    // 3 at() calls: the three such nodes on the "five" branch alone (South's
+    // play, West's play, the already_made() terminal) would add 9, for 17.
     EXPECT_EQ(source.at_calls(), 8u);
 }
