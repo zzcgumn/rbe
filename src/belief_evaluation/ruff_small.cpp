@@ -16,13 +16,8 @@ auto ruff_small() -> DefenderHeuristic
             return std::nullopt;
         }
 
-        // Every candidate considered here is confined to one suit
-        // (ctx.trump), so two touching runs among them are disjoint,
-        // ordered intervals -- comparing by raw (representative) rank
-        // already finds the right entry; only the rank ultimately played
-        // (used below for the card returned and the overruff check) needs
-        // resolving against ctx.fut.equals (see true_lowest_rank's own
-        // doxygen).
+        // All candidates are trumps, so raw rank finds the right entry. Only the
+        // rank played needs resolving (see true_lowest_rank).
         std::optional<std::size_t> smallest_trump_index;
         for (std::size_t i = 0; i < best_cards.size(); ++i)
         {

@@ -44,20 +44,10 @@ auto suit_top_tricks(Deal const& layout, int defender_seat, int trump) -> std::a
         int const seat_count = card_count(layout.remainCards[defender_seat][suit]);
         int const partner_count = card_count(layout.remainCards[partner_seat][suit]);
 
-        // The sound upper bound before any ruffing reduction: a round of
-        // this suit, for as long as *both* defending hands still hold it,
-        // consumes one card from each of them simultaneously -- whoever
-        // is not on lead that round still has to follow suit in the same
-        // trick, not save its card for a separate one. So the two hands
-        // cannot cash seat_count + partner_count separate tricks merely
-        // by combining counts; the number of rounds the suit survives is
-        // bounded by whichever defending hand is longer, not their sum
-        // (the shorter hand becomes void partway through, after which
-        // the longer one keeps running the suit alone for the remaining
-        // rounds). Summing was tried first and rejected after tracing a
-        // single ace-with-one-partner/king-with-the-other round by hand:
-        // both cards are consumed in the very same trick, giving one
-        // cashable trick there, not two.
+        // The cap before ruffing: the length of the longer defending hand. While
+        // both hands hold the suit, each round uses a card from each. So the
+        // tricks are bounded by the longer hand, not the sum. (An ace in one hand
+        // and a king in the other fall on the same trick: one trick, not two.)
         int cap = std::max(seat_count, partner_count);
 
         if (trump != DDS_NOTRUMP && suit != trump)
@@ -72,11 +62,8 @@ auto suit_top_tricks(Deal const& layout, int defender_seat, int trump) -> std::a
             }
         }
 
-        // Our own candidates for these cap rounds: the cap highest cards
-        // across both defending hands combined. A card beyond the top
-        // cap is never the deciding card of any round -- there are only
-        // cap rounds to win -- so it is excluded rather than confusing
-        // the count below with a card that can never actually be reached.
+        // Our candidates: the cap highest cards of both defending hands. There
+        // are only cap rounds, so a lower card never decides one.
         std::vector<int> defending = sorted_ranks_descending(layout.remainCards[defender_seat][suit]);
         std::vector<int> const partner_ranks = sorted_ranks_descending(layout.remainCards[partner_seat][suit]);
         defending.insert(defending.end(), partner_ranks.begin(), partner_ranks.end());
@@ -86,33 +73,18 @@ auto suit_top_tricks(Deal const& layout, int defender_seat, int trump) -> std::a
             defending.resize(static_cast<std::size_t>(cap));
         }
 
-        // The single highest card either opposing hand holds -- the one
-        // card that decides whether our *next* led card wins its trick,
-        // for as long as either opposing hand still has one to contend
-        // with. The moment one of our own cards, led highest first,
-        // fails to beat it, the opponent wins that trick and gains the
-        // lead: this function counts only tricks cashed *by leading this
-        // suit*, and once the opponents have won a trick in it, they are
-        // not obliged to lead it back, so nothing beyond that point is a
-        // guaranteed top trick, no matter how high our remaining cards
-        // individually rank. 0 (no real rank is this low) stands for "no
-        // opposing card at all".
+        // The highest card either opponent holds. While they can still follow,
+        // our next card wins only if it beats this. Once it does not, the
+        // opponents win the trick and the lead, and nothing later is certain.
+        // 0 means no opposing card.
         std::vector<int> const opp_a_ranks = sorted_ranks_descending(layout.remainCards[opponent_a][suit]);
         std::vector<int> const opp_b_ranks = sorted_ranks_descending(layout.remainCards[opponent_b][suit]);
         int const opponent_max =
             std::max(opp_a_ranks.empty() ? 0 : opp_a_ranks.front(), opp_b_ranks.empty() ? 0 : opp_b_ranks.front());
 
-        // How many rounds either opposing hand can even contest: every
-        // non-void hand, ours or theirs, is forced to contribute a card
-        // every round the suit is run, whether or not that round is won
-        // -- so a hand with k cards is spent, and void for every later
-        // round, after exactly k rounds of this suit being run,
-        // regardless of how those k rounds came out. Once our own
-        // winning run has reached that many rounds, both opposing hands
-        // are provably exhausted (the longer of the two having forced
-        // the pace), and every further card of ours within cap wins
-        // automatically, whatever its own rank -- opponent_max no longer
-        // describes a card that can still be played against it.
+        // How many rounds the opponents can follow: a hand with k cards is void
+        // after k rounds, whatever happened in them. After that many rounds every
+        // further card of ours within cap wins.
         int const opponent_rounds =
             std::max(static_cast<int>(opp_a_ranks.size()), static_cast<int>(opp_b_ranks.size()));
 

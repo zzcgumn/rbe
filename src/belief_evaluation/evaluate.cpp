@@ -19,20 +19,12 @@ namespace
         return seat == state.declarer || seat == dummy;
     }
 
-    /// Builds the EvaluationError for a declarer-side ExpandResult whose
-    /// `child` is empty -- called from both of this file's own
-    /// expand_declarer_node call sites (p_make()'s own recursion and
-    /// evaluate()'s root-handling block). Prefers `result`'s own
-    /// nested_seat/nested_layout, set only when `pi` itself threw
-    /// DeclarerStrategyContractViolation: that names the internal
-    /// delegate's own seat and exact layout, which `evaluate()` has no
-    /// other way to learn and which is strictly more specific than
-    /// `seat`/`known_holdings` below. Reports EvaluationCallback::
-    /// DefenderStrategy in that case -- the violating callback genuinely
-    /// was a DefenderStrategy-shaped one, just not the outer `delta`
-    /// evaluate() was itself given -- and EvaluationCallback::DeclarerPlay,
-    /// with this node's own seat/known_holdings, otherwise (pi itself
-    /// returned a card that failed validate_declarer_card).
+    /// Builds the EvaluationError for a declarer ExpandResult with no child.
+    /// Used at both expand_declarer_node call sites. If `pi` threw
+    /// DeclarerStrategyContractViolation, reports the delegate's seat and
+    /// layout as EvaluationCallback::DefenderStrategy. Otherwise `pi` returned
+    /// a bad card: EvaluationCallback::DeclarerPlay, with this node's seat and
+    /// known_holdings.
     auto declarer_expand_error(
         ExpandResult const& result, int seat, Deal const& known_holdings) -> EvaluationError
     {
@@ -45,10 +37,8 @@ namespace
         return EvaluationError{result.error, EvaluationCallback::DeclarerPlay, seat, known_holdings};
     }
 
-    /// The card whose history entry a defender child just recorded — the
-    /// trailing entry advance_state() (expand.cpp) appended when building
-    /// it. BeliefNode itself does not track "which card led here" any more
-    /// directly than that.
+    /// The card that led to a defender child: the last history entry, added
+    /// by advance_state().
     auto last_played_card(BeliefNode const& node) -> Card
     {
         assert(node.state.history.number > 0);
@@ -58,11 +48,9 @@ namespace
 
     // --- counters -----------------------------------------------------
     //
-    // One small helper per counter, each its counter's single write site
-    // and each checking the null `counters` pointer the same way. All but
-    // the last are called from two places: p_make(), and evaluate()'s own
-    // root-handling block, which dispatches the same way from outside
-    // p_make.
+    // One helper per counter, each its only write site, each checking for a
+    // null `counters`. All but the last are called from p_make() and from the
+    // root block of evaluate().
 
     auto count_node(EvaluationCounters* counters) -> void
     {
@@ -96,11 +84,8 @@ namespace
         }
     }
 
-    /// Called with the same node and depth count_node() uses, so every
-    /// node reached is recorded here, not only ones a cut later touches.
-    /// Grows the vector on demand — see
-    /// EvaluationCounters::sample_size_by_depth for why a trailing
-    /// zero-entry must never mean "reached but empty".
+    /// Called for every node reached, with the same node and depth as
+    /// count_node().
     auto record_sample_size(EvaluationCounters* counters, BeliefNode const& node, int depth) -> void
     {
         if (counters == nullptr)
@@ -122,9 +107,7 @@ namespace
         stats.nodes += 1;
     }
 
-    /// The exception to the two-call-site pattern above: this one is
-    /// called only from replenish_node(). Replenishment never happens at
-    /// the root, so a root-block call could only ever record zeros.
+    /// Called only from replenish_node(). The root is never replenished.
     auto record_replenishment_attempt(
         EvaluationCounters* counters,
         int depth,
@@ -148,19 +131,13 @@ namespace
         stats.at_calls += at_calls;
     }
 
-    /// Everything the recursion carries unchanged from the root down.
-    /// Held and passed by const reference; widening it is how the
-    /// recursion gains read-only context without touching every call
-    /// site's parameter list.
+    /// What the recursion carries unchanged from the root down. Add read-only
+    /// context here, not to every parameter list.
     ///
-    /// Three things are deliberately *not* members. `error` is a mutable
-    /// out-parameter, and burying one in a struct named "context" would
-    /// stop it looking like one. `depth` genuinely differs per call.
-    /// `declarer` and `tricks_needed` are already reachable through
-    /// `node.state`, and a second path to the same fact could drift.
+    /// Not members: `error`, a mutable out-parameter; `depth`, which changes
+    /// per call; `declarer` and `tricks_needed`, already in `node.state`.
     ///
-    /// `root_layout` and `source` reference objects owned by evaluate()'s
-    /// caller, outliving the whole recursion.
+    /// `root_layout` and `source` are owned by the caller of evaluate().
     struct SearchContext
     {
         DeclarerStrategy const& pi;
@@ -171,28 +148,20 @@ namespace
         LayoutSource const& source;
     };
 
-    /// Tops `node` back up towards `sample_size` when its layout count is
-    /// below `replenish_below`, rescaling `kappa` so the node's mass is
-    /// unchanged, and clearing `is_sample` when the scan reaches
-    /// `ScanOutcome::SourceExhausted`.
+    /// Tops `node` up towards `sample_size` when it has fewer than
+    /// `replenish_below` layouts. Rescales `kappa` so the mass is unchanged.
+    /// Clears `is_sample` when the scan reaches `SourceExhausted`.
     ///
-    /// Returns `std::nullopt` whenever nothing changed — no threshold, the
-    /// trigger unmet, no `sample_size` to top up to, or a scan that found
-    /// nothing and did not exhaust the source. The caller then uses `node`
-    /// itself, not a copy.
+    /// Returns `std::nullopt` when nothing changed; the caller then uses
+    /// `node`. The trigger is the layout count only (see
+    /// `SamplingOptions::replenish_below`).
     ///
-    /// The trigger is the layout count and **nothing else**: see
-    /// `SamplingOptions::replenish_below`.
+    /// The rescale is exact: with Kahan sums `E` and `E'` of `p` before and
+    /// after, `kappa' = kappa * E / E'`. Skipped when nothing was added, so an
+    /// unchanged node is exactly unchanged.
     ///
-    /// The rescale is algebraically exact — with `E` and `E'` the Kahan
-    /// sums of `p` before and after, `kappa' = kappa * E / E'` gives
-    /// `kappa' * E' = kappa * E`. Skipped when the scan added nothing, so
-    /// that "untouched" is a guarantee rather than "usually 1.0".
-    ///
-    /// A `delta` contract violation during the scan sets `error` (the same
-    /// `EvaluationError` shape `expand_defender_node` uses — same callback,
-    /// same contract) and returns `std::nullopt`, so the caller must check
-    /// `error` before falling back to `node`.
+    /// A `delta` violation during the scan sets `error` and returns
+    /// `std::nullopt`. **The caller must check `error` before using `node`.**
     auto replenish_node(
         BeliefNode const& node,
         SearchContext const& ctx,
@@ -205,7 +174,7 @@ namespace
         }
         if (! ctx.options.sampling.sample_size.has_value())
         {
-            return std::nullopt;  // no target to top up to -- see this field's own doxygen
+            return std::nullopt;  // no target to top up to
         }
         if (node.layouts.size() >= *ctx.options.sampling.replenish_below)
         {
@@ -213,12 +182,8 @@ namespace
         }
         if (node.no_more_available)
         {
-            // A scan somewhere on this path already reached the end of
-            // source and found this node's own narrower history was not
-            // among what survived -- see that field's own doxygen for why
-            // scanning again below here cannot find anything new either.
-            // Checked after the trigger (cheap) but before the scan
-            // (expensive), which is the whole point of carrying it.
+            // An earlier scan on this path exhausted the source, so no scan below can
+            // find anything. Checked after the cheap trigger, before the costly scan.
             return std::nullopt;
         }
 
@@ -239,7 +204,7 @@ namespace
         bool const exhausted = scan.outcome == ScanOutcome::SourceExhausted;
         if (scan.candidates.empty() && ! exhausted)
         {
-            return std::nullopt;  // the ordinary "nothing more available (yet)" outcome; node is unchanged
+            return std::nullopt;  // nothing found yet; node unchanged
         }
 
         BeliefNode replenished = node;
@@ -264,24 +229,13 @@ namespace
                 mass_after.add(p_i);
             }
 
-            // See this function's own doxygen for why the "nothing added"
-            // case above returns before ever reaching this division.
+            // The "nothing added" case returned above, so this never divides by zero.
             replenished.kappa *= mass_before.value() / mass_after.value();
         }
 
-        // The node's own scan reached the end of source: it now holds
-        // every layout its path admits, exactly as make_root's root-level
-        // scan does when it runs to completion. Not a refinement of
-        // tier2_dead()'s gate -- that stays exactly !node.is_sample, no
-        // floor -- this only lets a node report the flag honestly once it
-        // genuinely holds the whole of its own remaining space. Does not
-        // propagate upward: a child's own exhaustion says nothing about
-        // its parent, whose own layout set is still whatever prefix was
-        // drawn for it.
-        //
-        // no_more_available is set from this exact same signal -- see its
-        // own doxygen for why it is nonetheless a separate field from
-        // is_sample, not a second name for the same fact.
+        // The scan reached the end of source, so this node holds every layout its
+        // path admits. That does not change the parent. tier2_dead() still gates
+        // on !is_sample alone.
         if (exhausted)
         {
             replenished.is_sample = false;
@@ -290,28 +244,17 @@ namespace
         return replenished;
     }
 
-    /// The recursion: P_make(node) = terminal_value(node), or the sum (for
-    /// a defender node) / the single value (for a declarer node) over its
-    /// children. Once `error` is set, every further call is a no-op
-    /// returning 0 rather than continuing to recurse on an invariant a
-    /// callback has already violated. Every call site also stops issuing
-    /// further calls itself as soon as `error` is set (there is currently
-    /// no path that would reach this function again without checking
-    /// first), so this guard is a structural invariant for callers to rely
-    /// on rather than a behaviour any current test can isolate — keep it
-    /// so that stays true as call sites are added, not because it is
-    /// reachable today.
+    /// The recursion: terminal_value(node), the sum over children (defender
+    /// node), or the one child's value (declarer node).
     ///
-    /// `ctx.counters` is null unless EvaluateOptions::collect_counters was
-    /// set; every write to it goes through count_node() so collection
-    /// stays a single well-known site as more counters arrive.
+    /// Once `error` is set, every call returns 0 without recursing. Call sites
+    /// already stop when `error` is set, so no test reaches this guard. Keep
+    /// it for future call sites.
     ///
-    /// `depth` is the node's distance from the root, which is depth 0.
-    /// evaluate() dispatches the root itself, outside this function (see
-    /// its own root-handling block, which mirrors every cut here for that
-    /// reason), so the root never reaches this function and every call
-    /// site below passes `depth + 1` -- there is no call site that passes
-    /// depth 0.
+    /// `ctx.counters` is null unless collect_counters was set.
+    ///
+    /// `depth` is the distance from the root. evaluate() handles the root
+    /// itself, so every call here passes `depth + 1`.
     auto p_make(
         BeliefNode const& node,
         SearchContext const& ctx,
@@ -324,15 +267,9 @@ namespace
         }
         count_node(ctx.counters);
 
-        // Replenishment fires here: at node entry, before every cut below
-        // and before is_terminal()/expansion -- in particular before any
-        // BeliefView could be built (expand_declarer_node is the only place
-        // one is, and it has not been reached yet). See replenish_node's
-        // own doxygen for why this ordering is a stated constraint the rest
-        // of the module leans on, not an incidental choice. Absent
-        // options.sampling.replenish_below, replenish_node returns nullopt
-        // having touched nothing, so this costs one function call and
-        // nothing else on the path every existing test still takes.
+        // Replenish at node entry: before every cut, and before any BeliefView is
+        // built (only expand_declarer_node builds one). See replenish_node. Without
+        // replenish_below this is one call that changes nothing.
         std::optional<BeliefNode> const replenished = replenish_node(node, ctx, depth, error);
         if (error.has_value())
         {
@@ -349,27 +286,16 @@ namespace
         if (is_dead(n.state))
         {
             count_tier1_dead_cut(ctx.counters);
-            return 0.0;  // node_mass(n) discarded here, not conserved -- the contract fails in
-                          // every layout this node holds, whatever happens next
+            return 0.0;  // mass not conserved: the contract fails in every layout here
         }
         if (tier2_dead(n, ctx.options))
         {
             count_tier2_cut(ctx.counters);
-            return 0.0;  // same non-conservation as tier 1's dead cut above -- see its own comment
+            return 0.0;  // mass not conserved, as for the tier 1 dead cut
         }
-        // is_terminal(n) is never true here, not just its "made" branch: a
-        // terminal node has tricks_remaining(n.state) == 0, and at that
-        // point already_made() and is_dead() are exact logical complements
-        // (tricks_won >= needed vs. tricks_won + 0 < needed), so one of the
-        // two tier-1 checks above has already returned before this line could
-        // run. Kept anyway, the same reasoning this function's own error
-        // check above is kept for: a structural invariant for today's call
-        // sites to rely on, not a behaviour any current test can isolate --
-        // safe to keep as tier-1 coverage evolves, not because it is
-        // reachable today. is_terminal()/terminal_value() remain genuinely
-        // used elsewhere (direct construction in terminal_test.cpp, per their
-        // own doxygen); this is only about the two call sites inside the
-        // recursion.
+        // Never true here: at a terminal, already_made() and is_dead() are exact
+        // complements, so a tier 1 cut has already returned. Kept as a fallback,
+        // like the error check above.
         if (is_terminal(n))
         {
             return terminal_value(n);
@@ -421,8 +347,7 @@ auto is_dead(ObservationState const& state) -> bool
 
 auto tier2_dead(BeliefNode const& node, EvaluateOptions const& options) -> bool
 {
-    // Gated on !node.is_sample, unlike either tier-1 cut -- see this
-    // function's own doxygen for the soundness argument.
+    // Gated on !node.is_sample, unlike the tier 1 cuts. See the header.
     if (node.is_sample)
     {
         return false;
@@ -474,55 +399,41 @@ auto evaluate(
     std::optional<EvaluationError> error;
     EvaluationValue value{};
     EvaluationCounters counters{};
-    // Null unless options.collect_counters is set, so the counting call
-    // sites below are unconditional and cost nothing when off — count_node()
-    // itself is the single place that checks the flag (via nullness).
+    // Null unless collect_counters is set. The helpers check for null, so the
+    // calls below are unconditional.
     EvaluationCounters* const counters_ptr = options.collect_counters ? &counters : nullptr;
     SearchContext const ctx{pi, delta, options, counters_ptr, root_layout, source};
 
-    // The root's own visit — same site p_make() counts a node at, but
-    // outside p_make() because the root's dispatch happens here rather than
-    // through a p_make() call on itself.
+    // The root is counted here, because it is dispatched here, not in p_make().
     count_node(counters_ptr);
     record_sample_size(counters_ptr, root, /*depth=*/0);
 
-    // Set before the dispatch below rather than in the one branch that fills
-    // root_children: every cut path leaves root_children empty, and a caller
-    // branching on the shape of a result should get an answer there too. The
-    // seat on play is common knowledge, so this costs nothing and is true
-    // whether or not a first-card decision remains.
+    // Set before the dispatch, so that the cut paths set it too.
     value.root_is_declaring_side =
         is_declarer_side(root.state, seat_on_play(root.state.known_holdings));
 
     if (already_made(root.state))
     {
-        // Tier 1's already-made cut. pi is never even asked which seat is
-        // on play: the contract is made in every layout the root holds
-        // before a card is played, so there is no first-card decision to
-        // report alternatives for and root_children stays empty.
+        // Tier 1 made cut. pi is never called: the contract is already made, so
+        // root_children stays empty.
         count_tier1_made_cut(counters_ptr);
         value.p_make = node_mass(root);
     }
     else if (is_dead(root.state))
     {
-        // Tier 1's dead cut: the contract cannot be made from the root
-        // even in principle, so p_make stays 0.0 and root_children stays
-        // empty -- every first card leads to the same outcome.
+        // Tier 1 dead cut: p_make stays 0.0 and root_children stays empty.
         count_tier1_dead_cut(counters_ptr);
         value.p_make = 0.0;
     }
     else if (tier2_dead(root, options))
     {
-        // Tier 2's cut: every layout the root holds is dead by the
-        // injected bound, under the caller's own declaration.
+        // Tier 2 cut: every root layout is dead by the bound.
         count_tier2_cut(counters_ptr);
         value.p_make = 0.0;
     }
     else if (is_terminal(root))
     {
-        // Unreachable today for the same reason p_make()'s own is_terminal()
-        // check is -- see that call site's comment. Kept as the same
-        // structural fallback, not because a root can reach here now.
+        // Unreachable, as in p_make(). Kept as a fallback.
         value.p_make = terminal_value(root);  // no legal first card exists; root_children stays empty
     }
     else
@@ -531,13 +442,9 @@ auto evaluate(
 
         if (is_declarer_side(root.state, seat))
         {
-            // pi is called exactly once at the root — here — to learn its
-            // actual choice (validated the same way any other node is).
-            // The other legal cards' subtrees are then built directly via
-            // make_declarer_children(), which does not call pi, and
-            // evaluated by recursing pi/delta normally from there. The
-            // chosen card's own child (chosen.child) is reused rather than
-            // rebuilt a second time through make_declarer_children().
+            // pi is called once at the root, to learn its choice. The other legal
+            // cards' children come from make_declarer_children(), which does not call
+            // pi. The chosen card's child is reused.
             ExpandResult const chosen = expand_declarer_node(root, pi);
             if (! chosen.child.has_value())
             {
@@ -555,13 +462,8 @@ auto evaluate(
                     break;
                 }
             }
-            // chosen.card already passed validate_declarer_card, and
-            // enumerate_legal_cards()/legal_cards() computes the same
-            // follow-suit rule over the same Deal (root.state.known_holdings),
-            // so chosen.card is provably present in legal. Asserted, not just
-            // commented, per this file's own convention for preconditions
-            // that hold today but aren't otherwise enforced (see
-            // last_played_card and trick_complete_winner).
+            // chosen.card passed validate_declarer_card, which applies the same
+            // follow-suit rule to the same Deal. So it is in legal.
             assert(chosen_index < legal.size());
 
             std::vector<Card> other_cards;
@@ -625,15 +527,8 @@ auto evaluate(
     if (options.retain_root)
     {
         value.retained_root = root;
-        // Unlike every other ObservationState this evaluation builds,
-        // retained_root outlives the call: it survives inside the returned
-        // EvaluationResult, with no guarantee that options (or a PlayRecord
-        // inside it) does too. play_record's usual non-owning contract --
-        // "owned by the EvaluateOptions the caller passed to evaluate()" --
-        // does not extend to a value handed back to the caller, so it is
-        // cleared here rather than left dangling. The retained node is a
-        // diagnostic snapshot of the belief space, not a live query
-        // surface, and has no use for it.
+        // retained_root outlives the call, but options may not. Clear the
+        // pointer rather than leave it dangling. See EvaluationValue::retained_root.
         value.retained_root->state.play_record = nullptr;
     }
     if (options.collect_counters)

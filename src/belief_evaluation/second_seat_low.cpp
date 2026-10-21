@@ -8,28 +8,16 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    // Whether best_cards[lowest_index] touches another same-suit card, per
-    // ctx.fut.equals -- checked both ways:
+    // Whether best_cards[lowest_index] touches another card of its suit, by
+    // ctx.fut.equals. Two cases:
     //
-    // 1. lowest_index's *own* equals entry, non-empty -- the case
-    //    solve_board actually produces for a plain touching pair/run: it
-    //    collapses the whole group to ONE canonical entry (the highest
-    //    card) and folds every lower member into that one entry's own
-    //    equals, so best_cards may hold only that single entry with
-    //    nothing else to compare it against. A loop that only ever
-    //    compares *different* best_cards entries against each other -- the
-    //    first version of this function -- can never see this case at all:
-    //    with one entry there is nothing to loop over, and the bug is
-    //    silent, not a crash. true_lowest_rank (shared with the other
-    //    rules that compare candidates by raw rank) resolves the rank
-    //    half of this; only the touching verdict itself is local here.
-    // 2. The cross-reference loop below, for the case a caller lists a
-    //    touching group as separate best_cards entries explicitly instead
-    //    (checked in both directions, since dds may record a group's
-    //    membership on whichever entry it treats as the representative,
-    //    not necessarily the lowest-ranked one). The group is not
-    //    collapsed in this shape, so best_cards[lowest_index].rank is
-    //    already the true lowest rank -- nothing to resolve.
+    // 1. Its own equals entry is non-empty. solve_board reports a touching
+    //    run as one entry (the highest card) with the rest in equals. So
+    //    best_cards may hold only that entry. true_lowest_rank resolves its
+    //    rank.
+    // 2. A caller lists the group as separate best_cards entries. Checked in
+    //    both directions, because dds may record the group on any member.
+    //    Here best_cards[lowest_index].rank is already the lowest rank.
     struct TouchingResult
     {
         bool touches;
@@ -90,30 +78,17 @@ auto second_seat_low(bool randomize_touching_honors) -> DefenderHeuristic
 
         TouchingResult const touching = touching_group_of(best_cards, ctx.fut, lowest_index);
 
-        // Deferring only actually randomises the lowest candidate's own
-        // group if that group is the one spread(fut,
-        // SpreadPolicy::TouchingSequence) itself goes on to pick --
-        // fut may hold more than one disjoint touching group tied for
-        // best score (e.g. an untouched A-K alongside a separate Q-J),
-        // and spread() always resolves to canonical_best(fut)'s own
-        // group, not necessarily this one. Deferring when the two
-        // diverge would silently randomise the wrong pair -- or, if
-        // canonical_best's own candidate does not touch anything at
-        // all, would not randomise at all -- so this rule only defers
-        // when it knows the fallback actually lands on its own group;
-        // otherwise it still returns its own answer directly, the same
-        // card randomize_touching_honors=false would give.
+        // Defer only if spread(fut, TouchingSequence) will pick this group.
+        // fut may hold several tied groups (say A-K and a separate Q-J), and
+        // spread() picks canonical_best(fut). Otherwise deferring would randomise
+        // the wrong pair, or nothing. Then return the card that
+        // randomize_touching_honors=false gives.
         bool const defer_reaches_this_group =
             canonical_best(ctx.fut) == static_cast<int>(lowest_index);
 
-        // And only if the fallback it defers to is actually the policy
-        // that distributes over just this one touching group --
-        // ctx.fallback_policy may be SpreadPolicy::AllOptimal instead
-        // (a HeuristicDefender constructed with that policy), which
-        // spreads over every tied candidate across every suit rather
-        // than restricting to this group alone. Deferring there would
-        // not produce restricted choice at all, so this rule falls
-        // back to returning its own answer directly in that case too.
+        // And only if the fallback is TouchingSequence. Under AllOptimal it
+        // spreads over every tied card in every suit, which is not restricted
+        // choice.
         bool const fallback_is_touching_sequence =
             ctx.fallback_policy == SpreadPolicy::TouchingSequence;
 

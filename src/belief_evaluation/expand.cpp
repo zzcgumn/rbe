@@ -16,62 +16,24 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    /// A total order over Card, for grouping defender children by the card
-    /// played — Card itself declares no comparison, and doesn't need one
-    /// anywhere else in the module.
+    /// A total order over Card, for grouping defender children by card.
     auto card_key(Card const& card) -> int
     {
         return card.suit * 100 + card.rank;
     }
 
-    /// Mass conservation (algorithm.md's Sigma_c w_i^(...,b,c) = w_i^(...,b)):
-    /// summing every child's mass must reproduce the parent's. Every
-    /// distribution delta returned was already validated per-layout by its
-    /// caller, each within ProbabilitySumTolerance of summing to one, so a
-    /// violation here is not user input — it is a genuine internal
-    /// invariant failure (a bug in the grouping/reweighting that built
-    /// children, not a contract violation delta committed), and this is
-    /// called only inside an assert() rather than reported through
-    /// ExpandDefenderResult.
+    /// Mass conservation (algorithm.md: Sigma_c w_i^(...,b,c) = w_i^(...,b)):
+    /// the children's masses sum to the parent's. Each delta distribution was
+    /// already validated, so a failure here is an internal bug, not caller
+    /// input. Called only inside assert(), so it vanishes under NDEBUG.
     ///
-    /// The tolerance is ProbabilitySumTolerance scaled by node.layouts.size(),
-    /// not used verbatim: this check sums a quantity derived from every
-    /// layout's distribution, and each layout independently contributes up
-    /// to ProbabilitySumTolerance of error (kappa * p_i * that layout's own
-    /// sum-of-probabilities deviation), so the worst case (every layout's
-    /// error the same sign) scales with how many layouts there are, not
-    /// with a single distribution's own tolerance. p_i <= 1 for every
-    /// layout at every node (it only ever shrinks from the root's 1 via
-    /// multiplication by further probabilities <= 1), so scaling by the
-    /// layout count rather than by Sigma_i p_i is a safe, if slightly
-    /// looser, bound.
+    /// The tolerance is ProbabilitySumTolerance times node.layouts.size().
+    /// Each layout can add up to ProbabilitySumTolerance of error, and every
+    /// p_i <= 1, so the worst case grows with the layout count.
     ///
-    /// Re-derived, not assumed, now that node.kappa may have come from a
-    /// replenishment's rescale (kappa *= E / E') rather than only from
-    /// make_root's 1/N or a plain copy: that division introduces its own
-    /// rounding, but it does not add an uncounted error term to *this*
-    /// check. node.kappa and every child's kappa are the same double value
-    /// (copy-assigned, never recomputed in expand_defender_node), so
-    /// whatever rounding the rescale baked into it multiplies both sides of
-    /// the comparison identically and cancels to that one value's own
-    /// relative precision (order 1e-16), utterly below
-    /// ProbabilitySumTolerance (1e-6). What is left is exactly the
-    /// pre-existing per-layout term above, now summed over however many
-    /// layouts node.layouts.size() currently reports -- replenished layouts
-    /// included, each subject to the identical ProbabilitySumTolerance bound
-    /// on its own delta query this ply, no differently from a drawn layout.
-    /// The count already reflects any replenishment automatically, which is
-    /// the "safe direction" a larger node.layouts.size() pushes the bound;
-    /// the division pushes it nowhere, being common to both sides.
-    ///
-    /// Called only inside assert(): under NDEBUG the whole check --
-    /// tolerance, accumulator and loop alike -- disappears with it, rather
-    /// than computing and discarding a value nothing then reads. [[maybe_unused]]
-    /// is correct here, unlike on the tolerance it replaces: nothing about
-    /// this function runs when it isn't called, so there is no discarded
-    /// work left behind for the attribute to paper over -- only the
-    /// definition itself goes unused, in exactly the build where that is
-    /// the point.
+    /// A replenishment rescale of kappa adds no error term here. Parent and
+    /// children share the same kappa value, so its rounding cancels.
+    /// Replenished layouts are counted in node.layouts.size() like any other.
     [[maybe_unused]] auto defender_children_conserve_mass(
         BeliefNode const& node, std::vector<BeliefNode> const& children) -> bool
     {
@@ -88,16 +50,11 @@ namespace
 
 auto advance_state(ObservationState const& state, Card const& card) -> ObservationState
 {
-    // known_holdings' declarer and dummy entries are each hand's exact
-    // holding, but its two defender entries are both set to the *union*
-    // pool the two defenders share (see known_holdings_for in node.cpp) —
-    // so play(), which clears the card from only seat_on_play's own slot,
-    // is correct for a declarer or dummy play but leaves a defender's
-    // played card sitting in the *other* defender's identical pool entry.
-    // Clearing the card from every hand's slot first — safe, since a card
-    // can only ever be set in the slot(s) that actually hold it — fixes
-    // this uniformly for both cases without needing to know which kind of
-    // seat played.
+    // The two defender entries of known_holdings both hold the shared pool
+    // (see known_holdings_for in node.cpp). play() clears the card only from
+    // the seat on play, so a defender's card would stay in the other
+    // defender's entry. Clear it from every hand first. A card is only set
+    // where it is held, so this is safe for every seat.
     ObservationState next = state;
     Deal known = state.known_holdings;
     for (int hand = 0; hand < DDS_HANDS; ++hand)
@@ -106,11 +63,8 @@ auto advance_state(ObservationState const& state, Card const& card) -> Observati
     }
     Deal const advanced = play(known, card);
 
-    // play() clears currentTrick* only on the branch that resolves a
-    // trick; the append branch always leaves at least one slot
-    // non-zero. So "every slot zero after" is exactly "this play
-    // resolved the trick", with no need to also inspect the state
-    // before the play.
+    // play() clears currentTrick* only when the trick resolves. So all slots
+    // zero means the trick resolved.
     bool const trick_resolved = advanced.currentTrickRank[0] == 0 && advanced.currentTrickRank[1] == 0
         && advanced.currentTrickRank[2] == 0;
     if (trick_resolved)
@@ -147,13 +101,9 @@ auto make_declarer_children(BeliefNode const& parent, std::vector<Card> const& c
             child.layouts.push_back(play(layout, card));
         }
 
-        child.p = parent.p;          // untouched: declarer's play does not
-                                      // filter or reweight the belief space.
-        child.root_keys = parent.root_keys;  // copied whole: declarer's play
-                                              // neither filters nor renames
-                                              // any layout's root-space identity.
-        child.kappa = parent.kappa;  // every child gets the parent's full
-                                      // mass, not a share of it.
+        child.p = parent.p;          // declarer's play does not reweight
+        child.root_keys = parent.root_keys;  // or filter layouts
+        child.kappa = parent.kappa;  // every child gets the full mass
         child.is_sample = parent.is_sample;
         child.no_more_available = parent.no_more_available;
         children.push_back(std::move(child));
@@ -163,11 +113,8 @@ auto make_declarer_children(BeliefNode const& parent, std::vector<Card> const& c
 
 auto expand_declarer_node(BeliefNode const& node, DeclarerStrategy const& pi) -> ExpandResult
 {
-    // layouts/p/root_keys same length: node.hpp's own doxygen says this is
-    // "relied on wherever the node is read" -- cheap insurance that a
-    // hand-built fixture violating it (root_keys left default-empty, say)
-    // fails loudly here rather than through an unchecked operator[] further
-    // down, the same style is_terminal()'s own assert already uses.
+    // layouts, p and root_keys are parallel (node.hpp). Fail here on a
+    // hand-built fixture that breaks this, not on a later operator[].
     assert(node.p.size() == node.layouts.size());
     assert(node.root_keys.size() == node.layouts.size());
 
@@ -176,23 +123,10 @@ auto expand_declarer_node(BeliefNode const& node, DeclarerStrategy const& pi) ->
     std::vector<BeliefEntry> scratch;
     BeliefView const view = make_belief_view(node, scratch);
 
-    // A DeclarerStrategy implementation (BruteForceDeclarer, concretely)
-    // may throw DeclarerStrategyContractViolation to report that it could
-    // not produce a card at all, because one of its own internal,
-    // caller-configured delegates violated its contract. Caught here,
-    // at evaluate()'s own call boundary into pi, and converted into the
-    // same ValidationError this function already returns for a card pi
-    // itself returned that fails validate_declarer_card below -- so the
-    // exception never reaches evaluate()'s own public entry point,
-    // upholding "a user callback's contract violation is reported in the
-    // result, never thrown" (specs/replenished-belief-evaluation.md) for
-    // every caller who reaches pi only through evaluate(). The
-    // exception's own seat/offending_layout -- the internal delegate's,
-    // not pi's own -- are carried through as nested_seat/nested_layout
-    // rather than discarded, so evaluate.cpp can report where the
-    // violation actually happened instead of substituting this node's own
-    // seat/known_holdings. See that exception type's own doxygen
-    // (declarer_strategy.hpp).
+    // pi may throw DeclarerStrategyContractViolation when a delegate breaks
+    // its contract. Convert it to the same ValidationError as a bad card, so
+    // it never leaves evaluate(). Keep the delegate's seat and layout as
+    // nested_seat and nested_layout. See declarer_strategy.hpp.
     Card card;
     try
     {
@@ -217,22 +151,15 @@ auto expand_declarer_node(BeliefNode const& node, DeclarerStrategy const& pi) ->
 auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
     -> ExpandDefenderResult
 {
-    // Same invariant, same reason as expand_declarer_node's own assert above
-    // -- this function additionally indexes node.root_keys[i] directly
-    // (below), so a mismatch here is exactly the unchecked-operator[]
-    // out-of-bounds this pair of asserts exists to catch before it happens.
+    // As in expand_declarer_node. node.root_keys[i] is indexed below.
     assert(node.p.size() == node.layouts.size());
     assert(node.root_keys.size() == node.layouts.size());
 
     int const seat = seat_on_play(node.state.known_holdings);
 
-    // Grouped by card (keyed via card_key): the card itself, the surviving
-    // layouts that card belongs to (advanced by it), and their reweighted
-    // p. std::map orders by key (card_key), giving a stable, deterministic
-    // iteration order regardless of which layout each card was first seen
-    // from — the determinism oracle case relies on this. All three maps
-    // share the same key space, so lookups below never need a not-found
-    // branch.
+    // Grouped by card_key: the card, its surviving layouts (advanced by it),
+    // and their reweighted p. std::map gives a deterministic order, which the
+    // determinism test relies on. All three maps share one key space.
     std::map<int, Card> card_by_key;
     std::map<int, std::vector<Deal>> layouts_by_key;
     std::map<int, std::vector<Probability>> p_by_key;
@@ -244,10 +171,8 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
         DefenderQuery const query{layout, seat, node.state};
         std::vector<WeightedCard> const distribution = delta(query);  // once per layout
 
-        // Drawn here, before delegating, rather than inside
-        // validate_defender_distribution: see ValidationError::DistributionEmpty's
-        // own doxygen for why the two functions deliberately disagree on
-        // this one input.
+        // Checked here, not in validate_defender_distribution. See
+        // ValidationError::DistributionEmpty.
         if (distribution.empty())
         {
             return ExpandDefenderResult{std::nullopt, ValidationError::DistributionEmpty, layout};
@@ -263,17 +188,12 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
             int const key = card_key(entry.card);
             card_by_key.emplace(key, entry.card);
             layouts_by_key[key].push_back(layout);
-            // p is never renormalised here — p_i' = p_i * delta(...) and
-            // nothing else. The normalised posterior pi sees (belief_view.hpp)
-            // is computed from this on demand, never stored back.
+            // p is never renormalised: p_i' = p_i * delta(...). belief_view.hpp
+            // normalises on demand.
             p_by_key[key].push_back(node.p[i] * entry.probability);
-            // Pushed in this same loop, in this same order, into a third
-            // map alongside layouts_by_key and p_by_key -- see
-            // BeliefNode::root_keys' own doxygen for why a root-space key
-            // must never be recomputed from a node-depth Deal (distinct
-            // root-space layouts can replay to the same Deal here), which
-            // is what pushing in a second pass or deriving it from the
-            // child's own layouts afterwards would silently do.
+            // Pushed in the same loop and order as layouts and p. A root-space key
+            // must never be recomputed from a node Deal: different root layouts can
+            // replay to the same Deal. See BeliefNode::root_keys.
             root_keys_by_key[key].push_back(node.root_keys[i]);
         }
     }
@@ -291,16 +211,13 @@ auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
         }
         child.p = p_by_key[key];
         child.root_keys = root_keys_by_key[key];
-        child.kappa = node.kappa;  // kappa is untouched; defender children
-                                    // partition p, not kappa.
+        child.kappa = node.kappa;  // defender children split p, not kappa
         child.is_sample = node.is_sample;
         child.no_more_available = node.no_more_available;
         children.push_back(std::move(child));
     }
 
-    // Mass conservation (algorithm.md's Sigma_c w_i^(...,b,c) = w_i^(...,b)):
-    // see defender_children_conserve_mass's own doxygen for the tolerance
-    // derivation and why this is only ever called inside assert().
+    // See defender_children_conserve_mass.
     assert(defender_children_conserve_mass(node, children));
 
     return ExpandDefenderResult{std::move(children), ValidationError::None};

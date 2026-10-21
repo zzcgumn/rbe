@@ -10,9 +10,7 @@ auto decompose_constrained(
 {
     ConstrainedDecomposition result;
 
-    // One pass over pool.cards, in its own canonical order -- so
-    // free_cards is a filter of that order, never a re-sort, and stays
-    // stable across calls with the same inputs.
+    // One pass in pool order, so free_cards is filtered, never re-sorted.
     for (Card const& card : pool.cards)
     {
         bool const fixed_void = fixed_seat_voids[static_cast<std::size_t>(card.suit)];
@@ -20,20 +18,18 @@ auto decompose_constrained(
 
         if (fixed_void && other_void)
         {
-            // Both defenders void in this card's suit, and the pool still
-            // contains it: unresolvable, whichever of the two rules below
-            // would otherwise apply. No well-defined side for this card
-            // to be on, so nothing partial is reported either.
+            // Both defenders are void in this suit, and the pool still holds the
+            // card. It has no side, so nothing partial is reported.
             return ConstrainedDecomposition{.status = ConstrainedSpaceStatus::ContradictoryVoid};
         }
         if (fixed_void)
         {
-            // The fixed seat cannot hold it -- forced to the other defender.
+            // The fixed seat is void: forced to the other defender.
             result.forced_to_other_seat.push_back(card);
         }
         else if (other_void)
         {
-            // The other defender cannot hold it -- forced to the fixed seat.
+            // The other defender is void: forced to the fixed seat.
             result.forced_to_fixed_seat.push_back(card);
         }
         else
@@ -64,10 +60,7 @@ auto constrained_space_size(ConstrainedDecomposition const& decomposition) -> st
 {
     if (decomposition.status != ConstrainedSpaceStatus::Ok)
     {
-        // The three empty-space causes are kept apart on decomposition.status
-        // itself (see ConstrainedSpaceStatus's own doxygen) -- collapsing
-        // them all to the same 0 here would throw away exactly the
-        // distinction that exists for.
+        // decomposition.status says which kind of empty.
         return 0;
     }
     return binomial_coefficient(

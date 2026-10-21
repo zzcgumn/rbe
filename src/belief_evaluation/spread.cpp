@@ -10,9 +10,8 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    /// The cards named by `fut.equals[i]` -- a rank bitmask in Deal's own
-    /// bit convention, excluding `fut.rank[i]` itself -- as Cards in
-    /// `fut.suit[i]`.
+    /// The cards in `fut.equals[i]` (Deal bit convention, without
+    /// `fut.rank[i]`), as Cards in `fut.suit[i]`.
     auto touching_cards(FutureTricks const& fut, int i) -> std::vector<Card>
     {
         std::vector<Card> cards;
@@ -27,13 +26,9 @@ namespace
         return cards;
     }
 
-    /// A total order over Card for deduplication -- two fut entries in the
-    /// same touching sequence must not double-count the cards they share.
-    /// Collision-free only for a well-formed card (suit 0..3, rank 2..14),
-    /// which is all `FutureTricks` and `touching_cards()` above ever
-    /// populate -- asserted rather than silently tolerated, since a
-    /// malformed suit/rank here would collide or go negative without
-    /// either failing loudly or being a valid card to begin with.
+    /// A total order over Card, to remove cards shared by two entries of one
+    /// touching sequence. Collision-free only for suit 0..3 and rank 2..14,
+    /// so other values are asserted.
     auto card_key(Card const& card) -> int
     {
         assert(card.suit >= 0 && card.suit < DDS_SUITS);

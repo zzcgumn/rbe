@@ -14,10 +14,9 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    /// `delta`'s own probability for `card` in `distribution`, matching on
-    /// suit and rank. An omitted card and one explicitly given probability
-    /// 0 are indistinguishable here on purpose -- see `ReplayResult`'s own
-    /// doxygen for why both mean "this candidate did not follow the line".
+    /// The probability `delta` gives `card`, matching suit and rank. An
+    /// omitted card gives 0, the same as an explicit 0. Both reject (see
+    /// `ReplayResult`).
     auto probability_of(std::vector<WeightedCard> const& distribution, Card const& card) -> Probability
     {
         for (WeightedCard const& entry : distribution)
@@ -40,20 +39,13 @@ auto replay_candidate(
     int const skip = history_for(root_layout).number;
     int const dummy = (node_state.declarer + 2) % DDS_HANDS;
 
-    // Replayed in lockstep with the layout, both starting from exactly the
-    // same skip: two passes over the same history is where an off-by-one
-    // would get the layout and the state disagreeing about which ply is
-    // which.
+    // The layout and the state advance together from the same skip, so they
+    // cannot disagree about which ply is which.
     //
-    // state starts from the root's own ObservationState -- not from
-    // node_state with its history truncated -- because known_holdings,
-    // ranks and tricks_won_by_declarer at depth `skip` are genuinely
-    // different values from node_state's own (which reflect the node's
-    // full depth), and delta may read any of them. Only trump, first,
-    // declarer and tricks_needed are unaffected by advance_state and so are
-    // already identical between the root and node_state; the rest must be
-    // rebuilt from the root to reproduce the exact query the original
-    // expansion made.
+    // state starts from the root's ObservationState, not from node_state.
+    // known_holdings, ranks and tricks_won_by_declarer differ at each depth,
+    // and delta may read them. Replaying from the root reproduces the
+    // original query exactly.
     Deal working = candidate;
     ObservationState state = root_observation_state(
         root_layout, node_state.declarer, node_state.tricks_needed, node_state.play_record);
@@ -68,12 +60,9 @@ auto replay_candidate(
 
         if (is_declarer_or_dummy)
         {
-            // Common knowledge, identical across every consistent layout --
-            // always legal in candidate by construction. An internal
-            // invariant failure, not a rejection; see ReplayResult's own
-            // doxygen for why the two cases are handled differently.
-            // Contributes nothing to p_j, matching how p is built during
-            // ordinary expansion.
+            // Declarer and dummy cards are common knowledge, so always held here. A
+            // failure is an internal bug, not a rejection. Adds nothing to p_j, as
+            // in ordinary expansion.
             assert(held);
         }
         else
@@ -120,24 +109,14 @@ auto scan_for_replenishment(
 {
     if (wanted == 0)
     {
-        // The loop below would break on its own first iteration without
-        // ever calling source.at() -- but source.size() and building
-        // already_present from node.root_keys both happen before the loop
-        // starts, so without this early return they would be paid on every
-        // node this function is called for, for no observable difference.
-        // The only caller that reaches wanted == 0 is EvaluateOptions::
-        // replenish_below set above sample_size (see that field's own
-        // doxygen), where the trigger condition is true at every node --
-        // exactly the hot path this exists to keep cheap. Same result the
-        // loop would have produced: SampleFilled, zero at() calls, nothing
-        // found.
+        // The loop would stop at once, but only after calling source.size() and
+        // building already_present. Skip both. This happens at every node when
+        // replenish_below is above sample_size.
         return ScanResult{{}, ScanOutcome::SampleFilled, ValidationError::None, -1, Deal{}, 0};
     }
 
     std::optional<std::uint64_t> const size = source.size();
-    // Guaranteed: this node could not exist at all unless some earlier
-    // make_root call already required source.size() to be present -- a
-    // node-local scan is never the first thing to ask.
+    // make_root already required source.size(), or this node would not exist.
     assert(size.has_value());
 
     int const declarer = node.state.declarer;
@@ -151,9 +130,7 @@ auto scan_for_replenishment(
     std::uint64_t i = 0;
     for (; i < *size; ++i)
     {
-        // wanted checked before budget at every step, mirroring make_root's
-        // own tie-break: a candidate that fills the want is never charged
-        // against the budget.
+        // wanted is checked before budget, as in make_root.
         if (result.candidates.size() >= wanted)
         {
             break;
@@ -167,12 +144,12 @@ auto scan_for_replenishment(
 
         if (! is_consistent(candidate, root_layout, declarer, dummy))
         {
-            continue;  // not in this belief space at all -- the cheap check, tried first
+            continue;  // not in this belief space (the cheap check)
         }
         std::uint64_t const key = layout_key(candidate, fixed_seat);
         if (already_present.contains(key))
         {
-            continue;  // already in the node -- no delta call spent finding that out
+            continue;  // already in the node; no delta call needed
         }
 
         ReplayResult const replay = replay_candidate(candidate, root_layout, node.state, delta);
@@ -183,15 +160,12 @@ auto scan_for_replenishment(
         }
         if (! replay.layout.has_value())
         {
-            continue;  // did not follow this line -- the ordinary rejection
+            continue;  // did not follow this line
         }
         result.candidates.push_back(ScanCandidate{*replay.layout, replay.p_j, key});
     }
 
-    // Why the scan stopped, mirroring make_root's own derivation: the
-    // source ran out (i reached *size, whatever either cap was), else
-    // whichever cap actually bound, wanted taking priority to match the
-    // loop's own check order above.
+    // Why the scan stopped, as in make_root.
     result.outcome = (i >= *size)
         ? ScanOutcome::SourceExhausted
         : ((result.candidates.size() >= wanted) ? ScanOutcome::SampleFilled : ScanOutcome::BudgetExhausted);
