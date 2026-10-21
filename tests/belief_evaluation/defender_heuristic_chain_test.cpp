@@ -9,6 +9,9 @@
 
 #include "test_support.hpp"
 
+// Tests for how DefenderHeuristicChain composes rules: order, deferral
+// and caller-supplied rules.
+
 namespace be = dds::belief_evaluation;
 
 namespace
@@ -22,11 +25,9 @@ namespace
     constexpr int East = 1;
     constexpr int West = 3;
 
-    // A minimal, fixed context -- no test in this file needs the chain to
-    // actually read it, since every stub rule here is unconditional (the
-    // whole point: this file tests the chain's own composition logic, not
-    // any rule's bridge-domain condition, which is tested where each rule
-    // is defined instead).
+    // A minimal, fixed context. Every stub rule here is unconditional, so no
+    // test reads it. This file tests how the chain composes rules; each rule's
+    // bridge condition is tested where the rule is defined.
     auto make_fixed_context(be::ObservationState const& state, FutureTricks const& fut)
         -> be::DefenderHeuristicContext
     {
@@ -129,8 +130,8 @@ TEST_F(DefenderHeuristicChainTest, OmittingARuleRemovesItsEffectEntirely)
         return std::optional<be::Card>{be::Card{Spades, King}};
     };
 
-    // Only rule_a is ever add()-ed; rule_b would fire here if it were, but
-    // it is never given the chance.
+    // Only rule_a is add()-ed. rule_b would fire here if it were in the
+    // chain.
     be::DefenderHeuristicChain chain;
     chain.add(rule_a);
 
@@ -173,7 +174,7 @@ TEST_F(DefenderHeuristicChainTest, CallerSuppliedRuleInterleavedWithBuiltinsFire
     chain.add(caller_rule);
     chain.add(rule_b);
 
-    // The caller's own rule fires: its card wins, rule_b is never reached.
+    // The caller's rule fires: its card wins, and rule_b is never reached.
     caller_rule_should_fire = true;
     std::optional<be::Card> const fired = chain.select_card(ctx, best_cards);
     ASSERT_TRUE(fired.has_value());
@@ -181,8 +182,7 @@ TEST_F(DefenderHeuristicChainTest, CallerSuppliedRuleInterleavedWithBuiltinsFire
     EXPECT_EQ(caller_rule_calls, 1);
     EXPECT_EQ(rule_b_calls, 0);
 
-    // The caller's own rule defers: it was still tried, but rule_b's card
-    // wins.
+    // The caller's rule defers: it was still tried, but rule_b's card wins.
     caller_rule_should_fire = false;
     std::optional<be::Card> const deferred = chain.select_card(ctx, best_cards);
     ASSERT_TRUE(deferred.has_value());
@@ -193,22 +193,15 @@ TEST_F(DefenderHeuristicChainTest, CallerSuppliedRuleInterleavedWithBuiltinsFire
 
 TEST_F(DefenderHeuristicChainTest, ALaterRuleAtTheSameDecisionPointDefeatsSecondSeatLowsDeferral)
 {
-    // second_seat_low(true)'s own doxygen documents a caller obligation
-    // this type cannot enforce: "Put second_seat_low last among any rules
-    // that could fire at the same decision point when
-    // randomize_touching_honors is relied upon." The reason is structural,
-    // not a bug in second_seat_low itself -- select_card()'s nullopt is
-    // single-valued (see FirstNonNulloptWins/AllDeferReturnsNullopt
-    // above): there is no way for second_seat_low's "defer specifically so
-    // the fallback spread randomises this pair" to be distinguished from
-    // an ordinary "I don't apply, try the next rule". This test pins that
-    // documented-but-previously-unverified behaviour down as a known,
-    // tested property: a chain built in the one order the composability
-    // guarantee (Composability points 1 and 3 of this plan) explicitly
-    // licenses a caller to build, but which second_seat_low's own doxygen
-    // warns against, silently loses the deferral to whatever fires next --
-    // here, a stub standing in for any later rule or caller-supplied
-    // heuristic that also fires in second seat.
+    // second_seat_low(true) documents a caller obligation that the chain
+    // cannot enforce: put second_seat_low last among rules that can fire at
+    // the same point. select_card() has one nullopt, meaning "try the next
+    // rule" (see FirstNonNulloptWins and AllDeferReturnsNullopt above). So
+    // second_seat_low's "defer so the fallback spread randomises this pair"
+    // looks the same as "I don't apply". This test pins the result: in a
+    // chain that breaks the obligation, a later rule that fires in second
+    // seat silently wins over the deferral. The stub stands for any such
+    // rule, built in or supplied by the caller.
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = West;
@@ -218,12 +211,11 @@ TEST_F(DefenderHeuristicChainTest, ALaterRuleAtTheSameDecisionPointDefeatsSecond
     be::ObservationState state{};
     state.declarer = East;
 
-    // The same touching-pair shape second_seat_low's own
-    // DefersWhenTheLowestTouchesAnotherCandidateAndRandomizingIsOn test
-    // uses: the queen (this rule's own "lowest" pick) touches the ace.
-    // Deferring here is meant to hand the decision to the chain's
-    // fallback spread so it randomises between the two -- not to any
-    // later rule in the same chain.
+    // The touching-pair shape from second_seat_low's
+    // DefersWhenTheLowestTouchesAnotherCandidateAndRandomizingIsOn test: the
+    // queen (the rule's lowest pick) touches the ace. The deferral is meant
+    // for the chain's fallback spread, which randomises between the two, not
+    // for a later rule in the chain.
     FutureTricks fut{};
     fut.cards = 2;
     fut.suit[0] = Spades;
@@ -250,9 +242,8 @@ TEST_F(DefenderHeuristicChainTest, ALaterRuleAtTheSameDecisionPointDefeatsSecond
 
     std::optional<be::Card> const result = chain.select_card(ctx, best_cards);
 
-    // today's actual, documented-but-unenforced behaviour: the later
-    // rule's card wins outright, not the deferral second_seat_low meant to
-    // reach the fallback spread with.
+    // The documented, unenforced behaviour: the later rule's card wins
+    // outright, and the deferral never reaches the fallback spread.
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->rank, King);
     EXPECT_EQ(later_rule_calls, 1);

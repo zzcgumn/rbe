@@ -11,6 +11,9 @@
 
 #include "test_support.hpp"
 
+// Tests for expand_defender_node: one delta call per layout, grouping by
+// card, per-child values, and rejected distributions.
+
 namespace be = dds::belief_evaluation;
 
 namespace
@@ -28,9 +31,9 @@ namespace
     constexpr int East = 1;   // the defender on play throughout this file
     constexpr int West = 3;   // the other defender
 
-    /// East (the defender on play) holds `east_diamonds`; West's clubs
-    /// holding distinguishes otherwise-identical layouts for the ad-hoc
-    /// stochastic delta below. North and South hold nothing relevant.
+    /// East (the defender on play) holds `east_diamonds`. West's club holding
+    /// tells otherwise identical layouts apart for the stochastic delta below.
+    /// North and South hold nothing relevant.
     auto make_layout(std::initializer_list<int> east_diamonds, int west_club_rank) -> Deal
     {
         Deal deal{};
@@ -118,17 +121,17 @@ TEST_F(DefenderNodeTest, TwoLayoutsScriptedToDifferentCardsProduceTwoSingleLayou
 
 TEST_F(DefenderNodeTest, HandComputedPerChildValuesForAStochasticDefence)
 {
-    // Two layouts, East (the defender) on play, holding king and two of
-    // diamonds in both. West's club rank distinguishes the two layouts so
-    // the ad-hoc delta below can tell them apart. Hand-computed:
+    // Two layouts, East (the defender) on play, holding the king and two of
+    // diamonds in both. West's club rank lets the delta below tell the layouts
+    // apart. Hand-computed:
     //   layout 0: p = 0.6, delta plays the king with certainty
     //   layout 1: p = 0.4, delta plays the king 0.25, the two 0.75
-    // so the king's child holds both layouts with p = {0.6, 0.1}
-    //   (0.6 * 1.0 = 0.6, 0.4 * 0.25 = 0.1)
-    // and the two's child holds only layout 1 with p = {0.3}
+    // The king's child holds both layouts with p = {0.6, 0.1}
+    //   (0.6 * 1.0 = 0.6, 0.4 * 0.25 = 0.1).
+    // The two's child holds only layout 1 with p = {0.3}
     //   (0.4 * 0.75 = 0.3).
-    // Total 0.6 + 0.1 + 0.3 = 1.0, which conservation alone would also see
-    // under a wrong split — hence the per-child assertions below.
+    // The total is 0.6 + 0.1 + 0.3 = 1.0. A wrong split could give the same
+    // total, so the assertions below check each child.
     Deal const layout0 = make_layout({King, Two}, /*west_club_rank=*/Two);
     Deal const layout1 = make_layout({King, Two}, /*west_club_rank=*/Ace);
     be::BeliefNode const node = make_node({layout0, layout1}, {0.6, 0.4}, 1.0);
@@ -151,8 +154,8 @@ TEST_F(DefenderNodeTest, HandComputedPerChildValuesForAStochasticDefence)
     ASSERT_TRUE(result.children.has_value());
     ASSERT_EQ(result.children->size(), 2u);
     // Grouping order is not part of the contract, so identify each child by
-    // shape (the king's child holds both layouts, the two's child holds
-    // only layout 1) rather than by index.
+    // shape: the king's child holds both layouts, the two's child only
+    // layout 1.
     bool const first_is_king_child = (*result.children)[0].layouts.size() == 2u;
     be::BeliefNode const& king_child = first_is_king_child ? (*result.children)[0] : (*result.children)[1];
     be::BeliefNode const& two_child = first_is_king_child ? (*result.children)[1] : (*result.children)[0];
@@ -168,11 +171,10 @@ TEST_F(DefenderNodeTest, HandComputedPerChildValuesForAStochasticDefence)
     EXPECT_DOUBLE_EQ(king_child.kappa, node.kappa);
     EXPECT_DOUBLE_EQ(two_child.kappa, node.kappa);
 
-    // mass conservation, to the same tolerance
-    // validate_defender_distribution itself uses (1e-6) for a probability
-    // distribution summing to 1 — the two checks guard the same kind of
-    // floating-point drift, so reusing it keeps this test no stricter than
-    // the contract delta itself is held to.
+    // Mass conservation, to the tolerance validate_defender_distribution uses
+    // for a distribution summing to 1 (1e-6). Both checks guard against the
+    // same floating-point drift, so this test is no stricter than the delta
+    // contract.
     be::KahanAccumulator total_child_mass;
     for (be::BeliefNode const& child : *result.children)
     {
@@ -183,37 +185,31 @@ TEST_F(DefenderNodeTest, HandComputedPerChildValuesForAStochasticDefence)
 
 // --- a layout appearing in several children -------------------------------
 //
-// The path expand_defender_node has supported since it was written but
-// which no earlier test walked: delta assigning one layout's probability
-// across more than one card. algorithm.md notes this happens whenever the
-// defenders have had more than one real choice.
+// delta can split one layout's probability across more than one card.
+// algorithm.md notes this happens whenever the defenders have had more
+// than one real choice.
 
 TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChildrensCommonState)
 {
-    // One node, two layouts, East (the defender) on play, holding king and
-    // queen of diamonds in both. Built via make_root, which -- unlike the
-    // file's synthetic make_node helper used elsewhere -- always assigns
-    // p_i = 1 to every surviving layout, so the split is over that fixed
-    // prior rather than a hand-picked one:
+    // One node, two layouts, East (the defender) on play, holding the king and
+    // queen of diamonds in both. make_root gives every surviving layout
+    // p_i = 1, so the split is over that fixed prior:
     //   layout 0: p = 1. delta plays the king 0.5, the queen 0.5.
     //   layout 1: p = 1. delta plays the king with certainty.
     // The king's child holds both layouts, p = {0.5, 1.0}.
-    // The queen's child holds layout 0 only,  p = {0.5}.
-    // Total 0.5 + 1.0 + 0.5 = 2.0 = the parent's (kappa = 1/2, so this is
-    // mass 1.0 either side) -- conservation alone would also accept a wrong
-    // split summing to the same total, hence the per-child assertions below.
+    // The queen's child holds layout 0 only, p = {0.5}.
+    // The total is 0.5 + 1.0 + 0.5 = 2.0, the parent's (with kappa = 1/2, mass
+    // 1.0 on both sides). A wrong split could give the same total, so the
+    // assertions below check each child.
     //
-    // Built via make_root (not the file's synthetic make_node helper) so
-    // node.state.known_holdings is a genuine pooled common-knowledge Deal --
-    // both East and West show the same king+queen pool -- which is what
-    // makes this the first test where a partially-clearing advance_state()
-    // would actually show up: the king's child and the queen's child are
-    // two independent advance_state() calls from the *same* parent state,
-    // removing two different cards of the *same* suit, so any state that
-    // only cleared the queried seat's own slot (leaving the other
-    // defender's identical pool entry stale) would show up as the two
-    // children disagreeing about a pool that must actually be identical in
-    // shape (each missing exactly the one card it was advanced by).
+    // make_root, unlike this file's make_node helper, builds a real pooled
+    // common-knowledge Deal in node.state.known_holdings: East and West both
+    // show the king and queen. The two children come from two advance_state()
+    // calls on the same parent state, each removing a different card of the
+    // same suit. A state that cleared only the queried seat's slot would leave
+    // the other defender's pool entry stale. The two children would then
+    // disagree about a pool that must have the same shape in both (each
+    // missing only the card it was advanced by).
     auto const make_split_diamond_layout = [](int east_club_rank, int west_club_rank) -> Deal
     {
         Deal deal{};
@@ -226,10 +222,10 @@ TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChi
     };
     Deal const layout0 = make_split_diamond_layout(/*east=*/Two, /*west=*/Ace);
     Deal const layout1 = make_split_diamond_layout(/*east=*/Ace, /*west=*/Two);
-    // Not assert_equal_hand_sizes: this file's fixtures are deliberately
-    // single-suit-plus-filler remnants (North and South hold nothing) built
-    // to exercise expand_defender_node() directly, not full 13-card deals
-    // played out via evaluate() -- the check does not apply to this shape.
+    // Not assert_equal_hand_sizes: these fixtures are single-suit remnants
+    // with a filler (North and South hold nothing), built to test
+    // expand_defender_node() directly. They are not full deals played out by
+    // evaluate(), so the check does not apply.
     be::assert_pool_matches({layout0, layout1});
     be::assert_forms_one_belief_node({layout0, layout1}, North);
 
@@ -252,8 +248,7 @@ TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChi
     be::BeliefNode const& king_child = first_is_king_child ? (*result.children)[0] : (*result.children)[1];
     be::BeliefNode const& queen_child = first_is_king_child ? (*result.children)[1] : (*result.children)[0];
 
-    // The split: layout 0 appears in both children, p correctly multiplied
-    // per child.
+    // The split: layout 0 is in both children, with p multiplied per child.
     ASSERT_EQ(king_child.layouts.size(), 2u);
     ASSERT_EQ(king_child.p.size(), 2u);
     EXPECT_DOUBLE_EQ(king_child.p[0], 0.5);
@@ -271,15 +266,14 @@ TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChi
     }
     EXPECT_NEAR(total_child_mass.value(), be::node_mass(node), 1e-6);
 
-    // kappa is untouched -- defender children partition p, not kappa.
+    // kappa is untouched: defender children partition p, not kappa.
     EXPECT_DOUBLE_EQ(king_child.kappa, node.kappa);
     EXPECT_DOUBLE_EQ(queen_child.kappa, node.kappa);
 
-    // Per-child common-knowledge pool, hand-derived. The
-    // king's child is missing exactly the king from both defenders' entries
-    // (still showing the queen); the queen's child the reverse -- in
-    // *both* entries, not just East's (the one queried), which is exactly
-    // what a partial clear would get wrong.
+    // The per-child common-knowledge pool, hand-derived. The king's child is
+    // missing the king from both defenders' entries and still shows the queen.
+    // The queen's child is the reverse. Both entries must change, not just
+    // East's (the queried seat): a partial clear gets this wrong.
     unsigned const queen_only = be::holding({Queen});
     unsigned const king_only = be::holding({King});
     EXPECT_EQ(king_child.state.known_holdings.remainCards[East][Diamonds], queen_only);
@@ -290,14 +284,14 @@ TEST_F(DefenderNodeTest, ALayoutSplitIntoTwoChildrenIsAdvancedCorrectlyInBothChi
 
 TEST_F(DefenderNodeTest, AMixedNodeHandlesASplittingAndANonSplittingLayoutTogether)
 {
-    // Three layouts sharing the same king+queen diamond pool, split three
-    // different ways between the two defenders so each has a distinct key:
+    // Three layouts share the king and queen of diamonds, split differently
+    // between the defenders so each has a distinct key:
     //   layout 0: p = 0.5. delta plays the king 0.5, the queen 0.5 (splits).
-    //   layout 1: p = 0.3. delta plays the king with certainty (does not split).
-    //   layout 2: p = 0.2. delta plays the queen with certainty (does not split).
+    //   layout 1: p = 0.3. delta plays the king with certainty.
+    //   layout 2: p = 0.2. delta plays the queen with certainty.
     // The king's child holds layouts 0 and 1, p = {0.25, 0.30}.
     // The queen's child holds layouts 0 and 2, p = {0.25, 0.20}.
-    // Total 0.25 + 0.30 + 0.25 + 0.20 = 1.00.
+    // The total is 0.25 + 0.30 + 0.25 + 0.20 = 1.00.
     auto const make_layout_with_split =
         [](unsigned east_diamonds, unsigned west_diamonds, int east_club, int west_club) -> Deal
     {
@@ -333,9 +327,9 @@ TEST_F(DefenderNodeTest, AMixedNodeHandlesASplittingAndANonSplittingLayoutTogeth
     ASSERT_EQ(result.children->size(), 2u);
     bool const first_is_king_child = (*result.children)[0].layouts.size() == 2u
         && (*result.children)[0].layouts[1].remainCards[West][Diamonds] == 0u;
-    // Both children hold two layouts here, so identify by which layout each
-    // one's *second* entry is: the king's child holds layout 1 (West holds
-    // no diamonds), the queen's child holds layout 2 (West holds the king).
+    // Both children hold two layouts, so identify each by its second entry.
+    // The king's child holds layout 1 (West holds no diamonds), and the
+    // queen's child holds layout 2 (West holds the king).
     be::BeliefNode const& king_child = first_is_king_child ? (*result.children)[0] : (*result.children)[1];
     be::BeliefNode const& queen_child = first_is_king_child ? (*result.children)[1] : (*result.children)[0];
 
@@ -380,9 +374,8 @@ TEST_F(DefenderNodeTest, RootKeysArePartitionedExactlyLikePInTheSameLoop)
         ASSERT_EQ(child.root_keys.size(), child.p.size());
         ASSERT_EQ(child.root_keys.size(), child.layouts.size());
     }
-    // Each single-layout child's root_keys entry is the parent's own entry
-    // for whichever layout it held, not the other one -- the same
-    // one-to-one correspondence p carries.
+    // Each one-layout child's root_keys entry is the parent's entry for the
+    // layout it holds, not the other one: the same one-to-one link p has.
     be::BeliefNode const& king_child =
         (*result.children)[0].layouts.front().remainCards[East][Diamonds] == be::holding({King})
         ? (*result.children)[0]
@@ -465,15 +458,12 @@ TEST_F(DefenderNodeTest, RejectsProbabilitiesNotSummingToOne)
 
 TEST_F(DefenderNodeTest, RejectsAnEmptyDistributionUnderItsOwnCause)
 {
-    // An empty distribution genuinely does fail
-    // validate_defender_distribution's own sum-to-one check too (zero is
-    // not one), but expand_defender_node draws this distinction before
-    // ever delegating to it -- DistributionEmpty, not
-    // ProbabilitiesDoNotSumToOne -- since at this boundary "you returned
-    // nothing" is the more actionable answer. See
-    // ValidationError::DistributionEmpty's own doxygen for the full
-    // reasoning; DoubleDummyDefenderTest has the same distinction driven
-    // end-to-end through a real solver failure.
+    // An empty distribution also fails validate_defender_distribution's
+    // sum-to-one check, since zero is not one. expand_defender_node checks for
+    // it first and reports DistributionEmpty, not ProbabilitiesDoNotSumToOne:
+    // "you returned nothing" is the clearer answer here (see
+    // ValidationError::DistributionEmpty). DoubleDummyDefenderTest drives the
+    // same distinction end to end through a real solver failure.
     Deal const layout = make_layout({King, Two}, /*west_club_rank=*/Two);
     be::BeliefNode const node = make_node({layout}, {1.0}, 1.0);
     auto const delta = [](be::DefenderQuery const&) -> std::vector<be::WeightedCard> { return {}; };

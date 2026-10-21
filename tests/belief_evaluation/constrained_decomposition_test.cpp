@@ -11,6 +11,9 @@
 #include <belief_evaluation/defender_split.hpp>
 #include <belief_evaluation/types.hpp>
 
+// Tests for decompose_constrained: how defender voids split the pool into
+// forced and free cards, and the three causes of an empty space.
+
 namespace be = dds::belief_evaluation;
 
 using be::binomial_coefficient;
@@ -27,7 +30,7 @@ namespace
     constexpr int Diamonds = 2;
     constexpr int Clubs = 3;
 
-    /// No voids at all -- every suit false.
+    /// No voids at all: every suit false.
     auto no_voids() -> std::array<bool, DDS_SUITS>
     {
         return {};
@@ -82,7 +85,7 @@ TEST_F(ConstrainedDecompositionTest, NoVoidsPutsEveryCardInFreeAndMatchesPlan6aE
     EXPECT_EQ(suit_rank_pairs(decomposition.free_cards), suit_rank_pairs(pool.cards));
     EXPECT_EQ(decomposition.fixed_seat_needed, 2);
 
-    // Not merely equal in value -- the same call, since with nothing forced
+    // The same call, not just an equal value: with nothing forced,
     // free_cards.size() == pool.cards.size() and fixed_seat_needed ==
     // pool.fixed_seat_count.
     EXPECT_EQ(
@@ -97,7 +100,7 @@ TEST_F(ConstrainedDecompositionTest, NoVoidsPutsEveryCardInFreeAndMatchesPlan6aE
 TEST_F(ConstrainedDecompositionTest, OneDefenderVoidInOneSuitForcesThatSuitsWholePoolAway)
 {
     // Fixed seat void in clubs: both club cards are forced to the other
-    // defender: the diamonds are all that is left free.
+    // defender, and the diamonds are all that is left free.
     DefenderPool const pool = pool_of(
         {{Diamonds, 3}, {Diamonds, 5}, {Diamonds, 7}, {Clubs, 4}, {Clubs, 6}}, 2);
 
@@ -118,8 +121,8 @@ TEST_F(ConstrainedDecompositionTest, OneDefenderVoidInOneSuitForcesThatSuitsWhol
 
 TEST_F(ConstrainedDecompositionTest, BothDefendersVoidInDifferentSuitsForcesBothWays)
 {
-    // Fixed seat void in hearts (forced away); other defender void in
-    // clubs (forced to the fixed seat); diamonds are the only free suit.
+    // Fixed seat void in hearts (forced away), other defender void in clubs
+    // (forced to the fixed seat). Diamonds are the only free suit.
     DefenderPool const pool = pool_of(
         {{Diamonds, 3}, {Diamonds, 5}, {Hearts, 8}, {Hearts, 9}, {Clubs, 4}, {Clubs, 6}}, 3);
 
@@ -142,10 +145,10 @@ TEST_F(ConstrainedDecompositionTest, BothDefendersVoidInDifferentSuitsForcesBoth
 
 TEST_F(ConstrainedDecompositionTest, AVoidCoveringTheWholePoolLeavesExactlyOneLayout)
 {
-    // The pool is entirely one suit, and the fixed seat is void in it --
-    // and, consistently, holds none of it at the root. Every pool card is
-    // forced to the other defender, nothing is free, and exactly one
-    // assignment satisfies both hand sizes: C(0, 0) == 1.
+    // The pool is all one suit, and the fixed seat is void in it (and holds
+    // none of it at the root). Every pool card is forced to the other
+    // defender, nothing is free, and exactly one assignment satisfies both
+    // hand sizes: C(0, 0) == 1.
     DefenderPool const pool = pool_of({{Diamonds, 3}, {Diamonds, 5}, {Diamonds, 7}, {Diamonds, 9}}, 0);
 
     ConstrainedDecomposition const decomposition =
@@ -178,9 +181,8 @@ TEST_F(ConstrainedDecompositionTest, BothDefendersVoidInTheSameSuitIsContradicto
 
 TEST_F(ConstrainedDecompositionTest, MoreCardsForcedToTheFixedSeatThanItHoldsIsRejected)
 {
-    // The other defender is void in diamonds, forcing all three diamonds
-    // to the fixed seat -- but the fixed seat holds only one card at the
-    // root.
+    // The other defender is void in diamonds, which forces all three diamonds
+    // to the fixed seat. But the fixed seat holds only one card at the root.
     DefenderPool const pool = pool_of({{Diamonds, 3}, {Diamonds, 5}, {Diamonds, 7}}, 1);
 
     ConstrainedDecomposition const decomposition =
@@ -196,10 +198,9 @@ TEST_F(ConstrainedDecompositionTest, MoreCardsForcedToTheFixedSeatThanItHoldsIsR
 
 TEST_F(ConstrainedDecompositionTest, TheFixedSeatCannotReachItsHandSizeFromWhatIsLeftIsRejected)
 {
-    // Nothing is forced either way, but the fixed seat's own hand size at
-    // the root (4) exceeds the whole pool (2 free cards) -- a shape a real
-    // history-versus-root mismatch could produce, exercised here directly
-    // since this fixture only exercises this function in isolation.
+    // Nothing is forced either way, but the fixed seat's hand size at the root
+    // (4) exceeds the whole pool (2 free cards). A history that does not match
+    // its root could produce this shape; here the function is tested alone.
     DefenderPool const pool = pool_of({{Diamonds, 3}, {Diamonds, 5}}, 4);
 
     ConstrainedDecomposition const decomposition = decompose_constrained(pool, no_voids(), no_voids());
@@ -223,8 +224,7 @@ TEST_F(ConstrainedDecompositionTest, FreeCardOrderIsStableAcrossRepeatedCalls)
     ConstrainedDecomposition const second = decompose_constrained(pool, no_voids(), no_voids());
 
     EXPECT_EQ(suit_rank_pairs(first.free_cards), suit_rank_pairs(second.free_cards));
-    // And it is exactly pool.cards' own order, not merely internally
-    // consistent between the two calls -- the order an index-to-subset
-    // unranking over the free cards will need to stay deterministic.
+    // It is exactly pool.cards' order, not just the same in both calls.
+    // Unranking an index to a subset of the free cards relies on this order.
     EXPECT_EQ(suit_rank_pairs(first.free_cards), suit_rank_pairs(pool.cards));
 }

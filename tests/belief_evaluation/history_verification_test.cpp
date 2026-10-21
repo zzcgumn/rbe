@@ -10,6 +10,10 @@
 
 #include <belief_evaluation/history_verification.hpp>
 
+// Tests for verify_history: accepted histories, malformed input, the card
+// partition, the trailing trick, the leader and the declarer/dummy
+// cross-check.
+
 namespace be = dds::belief_evaluation;
 
 using be::HistoryVerdict;
@@ -41,15 +45,14 @@ namespace
         return cards;
     }
 
-    /// Builds a root + history pair that together account for exactly the
-    /// 52-card deck: `played` (in order) becomes the history, and every
-    /// other card is handed to `hand_for(suit, rank)` and added to that
-    /// seat's remainCards in root. So a fixture states only what it cares
-    /// about -- the played prefix and wherever `hand_for` deliberately
-    /// deviates from its default -- while accounting for the remaining
-    /// ~40-odd cards is mechanical and cannot be gotten wrong by hand.
-    /// `root.trump`, `root.first` and `root.currentTrick*` are left at
-    /// their defaults; callers set what they need.
+    /// Builds a root and history that together account for the whole 52-card
+    /// deck. `played` (in order) becomes the history, and every other card
+    /// goes to `hand_for(suit, rank)`, in that seat's remainCards in root. So
+    /// a fixture states only what it cares about: the played prefix and where
+    /// `hand_for` departs from its default. The other 40-odd cards are placed
+    /// mechanically and cannot be got wrong by hand. `root.trump`,
+    /// `root.first` and `root.currentTrick*` keep their defaults; callers set
+    /// what they need.
     auto build_deal(
         std::vector<CardPair> const& played, std::function<int(int, int)> const& hand_for)
         -> std::pair<Deal, PlayTraceBin>
@@ -78,9 +81,8 @@ namespace
         return {root, history};
     }
 
-    /// The default distribution every fixture below starts from: every
-    /// unplayed card goes to West, so a fixture need only say where the
-    /// handful of cards it actually cares about differ from that.
+    /// The default distribution for every fixture below: every unplayed card
+    /// goes to West. A fixture states only the few cards that differ.
     auto everything_to_west(int, int) -> int
     {
         return West;
@@ -95,9 +97,9 @@ class HistoryVerificationTest : public ::testing::Test
 
 TEST_F(HistoryVerificationTest, ACorrectHistoryAtATrickBoundaryIsAccepted)
 {
-    // North leads the ace of diamonds, East follows low, South follows
-    // low, West follows the queen -- North's ace is highest, so North
-    // leads next; no trick is in progress at this root.
+    // North leads the ace of diamonds, East and South follow low, and West
+    // follows with the queen. North's ace wins, so North leads next; no trick
+    // is in progress at this root.
     auto [root, history] = build_deal(
         {{Diamonds, 14}, {Diamonds, 2}, {Diamonds, 3}, {Diamonds, 12}}, everything_to_west);
     root.trump = DDS_NOTRUMP;
@@ -109,7 +111,7 @@ TEST_F(HistoryVerificationTest, ACorrectHistoryAtATrickBoundaryIsAccepted)
 TEST_F(HistoryVerificationTest, ACorrectHistoryMidTrickIsAccepted)
 {
     // Trick one as above (North wins). Trick two: North leads the king of
-    // spades, East follows with the deuce -- two cards into the trick in
+    // spades and East follows with the two, so two cards are in the trick in
     // progress at this root.
     auto [root, history] = build_deal(
         {{Diamonds, 14},
@@ -148,7 +150,7 @@ TEST_F(HistoryVerificationTest, AnOutOfRangeHistoryLengthIsRejected)
         {{Diamonds, 14}, {Diamonds, 2}, {Diamonds, 3}, {Diamonds, 12}}, everything_to_west);
     root.trump = DDS_NOTRUMP;
     root.first = North;
-    history.number = 53;  // one past PlayTraceBin::suit/rank's own 52-element bound
+    history.number = 53;  // one past the 52 elements of PlayTraceBin::suit/rank
 
     EXPECT_EQ(verify_history(root, North, history, North), HistoryVerdict::InvalidInput);
 }
@@ -178,10 +180,10 @@ TEST_F(HistoryVerificationTest, AnOutOfRangeOpeningLeaderIsRejected)
 
 TEST_F(HistoryVerificationTest, AnOutOfRangeDeclarerIsRejected)
 {
-    // declarer flows unchecked into check 4's voids[declarer][suit] and,
-    // via dummy = (declarer + 2) % DDS_HANDS, voids[dummy][suit] too -- an
-    // out-of-range or negative declarer would index either out of bounds
-    // if this check did not catch it first.
+    // declarer flows unchecked into check 4's voids[declarer][suit], and
+    // through dummy = (declarer + 2) % DDS_HANDS into voids[dummy][suit]. An
+    // out-of-range declarer would index either one out of bounds if this
+    // check did not catch it first.
     auto [root, history] = build_deal(
         {{Diamonds, 14}, {Diamonds, 2}, {Diamonds, 3}, {Diamonds, 12}}, everything_to_west);
     root.trump = DDS_NOTRUMP;
@@ -195,10 +197,9 @@ TEST_F(HistoryVerificationTest, AnOutOfRangeDeclarerIsRejected)
 
 TEST_F(HistoryVerificationTest, AMalformedCardSuitIsRejected)
 {
-    // card_index(suit, rank) indexes the 52-entry "seen" set directly in
-    // the very next check (the card partition) -- an out-of-range suit
-    // here would index it out of bounds if this check did not catch it
-    // first.
+    // The next check (the card partition) indexes the 52-entry "seen" set
+    // with card_index(suit, rank). An out-of-range suit would index it out of
+    // bounds if this check did not catch it first.
     auto [root, history] = build_deal(
         {{Diamonds, 14}, {Diamonds, 2}, {Diamonds, 3}, {Diamonds, 12}}, everything_to_west);
     root.trump = DDS_NOTRUMP;
@@ -237,8 +238,8 @@ TEST_F(HistoryVerificationTest, ACardBothPlayedAndStillHeldIsRejected)
         {{Diamonds, 14}, {Diamonds, 2}, {Diamonds, 3}, {Diamonds, 12}}, everything_to_west);
     root.trump = DDS_NOTRUMP;
     root.first = North;
-    // The ace of diamonds was just played, per history -- and root also
-    // still shows North holding it.
+    // History says the ace of diamonds was just played, and root still shows
+    // North holding it.
     root.remainCards[North][Diamonds] |= (1u << 14);
 
     EXPECT_EQ(verify_history(root, North, history, North), HistoryVerdict::CardPlayedAndHeld);
@@ -272,18 +273,18 @@ TEST_F(HistoryVerificationTest, ATrailingLengthThatDoesNotMatchTheRootIsRejected
     root.first = North;
     root.currentTrickSuit[0] = Spades;
     root.currentTrickRank[0] = 13;
-    // Root claims only one card is in progress; history's trailing count
-    // (6 % 4 == 2) disagrees, before either side's cards are even compared.
+    // Root has one card in progress, but history's trailing count is
+    // 6 % 4 == 2. The counts disagree before any cards are compared.
 
     EXPECT_EQ(verify_history(root, North, history, North), HistoryVerdict::TrickLengthMismatch);
 }
 
 TEST_F(HistoryVerificationTest, ATrailingTrickWithTheWrongCardsIsRejected)
 {
-    // The same 52 cards, the same trailing *count* (two), but root's own
-    // record of the trick in progress names a different second card than
-    // the one history actually played there -- an order error the card
-    // partition alone cannot catch, since it never looks at order.
+    // The same 52 cards and the same trailing count (two), but root's trick in
+    // progress names a different second card from the one history played.
+    // This is an order error, and the card partition cannot catch it because
+    // it ignores order.
     auto [root, history] = build_deal(
         {{Diamonds, 14},
          {Diamonds, 2},
@@ -306,20 +307,17 @@ TEST_F(HistoryVerificationTest, ATrailingTrickWithTheWrongCardsIsRejected)
 
 TEST_F(HistoryVerificationTest, AWrongOpeningLeaderIsRejectedEvenWhenTheCardsAndOrderAreRight)
 {
-    // North leads the ace of diamonds, East discards a club -- void in
-    // diamonds -- South follows low, West follows the queen. North's ace
-    // is highest, so root.first is genuinely North. The history itself is
-    // exactly right: the same 52 cards, in the same order, and the
-    // trailing trick (empty, since this trick is fully resolved) matches
-    // too -- neither the card partition nor the trailing-trick check
-    // depends on which seat played which card, only on which cards, in
-    // what order. Supplying South as the opening leader instead of North
-    // shifts every seat attribution by the same two-seat rotation: East's
-    // real void would misattribute to West, and North's own play would
-    // misattribute to South -- neither declarer (North) nor dummy (South,
-    // since dummy = declarer + 2), so the free cross-check does not catch
-    // it either. Only checking the replayed leader against root.first
-    // does.
+    // North leads the ace of diamonds, East discards a club (void in
+    // diamonds), South follows low, and West follows with the queen. North's
+    // ace wins, so root.first really is North. The history is correct: the
+    // same 52 cards in the same order, and the trailing trick matches (empty,
+    // as the trick is resolved). Neither the card partition nor the
+    // trailing-trick check depends on which seat played which card.
+    //
+    // Giving South as the opening leader rotates every seat by two. East's
+    // void moves to West, and North's play to South. West is neither declarer
+    // (North) nor dummy (South), so the declarer/dummy cross-check does not
+    // catch it. Only checking the replayed leader against root.first does.
     auto [root, history] =
         build_deal({{Diamonds, 14}, {Clubs, 2}, {Diamonds, 3}, {Diamonds, 12}}, [](int, int)
                     { return North; });
@@ -331,21 +329,17 @@ TEST_F(HistoryVerificationTest, AWrongOpeningLeaderIsRejectedEvenWhenTheCardsAnd
 
 TEST_F(HistoryVerificationTest, AWrongOpeningLeaderMidTrickIsAlsoRejected)
 {
-    // The same trap, but the trailing trick is a genuine (non-empty) one
-    // rather than a just-resolved one, and the wrong leader is off by a
-    // single seat rather than two -- checking the fix does not accidentally
-    // depend on either particular's shape. Trick one (spades) is fully
-    // resolved with North's ace highest, so North leads trick two: a
-    // diamond, with East -- void -- discarding a club next.
+    // The same trap, but the trailing trick is not empty, and the wrong leader
+    // is off by one seat instead of two. This checks that the test does not
+    // depend on either detail. Trick one (spades) ends with North's ace
+    // winning, so North leads trick two: a diamond, and East, void, discards a
+    // club.
     //
-    // Off by one seats this way misattributes the void to South (dummy,
-    // not a defender) rather than to a defender as the previous test's
-    // off-by-two does -- but South, in this fixture, holds none of the
-    // suit anyway (every card not explicitly placed is dumped on North
-    // above), so the free cross-check's own contradiction condition
-    // ("dummy void in a suit dummy still holds") is never triggered either.
-    // A dummy hand empty in the relevant suit is an entirely ordinary
-    // position, not a contrived one.
+    // Off by one, the void moves to South (dummy) instead of a defender. But
+    // South holds no diamonds here (every card not placed goes to North). So
+    // the cross-check's condition, "dummy void in a suit dummy still holds",
+    // is not met either. A dummy with no cards in the suit is an ordinary
+    // position.
     auto [root, history] = build_deal(
         {{Spades, 14},
          {Spades, 2},
@@ -361,9 +355,8 @@ TEST_F(HistoryVerificationTest, AWrongOpeningLeaderMidTrickIsAlsoRejected)
     root.currentTrickSuit[1] = Clubs;
     root.currentTrickRank[1] = 5;
 
-    // The true opening leader is North throughout (it won trick one, so it
-    // also leads trick two); East, off by one seat, is what a caller could
-    // plausibly mistype here.
+    // The true opening leader is North (it won trick one, so it also leads
+    // trick two). East, one seat off, is a plausible typing mistake.
     EXPECT_EQ(verify_history(root, North, history, East), HistoryVerdict::LeaderMismatch);
 }
 
@@ -371,11 +364,10 @@ TEST_F(HistoryVerificationTest, AWrongOpeningLeaderMidTrickIsAlsoRejected)
 
 TEST_F(HistoryVerificationTest, DummyDerivedVoidWhileRootShowsDummyHoldingTheSuitIsRejected)
 {
-    // North (declarer) leads the ace of diamonds. East follows low. South
-    // (dummy) discards a spade -- void in diamonds, despite root still
-    // showing dummy holding one (the five of diamonds, placed there
-    // deliberately below instead of following the default distribution).
-    // West follows with the queen.
+    // North (declarer) leads the ace of diamonds, and East follows low. South
+    // (dummy) discards a spade, void in diamonds, although root still shows
+    // dummy holding the five of diamonds (placed there below on purpose). West
+    // follows with the queen.
     auto const hand_for = [](int suit, int rank) -> int
     {
         if (suit == Diamonds && rank == 5)
@@ -394,10 +386,9 @@ TEST_F(HistoryVerificationTest, DummyDerivedVoidWhileRootShowsDummyHoldingTheSui
 
 TEST_F(HistoryVerificationTest, DeclarerDerivedVoidWhileRootShowsDeclarerHoldingTheSuitIsRejected)
 {
-    // East leads the ace of diamonds, South follows low, West follows the
-    // queen, and North (declarer) -- last to play this trick, seated
-    // after West -- discards a spade instead: void in diamonds, despite
-    // root still showing declarer holding one.
+    // East leads the ace of diamonds, South follows low, and West follows
+    // with the queen. North (declarer), last to play, discards a spade: void
+    // in diamonds, although root still shows declarer holding one.
     auto const hand_for = [](int suit, int rank) -> int
     {
         if (suit == Diamonds && rank == 5)

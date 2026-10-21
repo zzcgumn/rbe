@@ -8,6 +8,9 @@
 
 #include "test_support.hpp"
 
+// Tests for BruteForceCacheKey equality and hashing, and for
+// BruteForceCache's find and insert.
+
 namespace be = dds::belief_evaluation;
 
 namespace
@@ -77,11 +80,10 @@ TEST_F(BruteForceCacheTest, SameDealsDifferentPosteriorsProduceDifferentKeys)
 
 TEST_F(BruteForceCacheTest, EvenNearIdenticalPosteriorsNeverCompareEqual)
 {
-    // operator== must stay exact: an exhaustive search's own leaf values
-    // read every posterior exactly, so two vectors that are merely close
-    // -- not equal -- can legitimately produce different results.
-    // Treating them as the same cache key would hand back the wrong
-    // value for one of them.
+    // operator== must stay exact. An exhaustive search reads every posterior
+    // exactly, so two vectors that are close but not equal can give different
+    // results. Treating them as one cache key would return the wrong value for
+    // one of them.
     be::ObservationState const state = make_state(North);
     Deal const a = make_layout(North, be::holding({2}), be::holding({3}));
 
@@ -93,16 +95,12 @@ TEST_F(BruteForceCacheTest, EvenNearIdenticalPosteriorsNeverCompareEqual)
 
 TEST_F(BruteForceCacheTest, EqualKeysHashEqually)
 {
-    // The minimum any hash function must uphold: operator== compares
-    // the exact posterior (see EvenNearIdenticalPosteriorsNeverCompareEqual
-    // just above), so hash_value() must hash that same exact value, not
-    // a rounded approximation of it -- an earlier design quantised
-    // posteriors before hashing, aiming to put "near-identical" values
-    // in the same unordered_map bucket, but operator== would still
-    // reject them as unequal once there, so that rounding bought
-    // nothing it claimed to while actively hurting lookups elsewhere
-    // (many small, genuinely distinct posteriors at deep nodes round to
-    // the same quantised value and pile into one bucket).
+    // The minimum any hash must uphold. operator== compares the exact
+    // posterior (see EvenNearIdenticalPosteriorsNeverCompareEqual above), so
+    // hash_value() must hash that exact value, not a rounded one. Rounding
+    // would put close values in one bucket, where operator== still rejects
+    // them. It would also pile many small, distinct posteriors at deep nodes
+    // into one bucket.
     be::ObservationState const state = make_state(North);
     Deal const a = make_layout(North, be::holding({2}), be::holding({3}));
 
@@ -115,12 +113,10 @@ TEST_F(BruteForceCacheTest, EqualKeysHashEqually)
 
 TEST_F(BruteForceCacheTest, NearIdenticalPosteriorsAreNotRequiredToHashToTheSameBucket)
 {
-    // The flip side of EqualKeysHashEqually: two merely-close-but-unequal
-    // posteriors are *not* required to collide into the same bucket
-    // (unlike the old, quantising design) -- hashing the exact bit
-    // pattern, they generally will not, and that is correct: operator==
-    // would reject them as unequal regardless, so sharing a bucket could
-    // only ever cost a wasted comparison, never gain a hit.
+    // The flip side of EqualKeysHashEqually: close but unequal posteriors
+    // need not share a bucket. Hashing the exact bit pattern, they generally
+    // will not. That is correct: operator== rejects them anyway, so a shared
+    // bucket could only cost a wasted comparison, never gain a hit.
     be::ObservationState const state = make_state(North);
     Deal const a = make_layout(North, be::holding({2}), be::holding({3}));
 
@@ -155,11 +151,9 @@ TEST_F(BruteForceCacheTest, DifferentPositionFieldsProduceDifferentKeys)
 
 TEST_F(BruteForceCacheTest, DifferentDeclarerHoldingsAtTheSamePlyProduceDifferentKeys)
 {
-    // Same trump/tricks_needed/tricks_won_by_declarer/current-trick shape
-    // (both default/empty), but declarer's own remainCards differ --
-    // regression for the fix documented in this plan's own README
-    // ("correction 6"): layout_key() alone, applied only to the defender
-    // seat, would miss this entirely.
+    // Same trump, tricks_needed, tricks_won_by_declarer and current trick
+    // (all default or empty), but declarer's remainCards differ. layout_key()
+    // alone, applied only to the defender seat, would miss this.
     be::ObservationState const state = make_state(North);
 
     Deal a{};
@@ -184,15 +178,11 @@ TEST_F(BruteForceCacheTest, DifferentDeclarerHoldingsAtTheSamePlyProduceDifferen
 
 TEST_F(BruteForceCacheTest, DifferentNonKeyedDefenderHoldingsProduceDifferentKeys)
 {
-    // deal_and_posterior packs *both* defenders' own holdings per
-    // layout, not just defender_seat's (East, here) -- layout_key()'s
-    // own doxygen is explicit that its packing is "unique only among
-    // layouts that share a node's outstanding-card pool... not a
-    // cross-node or global layout identity": within make_layout's own
-    // fixed declarer/dummy holdings (Nine/Eight) and a fixed East
-    // holding, West's own holding is exactly the rest of the pool for
-    // *that one node* -- but two one-layout keys built independently,
-    // as here, are not "one node", so West's own holding must be
+    // deal_and_posterior packs both defenders' holdings per layout, not just
+    // defender_seat's (East, here). layout_key() is unique only among layouts
+    // that share one node's outstanding pool. Within one node, West's holding
+    // is the rest of the pool once East's is fixed. Two one-layout keys built
+    // separately, as here, are not one node, so West's holding must be
     // compared directly, not inferred by complement.
     be::ObservationState const state = make_state(North);
     Deal const a = make_layout(North, be::holding({2}), be::holding({3}));  // West holds Three
@@ -206,17 +196,13 @@ TEST_F(BruteForceCacheTest, DifferentNonKeyedDefenderHoldingsProduceDifferentKey
 
 TEST_F(BruteForceCacheTest, DifferentRootFirstProducesDifferentKeys)
 {
-    // ObservationState::first -- the seat that led this whole
-    // evaluation's own root's first trick -- is fixed for the entire
-    // recursion (advance_state, expand.cpp, never assigns it) and is not
-    // one of the two fields the opponent-model restriction excludes
-    // (only history/play_record are): a caller-supplied opponent model
-    // may legitimately read and condition on it. key.first tracks a
-    // different fact -- representative.first, the *current* trick's own
-    // leader, which play() updates to the winner every time a trick
-    // resolves -- so two evaluations whose roots began with a different
-    // opening leader, but which later reach "the same" current-trick
-    // shape, must not collide here.
+    // ObservationState::first, the seat that led the root's first trick, is
+    // fixed for the whole recursion (advance_state in expand.cpp never assigns
+    // it). The opponent-model restriction excludes only history and
+    // play_record, so an opponent model may read first. key.first is a
+    // different fact: the current trick's leader, which play() updates after
+    // each trick. So two evaluations whose roots had different opening leaders
+    // must not collide, even when they reach the same current-trick shape.
     be::ObservationState state_a = make_state(North);
     state_a.first = North;
     be::ObservationState state_b = make_state(North);
@@ -244,8 +230,7 @@ TEST_F(BruteForceCacheTest, RoundTripsThroughFindAndInsert)
     ASSERT_TRUE(cache.find(key).has_value());
     EXPECT_DOUBLE_EQ(*cache.find(key), 0.75);
 
-    // Last write wins on a repeated key -- see BruteForceCache::insert's
-    // own doxygen.
+    // The last write wins on a repeated key (see BruteForceCache::insert).
     cache.insert(key, 0.25);
     EXPECT_EQ(cache.size(), 1u);
     EXPECT_DOUBLE_EQ(*cache.find(key), 0.25);

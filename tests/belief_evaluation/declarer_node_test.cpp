@@ -10,6 +10,9 @@
 
 #include "test_support.hpp"
 
+// Tests for expand_declarer_node and make_declarer_children: when pi is
+// called, what the child carries over, and illegal cards.
+
 namespace be = dds::belief_evaluation;
 
 namespace
@@ -23,7 +26,7 @@ namespace
     constexpr int West = 3;   // a defender
 
     /// A node with North (declarer) on lead, holding the ace and king of
-    /// spades; South (dummy) holds nothing relevant. One layout, p = 1,
+    /// spades. South (dummy) holds nothing relevant. One layout, p = 1,
     /// kappa = 1.
     auto make_declarer_on_play_node() -> be::BeliefNode
     {
@@ -41,10 +44,9 @@ namespace
         node.state.known_holdings = layout;
         node.layouts = {layout};
         node.p = {1.0};
-        node.root_keys = {be::layout_key(layout, East)};  // (declarer + 1) % DDS_HANDS,
-                                                            // matching make_root's own
-                                                            // fixed-seat convention -- see
-                                                            // node.hpp's own doxygen.
+        // East is (declarer + 1) % DDS_HANDS, make_root's fixed seat (see
+        // node.hpp).
+        node.root_keys = {be::layout_key(layout, East)};
         node.kappa = 1.0;
         return node;
     }
@@ -86,9 +88,8 @@ TEST_F(DeclarerNodeTest, PiIsCalledWhenDeclarerIsOnPlay)
 
 TEST_F(DeclarerNodeTest, PiIsCalledWhenDummyIsOnPlay)
 {
-    // "the seat on play is declarer's side" is easy to write as "the seat
-    // on play is declarer" by mistake, so this is its own test rather than
-    // folded into the previous one.
+    // "The seat on play is declarer's side" is easy to get wrong as "the seat
+    // on play is declarer", so this case gets a separate test.
     be::BeliefNode const node = make_dummy_on_play_node();
     be::RecordingDeclarerStrategy recorder(be::Card{0, Ace});
 
@@ -110,10 +111,9 @@ TEST_F(DeclarerNodeTest, TheChildsBeliefSetAndWeightsCarryOverFromTheParent)
     EXPECT_EQ(child.p, node.p);            // untouched, not just summing to the same total
     EXPECT_DOUBLE_EQ(child.kappa, node.kappa);
     ASSERT_EQ(child.layouts.size(), node.layouts.size());
-    // Each layout is the parent's advanced by the played card — the belief
-    // set's size and correspondence carry over even though the card played
-    // is now gone from remainCards. Deal has no operator==, so compare the
-    // field that changed.
+    // Each layout is the parent's, advanced by the played card. The belief
+    // set's size and order carry over, though the played card has left
+    // remainCards. Deal has no operator==, so compare the field that changed.
     Deal const expected = play(node.layouts[0], be::Card{0, Ace});
     EXPECT_EQ(child.layouts[0].remainCards[North][0], expected.remainCards[North][0]);
     EXPECT_EQ(child.layouts[0].currentTrickSuit[0], expected.currentTrickSuit[0]);
@@ -122,9 +122,9 @@ TEST_F(DeclarerNodeTest, TheChildsBeliefSetAndWeightsCarryOverFromTheParent)
 
 TEST_F(DeclarerNodeTest, RootKeysCarryOverUnchangedFromTheParent)
 {
-    // make_declarer_children copies root_keys whole -- declarer's own play
-    // neither filters nor renames any layout's root-space identity, unlike
-    // p or layouts.
+    // make_declarer_children copies root_keys whole. Declarer's play neither
+    // filters nor renames any layout's root-space identity, unlike p or
+    // layouts.
     be::BeliefNode const node = make_declarer_on_play_node();
     be::RecordingDeclarerStrategy recorder(be::Card{0, Ace});
 
@@ -151,9 +151,8 @@ TEST_F(DeclarerNodeTest, ACardNotHeldIsRejectedThroughValidateDeclarerCard)
 TEST_F(DeclarerNodeTest, ACardIllegalForTheTrickIsRejectedThroughValidateDeclarerCard)
 {
     be::BeliefNode node = make_declarer_on_play_node();
-    // A heart has been led; North holds no hearts but does hold spades, so
-    // playing a spade is illegal — North must follow suit or, since void,
-    // may discard, but here North is not void: give North a heart too.
+    // West has led a heart and North holds the king of hearts, so North
+    // must follow suit. A spade is illegal.
     node.state.known_holdings.currentTrickSuit[0] = 1;  // hearts led
     node.state.known_holdings.currentTrickRank[0] = 2;
     node.state.known_holdings.first = West;  // West led the heart; North is next to play
@@ -170,10 +169,9 @@ TEST_F(DeclarerNodeTest, ACardIllegalForTheTrickIsRejectedThroughValidateDeclare
 
 // --- mass pass-through with more than one child -------------------------
 //
-// The evaluator itself never currently produces two declarer children,
-// so this is the only test that can falsify parent_mass / n_children —
-// which equals parent_mass whenever n_children == 1, i.e. every other test
-// in this file.
+// Every declarer child keeps the parent's full mass, not parent_mass /
+// n_children. The two agree when n_children == 1, so only a test with two
+// or more children can tell them apart.
 
 TEST_F(DeclarerNodeTest, EveryDeclarerChildInheritsTheParentsFullMass)
 {

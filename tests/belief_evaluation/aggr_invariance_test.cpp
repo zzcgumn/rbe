@@ -7,21 +7,22 @@
 
 #include <belief_evaluation/rank_map.hpp>
 
-// A namespace alias plus targeted `using` declarations, not `using namespace
-// dds::belief_evaluation;` -- this file includes api/dds_data_types.hpp
-// directly (declaring global ::Card), so a `using namespace` here would make
-// any future bare `Card` reference ambiguous between ::Card and
-// dds::belief_evaluation::Card rather than a clear compile error naming
-// which one was meant.
+// Tests that make_rank_map's aggr is the same for every defender split of
+// one pool.
+
+// A namespace alias and targeted `using` declarations, not `using
+// namespace dds::belief_evaluation;`. This file includes
+// api/dds_data_types.hpp, which declares a global ::Card, so a bare `Card`
+// would be ambiguous instead of a clear compile error.
 namespace be = dds::belief_evaluation;
 using be::RankMap;
 using be::make_rank_map;
 
 TEST(AggrInvariance, IdenticalAcrossEveryDefenderSplitOfTheSamePool)
 {
-    // Declarer (South, seat 2) and dummy (North, seat 0) hold fixed cards;
-    // East/West share the outstanding pool 0b1111 (four spades) in every
-    // possible two-way split.
+    // Declarer (South, seat 2) and dummy (North, seat 0) hold fixed cards.
+    // East and West share the four outstanding spades (ranks 2 to 5) in
+    // every possible two-way split.
     auto const make_deal = [](unsigned east_spades, unsigned west_spades)
     {
         Deal deal{};
@@ -37,7 +38,7 @@ TEST(AggrInvariance, IdenticalAcrossEveryDefenderSplitOfTheSamePool)
     unsigned const pool = 0b1111 << 2;  // four outstanding spades (ranks 2-5) to split
     std::vector<RankMap> maps;
     // Standard submask enumeration: every subset of `pool`, including 0 and
-    // `pool` itself, each visited exactly once.
+    // `pool` itself, visited once.
     unsigned east_subset = pool;
     while (true)
     {
