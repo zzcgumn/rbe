@@ -1,20 +1,16 @@
-// The C++ side of this capability's own Python-vs-C++ per-callback cost
-// comparison: loops the same evaluate() call many times and times it, for
-// two pi shapes (trivial, real Python-side work) crossed with two sampling
-// configurations (replenishing, non-replenishing -- see this file's own
-// module doxygen below for why both). timer.py is the identical
-// comparison from the Python binding's own side; report.py runs both and
-// tabulates the ratio.
+// The C++ side of the Python-against-C++ callback cost comparison. It
+// loops one evaluate() call many times and times it, for two pi (trivial,
+// and one with real work) crossed with two sampling configurations
+// (replenishing and non-replenishing). timer.py does the same through the
+// Python binding; report.py runs both and tabulates the ratio.
 //
-// Not a cc_test: this measures wall time, which is exactly what
-// benchmarks/belief_evaluation/instrument.cpp's own header comment already
-// explains a cc_test must never assert on. A cc_binary instead, not tagged
-// manual, so `bazel test //...` builds it everywhere and never runs it --
-// running it is report.py's job.
+// Not a cc_test: it measures wall time, and a test must never assert on
+// wall time (see benchmarks/belief_evaluation/instrument.cpp). It is a
+// cc_binary, not tagged manual, so `bazel test //...` builds it everywhere
+// and never runs it. report.py runs it.
 //
-// Solver-free: nothing here needs solve_board. The pi/delta pair timed
-// below lives in strategies.hpp, beside this file -- see that header for
-// why it is not in tests/belief_evaluation/test_support.hpp.
+// Solver-free. The pi and delta it times are in strategies.hpp, beside
+// this file.
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -54,11 +50,9 @@ namespace
     constexpr int South = 2;
     constexpr int West = 3;
 
-    // Identical to parity_reference.cpp's own make_two_card_finesse_root
-    // and exhaustive_layout_source_integration_test.cpp's own -- the third
-    // independent copy of this fixture in the tree, matching those two
-    // files' own established precedent rather than reaching across a
-    // package boundary for it.
+    // The same fixture as make_two_card_finesse_root in parity_reference.cpp
+    // and exhaustive_layout_source_integration_test.cpp. A fixture this small
+    // is copied, not shared across a package boundary.
     auto make_two_card_finesse_root() -> Deal
     {
         Deal root{};
@@ -81,14 +75,12 @@ namespace
         char const* pi_label, be::DeclarerStrategy const& pi, Config const& config, int iterations) -> void
     {
         Deal const root = make_two_card_finesse_root();
-        constexpr std::uint64_t seed = 7u;  // parity_reference.cpp's own SAMPLED_SEED
+        constexpr std::uint64_t seed = 7u;  // SAMPLED_SEED in parity_reference.cpp
 
-        // Accumulated and printed below (not a per-iteration volatile) so
-        // nothing above is optimised away as dead code -- genuinely read,
-        // not merely written, which is what makes this survive -Werror's
-        // own unused-but-set-variable check as well as an optimiser's.
-        // Not a correctness check either way; that is what the gtest/py_test
-        // guards are for.
+        // Accumulated and printed below so the optimiser cannot remove the calls
+        // as dead code. Reading it also satisfies -Werror's
+        // unused-but-set-variable check. It checks nothing; the gtest and py_test
+        // guards do that.
         double sink = 0.0;
         auto const start = std::chrono::steady_clock::now();
         for (int i = 0; i < iterations; ++i)
@@ -112,31 +104,30 @@ namespace
 
 auto main(int argc, char** argv) -> int
 {
-    int iterations = 2000;  // the earlier order-of-magnitude check's own loop count, for a direct re-run
+    int iterations = 2000;  // the loop count of an earlier check, so results compare directly
     if (argc > 1)
     {
         iterations = std::atoi(argv[1]);
     }
     if (iterations < 1)
     {
-        // Zero skips run_config's own loop entirely (dividing total_ms by
-        // zero iterations below); negative is nonsensical either way --
-        // reject both rather than print a silently invalid ms_per_iteration.
+        // Zero would divide total_ms by zero below, and a negative count is
+        // meaningless. Reject both rather than print an invalid
+        // ms_per_iteration.
         std::fprintf(stderr, "iterations must be a positive integer, got %d\n", iterations);
         return 1;
     }
 
-    // Same root, same declarer, same tricks_needed, same seed, same
-    // sample_size/scan_budget throughout -- only replenish_below differs,
-    // so "replenishing" vs "non-replenishing" isolates exactly the
-    // node-local replenishment scan's own effect on how often delta is
-    // called, per this task's own background.
+    // Root, declarer, tricks_needed, seed, sample_size and scan_budget are
+    // the same throughout; only replenish_below differs. So the comparison
+    // isolates the effect of node-local replenishment on how often delta is
+    // called.
     be::EvaluateOptions non_replenishing{};
     non_replenishing.sampling.sample_size = 10u;
     non_replenishing.sampling.scan_budget = 100u;
 
     be::EvaluateOptions replenishing = non_replenishing;
-    replenishing.sampling.replenish_below = 5u;  // parity_reference.cpp's own SAMPLED_REPLENISH_BELOW
+    replenishing.sampling.replenish_below = 5u;  // SAMPLED_REPLENISH_BELOW in parity_reference.cpp
 
     Config const configs[] = {
         Config{"non_replenishing", non_replenishing},

@@ -1,10 +1,9 @@
 load("//:CPPVARIABLES.bzl", "DDS_CPPOPTS", "DDS_LINKOPTS", "DDS_LOCAL_DEFINES")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 
-# The scripted (solver-free) declarer/defender strategy pair every fixture,
-# guard, and instrument under this directory shares by default -- see
-# strategies.hpp's own module doxygen for why it is not folded into
-# test_support.hpp instead.
+# The scripted, solver-free strategy pair every fixture, guard and
+# instrument here uses by default. See strategies.hpp for why it is not in
+# test_support.hpp.
 cc_library(
     name = "strategies",
     hdrs = ["strategies.hpp"],
@@ -19,11 +18,9 @@ cc_library(
     local_defines = DDS_LOCAL_DEFINES,
 )
 
-# The fixture ladder every benchmark and its correctness guard under this
-# directory measures on -- see fixtures.hpp's own module doxygen. Solver-free:
-# nothing here needs solve_board, only the scripted strategies this
-# capability's own C++ test suite already uses (test_support.hpp's
-# precedent), matching //src/belief_evaluation's own deps below.
+# The fixture ladder every benchmark and guard here measures on (see
+# fixtures.hpp). Solver-free: it needs only scripted strategies, like the
+# core C++ tests.
 cc_library(
     name = "fixtures",
     srcs = ["fixtures.cpp"],
@@ -39,13 +36,12 @@ cc_library(
     local_defines = DDS_LOCAL_DEFINES,
 )
 
-# The size guard: a fixture whose size() drifts silently invalidates every
-# number the tasks after this one report. In the default test cycle, both
-# build modes -- unlike the benchmarks themselves, this is fast enough to
-# run every time (the bottom two rungs' own exhaustive evaluate() calls
-# included). Links the solver (for the solver ladder's own
-# SolveBoardAcceptsTheRootLayout guard) -- permitted here for the same
-# reason as :instrument, not for the core library itself.
+# The size guard: if a fixture's size() drifts, every benchmark number on
+# it is silently wrong. It runs in the default test cycle, in both build
+# modes, because it is fast (including the exhaustive evaluate() calls on
+# the bottom two rungs). It links the solver for the solver ladder's
+# SolveBoardAcceptsTheRootLayout guard. Benchmark targets may; the core
+# library may not.
 cc_test(
     name = "fixtures_test",
     size = "small",
@@ -65,10 +61,9 @@ cc_test(
     local_defines = DDS_LOCAL_DEFINES,
 )
 
-# Not a test target: a plain program, invoked as a subprocess by the
-# Python-side fixture ladder test, that prints every rung to stdout as
-# Python literals -- see the source file's own header comment. Solver-free,
-# same deps as :fixtures above.
+# Not a test target. The Python fixture-ladder test runs this program,
+# which prints every rung as Python literals (see the source file).
+# Solver-free, with the same deps as :fixtures.
 cc_binary(
     name = "ladder_reference",
     srcs = ["ladder_reference.cpp"],
@@ -83,19 +78,17 @@ cc_binary(
     visibility = ["//python:__pkg__"],
 )
 
-# The measuring instrument: runs one fixture through evaluate() with a
-# caller-chosen seed/sample-size/replenishment threshold and prints raw
-# counters, timing, an uncut node count, or a spread-policy divergence
-# count. Not tagged manual, so `bazel test //...` builds it everywhere and
-# never runs it -- running it is the several-seeds x several-sample-sizes x
-# several-fixtures sweep the tasks after this one do, not a test. Depends
-# on the solver (double_dummy_defender, double_dummy_bound, solver_context,
-# and @dds//library/src:dds itself for solve_board.hpp -- --mode=divergence
-# calls solve_board directly, the same call double_dummy_defender.cpp
-# makes) for --strategy double_dummy, --tier2 and --mode=divergence --
-# explicitly permitted for this target even though the core library itself
-# must stay solver-free (see uncut_tree's own comment on the same
-# distinction).
+# The measuring instrument. It runs one fixture through evaluate() with a
+# chosen seed, sample size and replenishment threshold, and prints raw
+# counters, timing, an uncut node count or a spread-policy divergence
+# count. Not tagged manual, so `bazel test //...` builds it everywhere but
+# never runs it; the sweep scripts run it.
+#
+# It depends on the solver for --strategy double_dummy, --tier2 and
+# --mode=divergence: double_dummy_defender, double_dummy_bound,
+# solver_context, and @dds//library/src:dds for solve_board.hpp
+# (--mode=divergence calls solve_board directly). This target may link the
+# solver; the core library must not.
 cc_binary(
     name = "instrument",
     srcs = ["instrument.cpp"],
@@ -115,12 +108,10 @@ cc_binary(
     local_defines = DDS_LOCAL_DEFINES,
 )
 
-# How many nodes the search tree would have with tier 1 and tier 2 both
-# removed -- see uncut_tree.hpp's own module doxygen for why evaluate()
-# itself cannot answer that (already_made()/is_dead() are unconditional,
-# no EvaluateOptions flag disables either) and why this needs no change
-# under src/ regardless (built from the same public pieces evaluate()
-# itself is built from).
+# The node count with tier 1 and tier 2 both removed. evaluate() cannot
+# report it, because no option disables already_made() or is_dead(). Built
+# from evaluate()'s public pieces, so nothing under src/ changes (see
+# uncut_tree.hpp).
 cc_library(
     name = "uncut_tree",
     srcs = ["uncut_tree.cpp"],
@@ -136,8 +127,8 @@ cc_library(
     local_defines = DDS_LOCAL_DEFINES,
 )
 
-# count_uncut_nodes()'s own correctness: the one property it must always
-# have, a real evaluate() call visiting fewer or equal nodes, never more.
+# Tests count_uncut_nodes(): a real evaluate() call must visit no more
+# nodes than it counts, on the ladders where that holds.
 cc_test(
     name = "uncut_tree_test",
     size = "small",
@@ -155,12 +146,11 @@ cc_test(
     local_defines = DDS_LOCAL_DEFINES,
 )
 
-# The fast correctness guard beside the instrument above: only what is
-# deterministic (same seed -> same answer bitwise; sample_size >= size()
-# reproduces the exhaustive run exactly; the mass-conservation asserts
-# survive real sampling and replenishment on these bigger fixtures, in the
-# default build where those asserts are live). In the default test cycle,
-# both build modes.
+# The fast correctness guard beside the instrument. It checks only what is
+# deterministic: the same seed gives the same answer bitwise;
+# sample_size >= size() reproduces the exhaustive run; the mass-conservation
+# asserts survive sampling and replenishment (in the default build, where
+# they are live). Runs in the default test cycle, in both build modes.
 cc_test(
     name = "instrument_guard_test",
     size = "small",

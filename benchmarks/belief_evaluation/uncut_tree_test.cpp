@@ -1,24 +1,16 @@
-// count_uncut_nodes() is new benchmark-only code, not a library change --
-// its own correctness needs the same TDD discipline as anything else
-// here. Two properties checked, in two different ways: a real evaluate()
-// call (tier 1 and tier 2 both live) visits fewer or equal nodes than
-// this walker, compared directly against evaluate() on every fixture
-// below that has one; and, on a hand-derived case none of those fixtures
-// exercises (a declarer-led root), the walker's own count matches a
-// hand-counted expected total exactly, independent of evaluate() --
-// UncutTreeExpandsEveryLegalRootCardTest below.
+// count_uncut_nodes() is benchmark-only code and needs its own tests. Two
+// properties, checked two ways:
+// - a real evaluate() call, with both tiers live, visits no more nodes
+//   than the walker. Compared against evaluate() on every fixture below.
+// - on a hand-counted declarer-led root, which no fixture has, the walker's
+//   count matches exactly (UncutTreeExpandsEveryLegalRootCardTest).
 //
-// **Not a universal law, and not checked against every ladder** --
-// found directly, not assumed: the pool and realistic ladders
-// (fixtures.hpp) fail this property, because the real evaluator "walks
-// the tree in its own order and revisits sibling subtrees"
-// (DeclarerStrategy::play's own doxygen) for belief-view
-// renormalisation, while this walker is a single linear traversal that
-// visits each concrete node exactly once -- see uncut_tree.hpp's own
-// doxygen for the fuller explanation. Checked here only against the
-// finesse and solver ladders, where no such revisiting was observed to
-// occur (an assertion failure here on either would be the signal that
-// it started happening there too, not proof it cannot).
+// **The first property does not hold on every ladder.** The pool and
+// realistic ladders fail it: the real evaluator revisits sibling subtrees
+// (see DeclarerStrategy::play), while the walker visits each node once
+// (see uncut_tree.hpp). It is checked only on the finesse and solver
+// ladders, where no revisiting was seen. A failure there would mean
+// revisiting has started there too.
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -109,31 +101,26 @@ INSTANTIATE_TEST_SUITE_P(
         return "tricks" + std::to_string(info.param.tricks_needed);
     });
 
-// A declarer-led root needs every legal root card expanded, not only
-// pi's own chosen one (evaluate.cpp's own root-handling block does this,
-// to populate root_children) -- every fixture above leads from a
-// defender, so none of them exercise that path at all. A hand-derived
-// case, small enough to count by hand rather than compared against
-// evaluate() (which the pool/realistic ladder's own sibling-revisiting
-// note above already rules out as a source of a fixture this small and
-// declarer-led): North (declarer) holds two Spades (Two, Ace) and is on
-// lead, needing one trick; every other hand holds nothing, so there is
-// exactly one layout and zero defender uncertainty.
+// A declarer-led root needs every legal root card expanded, not only pi's
+// choice (evaluate.cpp does this to fill root_children). Every fixture
+// above has a defender on lead, so none exercises this. This case is
+// counted by hand, not compared with evaluate(), because of the revisiting
+// noted above. North (declarer) holds the Two and Ace of Spades, is on
+// lead and needs one trick. Every other hand is empty, so there is one
+// layout and no defender uncertainty.
 //
 //   root:                                          1 node
 //   North plays the Two (pi's chosen card):         South is on play
-//     next and holds nothing -- not is_terminal()   1 node
-//     (North still holds the Ace), a structural
-//     boundary this walker stops at without cutting
-//   North plays the Ace (the *other* legal root
-//     card, only reachable by expanding every legal
-//     root card, not only pi's chosen one):          1 node
+//     next and holds nothing. Not is_terminal()     1 node
+//     (North still holds the Ace), but a
+//     structural boundary the walker stops at
+//   North plays the Ace (the other legal root
+//     card, reached only by expanding every legal
+//     root card):                                   1 node
 //     same boundary
 //
-// Total: 3. Confirmed as the red/green pair this fix needed: reverting
-// just the "expand every other legal root card" branch (verified by
-// hand, not committed) reproduces the bug this test guards -- the count
-// comes back 2, missing the Ace branch entirely.
+// Total: 3. Without the "expand every other legal root card" branch, the
+// count is 2: the Ace branch is missing.
 TEST(UncutTreeExpandsEveryLegalRootCardTest, DeclarerLedRootCountsAllRootAlternatives)
 {
     constexpr int Spades = 0;
@@ -151,15 +138,10 @@ TEST(UncutTreeExpandsEveryLegalRootCardTest, DeclarerLedRootCountsAllRootAlterna
     EXPECT_EQ(*uncut, 3u);
 }
 
-// A fixture built so tier 1 provably never fires anywhere in it would
-// make the walker's count equal the real one exactly, which is a
-// stronger check than >= alone -- but no such fixture exists in either
-// ladder checked here (every finesse rung's own declarer needs *every*
-// remaining trick, and once one is lost tier 1's is_dead() legitimately
-// fires; the solver ladder is built the same way). Left as a >= check
-// rather than manufacturing an equality case that would not generalise
-// past its own construction.
+// A fixture where tier 1 never fires would make the counts equal, a
+// stronger check than >=. Neither ladder here has one: every finesse
+// declarer needs every remaining trick, so is_dead() fires once a trick is
+// lost, and the solver ladder is built the same way. So this stays a >=
+// check.
 //
-// The pool and realistic ladders are not checked here at all -- see this
-// file's own header comment for why the property does not hold for them
-// (revisited sibling subtrees, not a bug in either side).
+// The pool and realistic ladders are not checked; see the header comment.

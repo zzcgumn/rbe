@@ -1,16 +1,15 @@
-"""The Python side of this capability's own Python-vs-C++ per-callback cost
-comparison -- timer.cpp's own header comment explains the shape (two pi,
-two sampling configurations) and why. Loops the identical evaluate() call
-through the compiled binding and times it.
+"""The Python side of the Python-against-C++ callback cost comparison.
+timer.cpp's header explains the shape: two pi, two sampling
+configurations. This loops the same evaluate() call through the compiled
+binding and times it.
 
-A py_binary (built, not run automatically -- py_binary is not a test, so
-`bazel test //...` never executes it), not a plain script: unlike
-benchmarks/belief_evaluation's own sweep scripts, this needs the compiled
-belief_space_local_evaluation extension itself, which only bazel's own
-py_binary/py_test wiring builds and places on sys.path correctly (see
-BUILD.bazel's own comment on this file's target).
+A py_binary, not a plain script: unlike the sweep scripts in
+benchmarks/belief_evaluation, it needs the compiled
+belief_space_local_evaluation extension, which only Bazel's
+py_binary/py_test wiring builds and puts on sys.path. A py_binary is not a
+test, so `bazel test //...` never runs it.
 
-Usage (normally driven by report.py, not run standalone):
+Usage (normally run by report.py):
 
     bazel run //benchmarks/python_cost:timer_py -- [ITERATIONS]
 """
@@ -30,12 +29,10 @@ DDS_NOTRUMP = 4
 
 
 def make_two_card_finesse_root() -> dict:
-    # Identical to parity_reference.cpp's own make_two_card_finesse_root
-    # and timer.cpp's own copy -- the fourth independent copy of this tiny
-    # fixture in the tree (parity_reference.cpp,
-    # exhaustive_layout_source_integration_test.cpp, timer.cpp, this one),
-    # matching those files' own established precedent of duplicating a
-    # fixture this small rather than sharing it across a package boundary.
+    # The same fixture as make_two_card_finesse_root in
+    # parity_reference.cpp, exhaustive_layout_source_integration_test.cpp
+    # and timer.cpp. A fixture this small is copied, not shared across a
+    # package boundary.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = 1 << 9
     remain_cards[South][Spades] = 1 << 8
@@ -114,11 +111,10 @@ def higher_defender_count(layout: dict, declarer: int, suit: int, rank: int) -> 
 
 
 def real_work_declarer_play(state, view):
-    # Identical rule to strategies.hpp's own real_work_declarer_play --
-    # proven correct (both languages, independently hand-derived) in
+    # The same rule as real_work_declarer_play in strategies.hpp. Proved
+    # correct, independently in each language, by
     # safety_score_declarer_play_test.cpp and
-    # test_belief_space_local_evaluation_python_cost.py; not re-proven
-    # here, only timed.
+    # test_belief_space_local_evaluation_python_cost.py. Only timed here.
     known_holdings = state.known_holdings
     seat = seat_on_play(known_holdings)
     candidates = enumerate_legal_cards(known_holdings, seat)
@@ -139,7 +135,7 @@ def real_work_declarer_play(state, view):
 
 def run_config(pi_label: str, pi, config_label: str, kwargs: dict, iterations: int) -> None:
     root = make_two_card_finesse_root()
-    seed = 7  # timer.cpp's own seed, parity_reference.cpp's SAMPLED_SEED
+    seed = 7  # timer.cpp's seed, SAMPLED_SEED in parity_reference.cpp
 
     start = time.perf_counter()
     for _ in range(iterations):
@@ -154,11 +150,9 @@ def run_config(pi_label: str, pi, config_label: str, kwargs: dict, iterations: i
 
 
 def run(iterations: int) -> None:
-    # Same root/declarer/tricks_needed/seed/sample_size/scan_budget
-    # throughout -- only replenish_below differs -- matching timer.cpp's
-    # own pairing exactly, for the same reason (this task's own
-    # background: isolate the node-local replenishment scan's own effect
-    # on how often delta is called).
+    # Only replenish_below differs between the configurations, as in
+    # timer.cpp. So the comparison isolates the effect of node-local
+    # replenishment on how often delta is called.
     non_replenishing = {"collect_counters": False, "sample_size": 10, "scan_budget": 100}
     replenishing = dict(non_replenishing, replenish_below=5)
 
@@ -170,10 +164,8 @@ def run(iterations: int) -> None:
 if __name__ == "__main__":
     requested_iterations = int(sys.argv[1]) if len(sys.argv) > 1 else 2000
     if requested_iterations < 1:
-        # Zero or negative divides by iterations at the end of
-        # run_config() -- Python already raises ZeroDivisionError there
-        # rather than printing something silently wrong, but the message
-        # is clearer here, and this matches timer.cpp's own explicit
-        # rejection of the same input.
+        # Zero would raise ZeroDivisionError at the end of run_config().
+        # This message is clearer, and matches timer.cpp's rejection of the
+        # same input.
         sys.exit(f"iterations must be a positive integer, got {requested_iterations}")
     run(requested_iterations)

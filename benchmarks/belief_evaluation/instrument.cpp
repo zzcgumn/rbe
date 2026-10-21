@@ -1,65 +1,40 @@
-// A measuring instrument, not a test: runs one fixture from fixtures.hpp
-// through evaluate() with a caller-chosen seed, sample size, and
-// replenishment threshold, and prints what happened. Not tagged manual, so
-// `bazel test //...` builds it on every platform and never runs it --
-// running it is the whole point of a benchmark, not a fast check.
+// A measuring instrument, not a test. It runs one fixture from fixtures.hpp
+// through evaluate() with a chosen seed, sample size and replenishment
+// threshold, and prints what happened. It is not tagged manual, so
+// `bazel test //...` builds it on every platform but never runs it.
 //
-// Two separate modes rather than one run producing both: --mode=count
-// (the default) collects EvaluationCounters and prints them raw, never as
-// a ratio (see this file's own header for why); --mode=time instead times
-// several repetitions of the same call and prints nothing about counters
-// at all. Scan-to-hit must be measured separately from wall clock, which
-// would confound it with the DD calls a bound provider or a
-// DoubleDummyDefender makes under early cuts -- counting and timing stay
-// two passes so nobody is tempted to read one run's number as the other's.
+// One mode per run:
+// - --mode=count (default) prints EvaluationCounters raw, never as a ratio.
+// - --mode=time times several repetitions and prints no counters. Wall
+//   clock includes the double-dummy calls a bound or a DoubleDummyDefender
+//   makes, so it would confound scan-to-hit. A separate pass keeps a time
+//   from being read as a count, or the reverse.
+// - --mode=uncut prints the node count with tier 1 and tier 2 both removed
+//   (see uncut_tree.hpp). It runs a different recursion, over a tree that
+//   can be much larger, so it has its own pass.
+// - --mode=divergence counts how often SpreadPolicy::TouchingSequence and
+//   SpreadPolicy::AllOptimal choose differently at the same node. It needs
+//   --strategy double_dummy (see counting_divergence_defender).
 //
-// Output is flat "key=value" lines, one instrument invocation per process
-// (never several records interleaved) -- chosen over a human table because
-// the tasks after this one are sweeps: several seeds x several sample
-// sizes x several fixtures, tabulated by *something else*, not read by a
-// person run by run. A per-depth vector's own length is printed explicitly
-// (`sample_size_by_depth.length=N`) before its entries, rather than only
-// the entries themselves -- the distinction EvaluationCounters' own
-// doxygen calls out (a depth with no entry is not a depth with zero) has
-// to survive the trip through this format or it is lost for good.
+// Output is flat "key=value" lines, one record per process. The sweep
+// scripts parse it; nobody reads it run by run. Each per-depth vector
+// prints its length (`sample_size_by_depth.length=N`) before its entries.
+// That keeps the distinction EvaluationCounters documents: a depth with no
+// entry is not a depth with zero.
 //
-// `delta_calls` is printed in both modes: how many times this run's own
-// defender strategy was called, not part of EvaluationCounters (nothing
-// there counts it) so counted here by wrapping the callable itself --
-// counting it alongside a timed run does not reintroduce the confound the
-// count/time split above exists to avoid, since incrementing a counter
-// costs nothing next to what delta itself does; only an *expensive*
-// count (at_calls, which the source itself must actually perform) needs
-// its own separate pass. `bound_calls` (only nonzero with --tier2) is the
-// same mechanism applied to the injected LayoutBound tier2_dead() calls,
-// a different and generally much smaller count on the same run.
+// `delta_calls`, printed in every mode, counts calls to the defender
+// strategy. EvaluationCounters has no such count, so the callable is
+// wrapped. Counting costs nothing next to delta itself, so it does not
+// confound a timed run. `bound_calls` (non-zero only with --tier2) counts
+// calls to the injected LayoutBound the same way.
 //
-// A third mode, --mode=uncut, answers a question neither of the other two
-// can: how many nodes the search tree would have with tier 1 and tier 2
-// both removed (see uncut_tree.hpp's own doxygen for why evaluate() itself
-// cannot report this). Its own pass, not folded into --mode=count,
-// because it runs a *different* recursion (uncut_tree.cpp's own walker,
-// not evaluate()) over what can be a much larger tree than the cut one.
-//
-// A fourth, --mode=divergence, answers a different question again: how
-// often SpreadPolicy::TouchingSequence and SpreadPolicy::AllOptimal
-// (spread.hpp) actually choose differently at the same node, not merely
-// whether they *can*. Only meaningful with --strategy double_dummy (it
-// solves query.layout itself, the same call double_dummy_defender.cpp
-// makes) -- see counting_divergence_defender's own comment for why one
-// solve_board call per node is enough to compare both policies, not two.
-//
-// --strategy scripted is solver-free and the default; --strategy
-// double_dummy links the solver (DoubleDummyDefender) -- explicitly
-// permitted for this instrument even though the core library must stay
-// solver-free. --tier2 (only meaningful with --strategy double_dummy)
-// additionally supplies a DoubleDummyBound and declares
-// delta_is_double_dummy_optimal, the one configuration that can make
-// tier 2 fire at all. --policy (only meaningful with --strategy
-// double_dummy) chooses which SpreadPolicy the real DoubleDummyDefender
-// built for --mode=count/time uses; --mode=divergence ignores it as the
-// *only* defender and instead uses it to pick which of the two policies'
-// results actually drives the tree (see counting_divergence_defender).
+// --strategy scripted (default) is solver-free. --strategy double_dummy
+// uses DoubleDummyDefender and links the solver. The instrument may do that,
+// though the core library must not. With double_dummy only:
+// - --tier2 also supplies a DoubleDummyBound and declares
+//   delta_is_double_dummy_optimal. Tier 2 can fire only in this setup.
+// - --policy picks the defender's SpreadPolicy in count and time modes. In
+//   divergence mode it picks which policy's result drives the tree.
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -101,12 +76,10 @@ namespace
     constexpr char const* kPlatform = "unknown";
 #endif
 
-    // NDEBUG, not a guess at compilation_mode: -c opt is the only mode that
-    // defines it, and that is the only distinction that actually matters
-    // here. -c dbg and the default fastbuild both leave this "default",
-    // which is correct: they agree on whether asserts run, the only thing
-    // this label means, even though they disagree on optimisation level
-    // (a caller is trusted not to benchmark in dbg).
+    // NDEBUG, not a guess at compilation_mode. Only -c opt defines it, and it
+    // decides whether asserts run, which is all this label means. -c dbg and
+    // fastbuild both report "default", though their optimisation differs.
+    // Nobody should benchmark in dbg.
 #ifdef NDEBUG
     constexpr char const* kMode = "opt";
 #else
@@ -118,8 +91,8 @@ namespace
         std::fprintf(
             stderr,
             "Runs one benchmarks/belief_evaluation fixture through evaluate() and\n"
-            "prints raw counters, timing, or an uncut node count -- never more than one\n"
-            "of the three per run, never a ratio.\n\n"
+            "prints raw counters, timing, an uncut node count or a divergence count.\n"
+            "One mode per run, never a ratio.\n\n"
             "Usage: instrument --fixture NAME --history with|without --seed N [options]\n\n"
             "  --fixture NAME        pool4 pool5 pool6 pool7 pool8 realistic_a realistic_b,\n"
             "                        or finesse1 finesse2 finesse3 finesse4 (no history form),\n"
@@ -127,8 +100,8 @@ namespace
             "                        double_dummy; no history form)\n"
             "  --history FORM        with | without\n"
             "  --seed N              layout source seed (required)\n"
-            "  --sample-size N       cap the root's own sample; absent = exhaustive\n"
-            "  --scan-budget N       cap each scan's own at() calls; absent = unbounded\n"
+            "  --sample-size N       cap the root sample; absent = exhaustive\n"
+            "  --scan-budget N       cap at() calls per scan; absent = unbounded\n"
             "  --replenish-below N   node-local replenishment threshold; absent = off\n"
             "  --mode count|time|uncut|divergence   count (default): raw counters. time:\n"
             "                        wall clock only. uncut: the tree size with tier 1 and\n"
@@ -165,17 +138,12 @@ namespace
         std::string policy = "touching";
     };
 
-    // `flag` names the option this value came from, purely for the error
-    // message -- every caller below passes its own flag name so a bad
-    // value is reported against the option that carried it, not just
-    // "invalid number". Rejects what a bare, unchecked strtoull() would
-    // silently accept: empty text, a leading '-' (strtoull's own
-    // documented behaviour for that is to negate and wrap into a huge
-    // unsigned value, not to reject it -- exactly the footgun a
-    // caller-facing count argument must not have), and any trailing
-    // non-digit character (a malformed value such as "nope" would
-    // otherwise silently parse as 0 and run a different measurement than
-    // the one asked for).
+    // `flag` names the option, for the error message. Rejects what a bare
+    // strtoull() would accept:
+    // - empty text;
+    // - a leading '-', which strtoull negates and wraps into a huge value;
+    // - a trailing non-digit. "nope" would otherwise parse as 0 and run a
+    //   different measurement.
     auto parse_u64(char const* flag, char const* text) -> std::uint64_t
     {
         if (text[0] == '\0' || text[0] == '-')
@@ -238,18 +206,10 @@ namespace
             }
             else if (arg == "--repeat")
             {
-                // Not std::atoi(): it parses only a leading numeric
-                // prefix and silently ignores whatever follows
-                // ("5junk" -> 5, ignoring the rest and diagnosing
-                // nothing), so a malformed value would run a different
-                // repeat count than the one actually typed. Reuses
-                // parse_u64's own full-string, non-negative validation
-                // (the same rigor --seed/--sample-size/--scan-budget/
-                // --replenish-below already have) and adds the one
-                // additional check they do not need: repeat is an int,
-                // not a std::uint64_t, so a value past INT_MAX has to be
-                // rejected explicitly rather than silently truncated by
-                // the cast below.
+                // Not std::atoi(), which stops at the first non-digit ("5junk" -> 5)
+                // with no diagnostic. parse_u64 checks the whole string. repeat is an
+                // int, so a value past INT_MAX is rejected here, not truncated by the
+                // cast.
                 std::uint64_t const value = parse_u64("--repeat", next());
                 if (value > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
                 {
@@ -314,23 +274,20 @@ namespace
         }
         if (options.repeat < 1)
         {
-            // Zero or negative skips run_time_mode's own trial loop
-            // entirely, leaving best_ms at its -1.0 sentinel and printing
-            // that as elapsed_ms.best -- a caller easily produces this by
-            // typo (--repeat 0) and would otherwise get a silently
-            // invalid timing record rather than a rejection.
+            // Zero or negative would skip run_time_mode's trial loop and print the
+            // -1.0 sentinel as elapsed_ms.best. A typo such as --repeat 0 must be
+            // rejected, not produce an invalid record.
             std::fprintf(stderr, "--repeat must be a positive integer\n");
             return false;
         }
         return true;
     }
 
-    // "finesseN" (N = 1..DDS_SUITS) names bench::make_finesse_rung(N) --
-    // the genuine-uncertainty ladder, which has no with/without-history
-    // pairing, so --history is accepted but has no effect for these.
-    // Kept out of bench::all_rungs() itself (that list's own callers,
-    // fixtures_test.cpp's HistoryFormIsStrictlySmallerThanUnconstrained
-    // chief among them, assume the pairing these fixtures do not have).
+    // "finesseN" (N = 1..DDS_SUITS) names bench::make_finesse_rung(N). That
+    // ladder has no history pairing, so --history has no effect on it. It is
+    // kept out of bench::all_rungs(), whose callers (such as
+    // fixtures_test.cpp's HistoryFormIsStrictlySmallerThanUnconstrained)
+    // assume the pairing.
     auto find_finesse_rung(std::string const& name) -> std::optional<bench::RungFixture>
     {
         if (name.rfind("finesse", 0) != 0 || name.size() != 8)
@@ -423,8 +380,8 @@ namespace
         return "Unknown";
     }
 
-    // "touching"/"all_optimal" name spread.hpp's own two SpreadPolicy
-    // values -- parse_args already rejects anything else.
+    // "touching" and "all_optimal" name the two SpreadPolicy values.
+    // parse_args rejects anything else.
     auto to_spread_policy(std::string const& policy) -> be::SpreadPolicy
     {
         return policy == "all_optimal" ? be::SpreadPolicy::AllOptimal : be::SpreadPolicy::TouchingSequence;
@@ -452,13 +409,10 @@ namespace
         std::printf("strategy=%s\n", options.strategy.c_str());
         std::printf("tier2=%s\n", options.tier2 ? "true" : "false");
         std::printf("policy=%s\n", options.policy.c_str());
-        // The fixture's own size() for exactly this history form -- what
-        // "plotted against N" (a table with N ascending) needs, and what
-        // this process would otherwise have no way to report: the
-        // instrument is handed a RungFixture, not the ExhaustiveLayoutSource
-        // built from it, and expected_size is fixtures.hpp's own claim
-        // about that source, pinned by fixtures_test.cpp -- not
-        // re-derived here.
+        // The fixture's size() for this history form, which a table against N
+        // needs. The instrument holds a RungFixture, not the source built from
+        // it, so it prints fixtures.hpp's expected_size. fixtures_test.cpp pins
+        // that value.
         std::printf(
             "expected_size=%llu\n", static_cast<unsigned long long>(fixture.expected_size));
     }
@@ -472,25 +426,17 @@ namespace
         return eval_options;
     }
 
-    // delta's own call count is not part of EvaluationCounters -- nothing
-    // there distinguishes "how many times delta ran" from anything else
-    // -- so this wraps the callable directly, the same way
-    // test_support.hpp's CountingLayoutSource counts LayoutSource::at()
-    // calls. A reference-capturing lambda, not a class with a member
-    // counter: evaluate() takes `DefenderStrategy const&`
-    // (`std::function`), and passing a class instance there constructs a
-    // *copy* into the std::function, silently counting into that copy
-    // instead of the caller's own object. Capturing `&calls` by reference
-    // survives the copy (the closure is copied, the referenced counter is
-    // not) and is the simpler fix besides.
+    // EvaluationCounters does not count delta calls, so this wraps the
+    // callable, as test_support.hpp's CountingLayoutSource does for
+    // LayoutSource::at(). It is a lambda that captures the counter by
+    // reference, not a class with a member counter. evaluate() takes a
+    // `std::function`, which would copy a class and count into the copy. A
+    // copied closure still refers to the caller's counter.
     auto counting_delta(be::DefenderStrategy wrapped, std::uint64_t& calls) -> be::DefenderStrategy
     {
-        // `wrapped` captured *by value* (its own std::function, not a
-        // reference to this function's own parameter): the closure below
-        // outlives this call, and a captured reference to a parameter
-        // would dangle the moment this function returns. `calls` is
-        // captured by reference deliberately -- that one does need to
-        // outlive this call, to reach the caller's own counter.
+        // `wrapped` is captured by value: the closure outlives this call, and a
+        // reference to the parameter would dangle. `calls` is captured by
+        // reference so it reaches the caller's counter.
         return [wrapped, &calls](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
         {
             ++calls;
@@ -498,10 +444,9 @@ namespace
         };
     }
 
-    // Same mechanism, for LayoutBound -- what tier2_dead() calls, once
-    // per layout at a node until one is found live, so its own call count
-    // is a different (and generally much smaller) number from delta_calls
-    // even on the same run.
+    // The same wrapper for LayoutBound. tier2_dead() calls it once per layout
+    // until one is live, so bound_calls is usually much smaller than
+    // delta_calls on the same run.
     auto counting_bound(be::LayoutBound wrapped, std::uint64_t& calls) -> be::LayoutBound
     {
         return [wrapped, &calls](Deal const& layout) -> int
@@ -511,14 +456,11 @@ namespace
         };
     }
 
-    // A stable per-card key (suit*100+rank fits both fields' documented
-    // ranges with room to spare) for comparing two WeightedCard vectors as
-    // sets -- WeightedCard has no operator==, and probability is
-    // deliberately excluded from the comparison: this task's own question
-    // is which *cards* the two policies would ever play, not whether they
-    // weight the same cards identically (TouchingSequence and AllOptimal
-    // never do, even when their card sets coincide -- one candidate's
-    // group vs the union of several is not the same weight).
+    // A stable per-card key (suit * 100 + rank) for comparing WeightedCard
+    // vectors as sets. WeightedCard has no operator==. Probability is left out
+    // on purpose: the question is which cards each policy would play. Even
+    // when the card sets match, the weights differ (one group against a union
+    // of several).
     auto card_key(be::Card const& card) -> int
     {
         return card.suit * 100 + card.rank;
@@ -534,21 +476,16 @@ namespace
         return keys;
     }
 
-    // A DefenderStrategy that solves query.layout once -- the same
-    // solve_board call double_dummy_defender.cpp itself makes -- and from
-    // that one FutureTricks computes spread() under *both* SpreadPolicy
-    // values, rather than making a second solve_board call for the policy
-    // not driving the tree. spread.hpp's own doxygen is why one call
-    // suffices: TouchingSequence's result is always the touching group of
-    // one of the entries AllOptimal unions over, so its card set is always
-    // a subset of AllOptimal's -- comparing the two sets as built from one
-    // `fut` is exact, not an approximation that skips a second solve.
+    // A DefenderStrategy that solves query.layout once, with the solve_board
+    // call double_dummy_defender.cpp makes. From that one FutureTricks it
+    // computes spread() under both SpreadPolicy values. One solve is enough:
+    // TouchingSequence returns the touching group of one of the entries
+    // AllOptimal unions over, so its card set is always a subset of
+    // AllOptimal's (see spread.hpp). The comparison is exact.
     //
-    // Counts every call into `calls`, and every call where the two sets
-    // differ into `divergences`; returns `primary`'s own result, so this
-    // drives evaluate()'s tree exactly as DoubleDummyDefender(ctx, primary)
-    // would while also measuring what the *other* policy would have chosen
-    // at the same node.
+    // Counts every call into `calls`, and every call where the sets differ
+    // into `divergences`. Returns `primary`'s result, so the tree is the one
+    // DoubleDummyDefender(ctx, primary) would build.
     auto counting_divergence_defender(
         SolverContext& ctx, be::SpreadPolicy primary, std::uint64_t& calls, std::uint64_t& divergences)
         -> be::DefenderStrategy
@@ -558,10 +495,9 @@ namespace
         {
             ++calls;
             FutureTricks fut{};
-            // solutions=2, mode=0, target=-1: the exact call
-            // double_dummy_defender.cpp makes, and for the same reason
-            // (see that file's own comment) -- solutions=2 already reports
-            // everything either spread() call below consumes.
+            // solutions=2, mode=0, target=-1: the call double_dummy_defender.cpp
+            // makes, for the same reason. solutions=2 reports everything both
+            // spread() calls need.
             int const status =
                 solve_board(ctx, query.layout, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &fut);
             if (status != RETURN_NO_FAULT)
@@ -579,27 +515,22 @@ namespace
         };
     }
 
-    // The solver-backed pieces a --strategy double_dummy / --tier2 run
-    // needs, all owned here (not returned by value): DoubleDummyDefender's
-    // and DoubleDummyBound's own DefenderStrategy/LayoutBound each capture
-    // a reference to the object that made them, so everything must
-    // outlive the evaluate() call it is used in.
+    // The solver-backed pieces a double_dummy or --tier2 run needs. The
+    // DefenderStrategy and LayoutBound these objects return refer back to the
+    // object, so all of them must outlive the evaluate() call.
     struct SolverBacked
     {
-        // `ctx{}` here, not left for `SolverBacked backed{};` at the call
-        // site to default: aggregate-init of a member with no
-        // corresponding initializer copy-initializes it from `{}`, which
-        // rejects SolverContext's own explicit constructor. A default
-        // member initializer, direct-list-init by contrast, does not.
+        // `ctx{}` here, not left to `SolverBacked backed{};` at the call site.
+        // Aggregate init copy-initializes a member that has no initializer from
+        // `{}`, which SolverContext's explicit constructor rejects. A default
+        // member initializer uses direct-list-init, which is allowed.
         SolverContext ctx{};
         std::optional<be::DoubleDummyDefender> defender;
         std::optional<be::DoubleDummyBound> bound;
     };
 
-    // Not returned by value on purpose: SolverContext's own copy/move
-    // status is not documented and not worth relying on -- every caller
-    // constructs its own SolverBacked as a local and populates it via
-    // this, in place.
+    // Fills `backed` in place rather than returning it. SolverContext's copy
+    // and move behaviour is not documented, so nothing relies on it.
     auto populate_solver_backed(Options const& options, bench::RungFixture const& fixture,
                                  SolverBacked& backed) -> void
     {
@@ -784,10 +715,8 @@ namespace
     {
         print_header(options, fixture);
 
-        // Only backed.ctx is used here, not backed.defender: this mode
-        // drives its own solve_board calls directly (see
-        // counting_divergence_defender), one per node, rather than going
-        // through DoubleDummyDefender's own single-policy DefenderStrategy.
+        // Only backed.ctx is used. This mode makes its own solve_board calls (see
+        // counting_divergence_defender), not DoubleDummyDefender's.
         SolverBacked backed{};
         be::ExhaustiveLayoutSource const source(
             fixture.root, fixture.declarer, *options.seed, record_of(fixture));

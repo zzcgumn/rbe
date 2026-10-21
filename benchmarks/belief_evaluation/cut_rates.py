@@ -1,34 +1,25 @@
 #!/usr/bin/env python3
-"""Tier 1's opportunities compounding across a real tree, and whether
-tier 2 pays.
+"""Tier 1 cut rates across the whole ladder, and whether tier 2 pays.
 
-Three parts:
+Two parts:
 
-  1. Tier 1 made/dead cut rates across the whole ladder (all three
-     fixture sets), not from one fixture -- and how much of the tree a
-     cut actually removes, via uncut_tree.hpp's own node count
-     (--mode=uncut), not merely what fraction of *visited* nodes were
-     cuts (a different and less informative number: a cut high in the
-     tree removes a whole subtree from ever being visited at all, so a
-     per-visited-node rate systematically understates it).
-  2. Tier 2's cost against its benefit, on the solver ladder (the only
-     fixtures solve_board accepts -- see fixtures.hpp's own module
-     doxygen), exhaustive (tier 2's gate is closed under sampling; see
-     this task's own background on why that is a fact about the gate,
-     not a cost measurement). Cost per bound call against cost per
-     defender-node call, re-measured rather than cited -- and reported as
-     two whole-run-time-per-call *equivalents*, neither an isolated
-     per-call cost: the bound-call figure is the *net* wall-time delta
-     divided by bound calls, with tier 2's own downstream savings (fewer
-     nodes visited, fewer delta calls -- the benefit half of this same
-     measurement) folded in working the other way; the delta-call figure
-     is the entire without-tier2 run's own wall time (source scanning,
-     node expansion, every callback kind) divided by delta_calls, not a
-     measured cost of the delta callback alone. See the printed line's
-     own label for both caveats again at the point they are reported.
-  3. Whether either measurement contradicts an unconditional "early cuts
-     speed things up" claim -- read separately from the docs/specs, not
-     computed here.
+  1. Tier 1 made and dead cut rates across all three fixture sets. Also
+     how much of the tree a cut removes, from uncut_tree.hpp's node count
+     (--mode=uncut). A rate per visited node understates a cut: a cut high
+     in the tree removes a whole subtree that is then never visited.
+  2. Tier 2's cost against its benefit on the solver ladder, the only
+     fixtures solve_board accepts (see fixtures.hpp). The runs are
+     exhaustive, since tier 2's gate is closed under sampling. Both cost
+     figures are whole-run time per call, not isolated per-call costs:
+     - per bound call: the net wall-time delta divided by bound calls. It
+       already includes tier 2's savings (fewer nodes, fewer delta calls),
+       which work the other way.
+     - per delta call: the whole without-tier-2 run (source scanning, node
+       expansion, every callback) divided by delta_calls.
+
+Whether the results contradict the claim that early cuts speed up the
+search is judged in docs/replenished_belief_evaluation/benchmarks.md, not
+computed here.
 
 Usage (after `bazel build //benchmarks/belief_evaluation:instrument`):
 
@@ -74,13 +65,11 @@ def tier1_rates_and_compounding(binary: Path) -> None:
         made_rate = made_med / visited_med if visited_med else float("nan")
         dead_rate = dead_med / visited_med if visited_med else float("nan")
 
-        # uncut_tree.hpp's own count is not a valid upper bound on every
-        # ladder -- confirmed directly, not assumed (see that file's own
-        # doxygen): the pool/realistic ladder trips the real evaluator's
-        # sibling-subtree revisiting, so their own uncut count can come
-        # back *smaller* than what was actually visited. Reporting that
-        # as a percentage would be actively misleading, not merely
-        # incomplete, so it is not computed at all for those rungs.
+        # uncut_tree.hpp's count is not an upper bound on every ladder (see
+        # that file). On the pool and realistic ladders the real evaluator
+        # revisits sibling subtrees, so the uncut count can be smaller than
+        # the nodes visited. A percentage there would mislead, so it is not
+        # computed for those rungs.
         if report_uncut:
             uncut_record = sweep.run_instrument(
                 binary, fixture=fixture, history=history, seed=TIER1_SEEDS[0], mode="uncut")
@@ -109,14 +98,9 @@ def tier1_rates_and_compounding(binary: Path) -> None:
         measure(fixture, "without", report_uncut=True)
 
     print(
-        "\n  The reverted scratch prior this measurement replaces: 4 of 13 nodes\n"
-        "  cut (~31%), one fixture, one cut opportunity by construction -- not\n"
-        "  comparable to the *rates* above directly (those are per-visited-node,\n"
-        "  not tree-fraction-removed), but the tree_fraction_removed column (finesse\n"
-        "  rungs only -- see above for why the pool/realistic ladder cannot report\n"
-        "  one honestly) is the number that answers the same question that prior\n"
-        "  could not: how much of the tree compounding independent cut\n"
-        "  opportunities actually removes.")
+        "\n  tree_fraction_removed is reported for the finesse rungs only (see\n"
+        "  above). It answers how much of the tree compounding cut opportunities\n"
+        "  remove, which a per-visited-node rate cannot.")
 
 
 def solver_rung_n(binary: Path, fixture: str) -> int:
@@ -169,18 +153,11 @@ def tier2_cost_benefit(binary: Path) -> None:
         without_ms_med = statistics.median(without_ms)
         with_ms_med = statistics.median(with_ms)
 
-        # Paired per-seed deltas for every *difference* reported below, not
-        # the difference of two independently-computed medians --
-        # median(without) - median(with) is not in general
-        # median(without[i] - with[i]) (median is not a linear statistic),
-        # and the with/without runs above are already paired by seed (the
-        # same TIER2_SEEDS index drives both calls in the loop above), so
-        # the paired form costs nothing extra to compute and is the
-        # statistically correct one. The *levels* printed just below
-        # (without tier2: ..., with tier2: ...) are each their own
-        # independent median, which is fine -- only a *difference* between
-        # two medians is the thing that is not automatically the median of
-        # the difference.
+        # Every difference below is the median of paired per-seed
+        # differences, not the difference of two medians: the median is not
+        # linear. The runs are already paired by seed, so this costs
+        # nothing. The levels printed below are plain medians, which is
+        # fine.
         nodes_saved = statistics.median(wo - w for wo, w in zip(without_nodes, with_nodes))
         delta_saved = statistics.median(wo - w for wo, w in zip(without_delta, with_delta))
 
@@ -196,46 +173,32 @@ def tier2_cost_benefit(binary: Path) -> None:
             f"calls ({fixture})")
 
         if with_bound_med > 0:
-            # Neither of the two figures below is an isolated per-call
-            # cost -- both divide a *whole-run* wall time by a call count,
-            # which is not the same thing as timing that one callback kind
-            # on its own:
+            # Neither figure is an isolated per-call cost. Both divide a
+            # whole-run wall time by a call count:
             #
-            # - us_per_bound_call_net: extra_ms is the *net* wall-time
-            #   delta between the two runs, and with-tier2 also visits
-            #   fewer nodes and makes fewer delta calls (the benefit line
-            #   above), so this net figure already has tier 2's own
-            #   downstream savings folded into it, working the other way.
-            # - us_per_delta_call_equivalent: without_ms_med is the
-            #   *entire* without-tier2 run's own wall time -- source
-            #   scanning, node expansion, every callback kind, not delta
-            #   calls in isolation -- divided by delta_calls. It is a
-            #   "whole run time per delta call" equivalent, not a measured
-            #   cost of the delta callback itself.
+            # - us_per_bound_call_net: extra_ms is the net wall-time delta
+            #   between the runs. The tier-2 run also visits fewer nodes and
+            #   makes fewer delta calls, so the figure already includes those
+            #   savings, working the other way.
+            # - us_per_delta_call_equivalent: the whole without-tier-2 run
+            #   (source scanning, node expansion, every callback) divided by
+            #   delta_calls.
             #
-            # An isolated cost for either would need that one callback
-            # kind timed on its own, holding everything else fixed, which
-            # this run does not do. Re-measured here regardless, not cited
-            # from the earlier scratch figure (~6us bound / ~1.6us
-            # defender-node), which this task's own background says not
-            # to treat as a baseline.
-            #
-            # extra_ms is the paired per-seed median of (with - without),
-            # not with_ms_med - without_ms_med -- see the comment on
-            # nodes_saved/delta_saved above for why that distinction
-            # matters and why the paired form is free to compute here.
+            # An isolated cost would need one callback kind timed alone,
+            # which this run does not do. extra_ms is the median of paired
+            # per-seed (with - without) deltas, as above.
             extra_ms = statistics.median(w - wo for w, wo in zip(with_ms, without_ms))
             us_per_bound_call_net = 1000.0 * extra_ms / with_bound_med if with_bound_med else float("nan")
             us_per_delta_call_equivalent = (
                 1000.0 * without_ms_med / without_delta_med if without_delta_med else float("nan"))
             print(
-                f"  cost (both whole-run-time-per-call equivalents, not isolated per-call "
-                f"costs -- see this script's own comment above): "
-                f"~{us_per_bound_call_net:.2f} us/bound_call-equivalent (net, folds in tier 2's "
-                f"own downstream savings), ~{us_per_delta_call_equivalent:.2f} "
+                f"  cost (whole-run time per call, not isolated per-call costs; see the "
+                f"comment above): "
+                f"~{us_per_bound_call_net:.2f} us/bound_call-equivalent (net, includes tier 2's "
+                f"savings), ~{us_per_delta_call_equivalent:.2f} "
                 f"us/delta_call-equivalent (without-tier2 baseline)")
         else:
-            print("  cost: bound_calls == 0 -- tier 2 never fired here, no cost to attribute")
+            print("  cost: bound_calls == 0. Tier 2 never fired here, so there is no cost to attribute")
 
 
 def run() -> None:

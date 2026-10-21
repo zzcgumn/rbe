@@ -1,25 +1,21 @@
-// The fast correctness guard beside the instrument: only what is
-// deterministic. This plan's headline measurements are distributional --
-// "the spread is about 0.03" fails on an unlucky run, gets quarantined,
-// and stops meaning anything -- so this file asserts none of that. What it
-// asserts:
+// The fast correctness guard beside the instrument. It asserts only what
+// is deterministic. A distributional claim such as "the spread is about
+// 0.03" fails on an unlucky run, gets quarantined, and stops meaning
+// anything. This file asserts:
 //
-//   - the same seed gives the same answer bitwise (both p_make and every
-//     counter, not merely p_make);
-//   - sample_size >= size() reproduces the exhaustive run's own p_make
-//     exactly -- the property that makes sampling a restriction of the
-//     exhaustive computation rather than a different one;
+//   - the same seed gives the same answer bitwise: p_make and every
+//     counter;
+//   - sample_size >= size() reproduces the exhaustive p_make exactly. This
+//     is what makes sampling a restriction of the exhaustive computation,
+//     not a different one;
 //   - the mass-conservation invariants survive real sampling and
-//     replenishment on these bigger, less trivial fixtures than the core
-//     suite's own small ones -- in the default build, where those asserts
-//     are live. In -c opt all 21 are compiled out (-DNDEBUG) and this
-//     assertion is vacuous: a passing run there proves nothing about
-//     invariants, only that nothing else went wrong. Do not read a green
+//     replenishment on these larger fixtures, in the default build where
+//     the asserts are live. **In -c opt all 21 asserts are compiled out
+//     (-DNDEBUG), so this check proves nothing there.** Do not read a green
 //     opt run as invariant coverage.
 //
-// The instrument itself (instrument.cpp) reports the distributional
-// numbers and asserts nothing -- that split is deliberate, not an
-// oversight; see this plan's own "the plan's first hard problem" for why.
+// The instrument (instrument.cpp) reports the distributional numbers and
+// asserts nothing. That split is deliberate.
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -168,11 +164,10 @@ INSTANTIATE_TEST_SUITE_P(
     AllRungs, SampleAtLeastSizeReproducesExhaustiveTest, testing::ValuesIn(bench::all_rungs()),
     [](testing::TestParamInfo<bench::Rung> const& info) { return info.param.name; });
 
-// --- mass-conservation invariants survive real sampling and
-// replenishment on the ladder's own fixtures -- an internal assert firing
-// aborts the process (visible as this test crashing), in the default
-// build where those asserts are live. Vacuous in -c opt; see this file's
-// own header comment. ---------------------------------------------------
+// --- mass-conservation invariants survive real sampling and replenishment
+// on the ladder's fixtures. A failing internal assert aborts the process,
+// so this test crashes. Only in the default build; vacuous in -c opt (see
+// the header comment). ----------------------------------------------------
 
 class InvariantsSurviveSamplingAndReplenishmentTest : public testing::TestWithParam<bench::Rung>
 {
@@ -206,12 +201,10 @@ INSTANTIATE_TEST_SUITE_P(
     AllRungs, InvariantsSurviveSamplingAndReplenishmentTest, testing::ValuesIn(bench::all_rungs()),
     [](testing::TestParamInfo<bench::Rung> const& info) { return info.param.name; });
 
-// --- the same three properties, on the finesse ladder -- a materially
-// different construction (genuine per-layout uncertainty, several tricks,
-// a defender leading) from the pool/realistic rungs above, so its own
-// M>=N and determinism properties are confirmed independently rather
-// than assumed to carry over. No history form, so no With/Without split
-// here. ---------------------------------------------------------------
+// --- the same three properties on the finesse ladder. Its construction
+// differs from the pool and realistic rungs (real per-layout uncertainty,
+// several tricks, a defender on lead), so M>=N and determinism are checked
+// again, not assumed. It has no history form. ----------------------------
 
 class FinesseLadderDeterminismTest : public testing::TestWithParam<bench::RungFixture>
 {
@@ -232,13 +225,9 @@ TEST_P(FinesseLadderDeterminismTest, SampledRunIsBitwiseIdenticalAcrossTwoSepara
     be::EvaluationValue const& b = second.by_strategy.at(bench::scripted_strategy().id);
     std::string const label = "suits=" + std::to_string(fixture.tricks_needed);
 
-    // Every counter, not only p_make -- matching DeterminismTest's own
-    // comparison above exactly (this file's own module comment claims
-    // "both p_make and every counter, not merely p_make" as a blanket
-    // property; this test's own first cut checked only p_make, which
-    // left the finesse ladder specifically -- the only ladder with a
-    // real dead-cut rate -- untested for a seed-dependent counter
-    // regression the pool/realistic version would have caught).
+    // Every counter, not only p_make, as in DeterminismTest above. The finesse
+    // ladder is the only one with real dead cuts, so it can catch a
+    // seed-dependent counter regression the pool ladder would miss.
     EXPECT_EQ(a.p_make, b.p_make) << label;
     ASSERT_TRUE(a.counters.has_value());
     ASSERT_TRUE(b.counters.has_value());
