@@ -7,6 +7,10 @@
 
 #include "test_support.hpp"
 
+// EvaluationCounters, filled only when EvaluateOptions::collect_counters is
+// set. This file covers nodes_visited, the per-tier cut counters,
+// sample_size_by_depth and replenishment_by_depth.
+
 // A namespace alias and targeted `using` declarations, not `using
 // namespace dds::belief_evaluation;`. This file includes
 // api/dds_data_types.hpp, which declares a global ::Card, so a bare `Card`
@@ -22,10 +26,6 @@ using be::evaluate;
 using be::holding;
 using be::single_card_declarer_play;
 using be::single_card_defender;
-
-// EvaluationCounters, filled only when EvaluateOptions::collect_counters is
-// set. This file covers nodes_visited, the per-tier cut counters,
-// sample_size_by_depth and replenishment_by_depth.
 
 namespace
 {
@@ -112,7 +112,7 @@ TEST_F(CountersTest, CountersAreAbsentByDefault)
 }
 
 // Every other test turns counters on or off, never both, so only a direct
-// test makes the two runs agree. Bitwise, not EXPECT_DOUBLE_EQ: a counters
+// test checks that the two runs agree. Bitwise, not EXPECT_DOUBLE_EQ: a counters
 // flag that moves the last bit of p_make is the bug this catches.
 TEST_F(CountersTest, CollectingCountersDoesNotChangeTheAnswerEitherDirection)
 {
@@ -310,11 +310,11 @@ TEST_F(CountersTest, SampleSizeByDepthShowsTheCollapseFromASampledRootAcrossAPly
 
 namespace
 {
-    /// East holds one of two spade fillers (three or five), split against West
+    /// East holds one of two spade fillers (three or jack), split against West
     /// from a fixed pool. North holds only the spade ace, so evaluate()'s root
     /// has no other first card to explore. A third source entry (spade three
     /// again, another heart filler) is a new layout the "three" branch can
-    /// find; the source has nothing similar for the "five" branch.
+    /// find; the source has nothing similar for the "jack" branch.
     auto make_split_layout(int east_spade, int east_heart_filler) -> Deal
     {
         Deal deal{};
@@ -377,7 +377,7 @@ TEST_F(CountersTest, ReplenishmentByDepthMatchesTheHandDerivedVector)
     // and matches (1 at() call, delta certain). 3 at() calls, 1 layout added,
     // exhausted (end of source).
     //
-    // The "five" branch: 1 < 2 triggers, wanting 1. Its scan also examines all
+    // The "jack" branch: 1 < 2 triggers, wanting 1. Its scan also examines all
     // 3: "three, two" and "three, three" fail the recorded-spade check (1 at()
     // call each, no delta), and "jack, two" is present (1 at() call). 3 at()
     // calls, nothing added, exhausted.
@@ -415,7 +415,7 @@ TEST_F(CountersTest, ReplenishmentByDepthMatchesTheHandDerivedVector)
     EXPECT_EQ(by_depth[2].at_calls, 6u);
 
     // sample_size_by_depth shows the count after replenishment at depth 2:
-    // the "three" branch grew to 2 and the "five" branch stayed at 1. So
+    // the "three" branch grew to 2 and the "jack" branch stayed at 1. So
     // layout_min is 1, but layout_sum is 3, not the 1 + 1 = 2 before the
     // top-up.
     ASSERT_GT(value.counters->sample_size_by_depth.size(), 2u);

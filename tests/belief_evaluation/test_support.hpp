@@ -212,10 +212,10 @@ public:
     /// does not help: overload resolution picks the best candidate before
     /// access control, so an inaccessible equal match is still an ambiguity
     /// error. A private default constructor does not help either: it makes the
-    /// implicit copy and move constructors viable for the same `{}` call. So
-    /// this builds through the one existing constructor, with an empty table,
-    /// and then sets `table_` directly, which a member function may always
-    /// do.
+    /// implicit copy and move constructors viable for the same `{}` call, so
+    /// the ambiguity comes back. So this builds through the one existing
+    /// constructor, with an empty table, and then sets `table_` directly,
+    /// which a member function may always do.
     static auto stochastic(std::map<Key, std::vector<WeightedCard>> table) -> ScriptedDefender
     {
         ScriptedDefender defender({});
@@ -384,7 +384,7 @@ inline auto suit_pool(Deal const& deal, int suit) -> unsigned
 /// `layouts.front()`. Reports the first suit and layout index that differ.
 /// Layouts meant to form one node must agree on the pool, though they may
 /// split it differently between the defenders. A fixture that gets this
-/// wrong does not fail on its own: it silently becomes a node with fewer
+/// wrong does not fail by itself: it silently becomes a node with fewer
 /// layouts than intended.
 inline auto assert_pool_matches(std::vector<Deal> const& layouts) -> void
 {

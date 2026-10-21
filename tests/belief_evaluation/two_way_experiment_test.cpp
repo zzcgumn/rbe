@@ -294,7 +294,8 @@ TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
     // root's first-card decision, and its follow at trick two (its only
     // spade) is forced. Every other play here is forced too (North's one
     // card, South's one spade, East's and West's one enumerated card), so the
-    // scripted strategies suffice, unlike inside_pi above.
+    // standard single_card_declarer_play is enough. No custom strategy like
+    // inside_pi is needed.
     DeclarerStrategy const before_pi{
         .id = 1, .play = single_card_declarer_play, .state_key = nullptr};
     EvaluationResult const before_result =
@@ -484,7 +485,7 @@ TEST_F(TwoWayExperimentTest, TheVoidFlipsWhichDefenderIsFavouriteForTheMissingKi
         }
         if (suit == Spades && (rank == Two || rank == Three || rank == Four || rank == Five))
         {
-            return East;  // East's own four-card spade holding
+            return East;  // East's four-card spade holding
         }
         if (suit == Spades && (rank == King || rank == Six))
         {

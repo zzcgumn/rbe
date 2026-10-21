@@ -37,9 +37,9 @@ namespace
     constexpr int South = 2;  // dummy
     constexpr int West = 3;   // a defender
 
-    /// ♠A opposite North's ♠2/♠3/♠4/♠J — North's side holds every remaining
-    /// winner in the suit. Certain, for any belief space over the split of
-    /// the low cards among the defenders.
+    /// North's ♠A is the only winner in the suit. South and the defenders
+    /// hold only low spades, so the contract is certain for any split of the
+    /// low cards between the defenders.
     auto make_certain_win_layout(int east_low, int west_low) -> Deal
     {
         Deal deal{};
@@ -145,7 +145,7 @@ TEST_F(OracleTest, ASingleDefenderChoiceCarriesNoMassOnTheUnchosenBranch)
     // the assertion.
 }
 
-// --- 9d: the two-way guess -- the most important test in the project ----
+// --- 9d: the two-way guess, the most important test in the project -----
 
 namespace
 {

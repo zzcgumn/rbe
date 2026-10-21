@@ -18,6 +18,9 @@
 
 #include "test_support.hpp"
 
+// Node-local replenishment: the end-to-end p_make, the rescale and mass
+// conservation, exhaustion, and the scan that tops up a node.
+
 namespace be = dds::belief_evaluation;
 using be::BeliefNode;
 using be::CountingLayoutSource;
@@ -147,7 +150,7 @@ TEST_F(ReplenishmentTest, PMakeMovesFromFalseCertaintyToTheHandDerivedTrueValue)
     EXPECT_DOUBLE_EQ(no_replenish.by_strategy.at(1u).p_make, 1.0);
 
     // With replenishment: East's spade ply splits the 6 sampled layouts into
-    // two branches of 3, each below sample_size = 6, so each is topped up. Each
+    // two branches of 3, each below replenish_below = 6, so each is topped up. Each
     // finds its Ten layout (the only new candidate matching its spade ply) and
     // adds it, giving exactly 3/4.
     EvaluationResult const replenished = evaluate(
@@ -275,7 +278,7 @@ TEST_F(ReplenishmentTest, ReplenishingByHandGrowsTheNodeAndConservesMassToADeriv
     ScanResult const scan =
         scan_for_replenishment(node, root_layout, source, single_card_defender, /*wanted=*/3, std::nullopt);
     ASSERT_EQ(scan.error, be::ValidationError::None);
-    ASSERT_EQ(scan.candidates.size(), 1u);  // only "three, ten" matches this branch's own spade ply
+    ASSERT_EQ(scan.candidates.size(), 1u);  // only "three, ten" matches this branch's spade ply
     // Hand-derived: the one defender ply so far (East's spade) is forced and
     // the same for every layout in this branch, including the Ten. delta's
     // reply is certain, so it multiplies p_j by exactly 1.

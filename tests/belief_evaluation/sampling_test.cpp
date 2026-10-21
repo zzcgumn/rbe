@@ -8,6 +8,12 @@
 
 #include "test_support.hpp"
 
+// Root sampling: make_root scans the source from index 0 and takes the
+// first RootOptions::sample_size consistent layouts (or fewer), not all of
+// them. Every fixture asserts layouts.size() directly. make_root has two
+// reasons to return fewer layouts than intended (the consistency filter
+// and the cap), and only a pinned count tells them apart.
+
 // A namespace alias and targeted `using` declarations, not `using
 // namespace dds::belief_evaluation;`. This file includes
 // api/dds_data_types.hpp, which declares a global ::Card, so a bare `Card`
@@ -31,12 +37,6 @@ using be::make_root;
 using be::node_mass;
 using be::single_card_declarer_play;
 using be::single_card_defender;
-
-// Root sampling: make_root scans the source from index 0 and takes the
-// first RootOptions::sample_size consistent layouts (or fewer), not all of
-// them. Every fixture asserts layouts.size() directly. make_root has two
-// reasons to return fewer layouts than intended (the consistency filter
-// and the cap), and only a pinned count tells them apart.
 
 namespace
 {

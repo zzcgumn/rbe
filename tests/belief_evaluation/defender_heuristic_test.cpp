@@ -15,6 +15,9 @@
 
 #include "test_support.hpp"
 
+// Tests for the defender heuristic context, each defender rule, and the
+// default rule chains for notrump and trump contracts.
+
 namespace be = dds::belief_evaluation;
 
 namespace
@@ -253,7 +256,7 @@ TEST_F(SecondSeatLowTest, FiresOnlyInSecondSeatFollowingSuitAsADefender)
         EXPECT_FALSE(rule(ctx, best_cards).has_value());
     }
 
-    // Negative: wrong position -- third seat, not second. North leads,
+    // Negative: wrong position (third seat, not second). North leads,
     // East (declarer) follows, South (a defender) is on play at position 2.
     {
         Deal deal{};
@@ -506,7 +509,7 @@ TEST_F(SecondSeatLowTest, DoesNotDeferWhenTheLowestGroupIsNotTheOneSpreadWouldPi
     fut.suit[1] = Spades;
     fut.rank[1] = Queen;
     fut.equals[1] = 1 << Jack;
-    fut.score[1] = 5;  // tied with index 0 -- canonical_best keeps index 0
+    fut.score[1] = 5;  // tied with index 0; canonical_best keeps index 0
 
     be::DefenderHeuristicContext const ctx =
         be::make_defender_heuristic_context(deal, state, SecondSeat, fut);
@@ -923,7 +926,7 @@ TEST_F(FourthSeatLowTest, ReturnsTheTrueLowestCandidateWhenSolveBoardCollapsesTh
     // folds a touching run (queen and jack, king gone) into one entry (the
     // queen, dds's representative), with the jack in its equals. best_cards
     // has one member, and the group's true lowest card, the jack, is not
-    // listed as its own rank.
+    // listed separately.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = FourthSeatLeader;
