@@ -10,16 +10,13 @@
 namespace dds::belief_evaluation
 {
 
-/// How far a defender distribution's probabilities may sum from exactly
-/// one and still be accepted by `validate_defender_distribution`. Shared,
-/// not duplicated, with anything reasoning about the same tolerance in
-/// aggregate, where the worst-case discrepancy scales with how many
-/// distributions are summed rather than with this constant alone.
+/// How far a defender distribution may sum from one and still pass
+/// `validate_defender_distribution`. Code that sums many distributions
+/// uses this constant too, scaled by the number summed.
 constexpr double ProbabilitySumTolerance = 1e-6;
 
-/// Distinct rejection reasons for a user-supplied callback return. A
-/// user-supplied callback is an input, not an internal — violations are
-/// reported, never asserted.
+/// Why a callback's return was rejected. A callback is caller input, so
+/// violations are reported, never asserted.
 enum class ValidationError
 {
     None,                        ///< the input is valid
@@ -27,27 +24,25 @@ enum class ValidationError
     CardIllegalForTrick,         ///< the seat holds the led suit but the card is of another suit
     ProbabilityNonPositive,      ///< a WeightedCard's probability is <= 0, NaN, or +-infinite
     ProbabilitiesDoNotSumToOne,  ///< the distribution's probabilities do not sum to 1 within tolerance
-    /// The distribution is empty. `validate_defender_distribution` never
-    /// reports this itself -- an empty distribution fails its sum-to-one
-    /// check honestly, so that function answers
-    /// ProbabilitiesDoNotSumToOne. `expand_defender_node` draws the
-    /// distinction before delegating, because at the callback boundary
-    /// "you returned nothing" is more actionable than "your probabilities
-    /// sum to 0". The two disagreeing on this input is deliberate.
+    /// The distribution is empty. Reported by `expand_defender_node`,
+    /// which checks first: "you returned nothing" is clearer than "your
+    /// probabilities sum to 0". `validate_defender_distribution` on its
+    /// own reports ProbabilitiesDoNotSumToOne for an empty input.
     DistributionEmpty,
 };
 
-/// Validates a card a declarer strategy returned from `play`: held by `seat`
-/// in `deal`, and legal for the trick in progress (must follow suit if
-/// `seat` holds the led suit).
+/// Checks a card returned by `DeclarerStrategy::play`: `seat` holds it in
+/// `deal`, and it follows suit if `seat` can.
 auto validate_declarer_card(Deal const& deal, int seat, Card const& card) -> ValidationError;
 
-/// Validates a distribution a defender strategy returned: every card held by
-/// `seat` in `layout` and legal for the trick in progress (must follow suit
-/// if `seat` holds the led suit), every probability strictly positive, and
-/// the probabilities summing to 1 within tolerance. A card the strategy will
-/// never play must be omitted rather than given zero probability, so a
-/// non-positive probability is a contract violation, not "never".
+/// Checks a distribution returned by a defender strategy:
+/// - `seat` holds every card in `layout`, and each follows suit if `seat`
+///   can;
+/// - every probability is strictly positive;
+/// - the probabilities sum to 1 within `ProbabilitySumTolerance`.
+///
+/// Omit a card the strategy never plays. A zero probability is a contract
+/// violation, not "never".
 auto validate_defender_distribution(
     Deal const& layout,
     int seat,

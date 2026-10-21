@@ -8,17 +8,15 @@
 namespace dds::belief_evaluation
 {
 
-/// One card a defender might play, and the probability the defender model
-/// assigns to it in this layout.
+/// One card a defender might play, and its probability in this layout.
 struct WeightedCard
 {
     Card card;
     Probability probability;
 };
 
-/// Everything one call to a defender strategy needs. `layout` is the actual
-/// layout — perfect information — because this contract currently models
-/// perfect-information defenders only.
+/// The input to one defender strategy call. `layout` is the actual
+/// layout: defenders have perfect information.
 struct DefenderQuery
 {
     Deal const& layout;
@@ -26,19 +24,21 @@ struct DefenderQuery
     ObservationState const& state;  ///< what is commonly known
 };
 
-/// The defender model. Both defenders use the same strategy but feed it
-/// different information (`DefenderQuery::seat`) to reach a decision.
+/// The defender model. Both defenders use the same strategy, with a
+/// different `DefenderQuery::seat`.
 ///
-/// Returns a distribution rather than a single card, so that randomisation
-/// between double-dummy-equivalent cards (restricted choice) is expressible.
-/// Every returned card must be held by `seat` in `layout` and legal there;
-/// probabilities must be strictly positive and sum to one within tolerance.
-/// A card the strategy will never play must be omitted, not given zero
-/// probability — the evaluator treats "probability > 0" as the survival
-/// test for a layout.
+/// Returns a distribution, not a single card, so that it can randomise
+/// between equivalent cards (restricted choice). The contract:
+/// - `seat` holds every card in `layout`, and each is legal there;
+/// - every probability is strictly positive;
+/// - the probabilities sum to one within tolerance.
 ///
-/// Does not receive declarer's strategy or belief space. That independence
-/// is what licenses evaluating each node of the search in isolation.
+/// **Omit a card the strategy never plays.** Do not give it zero
+/// probability: a layout survives only through cards with probability
+/// above zero.
+///
+/// It does not see declarer's strategy or belief space. That is what lets
+/// the evaluator treat each node on its own.
 using DefenderStrategy =
     std::function<std::vector<WeightedCard>(DefenderQuery const&)>;
 

@@ -3,72 +3,49 @@
 #include <belief_evaluation/defender_strategy.hpp>
 #include <belief_evaluation/spread.hpp>
 
-/// Forward-declared rather than included: `solver_context.hpp` is heavy
-/// (measured at roughly 25x the compile time of a translation unit with
-/// just this declaration, ~200ms per TU). Every includer today already
-/// needs the full header, so this buys nothing yet; it is kept for a future
-/// includer that only references a `SolverContext` without calling into the
-/// solver.
+/// Forward-declared, not included: `solver_context.hpp` is slow to compile.
 ///
-/// Declared here, outside the namespace below, because this is
-/// `::SolverContext` at global scope. Inside the namespace it would declare
-/// a distinct, never-defined type.
+/// Declared at global scope, outside the namespace, because the type is
+/// `::SolverContext`. Inside the namespace it would declare a different,
+/// undefined type.
 class SolverContext;
 
 namespace dds::belief_evaluation
 {
 
 /// A DefenderStrategy that solves `query.layout` double dummy
-/// (`solve_board`) and spreads probability over the result via `policy`
-/// (see spread.hpp).
+/// (`solve_board`) and spreads probability over the result by `policy`.
+/// See spread.hpp.
 ///
-/// **This is not best defence against a contract.** It maximises tricks
-/// (`target = -1`), not the contract threshold: a threshold-aware
-/// double-dummy defender is indifferent across every line once the
-/// contract's fate is already decided, so its equivalence classes
-/// degenerate toward uniform noise, while trick-maximising keeps a usable
-/// gradient at every node. The consequence is real — **it will sometimes
-/// concede the contract to hold the trick count down** — and is an instance
-/// of the gap between maximising tricks and minimising `P_make` that this
-/// capability exists to quantify, not a defect to work around.
+/// **Not best defence against a contract.** It maximises tricks
+/// (`target = -1`). **It will sometimes give up the contract to hold down
+/// the trick count.** A defender that only cares about the contract is
+/// indifferent once the contract's fate is decided, so its choices would
+/// be close to noise. This gap between tricks and `P_make` is what the
+/// library measures. It is not a defect.
 ///
-/// **It also presumes a double-dummy declarer**, which is the half that
-/// surprises people. Double-dummy defence is optimal against a declarer who
-/// also plays double dummy; against a declarer following a fixed line, or one
-/// reasoning over a belief space, a defence tailored to *that* declarer can do
-/// strictly better. Visible in `examples/`' own grid: against the **fixed
-/// line** (`cash_two_hearts_and_play_a_spade`), this defender concedes a
-/// contract that a simple "cover when it wins" rule defeats — `55/70` against
-/// `35/70`, eleven in fourteen against exactly half, on the same ending
-/// against the same declarer. So "double dummy" names how this defender
-/// computes, not a ceiling on how well the defence can do.
+/// **It also assumes a double-dummy declarer.** Against a declarer with a
+/// fixed line, or one reading a belief space, a defence tailored to that
+/// declarer can do better. In `examples/`, against
+/// `cash_two_hearts_and_play_a_spade`, this defender lets the contract make
+/// in 55/70 layouts. A simple "cover when it wins" rule allows 35/70. See
+/// `examples/test_guess_6nt_belief_space.py` for how both figures are
+/// checked.
 ///
-/// (Both figures are settled independently of any solver tie-break: `55/70`
-/// by set equality against `DoubleDummyBound`'s own per-layout ceiling, and
-/// `35/70` by exhaustive minimax over the fixed line — see
-/// `examples/test_guess_6nt_belief_space.py`. Not every cell of the grid is
-/// this robust: against the *other* declarer here,
-/// `finesse_the_queen_from_the_beliefs`, this defender's own figure depends
-/// on which of several equally good cards `solve_board` names first, which
-/// is why that comparison is asserted by ordering rather than by decimal —
-/// see that test file's docstring.)
+/// `ctx` is not owned and is not thread-safe: use one SolverContext per
+/// thread. The caller creates and configures it, and keeps it alive.
 class DoubleDummyDefender
 {
 public:
-    /// `ctx` is not owned — the caller creates, configures and outlives it,
-    /// keeping transposition-table sizing and the solver's threading model
-    /// out of this defender's hands.
     explicit DoubleDummyDefender(
         SolverContext& ctx, SpreadPolicy policy = SpreadPolicy::TouchingSequence);
 
-    /// Solves `query.layout` once per call and delegates to `spread()`.
-    /// There is no result cache: future work needing one shares it across
-    /// callers rather than hiding it in this defender. A non-zero
-    /// `solve_board` status returns an empty distribution, which
-    /// `validate_defender_distribution` then rejects — the existing
-    /// validation path surfaces the error rather than a second one.
+    /// Solves `query.layout` on every call and passes the result to
+    /// `spread()`. There is no result cache. A non-zero `solve_board`
+    /// status returns an empty distribution, which
+    /// `validate_defender_distribution` rejects.
     ///
-    /// The returned `DefenderStrategy` captures `this` and must not outlive
+    /// The returned `DefenderStrategy` captures `this`. It must not outlive
     /// this `DoubleDummyDefender`.
     auto as_strategy() -> DefenderStrategy;
 
