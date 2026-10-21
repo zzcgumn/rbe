@@ -10,6 +10,11 @@
 
 #include "test_support.hpp"
 
+// End-to-end evidence that the early cuts fire on a fixture shaped like the
+// oracle fixtures (several tricks, several layouts) and change no answer.
+// cuts_test.cpp tests each cut on its own. The run with tier 2 needs the
+// solver, so it is in double_dummy_bound_test.cpp.
+
 // A namespace alias and targeted `using` declarations, not `using
 // namespace dds::belief_evaluation;`. This file includes
 // api/dds_data_types.hpp, which declares a global ::Card, so a bare `Card`
@@ -27,18 +32,6 @@ using be::evaluate;
 using be::holding;
 using be::single_card_declarer_play;
 using be::single_card_defender;
-
-// End-to-end evidence that early cuts change no answer; cuts_test.cpp
-// tests each cut on its own.
-//
-// Tier 1 has no off switch, so every test in this suite already runs with
-// it. This file adds the other half: evidence that the cuts fire on a
-// fixture shaped like the oracle fixtures (several tricks, several
-// layouts).
-//
-// The run with tier 1 and tier 2 together needs the solver
-// (DoubleDummyDefender with DoubleDummyBound), so it is in
-// double_dummy_bound_test.cpp.
 
 namespace
 {
@@ -275,9 +268,9 @@ TEST_F(ReproductionTest, MGreaterThanOrEqualToNReproducesExhaustiveBitwiseWithRe
 }
 
 // Replenishment cannot recover this fixture's M = 6 case, whatever
-// replenish_below is. A node can only gain a layout once its count has
-// dropped below `sample_size`, which needs an earlier defender split on
-// its path, and it accepts only candidates that match every defender ply
+// replenish_below is. A node can gain a layout only once its count has
+// dropped below `sample_size`. That needs an earlier defender split on its
+// path. The node also accepts only candidates that match every defender ply
 // played there. Here the only defender ply is the one that separates the
 // missing Ten layout from the six present. No earlier split creates a node
 // the Ten layout could join. The test below confirms this.

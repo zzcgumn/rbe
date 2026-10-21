@@ -20,6 +20,10 @@
 
 #include "test_support.hpp"
 
+// Tests for BruteForceDeclarer: leaves and the depth cutoff, the search, the
+// max_layouts cap, cache scoping under max_depth, and agreement with
+// DoubleDummyBound.
+
 namespace be = dds::belief_evaluation;
 
 namespace
@@ -893,8 +897,9 @@ TEST_F(BruteForceDeclarerTest, MaxDepthDoesNotCarryTheCacheAcrossSeparatePlayCal
     };
 
     be::BruteForceOptions options{};
-    options.max_depth = 5;  // cuts off at trick 2's East response; see the sibling
-                             // test for the depth-by-depth layout
+    // Depth 1 is East's reply to North's lead, so depth 5 is East's reply in
+    // trick 2, where the search cuts off.
+    options.max_depth = 5;
     SolverContext ctx;
     be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximizeExpectedTricks, spy, options);
     be::DeclarerStrategy const pi = declarer.as_strategy();
@@ -936,8 +941,8 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsMustBeAppliedBeforeCutoffLeafValueNotAf
     // fails this test directly.
     //
     // Two layouts:
-    // - well-formed, posterior 0.9: East holds the Clubs Ace and South and
-    //   West low cards. East's ace wins the last trick, so declarer takes 0
+    // - well-formed, posterior 0.9: East holds the Clubs Ace, South the King
+    //   and West the Three. East's ace wins the last trick, so declarer takes 0
     //   more tricks (checked below with DoubleDummyBound);
     // - garbage, posterior 0.1: a default, all-empty Deal, the malformed input
     //   of AMalformedLayoutSurfacesAsTheSentinelNotARealBound in

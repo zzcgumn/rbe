@@ -15,6 +15,10 @@
 
 #include "test_support.hpp"
 
+// Tests for DoubleDummyBound: hand-checkable positions, the orientation
+// conversion, solver failures and "not evaluated" scores as the sentinel,
+// and tier 1 with tier 2 together.
+
 // This file builds a raw SolverContext for the orientation tests, so it
 // sees both ::Card from api/dds.h and dds::belief_evaluation::Card. The two
 // are layout-identical, so an unqualified `Card` would compile as either
@@ -87,8 +91,9 @@ TEST_F(DoubleDummyBoundTest, ScoreIsForTheSideOnLeadNotForDeclarerAbsolutely)
 
 namespace
 {
-    /// East holds the top two spades, North (declarer) and South (dummy) the
-    /// bottom two, and West the middle two, so East wins both spade tricks.
+    /// East holds the top two spades, West the queen and jack, North
+    /// (declarer) the two and three, and South (dummy) the four and five. So
+    /// East wins both spade tricks.
     /// North holds the top two clubs and wins both club tricks. Four tricks,
     /// split evenly: declarer's double-dummy bound is exactly 2, a real
     /// in-between value.
@@ -261,8 +266,8 @@ TEST_F(DoubleDummyBoundTest, ReproductionRunBTierOneAndTwoTogetherAgainstAQualif
         .id = 1, .play = be::single_card_declarer_play, .state_key = nullptr};
 
     // Baseline: tier 1 only. No bound is supplied, so tier2_dead() never
-    // fires. The true value, 0.0, comes from full recursion through both
-    // tricks.
+    // fires. The true value, 0.0, comes from full recursion through all
+    // three tricks.
     be::EvaluationResult const tier1_only = be::evaluate(
         layout,
         North,
@@ -622,9 +627,9 @@ TEST_F(DoubleDummyBoundTest, WithTheBoundEvaluateStillReportsTheTrueValueOnAnUns
     // bound prunes only where it is below tricks_needed.
     //
     // The retry pays off where cuts happen. On the four-card ending in
-    // examples/, tier 2 takes nodes visited from 6283 to 3159, with 197 cuts,
-    // and runs faster than tier 1 alone: the retry costs less than searching
-    // the subtrees it lets the cut remove.
+    // examples/, tier 2 takes nodes visited from 6283 to 3159, with 197 cuts.
+    // It also runs faster than tier 1 alone: the retry costs less than
+    // searching the subtrees the cut removes.
     ASSERT_TRUE(without_bound.by_strategy.at(1u).counters.has_value());
     ASSERT_TRUE(with_bound.by_strategy.at(1u).counters.has_value());
     EXPECT_EQ(

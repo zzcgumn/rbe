@@ -7,6 +7,9 @@
 
 #include "test_support.hpp"
 
+// Tests for evaluate()'s early cuts: tier 1's already-made cut, tier 2's
+// dead cut with the layout and predicate bounds, and tier 2's sampling gate.
+
 namespace be = dds::belief_evaluation;
 
 // Tier 1's already-made cut: a node where declarer has every trick the
@@ -111,7 +114,7 @@ TEST_F(AlreadyMadeCutTest, ReturnsTheHandDerivedMassOverSeveralLayoutsAtUnequalP
     be::assert_forms_one_belief_node({layout_a, layout_b}, North);
     be::VectorLayoutSource source({layout_a, layout_b});
 
-    // East's lead is the root's defender decision, so it gives two
+    // East's lead is the root's defender decision. It gives two
     // root_children: the jack branch (both layouts, merged) and the queen
     // branch (layout A alone). kappa = 1/2 (two root layouts), and p_i = 1 at
     // the root.
@@ -158,7 +161,8 @@ TEST_F(AlreadyMadeCutTest, ReturnsTheHandDerivedMassOverSeveralLayoutsAtUnequalP
     ASSERT_NE(queen_branch, nullptr);
     // Bitwise, not EXPECT_DOUBLE_EQ: 0.5 and 1.0 are exact, so every value
     // above is exact. By mass conservation an uncut recursion reaches the same
-    // value at its terminal node; disabling the cut confirmed this.
+    // value at its terminal node. With the cut disabled, the uncut path gives
+    // the same values.
     EXPECT_EQ(jack_branch->value, ExpectedJackBranchMass);
     EXPECT_EQ(queen_branch->value, ExpectedQueenBranchMass);
     EXPECT_EQ(value.p_make, ExpectedJackBranchMass + ExpectedQueenBranchMass);
@@ -313,8 +317,9 @@ TEST_F(AlreadyMadeCutTest, TierCutCountersFireAtTheRootBlockSite)
 
 namespace
 {
-    /// East holds the top two spades, North (declarer) and South (dummy) the
-    /// bottom two, and West the middle two. East wins trick 1 whatever anyone
+    /// East holds the top two spades, West the queen and jack, North
+    /// (declarer) the two and three, and South (dummy) the four and five.
+    /// East wins trick 1 whatever anyone
     /// plays, so declarer's tricks_won stays 0. East on lead (defender root),
     /// deterministic under the scripted strategies.
     auto make_east_wins_first_trick() -> Deal
@@ -786,7 +791,7 @@ TEST_F(TierTwoCutTest, StopsAtTheFirstLiveLayoutWithoutQueryingTheRest)
     layout_a.currentTrickRank[1] = Three;  // West's card, already played
     layout_a.currentTrickSuit[2] = Spades;
     layout_a.currentTrickRank[2] = Ace;    // North's card, already played and winning
-    layout_a.remainCards[East][Spades] = be::holding({Four});  // East's own card, about to play
+    layout_a.remainCards[East][Spades] = be::holding({Four});  // East's card, about to play
     layout_a.remainCards[East][Clubs] = be::holding({Six});    // untouched filler pool, split one way
     layout_a.remainCards[West][Clubs] = be::holding({Seven});
 
@@ -825,8 +830,8 @@ TEST_F(TierTwoCutTest, BitwiseAgreementWithTheUncutPathVerifiedByTemporarilyDisa
     // Tier 2 has no off switch either. With the tier2_dead() calls in
     // evaluate.cpp disabled, the fixture of
     // FiresWhenEveryLayoutIsDeadAndTheDeclarationIsMade still evaluates to
-    // exactly 0.0 through natural recursion. This test pins the cut's value,
-    // which that check was run against.
+    // exactly 0.0 through natural recursion. This test pins that value with
+    // the cut on.
     Deal const layout_a = make_layout_a();
     Deal const layout_b = make_layout_b();
     be::VectorLayoutSource source({layout_a, layout_b});
@@ -893,8 +898,8 @@ namespace
     /// of hearts). North holds 4 cards at every node in trick 1, then fewer
     /// once it plays. That gives a predicate two regimes to tell apart without
     /// an entry per node. East on lead (defender root): East -> South -> West
-    /// -> North. Deterministic under the scripted strategies: each seat holds
-    /// one card per suit it can legally play at every step.
+    /// -> North. Each seat holds two cards in each of two suits, and the play
+    /// is deterministic because the strategies are scripted.
     auto make_two_trick_declarer_certain_win() -> Deal
     {
         Deal deal{};
@@ -943,8 +948,8 @@ TEST_F(PredicateBoundTest, AnswersEveryNodeInATwoTrickFixtureWithoutATableEntryP
     // node_mass = 1.0 when trick 2 is won. Nothing is dead by the bound, so
     // suppressing the cut gives the same value.
     EXPECT_EQ(result.by_strategy.at(1u).p_make, 1.0);
-    // Hand-counted: tier2_dead() runs at every node up to the one before
-    // North's winning play in trick 2. That is 8 nodes: East, South, West and
+    // Hand-counted: tier2_dead() runs at every node until trick 2
+    // resolves. That is 8 nodes: East, South, West and
     // North in trick 1, then North, East, South and West in trick 2. At the
     // 9th node the already-made cut fires first. The first four queries see
     // North holding all four cards (the first predicate); the last four see
