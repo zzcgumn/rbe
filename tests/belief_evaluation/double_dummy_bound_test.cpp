@@ -15,12 +15,11 @@
 
 #include "test_support.hpp"
 
-// This file constructs a raw SolverContext directly (for the orientation
-// tests below), so it sees both api/dds.h's own ::Card and this module's
-// dds::belief_evaluation::Card in the same translation unit. Qualifying
-// through this alias rather than `using namespace` keeps every module type
-// unambiguous against dds's -- the two are layout-identical, so an
-// unqualified `Card` would compile as either with no error to catch it.
+// This file builds a raw SolverContext for the orientation tests, so it
+// sees both ::Card from api/dds.h and dds::belief_evaluation::Card. The two
+// are layout-identical, so an unqualified `Card` would compile as either
+// with no error. Qualifying through this alias, not `using namespace`,
+// keeps every module type unambiguous.
 namespace be = dds::belief_evaluation;
 
 namespace
@@ -47,17 +46,15 @@ class DoubleDummyBoundTest : public ::testing::Test
 {
 };
 
-// --- what solve_board's raw score actually measures ------------------------
+// --- what solve_board's raw score measures ----------------------------------
 //
-// Verified empirically against the solver, not assumed -- the same
-// discipline as confirming FutureTricks::equals' bit convention before
-// building anything on it. A single-trick, one-card-per-hand ending, with
-// North (declarer) always holding the ace -- so declarer's own trick count
-// is 1 regardless of who leads -- but who is *on lead* changes what
-// solve_board's score[0] reports.
+// Measured against the solver, not assumed. A one-trick ending with one
+// card per hand, North (declarer) holding the ace: declarer takes 1 trick
+// whoever leads, but who is on lead changes what score[0] reports.
 //
-// A single suit with one card per hand is enough here (unlike every other
-// fixture below, which need a second, filler suit -- see its own note).
+// One suit with one card per hand is enough here. The fixtures below need
+// a second, filler suit (see the note on
+// make_declarer_wins_exactly_half_the_tricks).
 
 TEST_F(DoubleDummyBoundTest, ScoreIsForTheSideOnLeadNotForDeclarerAbsolutely)
 {
@@ -77,36 +74,30 @@ TEST_F(DoubleDummyBoundTest, ScoreIsForTheSideOnLeadNotForDeclarerAbsolutely)
         return fut.score[0];
     };
 
-    // North (declarer) on lead: declarer's own side is on lead, so the two
-    // hypotheses ("declarer's absolute tricks" vs "the side on lead's own
-    // tricks") coincide -- both would say 1. Not a disambiguator by
-    // itself, but the expected, unsurprising case.
+    // North (declarer) on lead: declarer's side is on lead, so both
+    // hypotheses ("declarer's tricks" and "the leading side's tricks") say 1.
+    // Expected, but not a disambiguator.
     EXPECT_EQ(solve_first(North), 1);
 
-    // East (a defender) on lead, same holdings: declarer's own ace still
-    // wins the only trick whoever leads, so "declarer's absolute tricks"
-    // would still say 1 -- but "the side on lead's own tricks" says 0,
-    // since East's side can never beat North's ace. The actual result
-    // disambiguates the two hypotheses directly.
+    // East (a defender) on lead, same holdings: declarer's ace still wins, so
+    // "declarer's tricks" would still say 1, but "the leading side's tricks"
+    // says 0. The result tells the two apart.
     EXPECT_EQ(solve_first(East), 0);
 }
 
 namespace
 {
-    /// East holds the top two spades, North (declarer) and South (dummy)
-    /// the bottom two, West the middle two -- East wins both spade tricks
-    /// outright however anyone else plays. North holds the top two clubs
-    /// outright -- North wins both club tricks the same way. Four tricks
-    /// total, split evenly: declarer's double-dummy bound is exactly 2, a
-    /// genuine in-between value, not 0 or 4.
+    /// East holds the top two spades, North (declarer) and South (dummy) the
+    /// bottom two, and West the middle two, so East wins both spade tricks.
+    /// North holds the top two clubs and wins both club tricks. Four tricks,
+    /// split evenly: declarer's double-dummy bound is exactly 2, a real
+    /// in-between value.
     ///
-    /// The second suit is not incidental: a solver call over a *single*
-    /// suit's worth of cards with more than one card per hand was measured
-    /// directly (not assumed) to report a nonsensical score (a negative
-    /// number) from this solver build, while the same holdings alongside
-    /// any second, filler suit solve correctly. Every fixture below with
-    /// more than one card per hand therefore carries a second suit, even
-    /// where the suit itself plays no role in the position's logic.
+    /// The second suit matters. One measurement of a single suit with more
+    /// than one card per hand gave a negative score, while the same holdings
+    /// with a filler suit solved correctly. (The "not evaluated" notes below
+    /// show that this is not the whole story.) Every fixture here with more
+    /// than one card per hand carries a second suit.
     auto make_declarer_wins_exactly_half_the_tricks() -> Deal
     {
         Deal deal{};
@@ -123,12 +114,9 @@ namespace
         return deal;
     }
 
-    /// North (declarer) holds the top two spades outright, and the top two
-    /// clubs too -- two certain tricks in each suit, four total, regardless
-    /// of who leads or what anyone else plays. The second suit here is
-    /// again the filler-suit workaround described above, not part of the
-    /// position's own logic -- North would win the spade tricks alone
-    /// exactly the same way with clubs absent.
+    /// North (declarer) holds the top two spades and the top two clubs: four
+    /// certain tricks, whoever leads. The clubs are the filler suit described
+    /// above; North would win the spade tricks the same way without them.
     auto make_north_wins_every_trick() -> Deal
     {
         Deal deal{};
@@ -160,9 +148,8 @@ TEST_F(DoubleDummyBoundTest, ADeclarerWinOutrightBoundsAtTheFullTrickCount)
 
 TEST_F(DoubleDummyBoundTest, ADeclarerLossOutrightBoundsAtZero)
 {
-    // Same shape as make_north_wins_every_trick(), but with East holding
-    // every honour in both suits -- declarer cannot win a single trick,
-    // whoever leads or plays.
+    // The shape of make_north_wins_every_trick(), but East holds every honour
+    // in both suits, so declarer takes no trick.
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = North;
@@ -196,10 +183,9 @@ TEST_F(DoubleDummyBoundTest, APositionInBetweenBoundsAtExactlyHalf)
 
 TEST_F(DoubleDummyBoundTest, ADefenderOnLeadStillReportsDeclarersOwnBound)
 {
-    // make_north_wins_every_trick() but re-led from East (a defender) --
-    // the orientation conversion (tricks_remaining(layout) minus the raw
-    // score) must still recover declarer's own bound of 4, not the
-    // defenders' own raw score of 0.
+    // make_north_wins_every_trick(), led from East (a defender). The
+    // orientation conversion (tricks_remaining(layout) minus the raw score)
+    // must still give declarer's bound of 4, not the defenders' raw 0.
     Deal layout = make_north_wins_every_trick();
     layout.first = East;
 
@@ -214,10 +200,9 @@ TEST_F(DoubleDummyBoundTest, ADefenderOnLeadStillReportsDeclarersOwnBound)
 
 TEST_F(DoubleDummyBoundTest, AMalformedLayoutSurfacesAsTheSentinelNotARealBound)
 {
-    // An empty Deal (no cards anywhere, first = North by zero-init) is not
-    // a legal position for the solver to analyse -- solve_board is
-    // expected to reject it non-zero, the same class of failure
-    // DoubleDummyDefender's own tests exercise.
+    // An empty Deal (no cards, first = North by zero-init) is not a legal
+    // position, so solve_board should reject it with a non-zero status, the
+    // same failure DoubleDummyDefender's tests use.
     Deal const empty_deal{};
     SolverContext ctx;
     be::DoubleDummyBound provider(ctx, North);
@@ -226,12 +211,11 @@ TEST_F(DoubleDummyBoundTest, AMalformedLayoutSurfacesAsTheSentinelNotARealBound)
     EXPECT_EQ(bound(empty_deal), 14);
 }
 
-// --- reproduction run (b): tier 1 and tier 2 together, against a delta
-// that satisfies EvaluateOptions::delta_is_double_dummy_optimal (the
-// headline acceptance criterion for early cuts, the solver-linked half --
-// run (a) is in reproduction_test.cpp). DoubleDummyDefender paired with
-// DoubleDummyBound, both driven by the same SolverContext, is the intended
-// sound configuration DoubleDummyBound's own doxygen names.
+// --- tier 1 and tier 2 together, against a delta that satisfies
+// EvaluateOptions::delta_is_double_dummy_optimal. The solver-free
+// counterpart is in reproduction_test.cpp. DoubleDummyDefender with
+// DoubleDummyBound, on one SolverContext, is the sound configuration
+// DoubleDummyBound documents.
 
 namespace
 {
@@ -240,18 +224,15 @@ namespace
     constexpr int Eight = 8;
     constexpr int Nine = 9;
 
-    /// North (declarer) holds only the queen and jack of spades -- East
-    /// and West hold the ace and king between them, so declarer never
-    /// wins a spade trick regardless of the split or who leads. The club
-    /// filler (one card each, never a genuine choice) also always goes to
-    /// West, the highest of the four -- so declarer's true double-dummy
-    /// value over the whole three-trick ending is 0, not just in spades.
+    /// North (declarer) holds only the spade queen and jack; East and West
+    /// hold the ace and king, so declarer never wins a spade trick. The club
+    /// filler (one card each, never a choice) also goes to West, the highest.
+    /// So declarer's double-dummy value over the three-trick ending is 0.
     ///
-    /// tier 1's own dead cut cannot see this: at the root, declarer's own
-    /// card count (3: queen, jack, club) is well above tricks_needed (1),
-    /// so tier 1 finds nothing to prune -- tier 1 counts cards, not
-    /// winners. Only a real double-dummy bound catches it, which is the
-    /// point of this fixture.
+    /// Tier 1's dead cut cannot see this. At the root declarer holds 3 cards,
+    /// well above tricks_needed (1): tier 1 counts cards, not winners. Only a
+    /// real double-dummy bound catches it, which is the point of the
+    /// fixture.
     auto make_declarer_never_wins_a_trick() -> Deal
     {
         Deal deal{};
@@ -279,9 +260,9 @@ TEST_F(DoubleDummyBoundTest, ReproductionRunBTierOneAndTwoTogetherAgainstAQualif
     be::DeclarerStrategy const pi{
         .id = 1, .play = be::single_card_declarer_play, .state_key = nullptr};
 
-    // Baseline: tier 1 only (no bound supplied, so tier2_dead() never
-    // fires -- see its own guard). The true value is 0.0, reached by full
-    // recursion through both tricks.
+    // Baseline: tier 1 only. No bound is supplied, so tier2_dead() never
+    // fires. The true value, 0.0, comes from full recursion through both
+    // tricks.
     be::EvaluationResult const tier1_only = be::evaluate(
         layout,
         North,
@@ -291,10 +272,10 @@ TEST_F(DoubleDummyBoundTest, ReproductionRunBTierOneAndTwoTogetherAgainstAQualif
         defender.as_strategy(),
         be::EvaluateOptions{.collect_counters = true});
 
-    // Tier 1 and 2 together: DoubleDummyDefender satisfies
-    // delta_is_double_dummy_optimal (target = -1 is trick-maximising for
-    // both sides -- see EvaluateOptions::delta_is_double_dummy_optimal's
-    // own doxygen), so this is the sound, intended pairing.
+    // Tier 1 and 2 together. DoubleDummyDefender satisfies
+    // delta_is_double_dummy_optimal (target = -1 maximises tricks for both
+    // sides; see EvaluateOptions::delta_is_double_dummy_optimal), so this is
+    // the sound pairing.
     be::EvaluationResult const tier1_and_2 = be::evaluate(
         layout,
         North,
@@ -309,43 +290,36 @@ TEST_F(DoubleDummyBoundTest, ReproductionRunBTierOneAndTwoTogetherAgainstAQualif
 
     ASSERT_FALSE(tier1_only.error.has_value());
     ASSERT_FALSE(tier1_and_2.error.has_value());
-    // Bitwise (criterion for run (b) itself): both exactly 0.0, and both
-    // reached the identical way regardless of which tiers were active.
+    // Bitwise: both exactly 0.0, whichever tiers are active.
     EXPECT_EQ(tier1_only.by_strategy.at(1u).p_make, tier1_and_2.by_strategy.at(1u).p_make);
     EXPECT_EQ(tier1_only.by_strategy.at(1u).p_make, 0.0);
 
-    // Evidence tier 2 did real work tier 1 alone could not: fewer nodes
-    // visited with tier 2 enabled, since tier 2's bound catches the
-    // all-dead position at the root itself, where tier 1's own dead cut
-    // could not (see the fixture's own comment).
+    // Tier 2 did work tier 1 could not: fewer nodes visited, because the
+    // bound catches the all-dead position at the root, where tier 1's dead
+    // cut cannot (see the fixture comment).
     ASSERT_TRUE(tier1_only.by_strategy.at(1u).counters.has_value());
     ASSERT_TRUE(tier1_and_2.by_strategy.at(1u).counters.has_value());
     EXPECT_LT(
         tier1_and_2.by_strategy.at(1u).counters->nodes_visited,
         tier1_only.by_strategy.at(1u).counters->nodes_visited);
-    // Fires at the very root: exactly 1 node visited with tier 2 enabled.
+    // Fires at the root: exactly 1 node visited with tier 2 enabled.
     EXPECT_EQ(tier1_and_2.by_strategy.at(1u).counters->nodes_visited, 1u);
 }
 
 TEST_F(DoubleDummyBoundTest, TierTwoCutRateUnderSamplingIsExactlyZeroBecauseOfTheGateNotByAccident)
 {
-    // The same fixture, real bound and real defender as the reproduction
-    // run above -- reused, not re-derived, per this file's own established
-    // pattern -- but this time with genuinely more than one consistent
-    // layout in the source, so a sample_size can actually bind. Five
-    // identical copies of make_declarer_never_wins_a_trick(): duplicate
-    // content is fine here (is_consistent compares each candidate against
-    // the root layout, and an exact copy of the root trivially matches),
-    // and DoubleDummyBound computes the identical answer (0 tricks) for
-    // every one of them, since the property driving that answer -- the
-    // spades holding -- is the same in every copy.
+    // The fixture, bound and defender of the run above, but with more than
+    // one consistent layout in the source, so a sample_size can bind. Five
+    // identical copies of make_declarer_never_wins_a_trick(). Duplicates are
+    // fine: is_consistent compares each candidate with the root layout, and a
+    // copy matches. DoubleDummyBound gives 0 tricks for each, since the spades
+    // are the same in every copy.
     //
-    // A zero tier-2 rate is trivially achievable by not measuring, by a
-    // fixture with no bound, or by a bound that never fires -- none of
-    // that is what this test shows. The unsampled run below fires the cut
-    // on this exact bound and delta (tier2_cuts >= 1); the sampled run,
-    // same bound, same delta, same layouts, fires it zero times. The only
-    // difference between the two runs is is_sample.
+    // A zero tier-2 count proves nothing by itself: no measurement, no bound
+    // or a bound that never fires would all give it. Here the unsampled run
+    // fires the cut with this bound and delta (tier2_cuts >= 1), and the
+    // sampled run, with the same bound, delta and layouts, fires it zero
+    // times. The only difference is is_sample.
     std::vector<Deal> layouts;
     for (int i = 0; i < 5; ++i)
     {
@@ -391,47 +365,38 @@ TEST_F(DoubleDummyBoundTest, TierTwoCutRateUnderSamplingIsExactlyZeroBecauseOfTh
     ASSERT_FALSE(sampled.error.has_value());
     ASSERT_TRUE(sampled.by_strategy.at(1u).counters.has_value());
     EXPECT_EQ(sampled.by_strategy.at(1u).counters->tier2_cuts, 0u);
-    // The true value happens to be 0.0 either way here (declarer really
-    // does never win a trick in this fixture), so this is not itself
-    // evidence the gate did anything -- tier2_cuts is. Asserted anyway,
-    // for the same reason the unsampled run's own value is: a mechanism
-    // that reaches a plausible-looking wrong number is worse than one
-    // that visibly fails.
+    // The value is 0.0 either way here (declarer never wins a trick), so this
+    // is not evidence the gate worked; tier2_cuts is. It is asserted anyway,
+    // as for the unsampled run: a plausible wrong number is worse than a
+    // visible failure.
     EXPECT_EQ(sampled.by_strategy.at(1u).p_make, 0.0);
 }
 
 // --- solve_board's "not evaluated" score, and the guard that contains it
 //
-// What is established. `as_bound()` asks solve_board for `solutions = 1` and
-// reads `score[0]` as a trick count. On positions this evaluator reaches,
-// solve_board can instead return `score[0] == -2` -- "not evaluated" -- with
-// `status == RETURN_NO_FAULT`, so the status guard does not catch it.
-// `solutions = 3` scores every affected position correctly.
+// What is established. `as_bound()` asks solve_board for `solutions = 1`
+// and reads `score[0]` as a trick count. On positions this evaluator
+// reaches, solve_board can return `score[0] == -2` ("not evaluated") with
+// `status == RETURN_NO_FAULT`, so the status check misses it.
 //
-// Until the guard below existed, that -2 was returned as a bound on the
-// declarer-on-lead branch: negative, hence below any `tricks_needed`, so
-// `tier2_dead()` fired on a live node and `evaluate()` reported 0.0 for a
-// contract that makes. `as_bound()` now range-checks the raw score before the
-// orientation split and answers `SolverFailureSentinel` (14) instead, which is
-// deliberately too *high* -- a bound read as an upper limit can only lose
-// pruning by being too high, where too low fires the cut. The cost is real and
-// is pruning only: on these positions tier 2 no longer contributes anything.
+// Unguarded, -2 on the declarer-on-lead branch is a bound below every
+// `tricks_needed`: `tier2_dead()` fires on a live node, and `evaluate()`
+// reports 0.0 for a contract that makes. So `as_bound()` range-checks the
+// raw score before the orientation split. Out of range, it retries at
+// `solutions = 3`, which scored every affected position measured. If the
+// retry also fails, it returns `SolverFailureSentinel` (14). The sentinel
+// is deliberately too *high*: a bound that is too high only loses pruning,
+// while one that is too low fires the cut.
 //
-// Deliberately not a clamp, which is a distinct operation and an unsound one:
-// clamping -2 into `[0, tricks_remaining]` gives 0, and 0 is below every
-// `tricks_needed >= 1`, so the cut would still fire on every affected node
-// while the bug looked fixed. (An earlier commit message on the example branch
-// says "one clamp to [0, tricks_remaining]" -- wrong for this reason.)
+// **Not a clamp.** Clamping -2 into `[0, tricks_remaining]` gives 0, which
+// is below every `tricks_needed >= 1`. The cut would still fire on every
+// affected node while the bug looked fixed.
 //
-// **What is still NOT established: which positions answer this way.** The
-// guard does not depend on knowing, which is why it could land first. An
-// earlier version of this comment claimed two triggers (a single-suit position
-// with more than one card per hand, and a forced or all-equals play) reaching
-// one mechanism, `nodes == 0`. That was wrong, and the table below is the
-// refutation rather than a demonstration:
+// **Not established: which positions answer this way.** The guard does not
+// depend on knowing. The table below refutes the obvious explanations:
 //
 //   - `nodes == 0` occurs with a *correct* score (SingleSuitOneCardEach), so
-//     it is a correlate and not the mechanism.
+//     it is a correlate, not the mechanism.
 //   - Changing only `first` on the failing fixture makes the same holdings
 //     score correctly (SameHoldingsLedFromNorth), so the holdings alone are
 //     not the trigger.
@@ -440,32 +405,26 @@ TEST_F(DoubleDummyBoundTest, TierTwoCutRateUnderSamplingIsExactlyZeroBecauseOfTh
 //   - A forced play scores correctly (TwoSuitsForcedFollow), so being forced
 //     is not sufficient.
 //
-// So: the symptom is pinned, the guard is pinned, the trigger is open. Anyone
-// recovering the lost pruning needs the trigger, or a retry at `solutions = 3`;
-// they should not trust a trigger story, including this one. Note that this
-// file's own fixture note (see make_declarer_wins_exactly_half_the_tricks)
-// records a narrower observation -- single suit, more than one card per hand --
-// which the second bullet above also contradicts as a complete account.
+// So the symptom and the guard are pinned, and the trigger is open. Do not
+// trust a trigger story, including the filler-suit note on
+// make_declarer_wins_exactly_half_the_tricks, which the second bullet
+// contradicts as a complete account.
 //
-// One asymmetry worth keeping in mind when probing. A negative score only
-// became a *low* bound on the declarer-on-lead branch, where as_bound()
-// returned score[0] directly. On the defender-on-lead branch it returns
-// `tricks_remaining - score[0]`, so -2 became tricks_remaining + 2 -- too
-// high, and therefore harmless. A defender-on-lead node showed an implausibly
-// large bound rather than a negative one. Both branches are guarded now, since
-// both read the same raw score.
+// One asymmetry, for anyone probing. On the declarer-on-lead branch
+// as_bound() returns score[0] itself, so -2 is a low bound. On the
+// defender-on-lead branch it returns `tricks_remaining - score[0]`, so -2
+// gives tricks_remaining + 2: too high, and so harmless. Both branches
+// read the same raw score, so both are guarded.
 
 namespace
 {
-    // Every position below is fully specified here, so the table is
-    // re-derivable from this file alone. An earlier version of this comment
-    // carried measurements whose positions were not recorded, which made them
-    // unverifiable -- the filler ranks turned out to be load-bearing.
+    // Every position is fully specified here, so the table can be re-derived
+    // from this file alone. The filler ranks matter.
     struct NoSearchCase
     {
         char const* name;
         Deal deal;
-        bool score_is_negative;  ///< what solutions = 1 does today
+        bool score_is_negative;  ///< what solutions = 1 returns
         int tricks;              ///< tricks the position holds, = cards per hand
     };
 
@@ -525,11 +484,10 @@ namespace
     }
 }
 
-// Each row asserts what solve_board does today, at both solutions = 1 and
-// solutions = 3, so the table above is a measurement a reader can re-run
-// rather than a claim they have to take. This one probes the solver directly
-// and is therefore unaffected by as_bound()'s guard: it records the behaviour
-// the guard exists to contain, and would only change if dds itself did.
+// Each row asserts what solve_board does at both solutions = 1 and
+// solutions = 3, so the table is a measurement a reader can re-run. This
+// probes the solver directly, unaffected by as_bound()'s guard. It records
+// the behaviour the guard contains, and changes only if dds does.
 TEST_F(DoubleDummyBoundTest, SolverCanAnswerNotEvaluatedAtSolutionsOneWithASuccessStatus)
 {
     SolverContext ctx;
@@ -545,7 +503,7 @@ TEST_F(DoubleDummyBoundTest, SolverCanAnswerNotEvaluatedAtSolutionsOneWithASucce
         int const status_three =
             solve_board(ctx, one.deal, /*target=*/-1, /*solutions=*/3, /*mode=*/0, &three_solutions);
 
-        // The heart of it: a *successful* status carrying a negative score.
+        // The core of it: a *successful* status with a negative score.
         EXPECT_EQ(status_one, RETURN_NO_FAULT) << one.name;
         EXPECT_EQ(status_three, RETURN_NO_FAULT) << one.name;
         EXPECT_EQ(one_solution.score[0] < 0, one.score_is_negative) << one.name;
@@ -562,7 +520,7 @@ TEST_F(DoubleDummyBoundTest, SolverCanAnswerNotEvaluatedAtSolutionsOneWithASucce
         }
         else if (one_solution.nodes == 0)
         {
-            // Why `nodes == 0` is not the mechanism: here it coincides with a
+            // Why `nodes == 0` is not the mechanism: here it comes with a
             // correct score.
             any_zero_nodes_with_a_correct_score = true;
             EXPECT_EQ(one_solution.score[0], three_solutions.score[0]) << one.name;
@@ -580,8 +538,8 @@ TEST_F(DoubleDummyBoundTest, SolverCanAnswerNotEvaluatedAtSolutionsOneWithASucce
 
 TEST_F(DoubleDummyBoundTest, ANotEvaluatedScoreSurfacesAsTheSentinelNotAsANegativeBound)
 {
-    // The guard's whole job, on the one position that needs it: a raw score
-    // of -2 must leave as_bound() as the sentinel and not as itself.
+    // The guard's job, on the position that needs it: a raw score of -2 must
+    // not leave as_bound() as itself.
     NoSearchCase const failing = no_search_cases().front();
     ASSERT_TRUE(failing.score_is_negative) << failing.name;
 
@@ -589,11 +547,10 @@ TEST_F(DoubleDummyBoundTest, ANotEvaluatedScoreSurfacesAsTheSentinelNotAsANegati
     be::DoubleDummyBound provider(ctx, North);
     be::LayoutBound const bound = provider.as_bound();
 
-    // The retry at solutions = 3 scores this position correctly, so the bound
-    // is the real double-dummy value and not the sentinel: declarer's side
-    // takes both tricks. The sentinel remains for a position where *both*
-    // solves decline to score, which is the floor of the design even though
-    // nothing here reaches it.
+    // The retry at solutions = 3 scores this position correctly, so the
+    // bound is the real double-dummy value, not the sentinel: declarer's side
+    // takes both tricks. The sentinel is kept for a position where both solves
+    // decline to score, though nothing here reaches it.
     EXPECT_EQ(bound(failing.deal), failing.tricks)
         << "expected the true double-dummy value. 14 means the retry is gone and the "
            "bound has fallen back to the sentinel -- sound, but it prunes nothing on "
@@ -603,10 +560,9 @@ TEST_F(DoubleDummyBoundTest, ANotEvaluatedScoreSurfacesAsTheSentinelNotAsANegati
 
 TEST_F(DoubleDummyBoundTest, EveryBoundIsAtTheSentinelOrInsideTheTrickRangeNeverBelowIt)
 {
-    // The guard stated as the invariant rather than as one position: whatever
-    // solve_board answers, as_bound() returns either a real bound within the
-    // tricks the position holds, or the sentinel -- never a value below the
-    // range, which is the only way a bound can fire a cut it should not.
+    // The guard as an invariant over every position: as_bound() returns a
+    // real bound within the tricks the position holds, or the sentinel. Never
+    // a value below the range, the only way a bound can fire a wrong cut.
     SolverContext ctx;
     be::DoubleDummyBound provider(ctx, North);
     be::LayoutBound const bound = provider.as_bound();
@@ -614,9 +570,8 @@ TEST_F(DoubleDummyBoundTest, EveryBoundIsAtTheSentinelOrInsideTheTrickRangeNever
     for (NoSearchCase const& one : no_search_cases())
     {
         int const value = bound(one.deal);
-        // The property the guard exists for, and the one that must survive any
-        // change to how the value is obtained: never below the range, because
-        // that is the only way a bound fires a cut it should not.
+        // The property the guard exists for, which must survive any change to
+        // how the value is obtained: never below the range.
         EXPECT_GE(value, 0) << one.name << ": a bound below zero is below every tricks_needed";
         EXPECT_LE(value, one.tricks)
             << one.name << ": with the retry, every position here scores -- a value of 14 "
@@ -626,17 +581,15 @@ TEST_F(DoubleDummyBoundTest, EveryBoundIsAtTheSentinelOrInsideTheTrickRangeNever
 
 TEST_F(DoubleDummyBoundTest, WithTheBoundEvaluateStillReportsTheTrueValueOnAnUnscorablePosition)
 {
-    // The end-to-end assertion, and the one that would have caught this in
-    // the first place: run the same position with and without the bound and
-    // require the same answer. Before the guard, this reported 0.0 with the
-    // bound and 1.0 without it.
+    // End to end: the same position with and without the bound must give the
+    // same answer. Without the guard, it reports 0.0 with the bound and 1.0
+    // without.
     //
-    // TheFailingFixture, from declarer's side: North (declarer) holds
-    // spades K J, South (dummy) T 9, and the defenders hold Q 6 5 4 between
-    // them. North's king is above every defender card, so declarer's side
-    // wins at least one of the two tricks however anyone plays -- hand
-    // checkable, and it makes the true value 1.0 at tricks_needed = 1 for
-    // any pi and any delta.
+    // TheFailingFixture, from declarer's side: North (declarer) holds spades
+    // K J, South (dummy) T 9, and the defenders Q 6 5 4. North's king beats
+    // every defender card, so declarer's side wins at least one of the two
+    // tricks. So the true value is 1.0 at tricks_needed = 1, for any pi and
+    // delta.
     Deal const layout = no_search_cases().front().deal;
     be::VectorLayoutSource source({layout});
     SolverContext ctx;
@@ -663,18 +616,15 @@ TEST_F(DoubleDummyBoundTest, WithTheBoundEvaluateStillReportsTheTrueValueOnAnUns
         << "the bound changed the answer, which a sound bound cannot do -- it may only "
            "change how much work reaching it took";
 
-    // No node saving is expected *here*, and that is not the retry failing.
-    // The retry gives this position its true bound of 2, and 2 is at or above
-    // the single trick needed, so the cut correctly does not fire: the contract
-    // is live. A bound only prunes where it is below tricks_needed.
+    // No node saving is expected here, and that is not a failure of the
+    // retry. The retry gives this position its true bound, 2, which is not
+    // below the single trick needed, so the cut correctly does not fire. A
+    // bound prunes only where it is below tricks_needed.
     //
-    // What the retry buys is measured where cuts actually happen. On the
-    // four-card ending in examples/, tier 2 takes nodes visited from 6283 to
-    // 3159 with 197 cuts, and is faster in wall-clock terms than tier 1 alone
-    // -- the retry costs less than searching the subtrees it lets the cut
-    // remove. (3445/174 was the number *before* this commit's retry; a stale
-    // copy of it here would be the exact "prose outlives the commit it
-    // describes" defect this file's own comments elsewhere warn against.)
+    // The retry pays off where cuts happen. On the four-card ending in
+    // examples/, tier 2 takes nodes visited from 6283 to 3159, with 197 cuts,
+    // and runs faster than tier 1 alone: the retry costs less than searching
+    // the subtrees it lets the cut remove.
     ASSERT_TRUE(without_bound.by_strategy.at(1u).counters.has_value());
     ASSERT_TRUE(with_bound.by_strategy.at(1u).counters.has_value());
     EXPECT_EQ(
