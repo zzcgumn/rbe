@@ -1,6 +1,6 @@
-"""Tests for `PlayRecord` and its Python-visible reach: `state.play_record`,
-`evaluate(..., play_record=...)`, and `ExhaustiveLayoutSource(..., record=...)`
--- the sole way either entry point accepts a play history.
+"""Tests for `PlayRecord` and where it appears: `state.play_record`,
+`evaluate(..., play_record=...)` and `ExhaustiveLayoutSource(..., record=...)`.
+A PlayRecord is the only way either entry point accepts a play history.
 """
 
 import unittest
@@ -26,11 +26,9 @@ def holding(*ranks: int) -> int:
 
 
 def make_one_card_finesse_root() -> dict:
-    # North (declarer) holds a single middling card (Nine); South (dummy)
-    # holds a single safely-lower card (Eight); East and West share a
-    # seven-card pool {Two..Seven, Ten}. Mirrors
-    # test_belief_space_local_evaluation_strategies.py's own fixture of the
-    # same name.
+    # North (declarer) holds the ♠9 and South (dummy) the ♠8. East and West
+    # share a seven-card pool: ♠2 to ♠7 and ♠10. Mirrors the fixture of the
+    # same name in test_belief_space_local_evaluation_strategies.py.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = holding(9)
     remain_cards[South][Spades] = holding(8)
@@ -76,9 +74,8 @@ class TestPlayRecordConstruction(unittest.TestCase):
         self.assertEqual(record.opening_leader, North)
 
     def test_an_out_of_range_opening_leader_is_rejected(self) -> None:
-        # The same exception type ExhaustiveLayoutSource's own record=
-        # argument raises when its own root-consistency check catches a
-        # malformed pair that reaches it some other way.
+        # ExhaustiveLayoutSource raises the same type when its record=
+        # argument fails the root-consistency check.
         with self.assertRaises(InvalidHistoryInputError):
             PlayRecord([], 99)
 
@@ -125,17 +122,11 @@ class TestEvaluatePlayRecord(unittest.TestCase):
         self.assertIsNone(captured["play_record"])
 
     def test_a_pi_stashed_states_play_record_raises_after_evaluate_returns(self) -> None:
-        # state.play_record is invariant for "the whole evaluation"
-        # (ObservationState's own doxygen) -- live, during any pi call
-        # while evaluate() is still running, it is always safe to read
-        # (test_play_record_reaches_the_state_pi_is_given above already
-        # covers that). But the state object itself is a value a Python
-        # pi can retain past its own call -- DeclarerStrategy::play's own
-        # purity requirement discourages this, but nothing enforces it --
-        # and play_record's backing storage is owned by this evaluate()
-        # call's own transient EvaluateOptions, which does not survive the
-        # call. Reading .play_record on a stashed state after evaluate()
-        # has returned must therefore raise, not read freed memory.
+        # During evaluate(), state.play_record is always safe to read. A
+        # Python pi can keep the state after its call: the purity rule
+        # discourages it but nothing enforces it. play_record lives in the
+        # EvaluateOptions of this evaluate() call, which ends with the call.
+        # A later read must raise, not read freed memory.
         stashed = {}
 
         def pi(state, view):
@@ -156,10 +147,9 @@ class TestEvaluatePlayRecord(unittest.TestCase):
             stashed["state"].play_record
 
     def test_a_delta_stashed_states_play_record_raises_after_evaluate_returns(self) -> None:
-        # The same hazard, for delta's own state argument
-        # (make_defender_strategy) rather than pi's -- delta carries no
-        # purity requirement at all, so retaining state there is not even
-        # discouraged by convention.
+        # The same hazard for delta's state argument, from
+        # make_defender_strategy. Delta has no purity rule, so nothing
+        # discourages keeping the state.
         stashed = {}
 
         def delta(layout, seat, state):
@@ -185,20 +175,13 @@ class TestEvaluatePlayRecord(unittest.TestCase):
 
 class TestExhaustiveLayoutSourceRecordArgument(unittest.TestCase):
     def test_a_supplied_record_is_consistent_and_reaches_the_source(self) -> None:
-        # ExhaustiveLayoutSource requires history and root together to
-        # account for all 52 cards once a non-empty record is supplied --
-        # and, mechanically, a real sequence of complete tricks always
-        # leaves all four hands at the same remaining count (each trick
-        # removes exactly one card from each hand), so a genuinely small
-        # defender pool needs many tricks played, not one. One trick played
-        # here instead (giving every hand 12 cards, a real but large
-        # C(24, 12) space) -- all four played cards are clubs, so no
-        # defender is void in anything, and the record does not narrow the
-        # space at all: the point of this test is that a record reaches
-        # ExhaustiveLayoutSource and is accepted as Consistent, not that it
-        # shrinks anything here. Genuine narrowing is
-        # TestTheHistoryConstrainsTheBeliefSpace's own, in
-        # test_belief_space_local_evaluation_play_sequence.py.
+        # With a record, the history and root must hold all 52 cards. One
+        # trick is played, so each hand has 12 cards: C(24, 12) layouts. All
+        # four cards are clubs, so no void is shown and the space does not
+        # shrink. This test only checks that the record is accepted as
+        # Consistent. TestTheHistoryConstrainsTheBeliefSpace in
+        # test_belief_space_local_evaluation_play_sequence.py checks the
+        # narrowing.
         history = [Card(Clubs, 2), Card(Clubs, 3), Card(Clubs, 4), Card(Clubs, 5)]  # W, N, E, S
         played = {(c.suit, c.rank) for c in history}
         remaining = [

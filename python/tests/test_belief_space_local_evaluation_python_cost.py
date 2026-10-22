@@ -1,21 +1,11 @@
-"""Correctness for `real_work_declarer_play` -- the "real Python-side
-work" pi the Python-vs-C++ cost comparison
-(benchmarks/python_cost/) needs, ported line-for-line from
-benchmarks/python_cost/strategies.hpp's own C++ version (see its own
-doxygen for what the rule computes and why).
+"""Tests safety_score_declarer_play, a line-for-line port of
+real_work_declarer_play in benchmarks/python_cost/strategies.hpp. The
+Python-vs-C++ cost comparison uses it as a pi that does real work.
 
-Hand-derived case, worked independently rather than read from a shared
-generator -- the same choice safety_score_declarer_play_test.cpp's own
-header comment explains (oracle_test.cpp's own precedent): a
-transcription slip here shows up as *some other score*, not as agreement
-with the wrong one, so a small enough case is safe to hand-derive on both
-sides separately. The two files' own worked comments should read
-identically; if they ever diverge, that divergence is the bug to chase.
-
-Only the scoring rule is proven here. That the Python binding reproduces
-a C++ evaluate() run bitwise, on this same shape of fixture, is already
-proven by test_belief_space_local_evaluation_parity.py -- not re-proven
-here (this plan's own "read, do not re-derive").
+The cases are derived by hand, as in safety_score_declarer_play_test.cpp. A
+slip gives a different score, not a false agreement. The worked comments in
+the two files should match. test_belief_space_local_evaluation_parity.py
+covers the binding's bitwise agreement with C++.
 """
 
 import unittest
@@ -95,13 +85,10 @@ class FakeState:
 
 
 class FakeEntry:
-    # Duck-typed stand-in for the real (pybind11-bound) BeliefEntry, which
-    # has no Python-visible constructor -- it only ever comes from a live
-    # BeliefView the evaluator built, referencing evaluator-owned memory
-    # (belief_space_local_evaluation.cpp's own PyBeliefEntry). safety_score
-    # _declarer_play only ever reads `.layout`/`.posterior` off an entry, so
-    # a plain object with those two attributes exercises the identical code
-    # path without needing a real evaluator run.
+    # Stands in for BeliefEntry, which Python cannot construct: it only
+    # comes from a live BeliefView. safety_score_declarer_play reads only
+    # `.layout` and `.posterior`, so this runs the same code without an
+    # evaluator.
     def __init__(self, layout: dict, posterior: float) -> None:
         self.layout = layout
         self.posterior = posterior
@@ -113,10 +100,9 @@ class FakeView:
 
 
 class TestSafetyScoreDeclarerPlay(unittest.TestCase):
-    # North holds the Five and the Ace of Spades, on lead -- both legal.
-    # Two equally likely layouts: East holds the King in one (beats the
-    # Five, not the Ace), neither defender holds anything in Spades in the
-    # other.
+    # North, on lead, holds the ♠A 5. In one of two equally likely
+    # layouts East holds the ♠K. In the other neither defender holds a
+    # spade.
     #
     #   score(Five) = 0.5 * 1 (East's King beats it) + 0.5 * 0 = 0.5
     #   score(Ace)  = 0.5 * 0 (nothing beats an Ace)  + 0.5 * 0 = 0.0
@@ -136,7 +122,7 @@ class TestSafetyScoreDeclarerPlay(unittest.TestCase):
         played = safety_score_declarer_play(state, view)
         self.assertEqual((played.suit, played.rank), (Spades, 14))
 
-    # Same two layouts, but North holds only the Five -- no choice to make.
+    # North holds only the five, so there is no choice.
     def test_returns_the_only_legal_card_when_there_is_no_choice(self) -> None:
         known_holdings = empty_deal()
         known_holdings["remain_cards"][North][Spades] = 1 << 5
@@ -149,8 +135,8 @@ class TestSafetyScoreDeclarerPlay(unittest.TestCase):
         played = safety_score_declarer_play(state, view)
         self.assertEqual((played.suit, played.rank), (Spades, 5))
 
-    # An empty belief view scores every candidate 0 -- the tie breaks by
-    # lowest rank, the same deterministic rule lowest_legal_card uses.
+    # An empty belief view scores every card 0. The tie goes to the lowest
+    # rank, as in lowest_legal_card.
     def test_ties_break_by_lowest_rank(self) -> None:
         known_holdings = empty_deal()
         known_holdings["remain_cards"][North][Spades] = (1 << 5) | (1 << 14)

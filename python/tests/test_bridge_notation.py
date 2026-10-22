@@ -1,14 +1,5 @@
-"""Tests for `bridge_notation`, promoted from `examples/` into its own
-installed package.
-
-`TestParseDeal` moved here verbatim from `examples/test_play_sequence.py` --
-it always tested this module, not `play_sequence.py`, and belongs with what
-it tests.
-
-`TestFormatting` is new. `rank_letter`, `format_card`, `format_hand` and
-`format_denomination` were used throughout `examples/` -- always as an
-argument to `print(...)`, never asserted on -- so promoting this module to
-shipped API is the first point any of them has had a direct test.
+"""Tests for `bridge_notation`: parsing deals and cards, and formatting
+ranks, cards, hands and denominations.
 """
 
 import unittest
@@ -71,9 +62,7 @@ class TestParseDeal(unittest.TestCase):
 
 
 class TestFormatting(unittest.TestCase):
-    """Never directly asserted on before this promotion -- see module
-    docstring. Perturbed once each and confirmed to fail before being left as
-    written; see the commit message."""
+    """The examples print these but do not check them."""
 
     def test_rank_letter_names_every_rank(self) -> None:
         self.assertEqual(rank_letter(14), "A")
@@ -113,8 +102,7 @@ class TestFormatting(unittest.TestCase):
 
 
 class TestPromotedAsATopLevelPackage(unittest.TestCase):
-    """The property this whole promotion is for: importable on its own,
-    with no dependency on belief_space_local_evaluation."""
+    """bridge_notation imports without belief_space_local_evaluation."""
 
     def test_the_module_itself_is_importable(self) -> None:
         self.assertTrue(hasattr(bridge_notation, "parse_deal"))

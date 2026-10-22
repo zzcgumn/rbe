@@ -1,9 +1,7 @@
 """Runs every Python code example in docs/belief_space_local_evaluation.md,
-as close to verbatim as a runnable script requires (the doc's own snippets
-use placeholder names -- root, declarer, seed, tricks_needed -- that this
-file defines once and reuses, exactly the values the doc's prose implies).
-An example that does not run is worse than no example; this is how "every
-code example in the document runs" is verified rather than eyeballed.
+as close to verbatim as a script allows. The doc's placeholders, such as root,
+declarer, seed and tricks_needed, are defined here with the values its prose
+implies.
 """
 
 import unittest
@@ -25,9 +23,9 @@ def holding(*ranks: int) -> int:
 
 
 def make_root() -> dict:
-    # East/West share a seven-card spade pool (East 2, West 5); North/South
-    # hold one card each. Small enough to enumerate exhaustively, large
-    # enough for sample_size/replenish_below to have real headroom.
+    # East and West share seven spades, two for East and five for West.
+    # North and South hold one card each. The space is small enough to
+    # enumerate and large enough for sampling and replenishment.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = holding(9)
     remain_cards[South][Spades] = holding(8)
@@ -58,11 +56,9 @@ class TestALayoutSource(unittest.TestCase):
         self.assertEqual(source.size(), 21)  # C(7, 2)
 
     def test_exhaustive_layout_source_with_history(self) -> None:
-        # A consistent history needs the *whole* deck accounted for
-        # (played, or still held somewhere) -- every card not explicitly
-        # played goes to North by default, so the fixture states only
-        # what it cares about: North leads, East shows void in diamonds by
-        # discarding a spade, and root reflects the position afterwards.
+        # A consistent history needs all 52 cards, played or held. Every
+        # card not played goes to North. North leads, and East shows out of
+        # diamonds by discarding a spade.
         played = [(Diamonds, 14), (Spades, 2), (Diamonds, 13), (Diamonds, 12)]
         played_set = set(played)
         remain_cards = [[0, 0, 0, 0] for _ in range(4)]
@@ -112,8 +108,8 @@ class TestALayoutSource(unittest.TestCase):
 
 class TestPlayingAHandOut(unittest.TestCase):
     def test_the_four_free_functions(self) -> None:
-        # North (declarer) holds a single card; East/West hold one each --
-        # small enough to hand-derive every step. East leads.
+        # One card per hand, so every step can be derived by hand. East
+        # leads.
         deal = {
             "trump": DDS_NOTRUMP,
             "first": East,
@@ -164,11 +160,11 @@ class TestPlayingAHandOut(unittest.TestCase):
         self.assertEqual(root["first"], North)
 
     def test_play_sequence(self) -> None:
-        # West holds C6, North C4, East C9, South CQ -- South (declarer)
-        # wins the trick with the queen.
+        # West holds the ♣6, North the ♣4, East the ♣9 and South the ♣Q.
+        # South (declarer) wins with the queen.
         deal = {
             "trump": DDS_NOTRUMP,
-            "first": East,  # overridden by PlaySequence's own opening_leader
+            "first": East,  # PlaySequence's opening_leader overrides this
             "remain_cards": [[0, 0, 0, 0] for _ in range(4)],
             "current_trick_suit": (0, 0, 0),
             "current_trick_rank": (0, 0, 0),
@@ -209,13 +205,10 @@ def seat_on_play(deal: dict) -> int:
 
 class TestPiAndDelta(unittest.TestCase):
     def test_pi_and_delta_shapes_run(self) -> None:
-        # The doc's own pi/delta bodies are illustrative fixed plays
-        # ("return bsle.Card(0, 14)"), which is only legal at a node where
-        # that exact card is held -- not true throughout a real search.
-        # This test confirms the *shape* (arguments in, a Card out; a list
-        # of (Card, probability) pairs out) is exactly what evaluate()
-        # calls with and accepts, using real forced/lowest-legal bodies
-        # instead of the doc's fixed example so it runs to completion.
+        # The doc's pi and delta return a fixed card ("return
+        # bsle.Card(0, 14)"), which is illegal at most nodes of a search.
+        # This test keeps the doc's signatures and return types, and plays
+        # the lowest card instead.
         def pi(state, view):
             del view
             return lowest_card_in(state.known_holdings["remain_cards"][seat_on_play(state.known_holdings)])
@@ -277,9 +270,8 @@ class TestEvaluate(unittest.TestCase):
 
 
 class TestExceptionsSection(unittest.TestCase):
-    # The Exceptions section is prose, not a code block, but its two
-    # concrete claims are checked directly: the shared root, and that a
-    # propagated Python exception keeps its own type.
+    # The Exceptions section is prose, but its two claims are checked: one
+    # base class, and a propagated Python exception keeps its type.
     def test_every_family_is_rooted_at_the_same_base(self) -> None:
         self.assertTrue(issubclass(bsle.HistoryRejectedError, bsle.BeliefSpaceLocalEvaluationError))
         self.assertTrue(issubclass(bsle.ConstrainedSpaceEmptyError, bsle.BeliefSpaceLocalEvaluationError))
@@ -306,12 +298,9 @@ class TestExceptionsSection(unittest.TestCase):
 
 
 def make_solver_seam_root() -> dict:
-    # solve_board (the real double-dummy solver, unlike the scripted
-    # strategies used everywhere else in this file) requires all four
-    # hands to hold the same number of cards -- an ordinary well-formed
-    # ending, not merely something belief_evaluation's own machinery
-    # tolerates. North: Q, J of spades; South: 2, 3; East: A, 4; West: K,
-    # 5; one club filler each.
+    # solve_board, the double-dummy solver, needs equal hand sizes.
+    # North holds ♠Q J, South ♠3 2, East ♠A 4 and West ♠K 5, and each has
+    # one club.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = holding(12, 11)
     remain_cards[South][Spades] = holding(2, 3)

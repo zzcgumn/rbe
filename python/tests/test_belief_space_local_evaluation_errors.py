@@ -1,3 +1,6 @@
+"""Tests for the exception hierarchy: one test per failure cause, and
+exceptions raised in Python callbacks crossing evaluate() unchanged."""
+
 import unittest
 
 from belief_space_local_evaluation import BeliefSpaceLocalEvaluationError
@@ -53,10 +56,9 @@ def make_one_card_finesse_root() -> dict:
 
 
 def make_two_card_finesse_root() -> dict:
-    # Same pool, but East holds two of the seven cards (C(7, 2) = 21
-    # splits) -- enough freedom for a sampled root and node-local
-    # replenishment to have real work to do. Mirrors
-    # exhaustive_layout_source_integration_test.cpp's own fixture.
+    # The same pool, but East holds two of the seven cards: C(7, 2) = 21
+    # splits. That gives a sampled root and replenishment real work. Mirrors
+    # the fixture in exhaustive_layout_source_integration_test.cpp.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = holding(9)
     remain_cards[South][Spades] = holding(8)
@@ -95,12 +97,10 @@ def defender_play(layout, seat, state):
 
 
 class TestTheHierarchyShape(unittest.TestCase):
-    # Settled in one sitting, all three mechanisms at once: a rejected
-    # history (from a source's constructor), a RootFailure and a
-    # ValidationError (both from evaluate()). Everything this module
-    # raises intentionally shares the one root, and a history rejection
-    # must never be catchable as the same thing as an ordinary
-    # NoLayoutSurvived -- they are different faults with different fixes.
+    # Three families: a rejected history, from a source's constructor, and
+    # a RootFailure and a ValidationError, from evaluate(). All share one
+    # base class. A rejected history must not be catchable as
+    # NoLayoutSurvived, because the two faults have different fixes.
     def test_every_family_derives_from_the_one_root(self) -> None:
         for cls in (
             HistoryRejectedError,
@@ -117,34 +117,28 @@ class TestTheHierarchyShape(unittest.TestCase):
         self.assertFalse(issubclass(NoLayoutSurvivedError, HistoryRejectedError))
 
     def test_invalid_history_input_is_also_a_value_error(self) -> None:
-        # The one input-shaped history cause -- a malformed PlayTraceBin,
-        # checkable independent of which root it is checked against.
+        # The only history cause that is bad input: a malformed
+        # PlayTraceBin, detectable without a root.
         self.assertTrue(issubclass(InvalidHistoryInputError, ValueError))
         self.assertTrue(issubclass(InvalidHistoryInputError, HistoryRejectedError))
-        # The other seven causes are a well-formed history that does not
-        # fit this particular root -- not input-shaped, so not ValueError.
+        # The other seven causes are a well-formed history that does not fit
+        # the root, so they are not ValueError.
         self.assertFalse(issubclass(DuplicatedCardError, ValueError))
 
     def test_sample_size_zero_is_also_a_value_error(self) -> None:
         self.assertTrue(issubclass(SampleSizeZeroError, ValueError))
         self.assertTrue(issubclass(SampleSizeZeroError, RootFailureError))
-        # The other RootFailure causes are about the source's content,
-        # not a malformed literal -- not ValueError-derived.
+        # The other RootFailure causes concern the source's content, not a
+        # bad argument, so they are not ValueError.
         self.assertFalse(issubclass(NoLayoutSurvivedError, ValueError))
         self.assertFalse(issubclass(ScanBudgetExhaustedError, ValueError))
         self.assertFalse(issubclass(SourceNotEnumerableError, ValueError))
 
     def test_the_two_multiple_base_exceptions_report_this_extensions_own_module(self) -> None:
-        # InvalidHistoryInputError and SampleSizeZeroError are the two
-        # exceptions built by hand (make_exception_with_bases, via
-        # builtins.type directly) rather than by py::exception<>, since
-        # pybind11's own helper supports only one base. py::exception<>
-        # sets __module__ to the extension itself automatically; the
-        # hand-rolled path must do the same explicitly, or these two
-        # report a meaningless __module__ (importlib's own bootstrap
-        # machinery, an accident of how the call reaches the type builtin,
-        # not this extension) while every other exception here reports
-        # the real one.
+        # These two have two base classes, which py::exception<> does not
+        # support. make_exception_with_bases builds them through
+        # builtins.type and must set __module__ itself. Otherwise they would
+        # report importlib's bootstrap module, not the extension.
         expected = ContradictoryVoidError.__module__  # a py::exception<>-built one, for comparison
         self.assertEqual(InvalidHistoryInputError.__module__, expected)
         self.assertEqual(SampleSizeZeroError.__module__, expected)
@@ -170,8 +164,8 @@ class TestEveryRootFailureRaises(unittest.TestCase):
 
             def at(self, index):
                 deal = make_one_card_finesse_root()
-                # Declarer holds a card it does not hold at the real root
-                # -- inconsistent, so make_root's own filter drops it.
+                # Declarer holds a card it does not hold at the root, so
+                # make_root drops the layout.
                 deal["remain_cards"][North][Spades] = holding(9, 8)
                 return deal
 
@@ -204,9 +198,9 @@ class TestEveryRootFailureRaises(unittest.TestCase):
 
 class TestScanBudgetExhaustedIsNotNoLayoutSurvived(unittest.TestCase):
     def test_the_two_root_failures_are_distinguishable(self) -> None:
-        # RootFailure's own doxygen: collapsing these "would send them to
-        # debug the wrong thing" -- NoLayoutSurvived means fix your
-        # source; ScanBudgetExhausted means raise the budget.
+        # NoLayoutSurvived means fix the source. ScanBudgetExhausted means
+        # raise the budget. Merging them would send a caller to debug the
+        # wrong thing.
         self.assertFalse(issubclass(ScanBudgetExhaustedError, NoLayoutSurvivedError))
         self.assertFalse(issubclass(NoLayoutSurvivedError, ScanBudgetExhaustedError))
 
@@ -228,10 +222,10 @@ class TestEveryValidationErrorCauseRaisesWithContext(unittest.TestCase):
         self.assertIn("remain_cards", ctx.exception.layout)
 
     def test_card_illegal_for_trick(self) -> None:
-        # East leads a spade; West (holding spades) discards a heart it
-        # does not even hold -- both illegal-for-trick and not-held at
-        # once, but the seat holding the led suit is what
-        # validate_defender_distribution checks first.
+        # Delta always plays the ♥2 for West. The ♥2 joins the defenders'
+        # pool. If East holds a spade, it leads one and West revokes. If
+        # East holds the ♥2, West plays a card it does not hold. The test
+        # accepts either error.
         def bad_defender(layout, seat, state):
             del state
             if seat == East:
@@ -278,10 +272,9 @@ class TestEveryValidationErrorCauseRaisesWithContext(unittest.TestCase):
 
 
 class TestBudgetExhaustedScanReturnsAResultNotARaise(unittest.TestCase):
-    # ScanOutcome (SourceExhausted/SampleFilled/BudgetExhausted) is a
-    # result, not a failure. A scan_budget that degrades a sample (finds
-    # at least one layout, but stops before the source is exhausted) must
-    # return normally, never raise.
+    # A ScanOutcome is a result, not a failure. A scan that finds at least
+    # one layout and then hits scan_budget returns a smaller sample. It
+    # does not raise.
     def test_a_narrow_scan_budget_still_returns_a_result(self) -> None:
         root = make_two_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 1)
@@ -296,28 +289,17 @@ class TestBudgetExhaustedScanReturnsAResultNotARaise(unittest.TestCase):
 
 
 class TestExceptionsPropagateThroughTheRecursionUnchanged(unittest.TestCase):
-    # A Python exception raised inside pi, delta, or a Python source's
-    # at() must cross evaluate() unchanged -- own type, own message --
-    # with no crash and no leak, including when raised deep in the
-    # recursion (not just at the root) on a sampled,
-    # replenishing run. This is where a wrong GIL discipline would show up
-    # as a crash at an apparently unrelated point rather than a clean
-    # propagated exception, so these tests are deliberately not trivial
-    # root-level raises.
+    # An exception raised in pi, delta or a Python source's at() must cross
+    # evaluate() with its type and message, with no crash and no leak. The
+    # tests raise deep in a sampled, replenishing run, not at the root. A
+    # GIL mistake would show there as a crash somewhere unrelated.
     #
-    # A finding, investigated rather than asserted around blindly:
-    # ctx.exception.__traceback__ comes back None on this toolchain
-    # (pybind11 3.0.1 against the pinned Python 3.14) -- reproduced even
-    # for a root-level raise with zero py::gil_scoped_release anywhere on
-    # the path (a bare LayoutSource.at() override, no evaluate() call at
-    # all), which rules out this plan's own GIL discipline as the cause:
-    # pybind11's error_already_set correctly fetches and restores
-    # (type, value, trace) via PyErr_Fetch/PyErr_Restore, matching its own
-    # documented behaviour, but the trace this environment's PyErr_Fetch
-    # hands back is already empty by the time pybind11 sees it. Type and
-    # message survive intact in every case below (the only two criterion
-    # 4 actually asks this binding itself to preserve); this is reported
-    # here rather than silently asserted past.
+    # ctx.exception.__traceback__ is None with pybind11 3.0.1 and Python
+    # 3.14. That holds even for a bare LayoutSource.at() override called
+    # without evaluate() or any GIL release, so the binding is not the
+    # cause. pybind11's error_already_set restores the trace it fetches,
+    # but PyErr_Fetch already returns an empty one. The tests check only
+    # type and message.
 
     def test_a_raise_from_pi_deep_in_the_recursion_propagates(self) -> None:
         class Boom(RuntimeError):
@@ -371,8 +353,8 @@ class TestExceptionsPropagateThroughTheRecursionUnchanged(unittest.TestCase):
 
             def at(self, index):
                 self.calls += 1
-                # Past the root's own bounded scan (sample_size=4): deep
-                # into a node-local replenishment scan, not the root call.
+                # Past the root scan (sample_size=4), inside a node-local
+                # replenishment scan.
                 if self.calls > 10:
                     raise Boom("deliberate, from at(), during replenishment")
                 return self._deals[index % len(self._deals)]

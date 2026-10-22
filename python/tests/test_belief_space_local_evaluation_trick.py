@@ -1,9 +1,8 @@
 """The trick primitives bound from src/belief_evaluation/trick.hpp.
 
-Every expectation here is hand-derived from the position written above it, not
-recorded from a run: this file is what stops a Python caller's mental model of
-the follow-suit and trick-winner rules drifting from the evaluator's own, which
-is the divergence that produces a wrong *root* and no error anywhere.
+Every expectation is derived by hand from the position above it, not recorded
+from a run. A caller whose follow-suit or trick-winner rules differ from the
+evaluator's builds a wrong root, and nothing reports an error.
 """
 
 import unittest
@@ -54,8 +53,8 @@ class TestSeatOnPlay(unittest.TestCase):
 
 class TestLegalCards(unittest.TestCase):
     def test_when_leading_is_every_held_card_suit_then_rank(self) -> None:
-        # Order is part of the contract: suit ascending, rank ascending within
-        # a suit. root_children's own order is this order.
+        # The order is part of the contract: suit ascending, then rank
+        # ascending. root_children uses the same order.
         position = deal(NORTH, {NORTH: {SPADES: [QUEEN, THREE], DIAMONDS: [KING],
                                         CLUBS: [TWO]}})
         self.assertEqual(
@@ -80,7 +79,8 @@ class TestLegalCards(unittest.TestCase):
         self.assertEqual(bsle.legal_cards(deal(NORTH, {}), NORTH), [])
 
     def test_returns_cards_not_bitmasks(self) -> None:
-        # The whole reason this is bound rather than legal_cards' four masks.
+        # The binding returns Cards, not the four masks of the C++
+        # legal_cards.
         cards = bsle.legal_cards(deal(NORTH, {NORTH: {SPADES: [ACE]}}), NORTH)
         self.assertIsInstance(cards[0], bsle.Card)
         self.assertEqual((cards[0].suit, cards[0].rank), (SPADES, ACE))
@@ -102,9 +102,8 @@ class TestTrickCompleteWinner(unittest.TestCase):
         self.assertEqual(bsle.trick_complete_winner(position, bsle.Card(HEARTS, ACE)), NORTH)
 
     def test_a_ruff_wins_over_a_higher_card_of_the_led_suit(self) -> None:
-        # Hearts are trumps. North's ace of spades is the highest spade; West
-        # ruffs with the two of hearts and wins. 6NT never reaches this branch,
-        # which is why it is asserted here rather than left to the example.
+        # Hearts are trumps. North's ace is the highest spade, and West ruffs
+        # with the two of hearts and wins. The 6NT example never ruffs.
         position = deal(NORTH, {WEST: {HEARTS: [TWO]}}, trump=HEARTS,
                        trick=[(SPADES, ACE), (SPADES, THREE), (SPADES, FOUR)])
         self.assertEqual(bsle.trick_complete_winner(position, bsle.Card(HEARTS, TWO)), WEST)
@@ -132,8 +131,8 @@ class TestPlay(unittest.TestCase):
         self.assertEqual(after["remain_cards"][WEST][SPADES], 0)
 
     def test_is_pure(self) -> None:
-        # Pure per trick.hpp's own contract: the input Deal is unchanged. A
-        # caller replaying a history depends on this to keep earlier roots.
+        # As trick.hpp promises, the input Deal is unchanged. A caller that
+        # replays a history relies on this to keep earlier roots.
         position = deal(NORTH, {NORTH: {SPADES: [ACE, TWO]}})
         before = (position["first"], position["current_trick_rank"],
                   [row[:] for row in position["remain_cards"]])
@@ -146,8 +145,8 @@ class TestPlay(unittest.TestCase):
 
 
 def spades_each(north, east, south, west):
-    """One suit, so following is always forced and every trick is decided by
-    rank alone -- the counting is what is under test, not the trick rule."""
+    """One suit, so every seat must follow and rank alone decides each trick.
+    The tests check the counting, not the trick rule."""
     return {NORTH: {SPADES: north}, EAST: {SPADES: east},
             SOUTH: {SPADES: south}, WEST: {SPADES: west}}
 
@@ -155,19 +154,16 @@ def spades_each(north, east, south, west):
 class TestPlayOut(unittest.TestCase):
     """Replaying a history to a root, and counting declarer's tricks with it.
 
-    `evaluate()` takes `tricks_needed` and takes it on trust: the evaluator
-    carries no trick counter. So the caller writes the arithmetic that decides
-    what "make" means, and an off-by-one there evaluates a different contract
-    and reports a confident number for it, with no diagnostic anywhere. That is
-    the defect class this removes.
+    `evaluate()` trusts `tricks_needed`: the evaluator keeps no trick count.
+    An off-by-one in the caller's count evaluates a different contract, with
+    no diagnostic. `play_out` does the count for the caller.
 
-    The root and the count come back together for the same reason: the hazard is
-    the two disagreeing, so there is no way to obtain one without the other.
+    It returns the root and the count together, so the two cannot disagree.
     """
 
     def test_declarers_side_winning_every_trick_counts_every_trick(self) -> None:
-        # North (declarer) holds A K, so both tricks are declarer's however
-        # anyone else plays. East leads, being declarer's LHO.
+        # North (declarer) holds the A K, so declarer wins both tricks. East,
+        # declarer's left-hand opponent, leads.
         start = deal(EAST, spades_each([ACE, KING], [THREE, TWO], [4, 5], [6, 7]))
         history = [bsle.Card(SPADES, r) for r in
                    (THREE, 4, 6, ACE,   # East low, South low, West low, North's ace
@@ -191,9 +187,8 @@ class TestPlayOut(unittest.TestCase):
         self.assertEqual(won, 0)
 
     def test_a_defence_won_trick_does_not_advance_the_count_and_moves_the_lead(self) -> None:
-        # The branch that had no test anywhere until it was noticed missing: one
-        # trick to each side. Asserted as two claims, because a counter that
-        # simply counted tricks would pass the first.
+        # One trick to each side. A counter that counted every trick would
+        # pass the first check, so there are two.
         start = deal(EAST, spades_each([ACE, 4], [KING, TWO], [THREE, 5], [6, 7]))
         first_trick = [bsle.Card(SPADES, r) for r in (KING, THREE, 6, 4)]
 
@@ -210,9 +205,8 @@ class TestPlayOut(unittest.TestCase):
         self.assertEqual(root["first"], NORTH)
 
     def test_dummys_trick_counts_for_declarer(self) -> None:
-        # South is dummy to North's declarer. A trick won by dummy is won by
-        # declarer's side -- the same declarer-or-dummy reading that is wrong in
-        # the obvious way elsewhere.
+        # South is dummy. A trick dummy wins counts for declarer's side. A
+        # test of `seat == declarer` would miss it.
         start = deal(EAST, spades_each([4, 5], [THREE, TWO], [ACE, KING], [6, 7]))
         history = [bsle.Card(SPADES, r) for r in (THREE, ACE, 6, 4)]
 
@@ -222,9 +216,9 @@ class TestPlayOut(unittest.TestCase):
         self.assertEqual(root["first"], SOUTH)
 
     def test_a_trailing_incomplete_trick_is_not_counted(self) -> None:
-        # The history includes the trick in progress, which has one to three
-        # cards and no winner. A count that consumed the history four at a time
-        # would either drop it or invent a winner for it.
+        # The history ends with a trick in progress: one to three cards and
+        # no winner. A count that read the history four cards at a time
+        # would drop that trick or invent a winner.
         start = deal(EAST, spades_each([ACE, KING], [THREE, TWO], [4, 5], [6, 7]))
         history = [bsle.Card(SPADES, r) for r in (THREE, 4, 6, ACE,  # trick one
                                                  KING, TWO)]        # two cards only
@@ -246,9 +240,8 @@ class TestPlayOut(unittest.TestCase):
         self.assertEqual(root["first"], EAST)
 
     def test_a_ruff_is_counted_for_the_side_that_ruffed(self) -> None:
-        # Hearts are trumps and East is void in spades. North leads a spade,
-        # East ruffs and takes the trick -- so the trick goes to the defence
-        # even though declarer played the highest spade.
+        # Hearts are trumps and East has no spades. North leads the ace and
+        # East ruffs, so the defence wins the trick.
         start = deal(NORTH,
                      {NORTH: {SPADES: [ACE, KING]}, EAST: {HEARTS: [TWO, THREE]},
                       SOUTH: {SPADES: [4, 5]}, WEST: {SPADES: [6, 7]}},
@@ -262,11 +255,8 @@ class TestPlayOut(unittest.TestCase):
         self.assertEqual(root["first"], EAST)
 
     def test_the_opening_leader_decides_who_plays_the_first_card(self) -> None:
-        # Same cards, different leader: the same history is a different hand.
-        # This is the argument for the root and the count arriving together --
-        # a caller passing a leader inconsistent with the deal gets a different
-        # answer to the one they meant, and nothing about the count alone shows
-        # it.
+        # With another leader, the same history is a different hand. The count
+        # alone would not show a leader that does not match the deal.
         holdings = spades_each([ACE, KING], [THREE, TWO], [4, 5], [6, 7])
         history = [bsle.Card(SPADES, r) for r in (THREE, 4, 6, ACE)]
 
@@ -279,9 +269,8 @@ class TestPlayOut(unittest.TestCase):
         self.assertEqual(won_from_east, 1)
 
     def test_it_agrees_with_the_example_that_used_to_do_this_by_hand(self) -> None:
-        # Nine tricks of a real hand, all won by declarer's side: the sequence
-        # the example's own numbers are computed from. A hand-written counter
-        # got this right; the point is that it no longer has to.
+        # The nine tricks of the guess_6nt example, all won by declarer's
+        # side. The example's numbers start from the ending they reach.
         start = deal(WEST, {
             NORTH: {SPADES: [KING, JACK, 7], HEARTS: [QUEEN, JACK],
                     DIAMONDS: [QUEEN, TEN, 6, 5], CLUBS: [ACE, JACK, 4, 2]},

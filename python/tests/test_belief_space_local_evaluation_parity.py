@@ -1,29 +1,15 @@
-"""Proves driving the evaluator from Python gives the same answers as
-driving it from C++, including where sampling and replenishment are in
-play.
+"""Checks that the evaluator gives the same answers driven from Python as
+from C++, including with sampling and replenishment.
 
-size() on three roots, a sampled/replenishing run compared bitwise, and
-counters compared field for field all read their fixtures and expected
-answers from tests/belief_evaluation/parity_reference, a small C++
-program run once as a subprocess and its stdout parsed as Python literals.
-This is a "build both sides of every comparison from one description"
-mechanism: hand-transcribing the same fixture once in each language is
-exactly how a slip hides -- the Python side would still run, still
-produce *some* answer, and pass or fail for a reason that has nothing to
-do with the binding. Reading the C++ program's own output instead means
-the fixture and the answer it is compared against both come from the same
-construction, once, in C++.
+Most tests read their fixtures and expected answers from
+tests/belief_evaluation/parity_reference. That C++ program runs once as a
+subprocess and prints Python literals. Both sides of each comparison come
+from one construction, so a transcription slip cannot hide.
 
-The oracle cases and the Python LayoutSource-subclass tests instead
-compare against a hand-derived constant (1.0, 0.0, 0.5) that is
-independently known and asserted by oracle_test.cpp's own EXPECT_DOUBLE_EQ
--- safe from the same failure mode even when hand-ported, since a
-transcription slip there would show up as *some other number*, not as an
-agreement with the wrong reference. parity_reference.cpp still emits these
-same fixtures too (see ORACLE_*), for the extra rigor of comparing against
-the value C++ actually computed rather than only the value someone
-derived by hand -- both hold here, and the oracle tests below assert
-against the hand-derived constant directly.
+The oracle tests compare against hand-derived constants (1.0, 0.0, 0.5),
+which oracle_test.cpp also asserts. A slip there gives a different number,
+not a false agreement. They also compare against the ORACLE_* values that
+parity_reference prints.
 """
 
 import subprocess
@@ -42,10 +28,9 @@ DDS_NOTRUMP = 4
 
 
 def _repo_root(start: Path | None = None) -> Path:
-    # Do not Path.resolve() -- under `bazel test` this file is often a
-    # runfiles symlink into the execroot/source tree, and resolving leaves
-    # the runfiles tree where the parity_reference data dep lives. Mirrors
-    # ci_belief_evaluation_opt_test.py's own _repo_root exactly.
+    # Do not call Path.resolve(). Under `bazel test` this file is often a
+    # runfiles symlink, and resolving it leaves the runfiles tree that holds
+    # parity_reference. Same as _repo_root in ci_belief_evaluation_opt_test.py.
     here = (start or Path(__file__)).absolute()
     for parent in here.parents:
         workflows = parent / ".github" / "workflows"
@@ -55,13 +40,8 @@ def _repo_root(start: Path | None = None) -> Path:
 
 
 def _parity_reference_binary() -> Path:
-    # Bazel emits a cc_binary's runfile as the bare target name on
-    # Linux/macOS but with a .exe suffix on Windows -- this package has
-    # Windows rules (ci_windows_cppopts_test.py's own guard), so a helper
-    # that only ever probes the extensionless path leaves this test unable
-    # to find its own data dependency there. Prefer the bare name (it is
-    # what every other platform has); fall back to the suffixed one only
-    # when that is what actually exists.
+    # A cc_binary runfile has no suffix on Linux and macOS, and .exe on
+    # Windows. The build has Windows rules, so try both, bare name first.
     root = _repo_root() / "tests" / "belief_evaluation" / "parity_reference"
     for candidate in (root, root.with_suffix(".exe")):
         if candidate.is_file():
@@ -77,9 +57,9 @@ def _run_parity_reference() -> dict:
         text=True,
     ).stdout
     namespace: dict = {}
-    # Trusted, self-generated output (this process's own data dependency,
-    # not external input) -- exec rather than ast.literal_eval because the
-    # output is a sequence of assignment statements, not one literal.
+    # The output comes from this test's data dependency, so it is trusted.
+    # It is a series of assignments, not one literal, so ast.literal_eval
+    # cannot read it.
     exec(compile(output, "<parity_reference>", "exec"), namespace)  # noqa: S102
     return namespace
 
@@ -127,9 +107,8 @@ def defender_play(layout, seat, state):
 
 
 class TestSizeAgreesOnThreeRootsOfDifferentShapes(unittest.TestCase):
-    # Three roots -- a whole-space ending, a mid-trick ending, and a
-    # two-card degenerate ending -- read from the C++ program that
-    # built them, so "the same root" is not an assumption.
+    # A whole-space ending, a mid-trick ending and a two-card ending, read
+    # from the C++ program that built them.
     def test_ten_card_pool_root(self) -> None:
         source = ExhaustiveLayoutSource(REFERENCE["TEN_CARD_POOL_ROOT"], North, 1)
         self.assertEqual(source.size(), REFERENCE["TEN_CARD_POOL_SIZE"])
@@ -144,9 +123,8 @@ class TestSizeAgreesOnThreeRootsOfDifferentShapes(unittest.TestCase):
 
 
 class TestLayoutSourceReproducesCppAnswers(unittest.TestCase):
-    # A Python LayoutSource subclass -- not ExhaustiveLayoutSource, which
-    # is itself the C++ type -- reproduces the C++ source's own at()
-    # values on the same (small, exhaustively comparable) fixture.
+    # A Python LayoutSource subclass returns the layouts that the C++
+    # source produced for the small fixture.
     def test_a_python_layout_source_matches_every_cpp_layout(self) -> None:
         expected = REFERENCE["SMALL_SINGLE_SUIT_LAYOUTS"]
 
@@ -166,17 +144,16 @@ class TestLayoutSourceReproducesCppAnswers(unittest.TestCase):
         for index, deal in enumerate(expected):
             self.assertEqual(source.at(index), deal)
 
-        # And ExhaustiveLayoutSource's own seeded enumeration over the same
-        # root produces exactly this set (bijectively, since size() == 2),
-        # not merely the same count.
+        # ExhaustiveLayoutSource over the same root produces the same set,
+        # not just the same count.
         cpp_source = ExhaustiveLayoutSource(REFERENCE["SMALL_SINGLE_SUIT_ROOT"], North, 1)
         produced = [cpp_source.at(i) for i in range(cpp_source.size())]
         self.assertEqual(sorted(produced, key=repr), sorted(expected, key=repr))
 
 
 class TestSampledReplenishingRunIsBitwiseIdentical(unittest.TestCase):
-    # Exact equality on the double, not approximate -- the one property
-    # most likely to quietly not hold.
+    # Exact equality on the double, not approximate. This is the property
+    # most likely to break unnoticed.
     def test_p_make_matches_bitwise(self) -> None:
         root = REFERENCE["SAMPLED_ROOT"]
         source = ExhaustiveLayoutSource(root, North, REFERENCE["SAMPLED_SEED"])
@@ -192,8 +169,8 @@ class TestSampledReplenishingRunIsBitwiseIdentical(unittest.TestCase):
         self.assertEqual(result["by_strategy"][1]["p_make"], REFERENCE["SAMPLED_P_MAKE"])
 
     def test_counters_match_field_for_field(self) -> None:
-        # Confirms the Python-driven run took the *same path*, not merely
-        # reached the same answer.
+        # The Python-driven run took the same path, not just reached the
+        # same answer.
         root = REFERENCE["SAMPLED_ROOT"]
         source = ExhaustiveLayoutSource(root, North, REFERENCE["SAMPLED_SEED"])
         result = evaluate(
@@ -222,11 +199,9 @@ class TestSampledReplenishingRunIsBitwiseIdentical(unittest.TestCase):
 
 
 class TestOracleCases(unittest.TestCase):
-    # The established oracle cases (oracle_test.cpp's own 9a, 9b, 9e),
-    # reproduced with a Python pi and delta, against the hand-derived
-    # constant those C++ tests themselves assert -- not merely against
-    # whatever this run computes, so a Python-side bug reads as "wrong
-    # answer" rather than "agrees with itself".
+    # Three oracle cases from oracle_test.cpp, with a Python pi and delta.
+    # Each checks the hand-derived constant that the C++ test asserts, so a
+    # Python-side bug gives a wrong answer.
     def test_certainty_over_a_several_layout_belief_space(self) -> None:
         layout = REFERENCE["ORACLE_CERTAINTY_LAYOUT"]
 
@@ -235,8 +210,8 @@ class TestOracleCases(unittest.TestCase):
                 return 3
 
             def at(self, index):
-                # Mirrors oracle_test.cpp's own three make_certain_win_layout
-                # calls: (2,4), (4,2), (2,2) for East/West's low card.
+                # Mirrors the three make_certain_win_layout calls in
+                # oracle_test.cpp: East and West's low cards.
                 variants = [(2, 4), (4, 2), (2, 2)]
                 east_low, west_low = variants[index]
                 deal = {k: (list(v) if isinstance(v, list) else v) for k, v in layout.items()}
@@ -262,7 +237,7 @@ class TestOracleCases(unittest.TestCase):
                 return layout
 
         source = OneLayoutSource()
-        # Only one trick exists in the whole ending; two is unreachable.
+        # The ending has one trick, so two tricks are impossible.
         result = evaluate(layout, North, 2, source, declarer_play, defender_play)
         self.assertNotIn("error", result)
         self.assertEqual(result["by_strategy"][1]["p_make"], 0.0)
@@ -306,28 +281,21 @@ class TestOracleCases(unittest.TestCase):
 
 
 class TestTheTwoWayGuess(unittest.TestCase):
-    # The most important test in the project (oracle_test.cpp's own words):
-    # a genuine two-layout information set, reproduced with a Python pi
-    # that inspects BeliefView the same way play_two_way_guess does in
-    # C++. Not read from parity_reference -- this fixture's whole point is
-    # exercising the belief-view machinery from Python's own side, and the
-    # hand-derived 0.5 is independently walked through in the comment
-    # below, matching oracle_test.cpp's own derivation.
+    # The two-way guess from oracle_test.cpp: a two-layout information set.
+    # The Python pi reads BeliefView as play_two_way_guess does in C++. The
+    # fixture is built here, not read from parity_reference, to drive the
+    # belief view from Python.
     #
-    # North: Spade Two, Club Two filler. South (dummy): Spade Ace, Spade
-    # Jack. East always holds two spades (King+Six, or Six+Seven -- Six is
-    # the lowest either way, so East's own lead is uninformative). West
-    # holds one spade (Seven, or King) plus a club filler.
+    # North holds ♠2 ♣2, South (dummy) ♠A J. East holds ♠K 6 or ♠7 6, and
+    # follows with the six either way, which reveals nothing. West holds
+    # the other spade, ♠7 or ♠K, and the ♣5. North leads and dummy plays
+    # the jack.
     #
-    # Layout 0 (East King+Six, West Seven): West's forced Seven loses to
-    # dummy's Jack -- trick 1 to declarer. Trick 2: dummy's Ace beats
-    # East's forced King -- 2/2, contract made.
-    # Layout 1 (East Six+Seven, West King): West's forced King beats the
-    # Jack -- trick 1 to the defence. West leads its own club filler next;
-    # North follows, East and South (void in clubs) discard their
-    # remaining spades uselessly -- West's own club wins trick 2 too --
-    # 0/2, contract fails.
-    # Equally likely (kappa = 1/2 each): P_make = 0.5*1 + 0.5*0 = 0.5.
+    # Layout 0 (West ♠7): the jack wins trick 1. Dummy's ace beats East's
+    # king on trick 2. 2/2, made.
+    # Layout 1 (West ♠K): the king wins trick 1. West leads the ♣5, and East
+    # and South have no clubs. West wins trick 2. 0/2, down.
+    # Each layout has kappa = 1/2: P_make = 0.5 * 1 + 0.5 * 0 = 0.5.
     def make_layout0(self) -> dict:
         remain_cards = [[0, 0, 0, 0] for _ in range(4)]
         remain_cards[North][Spades] = 1 << 2
@@ -386,19 +354,18 @@ class TestTheTwoWayGuess(unittest.TestCase):
 
         self.assertNotIn("error", result)
         self.assertEqual(result["by_strategy"][1]["p_make"], 0.5)
-        # The info set really was seen as genuinely ambiguous: two entries,
-        # posteriors summing to 1, each near 0.5.
+        # The information set is ambiguous: two entries, each with posterior
+        # 0.5.
         self.assertEqual(info_set_checks[0], 2)
         self.assertAlmostEqual(info_set_checks[1], 1.0, places=9)
         self.assertAlmostEqual(info_set_checks[2], 0.5, places=9)
         self.assertAlmostEqual(info_set_checks[3], 0.5, places=9)
 
     def test_collapses_to_one_if_the_line_per_layout_is_allowed_to_differ(self) -> None:
-        # The mutation this guards against: an evaluator that (incorrectly)
-        # solved each layout independently would report 1.0 here instead
-        # of 0.5 -- confirmed by literally doing that, against a singleton
-        # source per layout, matching oracle_test.cpp's own version of
-        # this check.
+        # An evaluator that solved each layout separately could pick the
+        # winning line in each and report 1.0, not 0.5. As in
+        # oracle_test.cpp, this evaluates each layout with a separate source:
+        # the jack wins layout 0 and loses layout 1.
         layout0 = self.make_layout0()
         layout1 = self.make_layout1()
 
