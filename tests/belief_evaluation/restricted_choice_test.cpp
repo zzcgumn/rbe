@@ -13,10 +13,10 @@
 
 namespace be = dds::belief_evaluation;
 
-// Tests restricted choice. Declarer's belief about where a missing honour
-// sits must shift after a defender plays one of two touching honours. It
-// must not shift when the defender's play carries no information. See
-// docs/replenished_belief_evaluation/algorithm.md for the theory.
+// Tests restricted choice: declarer's belief about where a missing honour
+// sits must shift after a defender plays an honour, unless that play
+// carries no information. See docs/replenished_belief_evaluation/algorithm.md
+// for the theory.
 
 namespace
 {
@@ -40,7 +40,7 @@ namespace
     ///
     /// The two layouts split the same pool {K, Q, 4, 2} differently:
     ///   layout A: East holds ♦KQ (a real choice), West ♦42.
-    ///   layout B: East holds ♦K4, West ♦Q2 (the king is forced).
+    ///   layout B: East holds ♦K4, West ♦Q2 (East plays the king for sure).
     /// A club in North and in South gives every hand two cards, so the ending
     /// plays out to the end.
     auto make_layout_a() -> Deal

@@ -1,15 +1,3 @@
-// Not a gtest binary. test_belief_space_local_evaluation_parity.py runs
-// this program, which builds a few fixtures and runs the C++ evaluator on
-// them. It prints each fixture as a Python deal dict and each answer as a
-// Python literal.
-//
-// Both sides of each comparison come from one description. Writing each
-// fixture twice, once per language, could hide a transcription slip. The
-// Python side would still produce an answer, and pass or fail for the
-// wrong reason.
-//
-// No solver: like //src/belief_evaluation, this needs only the scripted
-// strategies that the other C++ tests use.
 #include <cstdint>
 #include <cstdio>
 #include <optional>
@@ -22,6 +10,11 @@
 #include <belief_evaluation/exhaustive_layout_source.hpp>
 
 #include "test_support.hpp"
+
+// Not a gtest binary: test_belief_space_local_evaluation_parity.py runs it,
+// and it prints fixtures and C++ answers as Python literals. Both sides of
+// each comparison come from one description, so a transcription slip
+// cannot hide. It needs no solver, only scripted strategies.
 
 namespace be = dds::belief_evaluation;
 

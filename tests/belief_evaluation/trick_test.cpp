@@ -223,8 +223,8 @@ TEST_F(TrickTest, HighestCardOfTheLedSuitWinsInNotrump)
 TEST_F(TrickTest, ADiscardNeverWinsEvenIfItOutranksTheLedSuit)
 {
     // North leads the ♦K. East, void in diamonds, discards the ♠A. It is the
-    // highest card played, but a discard never wins in notrump. South and West
-    // (the fourth card) follow low in diamonds. North's king wins.
+    // highest card played, but a discard never wins in notrump. South follows
+    // low in diamonds, and West's ♦Q is the fourth card. North's king wins.
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = North;

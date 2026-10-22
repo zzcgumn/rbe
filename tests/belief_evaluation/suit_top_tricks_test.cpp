@@ -63,8 +63,7 @@ TEST_F(SuitTopTricksTest, LongerHandKeepsRunningAfterTheShorterOneIsExhausted)
     // North (defender) holds the ace and a low card; South (partner) holds
     // only the king. Round one uses the ace and the king, and the ace wins.
     // South is then void, and North's low card wins round two, since nothing
-    // is left to beat it. Two top tricks: not 4 cards' worth, and not 1 from
-    // max(2, 1).
+    // is left to beat it. Two top tricks, not one per card held.
     Deal deal{};
     deal.remainCards[North][Spades] = be::holding({Ace, Four});
     deal.remainCards[South][Spades] = be::holding({King});
@@ -132,7 +131,7 @@ TEST_F(SuitTopTricksTest, UndercountsWhenTheShorterOpponentHoldsTheOnlyDangerous
     //
     // North (defender) holds the king, eight and five; South (partner) holds
     // none. East holds only the nine: the shorter hand, with the only card
-    // that could beat North's king. West holds the two and three, longer but
+    // above North's eight and five. West holds the two and three, longer but
     // harmless.
     //
     // In play: North leads the king, East must play the nine and West ducks

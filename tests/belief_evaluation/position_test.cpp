@@ -252,7 +252,7 @@ TEST(TrickWinner, HighestCardOfLedSuitWinsWhenNotTheLeader)
 
 TEST(TrickWinner, AnyTrumpBeatsAnyCardOfTheLedSuit)
 {
-    // Led suit 0 (spades); play-index 2 discards a low trump (suit 1).
+    // Led suit 0 (spades); play index 2 ruffs with a low trump (suit 1).
     std::array<int, 4> suits{0, 0, 1, 0};
     std::array<int, 4> bits{5, 6, 0, 4};  // trump bit 0 is the lowest card there is
     EXPECT_EQ(trick_winner(/* trump = */ 1, 0, suits, bits), 2);
