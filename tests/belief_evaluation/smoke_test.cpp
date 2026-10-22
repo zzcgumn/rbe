@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 
-// Confirms the belief_evaluation module links into a running test binary.
-// Superseded by real coverage from later steps onward; kept as a harmless
-// canary rather than deleted.
+// Checks that the belief_evaluation module links into a test binary.
 TEST(BeliefEvaluationModule, LinksAndRuns)
 {
     SUCCEED();

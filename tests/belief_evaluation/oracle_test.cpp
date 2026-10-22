@@ -62,7 +62,7 @@ class OracleTest : public ::testing::Test
 {
 };
 
-// --- 9a: certainty ---------------------------------------------------------
+// --- certainty --------------------------------------------------------------
 
 TEST_F(OracleTest, CertaintyOverASeveralLayoutBeliefSpace)
 {
@@ -92,7 +92,7 @@ TEST_F(OracleTest, CertaintyOverASeveralLayoutBeliefSpace)
     EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);
 }
 
-// --- 9b: impossibility -------------------------------------------------
+// --- impossibility -----------------------------------------------------
 
 TEST_F(OracleTest, Impossibility)
 {
@@ -109,7 +109,7 @@ TEST_F(OracleTest, Impossibility)
     EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 0.0);
 }
 
-// --- 9c: a single defender choice ---------------------------------------
+// --- a single defender choice ------------------------------------------
 
 TEST_F(OracleTest, ASingleDefenderChoiceCarriesNoMassOnTheUnchosenBranch)
 {
@@ -145,7 +145,7 @@ TEST_F(OracleTest, ASingleDefenderChoiceCarriesNoMassOnTheUnchosenBranch)
     // the assertion.
 }
 
-// --- 9d: the two-way guess, the most important test in the project -----
+// --- the two-way guess, the most important test in the project --------
 
 namespace
 {
@@ -322,7 +322,7 @@ TEST_F(OracleTest, TheTwoWayGuessCollapsesToOneIfTheLinePerLayoutIsAllowedToDiff
     EXPECT_DOUBLE_EQ(result1.by_strategy.at(1u).p_make, 0.0);
 }
 
-// --- 9e: delta actually matters -------------------------------------------
+// --- delta actually matters ----------------------------------------------
 
 TEST_F(OracleTest, DeltaActuallyMatters)
 {

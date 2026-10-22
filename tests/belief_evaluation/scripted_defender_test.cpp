@@ -9,6 +9,9 @@
 
 #include "test_support.hpp"
 
+// Tests for ScriptedDefender: matching queries, loud failures on misses
+// and illegal scripts, the stochastic factory and replay stability.
+
 namespace be = dds::belief_evaluation;
 
 namespace
@@ -100,8 +103,8 @@ TEST_F(ScriptedDefenderTest, AMissingTableEntryIsALoudNonFatalFailure)
         distribution = defender.as_strategy()(be::DefenderQuery{layout, East, state}),
         "no scripted entry");
 
-    // The failure is the intended behaviour, per this double's own doxygen;
-    // it must still return something obviously invalid rather than crash.
+    // The failure is intended (see ScriptedDefender's doxygen). The result
+    // must still be obviously invalid, not a crash.
     EXPECT_TRUE(distribution.empty());
 }
 
@@ -110,7 +113,7 @@ TEST_F(ScriptedDefenderTest, AScriptedIllegalCardIsALoudNonFatalFailure)
     Deal const layout = make_layout();
     be::ObservationState state{};
 
-    // East does not hold the ace of diamonds — an illegal script.
+    // East does not hold the ♦A, so the script is illegal.
     be::ScriptedDefender::Key const key{be::layout_key(layout, East), ""};
     be::ScriptedDefender defender({{key, be::Card{2, 14}}});
 
@@ -143,10 +146,9 @@ TEST_F(ScriptedDefenderTest, ReturnsAScriptedMultiEntryDistribution)
 
 TEST_F(ScriptedDefenderTest, TheDeterministicConstructorStillReturnsASingleCertainCard)
 {
-    // Same assertion as ReturnsTheScriptedCardWithCertaintyOnAMatchingQuery
-    // above, kept separate here to sit next to the multi-entry case as a
-    // reminder that the constructor and the stochastic factory must keep
-    // working identically.
+    // The same assertion as ReturnsTheScriptedCardWithCertaintyOnAMatchingQuery.
+    // It sits next to the multi-entry case because the constructor and the
+    // stochastic factory must behave the same.
     Deal const layout = make_layout();
     be::ObservationState state{};
 
@@ -177,22 +179,16 @@ TEST_F(ScriptedDefenderTest, RecordingWorksTheSameForTheMultiEntryConstructor)
     EXPECT_EQ(defender.queries()[0].layout, be::layout_key(layout, East));
 }
 
-// --- replay stability: called twice on the same ply, answers identically -
+// --- replay stability: two calls on the same ply give the same answer ----
 
 TEST_F(ScriptedDefenderTest, CalledTwiceOnTheSamePlyReturnsTheIdenticalDistributionBothTimes)
 {
-    // A property replenishment leans on directly: delta is called once
-    // during the original expansion and again during a later replay of the
-    // same ply, and the two calls must agree bitwise or a replenished
-    // layout's p_j would not match what the drawn layouts carry.
-    // ScriptedDefender is a table lookup on
-    // {layout_key(query.layout, query.seat), position_string(query.state)}
-    // -- replay-stable by construction, since position_string derives from
-    // state.history, which reproduces identically on replay (see
-    // replenishment_scan_test.cpp's own fixtures, which depend on exactly
-    // this). Pinned here so a future change to ScriptedDefender that broke
-    // it would fail cheaply, in this file, rather than as an unexplained
-    // p_j mismatch three files away.
+    // Replenishment depends on this. delta is called once during expansion
+    // and again when the ply is replayed. The two calls must agree bitwise, or
+    // a replenished layout's p_j would not match the drawn layouts.
+    // ScriptedDefender looks up {layout_key, position_string(state)}, and
+    // position_string comes from state.history, which a replay reproduces.
+    // This test catches a break here instead of as a p_j mismatch elsewhere.
     Deal const layout = make_layout();
     be::ObservationState state{};
     state.history.number = 1;
@@ -223,7 +219,7 @@ TEST_F(ScriptedDefenderTest, AScriptedDistributionNotSummingToOneIsALoudNonFatal
     be::ObservationState state{};
 
     be::ScriptedDefender::Key const key{be::layout_key(layout, East), ""};
-    // 0.5 + 0.4 = 0.9, not 1 -- an illegal script.
+    // 0.5 + 0.4 = 0.9, not 1, so the script is illegal.
     be::ScriptedDefender defender = be::ScriptedDefender::stochastic(
         {{key, {be::WeightedCard{be::Card{2, King}, 0.5}, be::WeightedCard{be::Card{2, Queen}, 0.4}}}});
 
