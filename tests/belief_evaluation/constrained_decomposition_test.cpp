@@ -72,7 +72,7 @@ class ConstrainedDecompositionTest : public ::testing::Test
 
 // --- no voids reproduces the existing unconstrained binomial exactly --------
 
-TEST_F(ConstrainedDecompositionTest, NoVoidsPutsEveryCardInFreeAndMatchesPlan6aExactly)
+TEST_F(ConstrainedDecompositionTest, NoVoidsPutsEveryCardInFreeAndMatchesUnconstrainedBinomial)
 {
     DefenderPool const pool = pool_of(
         {{Diamonds, 3}, {Diamonds, 5}, {Diamonds, 7}, {Clubs, 4}, {Clubs, 6}}, 2);
