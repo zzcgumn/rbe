@@ -4,11 +4,12 @@
 
 #include <belief_evaluation/kahan.hpp>
 
-// A namespace alias plus a targeted `using` declaration, not `using
-// namespace dds::belief_evaluation;` -- see the other test files in this
-// directory for why: kept consistent even though this particular file
-// doesn't yet include anything that makes api/dds_data_types.hpp's global
-// ::Card visible.
+// Tests that KahanAccumulator keeps the precision that naive summation
+// loses.
+
+// A namespace alias and a targeted `using` declaration, not `using
+// namespace dds::belief_evaluation;`, to match the other test files. This
+// file does not make the global ::Card visible.
 namespace be = dds::belief_evaluation;
 using be::KahanAccumulator;
 

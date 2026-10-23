@@ -1,12 +1,5 @@
-"""Tests for `strategies.py`: the templates' shape, and agreement with the
-evaluator's own follow-suit rule.
-
-`play_sequence.py` and `bridge_notation.py` were promoted to the installed
-package; their own tests moved with them to
-`python/tests/test_belief_space_local_evaluation_play_sequence.py` and
-`python/tests/test_bridge_notation.py`. What is left here is genuinely
-example-specific: `strategies.py`'s copy-me templates, and a cross-check
-between this package's own notion of "legal" and the evaluator's.
+"""Tests for `strategies.py`: the shape of the templates, and agreement with
+the follow-suit rule of the evaluator.
 """
 
 import unittest
@@ -16,10 +9,9 @@ from belief_space_local_evaluation import legal_cards, seat_on_play
 
 
 class TestTheTemplates(unittest.TestCase):
-    """empty_declarer / empty_defender are copy-me templates, and a template
-    nobody has run is the kind that turns out not to work. These pin the two
-    things a reader needs from them: the signature `evaluate()` calls with,
-    and that the body is the only part left to fill in."""
+    """`empty_declarer` and `empty_defender` are templates to copy. Check
+    that they have the signatures `evaluate()` calls, and that only the
+    body is missing."""
 
     def test_they_take_the_arguments_evaluate_passes(self) -> None:
         import inspect
@@ -57,12 +49,11 @@ class TestTheTemplates(unittest.TestCase):
 
 
 class TestAgainstTheLibrary(unittest.TestCase):
-    """The reason this file exists: agreement with the evaluator's own rules.
+    """Agreement with the rules of the evaluator.
 
-    `evaluate()` rejects a card its own `legal_cards` considers illegal, so
-    feeding it this module's choices at every node is a direct cross-check of
-    the two follow-suit rules. A disagreement shows up as a ValidationError
-    rather than as a plausible number.
+    `evaluate()` rejects an illegal card. So running this module's choices
+    at every node cross-checks the two follow-suit rules. A disagreement
+    shows up as a ValidationError, not as a plausible number.
     """
 
     def test_every_card_this_module_calls_legal_is_accepted_by_evaluate(self) -> None:
@@ -77,8 +68,8 @@ class TestAgainstTheLibrary(unittest.TestCase):
         def pi(state, view):
             del view
             deal = state.known_holdings
-            # Deliberately the *highest* legal card, so the choice exercises
-            # a different part of the legal set than the example's own pi.
+            # The highest legal card, to test a different part of the legal
+            # set from the example's pi.
             return max(legal_cards(deal, seat_on_play(deal)),
                        key=lambda c: (c.rank, -c.suit))
 
@@ -90,12 +81,11 @@ class TestAgainstTheLibrary(unittest.TestCase):
 
 
 class TestPlayRecordChangesTheAnswer(unittest.TestCase):
-    """The capability play_record exists for, proven against a real caller
-    rather than left as plumbing nothing reads. Two evaluate() calls
-    against the *same* root, source and delta, differing only in
-    play_record -- legitimate because PlayRecord is never checked against
-    a root at all, so there is no need for two matching deals here, only
-    two calls against the one root."""
+    """`play_record` reaches pi and can change its answer.
+
+    Two evaluate() calls use the same root, source and delta. Only
+    `play_record` differs. `evaluate()` does not check a PlayRecord against
+    the root, so one root serves both calls."""
 
     def test_the_first_card_returned_differs_with_and_without_a_pitched_heart(self) -> None:
         import guess_6nt_belief_space as example

@@ -2,10 +2,9 @@ load("//:CPPVARIABLES.bzl", "DDS_CPPOPTS", "DDS_LINKOPTS", "DDS_LOCAL_DEFINES")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("@rules_python//python:defs.bzl", "py_binary")
 
-# The pi/delta pair timer.cpp times -- see strategies.hpp's own module
-# comment for why this lives here rather than in
-# tests/belief_evaluation/test_support.hpp. Header-only, matching
-# benchmarks/belief_evaluation:strategies' own shape.
+# The pi and delta timer.cpp times. Header-only, like
+# benchmarks/belief_evaluation:strategies. See strategies.hpp for why it is
+# not in tests/belief_evaluation/test_support.hpp.
 cc_library(
     name = "strategies",
     hdrs = ["strategies.hpp"],
@@ -20,10 +19,8 @@ cc_library(
     local_defines = DDS_LOCAL_DEFINES,
 )
 
-# real_work_declarer_play()'s own correctness: a hand-derived case,
-# independent of any fixture or evaluate() call -- see the source file's
-# own header comment for why that is safe here (oracle_test.cpp's own
-# precedent).
+# Tests real_work_declarer_play() on a hand-derived case, independent of
+# any fixture or evaluate() call (see the source file).
 cc_test(
     name = "safety_score_declarer_play_test",
     size = "small",
@@ -39,12 +36,9 @@ cc_test(
     local_defines = DDS_LOCAL_DEFINES,
 )
 
-# The C++ side of this capability's own Python-vs-C++ per-callback cost
-# comparison -- see timer.cpp's own header comment. Not tagged manual, so
-# `bazel test //...` builds it everywhere and never runs it, matching
-# benchmarks/belief_evaluation:instrument's own precedent exactly
-# (running it is report.py's job, not the default test cycle's).
-# Solver-free: nothing here needs solve_board.
+# The C++ side of the Python-against-C++ callback cost comparison (see
+# timer.cpp). Not tagged manual, so `bazel test //...` builds it but never
+# runs it; report.py runs it. Solver-free.
 cc_binary(
     name = "timer_cpp",
     srcs = ["timer.cpp"],
@@ -59,13 +53,11 @@ cc_binary(
     local_defines = DDS_LOCAL_DEFINES,
 )
 
-# The Python side of the same comparison, from the compiled binding
-# itself -- needs belief_space_local_evaluation_lib's own build+runfiles
-# wiring, so this is a py_binary (built, not run automatically -- a
-# py_binary is not a test, so `bazel test //...` never executes it either)
-# rather than a plain script the way benchmarks/belief_evaluation's own
-# sweep scripts are (those need no compiled extension, only a subprocess
-# and stdout parsing -- see sweep.py's own module doxygen).
+# The Python side of the same comparison, through the compiled binding.
+# It needs the build and runfiles wiring of
+# belief_space_local_evaluation_lib, so it is a py_binary, not a plain
+# script like the sweep scripts in benchmarks/belief_evaluation. A
+# py_binary is not a test, so `bazel test //...` never runs it.
 py_binary(
     name = "timer_py",
     srcs = ["timer.py"],
@@ -73,10 +65,9 @@ py_binary(
     deps = ["//python:belief_space_local_evaluation_lib"],
 )
 
-# Runs both timers and tabulates the ratio -- the one command this task's
-# own "ships, and is re-runnable" criterion asks for. Depends on both
-# timers as data so `bazel run //benchmarks/python_cost:report` finds
-# both without either needing to be built or located by hand first.
+# Runs both timers and tabulates the ratio, in one command. Both timers
+# are data deps, so `bazel run //benchmarks/python_cost:report` builds and
+# finds them.
 py_binary(
     name = "report",
     srcs = ["report.py"],

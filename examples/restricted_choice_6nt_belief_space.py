@@ -1,116 +1,76 @@
-"""Restricted choice 6NT: a slam that comes down to a guess the cards
-themselves answer differently than it looks.
+"""Restricted choice 6NT: a slam that turns on one guess in spades.
 
     North   S J85    H 987   D QJT    C AJT5
     East    S A9642  H AQT3  D AK     C KQ
     South   S Q      H 652   D 98753  C 9764
     West    S KT73   H KJ4   D 642    C 832
 
-West plays 6NT. Eight tricks cash themselves -- the rest of the diamonds,
-hearts and clubs -- leaving the five-card-each ending
+West plays 6NT. After eight tricks in diamonds, hearts and clubs, this
+ending is left:
 
     North   S J85    D T      C T
     East    S A9642
     South   S Q      D 83     C 74
     West    S KT73           C 8
 
-needing all five remaining tricks: the contract's only loser, if there is
-one, is in spades. Declarer and dummy hold A K T 9 7 6 4 3 2 between them,
-nine cards; North and South hold the other four -- Q J 8 5 -- split some
-way that is not known.
+Declarer needs all five tricks. The only possible loser is in spades.
+Declarer and dummy hold A K T 9 7 6 4 3 2. North and South hold Q J 8 5,
+split in an unknown way.
 
-The plan: lead low from dummy to the king in hand first, then lead low
-again -- the higher of hand's two remaining small cards, specifically,
-keeping the lower one as the safe spare the ten-unblocking technique
-below relies on; see `_lead_spade_or_the_lone_club`'s own docstring for
-exactly why. What North follows with on *that* trick settles everything
-below the two honours -- the eight and the five are the only other
-outstanding cards, so this is necessarily North's last possible small
-card, unless North is already void. Three cases, not two:
+**The plan:**
 
-- North shows an honour: win with the ace every time -- there is nothing
-  to read, a defender who still held the other honour behind the one just
-  shown would simply have kept this one back too.
-- North shows their last possible small card (a real spade): the real
-  decision is on the table -- rise with the ace now, or duck (relying on
-  the ten, still in hand, once South's own card -- not yet seen, and
-  played to *this same trick* -- has settled where the last card is).
-  Genuinely risky either way: South could reveal the danger card on this
-  very trick, so a wrong duck here can lose outright, on the spot. A
-  singleton honour in *South's* hand also lands here: South shows it
-  forced, on the very first round, and North's own two small cards are
-  then read exactly like any genuine 2-2 break.
-- North is already void and discards: always duck, regardless of what the
-  belief space says -- it always says South certainly guards an honour
-  here, but that is a fact about South's length, not a reason to rise.
-  Two different layouts share this branch, and they do not share an
-  outcome.
+1. Lead low from dummy to the king.
+2. Lead the higher of declarer's two small spades. Keep the lower one as
+   a spare (see `_lead_spade_or_the_lone_club`).
+3. Act on North's card in the second round:
+   - **An honour:** win with the ace. There is nothing to read.
+   - **A small spade:** this is North's last small card. Read the belief
+     space. Rise with the ace, or duck and rely on the ten. Both are
+     risky: South plays to this same trick and can win it.
+     A singleton honour with South also lands here. South had to show it
+     in round one, and the two small cards in North then read like a 2-2
+     break.
+   - **A discard, because North is void:** always duck. The belief space
+     says South certainly holds an honour. That is a fact about South's
+     length, not a reason to rise.
 
-  When South holds the queen *and* the jack -- whether with one small
-  card alongside them or two -- the contract cannot be made by either
-  choice at this trick. South's remaining honour outranks this side's
-  only card left above the small spades (the ten) once the king and the
-  ace are both gone, which happens by the third round regardless of
-  which way this trick goes, and South always has a spot card in hand to
-  hold the second honour back that long. Ducking is "free" there only in
-  the sense that it loses no worse than rising would.
+The void branch covers two layouts with different outcomes:
 
-  The other layout sharing this branch -- North's own singleton is the
-  *honour*, with South holding the other honour plus both small cards --
-  is one this plan simply loses, and it is this plan's first move that
-  loses it, not its second. "Lead low to the king first" is not the
-  risk-free opening its own safety (nothing beats a king) makes it look
-  like: it is already a bet that *South*, not North, is the hand hiding
-  a dangerous singleton honour, the same kind of bet the later
-  ace-or-duck decision makes openly and reads the belief space for. This
-  earlier bet is never read anywhere -- the king is led for unconditionally,
-  on every call, regardless of which side the belief space would actually
-  favour. Checked directly against a double-dummy solver, the bet is
-  wrong exactly backwards for this layout: leading the *ace* first, not
-  the king, is what makes all five tricks here; led this plan's way
-  instead, the contract is already down to two tricks out of five before
-  the later duck-or-rise choice is even reached, and no choice at that
-  later point wins the rest back (though ducking still salvages more of
-  it than rising does -- see `always_rise_with_the_ace`'s own docstring).
-  `cash_the_king_then_read_the_beliefs` never asks the belief space this
-  earlier question, so it does not win this layout, even though a
-  declarer who did ask it, in principle, could.
+- **South holds the queen and the jack**, with one or two small cards.
+  The contract cannot make. By round three the ace and king are gone,
+  and South's last honour beats the ten. Ducking loses no more than
+  rising.
+- **North's singleton is an honour**, and South holds the other honour
+  and both small cards. Step 1 already lost this layout. Leading low to
+  the king is a bet that South, not North, holds a dangerous singleton
+  honour. The plan never reads the belief space for that bet. A
+  double-dummy solver makes all five tricks by leading the ace first.
+  After the king lead, two of five tricks are already lost. Ducking still
+  saves more than rising (see `always_rise_with_the_ace`).
 
-This example reads the genuine (second) case's probability off the belief
-space and reports it, plus the fixed (third) case's correctness, against
-four defenders, each a fixed, named rule rather than a solver's own
-tie-break, so each number is hand-checkable against the rule that produced
-it: `randomises_queen_jack_in_second_seat`, which names the
-restricted-choice 50/50 outright (holding the queen and the jack together,
-second seat, shows either at random; everywhere else, plays low);
-`always_shows_the_queen_from_qj_in_second_seat`, the deliberate contrast
-(always the queen from that same holding, never the jack, so showing it is
-no longer any tell at all); a defender who never hides a jack behind a
-queen at all (plays its lowest legal card, full stop); and
-`DoubleDummyDefender`.
+**The defenders.** Each is a fixed rule, so each number can be checked by
+hand:
 
-That fourth one is the interesting case. It agrees with the bespoke 50/50
-defender exactly on the genuine small-card branch -- both read 60% for
-the finesse there, which the printed output checks -- but *not* overall:
-the always-duck-when-void technique above only pays off against a
-defender whose later play is itself predictable (always the lowest legal
-card), and `DoubleDummyDefender` is not one of those. A real double-dummy
-defender, holding South's length in the void branches, is not obliged to
-shed its small cards low-to-high the way the other three defenders here
-always do; it is free to release the danger card on whichever round
-actually defeats the always-duck plan, and measured here, it does. The
-technique still never costs anything against `DoubleDummyDefender`
-specifically (nothing about the fix can make a node's outcome *worse*
-against any defender, only fail to improve it) -- it simply does not
-gain against this one the way it gains against the other three.
+- `randomises_queen_jack_in_second_seat`: in second seat with the queen
+  and the jack, shows either at random. Otherwise plays low. This is the
+  restricted-choice 50/50.
+- `always_shows_the_queen_from_qj_in_second_seat`: always shows the queen
+  from that holding. Showing the queen then tells declarer nothing.
+- A defender who always plays the lowest legal card.
+- `DoubleDummyDefender`.
 
-None of this is the same question as which card actually gives the higher
-`P_make` over this contract as a whole -- the example reports both.
-Reading the belief space still scores higher than always rising with the
-ace against every defender measured here, including `DoubleDummyDefender`
--- but the margin is not a fixed, defender-independent fact the way the
-always-duck technique's own correctness is; it depends on how predictable
-the specific defender's remaining small cards turn out to be.
+**The results.**
+
+- Against `DoubleDummyDefender`, the finesse reading in the small-spade
+  branch matches the 50/50 defender: 60%. But the overall `P_make` is
+  lower.
+- The reason: always ducking when North is void pays off only against a
+  defender who sheds small cards lowest first. The other three defenders
+  do. `DoubleDummyDefender` can release the key card in whichever round
+  beats the plan, and here it does. Ducking never costs anything against
+  it. It just gains nothing.
+- Reading the belief space beats always rising with the ace against every
+  defender here. The margin depends on the defender.
 
 Run it with:
 
@@ -157,11 +117,8 @@ from strategies import (
 
 SEED = 1
 
-# Not named in strategies.py (only the honours TEN through ACE are), but
-# used the same way below: the specific duck card
-# cash_the_king_then_read_the_beliefs plays, chosen to beat North's own
-# small cards (the eight and the five) while still not committing the
-# ace -- see that function's own docstring.
+# The card cash_the_king_then_read_the_beliefs ducks with. It beats North's
+# small cards (the eight and the five) and keeps the ace back.
 NINE = 9
 
 
@@ -188,36 +145,20 @@ def restricted_choice_6nt() -> PlaySequence:
 
 
 def _lead_spade_or_the_lone_club(legal, state):
-    """The lead shared by both declarers below, at every trick either of
-    them leads (dummy's first round, hand's second, and any later round a
-    duck hands back to dummy): prefer a spade to the lone club outright,
-    and within spades, choose among three cases that only ever matter one
-    at a time.
+    """The lead for both declarers, at every trick they lead. Prefer a
+    spade to the lone club. Within spades:
 
-    - The king is still unplayed (this is the first round): lead low.
-      Nothing a defender holds beats a king, so this trick itself is
-      never at risk -- but that is not the same as this being a neutral,
-      risk-free opening. It is a bet that *South*, not North, is the
-      hand holding a dangerous singleton honour, exactly the kind of bet
-      the later ace-or-duck decision makes openly and reads the belief
-      space for. This earlier one is never asked -- the king is led for
-      unconditionally, every time this is called, regardless of which
-      side is actually more likely to be dangerous. See
-      `cash_the_king_then_read_the_beliefs`'s own docstring for the one
-      layout (North's own singleton is the honour) where that specific
-      bet is wrong, and costs the contract outright.
-    - The king is gone and the ace is still held: lead the ace. Once the
-      first round has already happened, holding the ace back on a later
-      lead no longer protects anything either -- there is no trick left
-      where retaining it lets it react to a defender's card, because
-      whichever side wins the trick this leads to leads the next one too.
-      This is the mirror image of the first case, not an exception to it.
-    - Neither: lead the higher of the remaining small cards, keeping the
-      lower one as the safe spare `_third_hand_after_the_ace_decision`'s
-      own ten-unblocking note relies on. Leading the higher one first is
-      what makes that spare safe: a hand that leads its small cards
-      low-first is left holding the higher one, which is exactly the card
-      liable to win a trick nobody meant it to.
+    - **The king is still unplayed** (round one): lead low. No defender's
+      card beats the king. But this is a bet that South, not North, holds
+      a dangerous singleton honour. The bet is never read from the belief
+      space. See `cash_the_king_then_read_the_beliefs` for the layout
+      where it loses.
+    - **The king is gone and the ace is held:** lead the ace. After round
+      one, keeping the ace back protects nothing. The winner of this
+      trick leads the next one anyway.
+    - **Otherwise:** lead the higher small card. Keep the lower one as a
+      safe spare for `_third_hand_after_the_ace_decision`. If you lead
+      the lower card first, the higher one can win a trick by accident.
     """
     spades = [c for c in legal if c.suit == SPADES]
     if not spades:
@@ -237,28 +178,19 @@ def _lead_spade_or_the_lone_club(legal, state):
 
 
 def _third_hand_after_the_ace_decision(legal, on_trick, state, dummy):
-    """The shared tail for both declarers below, once whatever the ace
-    question had to settle (rise, duck, or there never was a question) is
-    behind them: play the ten if it is still useful, and otherwise the
-    cheapest remaining card that still wins.
+    """Third hand for both declarers, after the ace decision. Play the ten
+    if it is useful. Otherwise play the cheapest card that wins.
 
-    The ten is "still useful" whenever no *defender's* card on the trick
-    already beats it -- not whenever nothing at all beats it. A defender's
-    higher card means the ten is genuinely beaten and the trick is already
-    lost regardless of what plays under it; our own partner's higher card
-    means the trick is already *won* regardless, and the ten should be
-    unloaded right then rather than saved for a future round where nothing
-    will be behind it to support it. Saving it for later was the specific
-    mistake a bare queen or bare jack still exposed before this function
-    existed: with the ace already gone, a bare ten third hand, led into
-    blind, loses to whichever honour survives -- the trick that unloading
-    it here avoids.
+    The ten is useful unless a *defender's* card on the trick beats it:
 
-    Past the ten, third hand plays the cheapest card that still wins
-    rather than its own lowest: the generic "always play low" habit used
-    elsewhere in this package is wrong specifically here, because letting
-    an uncontested trick stand up over our own side's lead strands the
-    losing hand on lead with nothing left but a loser in another suit.
+    - A defender's higher card: the trick is lost. Play low.
+    - Our partner's higher card: the trick is won. Unload the ten now. If
+      you keep it, a later round leaves it bare, with the ace gone, and it
+      loses to the last honour.
+
+    Without the ten, play the cheapest card that wins, not the lowest
+    card. If we let this trick go, the losing hand is left on lead with
+    only a loser in another suit.
     """
     ten = pick(legal, SPADES, TEN)
     if ten is not None:
@@ -266,17 +198,9 @@ def _third_hand_after_the_ace_decision(legal, on_trick, state, dummy):
             c.rank for position, c in enumerate(on_trick)
             if c.suit == SPADES and (state.trick_leader + position) % 4 in (state.declarer, dummy))
         if max(our_sides_cards_on_trick, default=-1) > TEN:
-            # Our own side already has this trick's winner on the table,
-            # with something higher than the ten (the ace, the only card
-            # above ten our side ever holds once the king is gone) -- the
-            # trick's outcome is already settled, so the ten is safe to
-            # unload no matter what a defender has also shown. Checking
-            # only "did a defender beat the ten" here, without this,
-            # would keep the ten back whenever a defender's honour also
-            # happened to be on the trick -- even though that honour
-            # never had a chance against our own side's higher card
-            # either, and keeping the ten back is exactly the mistake
-            # this function exists to avoid.
+            # Our side already wins this trick with the ace. Unload the ten,
+            # even if a defender's honour is also on the trick: that honour
+            # cannot beat the ace.
             return ten
 
         beaten_by_a_defender = any(
@@ -297,43 +221,32 @@ def _third_hand_after_the_ace_decision(legal, on_trick, state, dummy):
 
 
 def _norths_second_card_is_a_genuine_small_spade(on_trick) -> bool:
-    """Whether `on_trick[1]` -- North's response once the honour check in
-    `cash_the_king_then_read_the_beliefs` has already ruled out an honour
-    there -- is an actual spade, as opposed to a discard from a suit North
-    has already voided (which happens whenever South holds all four
-    missing cards, forcing North to zero of them).
+    """Whether North's card, `on_trick[1]`, is a real spade rather than a
+    discard. The caller has already ruled out an honour.
 
-    This is the gate on whether a node's `danger` is folded into
-    `ace_vs_finesse_readings`'s own `readings` dict: a void discard is a structurally
-    different, and in general differently weighted, belief-space node --
-    South having all four missing cards makes South's retaining one of
-    them a near-certainty, nothing like the genuine small-card case --
-    and is not "two small from North" in the sense
-    `_print_ace_vs_the_finesse`'s own label uses. Multiple such nodes can
-    share the same South-honour key, so without this check the captured
-    reading would be whichever node the evaluator happens to visit first
-    -- an artifact of traversal order, not the fixed fact the module
-    docstring claims it is. A pure function of `on_trick` alone, kept
-    separate so this specific condition can be tested without going
-    through a full `evaluate()` run.
+    North is void when South holds all four missing spades. A void node
+    has a very different `danger` from a small-spade node, but it can
+    share the same South-honour key. `ace_vs_finesse_readings` uses this
+    test to skip void nodes. Without it, the reading would depend on which
+    node the evaluator visits first.
+
+    A separate function, so that it can be tested without `evaluate()`.
     """
     return on_trick[1].suit == SPADES
 
 
 def _danger_south_still_guards_an_honour(state, on_trick, view, dummy):
-    """Pure function of `(state, view)` (plus `on_trick`/`dummy`, both
-    already derivable from `state` and repeated here only so a caller
-    that already has them need not recompute them): `None` everywhere
-    except `cash_the_king_then_read_the_beliefs`'s one belief-dependent
-    node -- king already gone, ace still held, and North's just-played
-    card not an honour -- where it is the belief-space posterior that
-    South, not yet seen this trick, still holds the queen or the jack.
+    """The probability that South still holds the queen or the jack, at
+    the one node where `cash_the_king_then_read_the_beliefs` reads the
+    belief space. None at every other node.
 
-    Factored out of `cash_the_king_then_read_the_beliefs` itself so that
-    function can stay a genuinely pure declarer strategy -- no side
-    channel of its own -- while `ace_vs_finesse_readings` below can still
-    report this exact number: both call this same function, rather than
-    one of them writing it somewhere the other reads it back from.
+    That node: the king is gone, the ace is held, and North has not played
+    an honour. `on_trick` and `dummy` can be derived from `state`. They are
+    parameters only to save recomputing them.
+
+    A pure function of its arguments. Both the strategy and
+    `ace_vs_finesse_readings` call it, so the strategy needs no side
+    channel to report the value.
     """
     legal = state.legal_cards
     if not (state.trick_leader in (state.declarer, dummy) and state.position_in_trick == 2):
@@ -345,14 +258,10 @@ def _danger_south_still_guards_an_honour(state, on_trick, view, dummy):
     if any(c.suit == SPADES and c.rank >= JACK for c in on_trick):
         return None
 
-    # `trick_leader + 3` is South's seat here specifically because this
-    # line is only reachable with `trick_leader == declarer` (West
-    # leading round two) -- the sibling case, `trick_leader == dummy`
-    # (East leading round one), already returned `None` above (the king
-    # check). Were that short-circuit ever reordered or removed, this
-    # would silently compute North's seat instead of South's, with no
-    # error anywhere -- the specific shape of bug this file's review
-    # history already has two instances of.
+    # `trick_leader + 3` is South only because trick_leader is declarer
+    # (West, round two) here. When dummy leads (round one), the king check
+    # above has already returned None. If you reorder those checks, this
+    # silently computes North's seat instead.
     souths_seat = (state.trick_leader + 3) % 4
     return sum(
         entry.posterior for entry in view.entries
@@ -360,78 +269,27 @@ def _danger_south_still_guards_an_honour(state, on_trick, view, dummy):
 
 
 def cash_the_king_then_read_the_beliefs(state, view):
-    """pi: lead low to the king first, then read the belief space for the
-    one real decision in the suit.
+    """pi: lead low to the king, then read the belief space for the one
+    real decision in spades.
 
-    Declarer and dummy hold A K T 9 7 6 4 3 2 in spades; North and South
-    hold Q J 8 5 between them. Both missing low cards (the eight and the
-    five) are spent by the time North follows to the second round, so
-    whatever North shows there is either an honour, North's last possible
-    small card, or (whenever North is already void) a discard from a suit
-    North is already void in by then.
+    By the time North plays to round two, the eight and the five are the
+    only small spades left. So North shows one of three things:
 
-    - North shows an honour (queen or jack): win with the ace every time.
-      A defender who still held the other honour behind the one just shown
-      would, under `DoubleDummyDefender`'s own spreading policy, just as
-      readily have shown that one instead -- so nothing here favours
-      reading it either way, and the ace can never lose to it regardless.
-    - North shows their last possible small card (a genuine spade, not a
-      discard -- `_norths_second_card_is_a_genuine_small_spade`): the
-      belief space is asked directly whether South -- not yet seen this
-      trick -- still guards one of the two honours
-      (`_danger_south_still_guards_an_honour`). Above even odds, rise
-      with the ace; at or below, duck (keep the ace, and let the ten,
-      still in hand, settle whatever North is left holding on a later
-      round -- see `_lead_spade_or_the_lone_club` and
-      `_third_hand_after_the_ace_decision` for exactly how that later
-      round is handled, which is not "lead low" the way every other
-      round here is). This is a genuine risk either way: South, not yet
-      seen, plays *this same trick*, so a wrong duck here can lose
-      outright, on the spot. A singleton honour in *South's* own hand
-      also lands here, not in the void branch below: South shows it
-      forced, on the first round (before this one), and North's two
-      remaining small cards are then read exactly like a genuine 2-2
-      break.
-    - North discards, already void: always duck, regardless of what
-      `_danger_south_still_guards_an_honour` computes -- it is always
-      1.0 here (North holding nothing forces whatever remains to be
-      South's), but that is a fact about South's length, not a reason to
-      rise. Two different layouts share this branch, and they do not
-      share an outcome:
-        - South holds both the queen and the jack (with one small card
-          alongside them, or two): the contract cannot be made by either
-          choice at this trick. Once the king and the ace are both gone
-          -- unavoidably, by the third round of the suit, whichever one
-          of rise or duck this trick chose -- South's remaining honour
-          outranks the ten, this side's only card left above North and
-          South's own small cards, and South still has a spot card to
-          hold it back until exactly that round. Ducking does not avoid
-          this; it only avoids making it worse. Both choices lose this
-          layout identically, which is the only sense in which ducking
-          here is "free" -- not a guarantee that it wins.
-        - South holds exactly one honour, with North's own singleton
-          being the other one: double-dummy, this layout *is* makeable
-          -- but not by this function, and not at this trick. The
-          mistake already happened one trick earlier: leading low to
-          the king, this plan's fixed first move, is a bet that *South*
-          is the hand with the dangerous singleton honour, and this
-          layout is exactly the one where that bet is wrong. Checked
-          against a double-dummy solver, leading the *ace* first (not
-          the king) is what makes all five tricks here; led this plan's
-          way instead, the contract is already down to two tricks out of
-          five before this trick's duck-or-rise choice is even reached.
-          Ducking still salvages more of what is left than rising would
-          (see `always_rise_with_the_ace`'s own docstring), but neither
-          choice recovers what the first trick already gave up. This
-          function never reads the belief space at that first lead --
-          `_lead_spade_or_the_lone_club` always leads low, regardless of
-          which side is actually more likely to be dangerous -- so it
-          simply does not win this layout, even though a declarer who
-          asked that earlier question, in principle, could.
+    - **An honour:** win with the ace. The ace cannot lose to it.
+    - **North's last small spade** (see
+      `_norths_second_card_is_a_genuine_small_spade`): ask the belief
+      space whether South still holds an honour
+      (`_danger_south_still_guards_an_honour`). Above 0.5, rise with the
+      ace. Otherwise duck with the nine, and let the ten deal with North's
+      last card in a later round. Both choices are risky, because South
+      plays to this same trick.
+    - **A discard, because North is void:** always duck. The danger is
+      always 1.0 here, but that only reflects South's length. The module
+      docstring describes the two layouts in this branch. In one, the
+      contract cannot make. In the other, the first lead already lost it.
 
-    A pure function of `(state, view)`, with no side channel of its own:
-    see `ace_vs_finesse_readings` for how the belief this function reads
-    gets reported without this function writing it anywhere itself.
+    A pure function of `(state, view)`. See `ace_vs_finesse_readings` for
+    how the belief it reads is reported.
     """
     legal = state.legal_cards
     on_trick = state.current_trick
@@ -454,10 +312,8 @@ def cash_the_king_then_read_the_beliefs(state, view):
 
         ace = pick(legal, SPADES, ACE)
         if ace is not None:
-            # _danger_south_still_guards_an_honour already returned None
-            # above, and the only way it does that with the ace held is
-            # North having just shown an honour -- win with it every time
-            # (see this function's own docstring for why).
+            # With the ace held, danger is None only if North showed an
+            # honour. Win with the ace.
             return ace
 
         return _third_hand_after_the_ace_decision(legal, on_trick, state, dummy)
@@ -466,36 +322,24 @@ def cash_the_king_then_read_the_beliefs(state, view):
 
 
 def always_rise_with_the_ace(state, view):
-    """pi: as `cash_the_king_then_read_the_beliefs`, but never ducks --
-    rise with the ace on the second round regardless of what the belief
-    space says.
+    """pi: as `cash_the_king_then_read_the_beliefs`, but never duck. Always
+    rise with the ace in round two.
 
-    Measured purely for contrast with the belief-reading declarer above.
-    It is, perhaps surprisingly, the *worse* of the two overall (see the
-    `P_make` the two print) -- but not because reading the belief costs
-    nothing. Once North's round-two card is a genuine small card (not a
-    discard), rising wins outright exactly when South still guards the
-    outstanding honour behind it (the queen-jack-tight sub-case of a 2-2
-    break) -- a duck loses that trick on the spot instead, to South's own
-    card, played right there. The belief-reading declarer's own duck
-    wins the *opposite* case instead (South having shown a singleton
-    honour, with North -- not South -- left holding the other), and that
-    case is weighted higher here: 60% against 40%, exactly
-    `ace_vs_finesse_readings`'s own printed split for this node, not a
-    free reclaim of one without risking the other.
+    A contrast to the belief-reading declarer. It scores lower overall.
 
-    Separately, once North is already void, rising and ducking are not
-    symmetric the way they are at the genuine small-card node above --
-    but "not symmetric" is not the same as "duck wins outright" either.
-    When South holds both the queen and the jack there, neither choice
-    makes the contract, so rising costs nothing extra. When North's own
-    singleton was the honour instead, the contract was already lost one
-    trick earlier, at this plan's fixed first lead (low to the king,
-    never the ace) -- and within what that first mistake leaves behind,
-    ducking still salvages more than rising does, the same shape of gain
-    as the genuine small-card node, just smaller. See
-    `cash_the_king_then_read_the_beliefs`'s own docstring for exactly
-    which layout is which, and why neither one is a free win for duck.
+    When North follows with a small spade:
+
+    - Rising wins when South still holds the other honour (South had the
+      queen and the jack in a 2-2 break). Ducking loses that trick.
+    - Ducking wins the opposite case: South showed a singleton honour, and
+      North holds the other. That case is more likely: 60% against 40%,
+      the split `ace_vs_finesse_readings` prints.
+
+    When North is void:
+
+    - If South holds the queen and the jack, neither choice makes.
+    - If North's singleton was an honour, the first lead already lost the
+      contract. Ducking still saves more tricks than rising.
     """
     del view
     legal = state.legal_cards
@@ -520,40 +364,27 @@ def always_rise_with_the_ace(state, view):
 
 
 def randomises_queen_jack_in_second_seat(layout, seat, state):
-    """delta: in second seat, a defender holding both the spade queen and
-    the spade jack shows either with equal probability; every other
-    defender, and every other seat, follows with its lowest legal card.
+    """delta: in second seat on a spade lead, a defender with the spade
+    queen and jack shows either one, 50/50. Otherwise play the lowest legal
+    card.
 
-    "Second seat" means exactly one card is already on the trick -- the
-    leader's -- so `seat` is the next to call, before declarer's own
-    third-hand decision is made (the decision
-    `cash_the_king_then_read_the_beliefs` actually reads the belief space
-    for). Read from `layout` rather than `state`, the same way
-    `queen_of_spades_when_it_wins` does: a defender strategy is allowed to
-    see its own seat's cards and the trick in progress directly, and
-    `cards_on_trick`/`layout["first"]` already give trick position without
-    re-deriving it from `state`.
+    "Second seat" means only the leader's card is on the trick. Declarer
+    plays third, and that is the decision
+    `cash_the_king_then_read_the_beliefs` reads the belief space for. The
+    trick is read from `layout`, like `queen_of_spades_when_it_wins`.
 
-    Written for this ending specifically -- "the queen and the jack" names
-    two fixed cards, not a general rule for any touching pair -- so that
-    the probability `cash_the_king_then_read_the_beliefs` reads back is an
-    exact, hand-checkable restricted-choice fraction: a defender dealt the
-    bare queen is forced to show it; a defender dealt the queen *with* the
-    jack behind it shows the queen only half the time. Unlike
-    `DoubleDummyDefender`, which spreads over touching equals according to
-    its own solver-driven policy, this one names the 50/50 outright.
+    Written for this ending only. It gives an exact restricted-choice
+    fraction that can be checked by hand. A defender with a bare queen must
+    show it. A defender with the queen and the jack shows the queen only
+    half the time.
     """
-    del state  # Conditions on the layout alone, like queen_of_spades_when_it_wins.
+    del state  # Uses the layout only.
     legal = legal_cards(layout, seat)
     on_trick = cards_on_trick(layout)
 
-    # `on_trick[0].suit == SPADES` is load-bearing, not a sanity check:
-    # without it, this also fires whenever a non-spade trick is led and
-    # this defender is void in that suit (every spade, including both
-    # honours, is then a legal discard too), making it randomise a
-    # discard instead of following the documented "every other seat...
-    # plays its lowest legal card" rule on a trick that was never a
-    # second-seat spade decision at all.
+    # The spade check is needed. On a non-spade lead, a void defender can
+    # legally discard either honour. Without the check, this would
+    # randomise a discard.
     if len(on_trick) == 1 and on_trick[0].suit == SPADES:
         queen = pick(legal, SPADES, QUEEN)
         jack = pick(legal, SPADES, JACK)
@@ -564,28 +395,21 @@ def randomises_queen_jack_in_second_seat(layout, seat, state):
 
 
 def always_shows_the_queen_from_qj_in_second_seat(layout, seat, state):
-    """delta: in second seat, a defender holding both the spade queen and
-    the spade jack always shows the queen -- never the jack; every other
-    defender, and every other seat, follows with its lowest legal card.
+    """delta: in second seat on a spade lead, a defender with the spade
+    queen and jack always shows the queen. Otherwise play the lowest legal
+    card.
 
-    The deliberate contrast with `randomises_queen_jack_in_second_seat`:
-    showing the queen here carries no information at all about whether the
-    jack is behind it, because a defender dealt the bare queen and a
-    defender dealt the queen with the jack behind it do exactly the same
-    thing. Restricted choice has nothing to bite on, so the posterior this
-    example reads back collapses to the raw prior odds of the two holdings
-    -- unmodified by the showing, where the 50/50 defender's own
-    half-the-time shortfall skews it towards the bare queen instead.
+    A contrast to `randomises_queen_jack_in_second_seat`. Here a bare queen
+    and a queen with the jack play the same card. So showing the queen
+    tells declarer nothing, and the posterior is the prior odds of the two
+    holdings. Against the 50/50 defender, the posterior favours the bare
+    queen.
     """
-    del state  # Conditions on the layout alone, like queen_of_spades_when_it_wins.
+    del state  # Uses the layout only.
     legal = legal_cards(layout, seat)
     on_trick = cards_on_trick(layout)
 
-    # See randomises_queen_jack_in_second_seat's own comment on this same
-    # check: without the suit restriction, a non-spade trick this
-    # defender is void in would also hand it both spade honours as legal
-    # discards, firing this special case on a trick that is not a
-    # second-seat spade decision at all.
+    # The spade check is needed. See randomises_queen_jack_in_second_seat.
     if len(on_trick) == 1 and on_trick[0].suit == SPADES:
         queen = pick(legal, SPADES, QUEEN)
         jack = pick(legal, SPADES, JACK)
@@ -596,18 +420,13 @@ def always_shows_the_queen_from_qj_in_second_seat(layout, seat, state):
 
 
 def spade_split_frequencies(sequence, source) -> dict:
-    """The belief space's own prior over the root -- before any card of
-    this ending is played -- for four named spade splits: the suit
-    breaking 2-2 between North and South, and South specifically holding
-    the queen-jack pair tight, a singleton jack, or a singleton queen (the
-    real deal's own holding).
+    """The prior probability at the root of four spade splits: 2-2, and
+    South with QJ tight, a singleton jack, or a singleton queen (the real
+    deal).
 
-    Settled with a throwaway `evaluate()` call. The root's `BeliefView`
-    does not depend on which pi or delta it is paired with -- nobody has
-    read a belief yet, so any legal pair reaches the identical root -- and
-    `probe` below plays the rest of the hand out low purely so the call
-    completes; nothing past its first call matters, and the whole result
-    is discarded once `frequencies` is read back out of the closure.
+    Uses a throwaway `evaluate()` call. The root `BeliefView` is the same
+    for any pi and delta. `probe` reads it on its first call, then plays
+    low only so that the call completes. The result is discarded.
     """
     frequencies = {}
 
@@ -631,26 +450,16 @@ def spade_split_frequencies(sequence, source) -> dict:
 
 
 def ace_vs_finesse_readings(sequence, source, delta) -> dict:
-    """The conditional probability that *the finesse* is correct, against
-    rising with the ace, at `cash_the_king_then_read_the_beliefs`'s one
-    belief-dependent node -- once North has followed with their last
-    possible small card -- keyed by which honour South showed on the
-    first round (`QUEEN` or `JACK`), against the given defender. (The
-    complementary ace-is-correct probability a caller may also want is
-    just one minus this; `_print_ace_vs_the_finesse` reports both.)
+    """The probability that the finesse is right, at the one node where
+    `cash_the_king_then_read_the_beliefs` reads the belief space. Keyed by
+    the honour South showed in round one (`QUEEN` or `JACK`). The
+    probability that the ace is right is one minus this.
 
-    Settled with a dedicated `evaluate()` call, the same way
-    `spade_split_frequencies` settles the root's own prior: `probe` plays
-    exactly the game `cash_the_king_then_read_the_beliefs` itself would
-    (it calls that function directly for the returned card, so the two
-    can never disagree about what is actually played), and separately
-    reads `_danger_south_still_guards_an_honour` -- the same pure
-    function `cash_the_king_then_read_the_beliefs` itself reads -- into
-    a `readings` dict that lives only in this call's own closure. Nothing
-    is written to module-level state anywhere in this package: the
-    declarer strategy stays a pure function of `(state, view)`, and this
-    reporting need is met by asking the same question again from
-    outside it, not by having the strategy answer twice.
+    Runs one `evaluate()` call. `probe` calls
+    `cash_the_king_then_read_the_beliefs` for every card, so it plays the
+    same game. It also calls `_danger_south_still_guards_an_honour` and
+    stores the result in a local `readings` dict. So the strategy stays a
+    pure function, with no module-level state.
     """
     readings = {}
 
@@ -674,16 +483,12 @@ def ace_vs_finesse_readings(sequence, source, delta) -> dict:
 
 
 def _print_ace_vs_the_finesse(readings_by_souths_honour, label) -> None:
-    """Print the conditional probability of rising with the ace against
-    taking the finesse, for each of the two branches `main()` tracks: the
-    queen from South, two small from North, and the jack from South, two
-    small from North, against one named defender.
+    """Print the probability that the ace or the finesse is right, against
+    one defender. One line per branch: South showed the queen, or the jack,
+    and North followed with two small spades.
 
-    The two numbers printed for each branch always sum to one -- they are
-    the same posterior `cash_the_king_then_read_the_beliefs` itself reads,
-    `danger` and its complement, not two independent measurements -- so
-    this is a restatement of the belief for readability, not a second
-    calculation.
+    The two numbers on each line are `danger` and its complement, so they
+    sum to one.
     """
     print(f"\nAce vs finesse, against {label}, once North has shown the "
           f"last possible small card:")
@@ -728,7 +533,7 @@ def main() -> None:
     print()
 
     frequencies = spade_split_frequencies(sequence, source)
-    print("Spades, prior to any card of this ending -- the belief space's own odds:")
+    print("Spade splits before any card of this ending, from the belief space:")
     print(f"  2-2 break:               {frequencies['2-2']:.2%}")
     print(f"  South QJ tight:          {frequencies['south QJ tight']:.2%}")
     print(f"  South singleton jack:    {frequencies['south singleton J']:.2%}")
@@ -742,116 +547,87 @@ def main() -> None:
     _print_ace_vs_the_finesse(
         ace_vs_finesse_readings(sequence, source, defence), "the bespoke 50/50 defender")
     print(
-        "    The two branches agree exactly: a defender who genuinely "
-        "randomises between the queen and the jack makes either one "
-        "equally uncertain to have been forced, whichever is shown.")
+        "    The two branches agree. When the defender randomises, the "
+        "queen and the jack are equally likely to have been forced.")
 
     always_ace_value = evaluate(sequence, source, always_rise_with_the_ace, defence)
     print(f"\nAlways rising with the ace instead:     P_make = {always_ace_value['p_make']:.4f}")
     print(
-        "Lower, not higher, but not for free either: at the genuine "
-        "small-card node above, rising wins outright exactly when South "
-        "still guards the outstanding honour (the 40% share the reading "
-        "just printed), and a duck loses that trick on the spot instead "
-        "-- the belief-reading declarer's own duck is simply betting on "
-        "the more likely 60% case (North left holding the danger card, "
-        "not South), not avoiding a risk altogether. The void branch, "
-        "where North is already out of spades, is not a clean win for "
-        "duck either. When South holds the queen and the jack together "
-        "there, neither choice makes the contract -- so duck costs "
-        "nothing, but it does not win anything back either. When North's "
-        "own singleton was the honour instead, the contract was already "
-        "lost one trick earlier, at this plan's fixed first lead (low to "
-        "the king, never the ace) -- a double-dummy solver makes that "
-        "layout in full by leading the ace first, a bet this plan never "
-        "makes. Ducking at this later trick still salvages more of what "
-        "is left than rising would, but neither recovers what the first "
-        "lead already gave up -- see `cash_the_king_then_read_the_beliefs`'s "
-        "own docstring for exactly which layout is which.")
+        "Lower. When North follows small, rising wins if South still holds "
+        "the other honour: the 40% case above. Ducking bets on the more "
+        "likely 60% case, where North holds it.\n"
+        "When North is void, ducking is no clean win either. If South holds "
+        "the queen and the jack, neither choice makes. If North's singleton "
+        "was an honour, the first lead (low to the king) already lost the "
+        "contract. Leading the ace first would make it. See the module "
+        "docstring.")
 
     ctx = dds3.SolverContext()
     double_dummy_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs, double_dummy_defender(ctx))
     print(
         f"\n`DoubleDummyDefender` under `SpreadPolicy.TouchingSequence` "
-        f"instead: P_make = {double_dummy_value['p_make']:.4f}. It reads "
-        f"the genuine small-card node exactly the way the bespoke 50/50 "
-        f"defender does (`ace_vs_finesse_readings` agrees on both "
-        f"branches), but the always-duck-when-void technique above does "
-        f"not pay off against it the way it does against the other three "
-        f"defenders this example measures: that technique relies on the "
-        f"defender's own remaining cards coming out lowest-first, and a "
-        f"real double-dummy defender is not obliged to play that "
-        f"predictably.")
+        f"instead: P_make = {double_dummy_value['p_make']:.4f}. Its "
+        f"reading at the small-spade node matches the 50/50 defender. But "
+        f"ducking when North is void gains nothing against it. That gain "
+        f"needs a defender who plays small cards lowest first, and a "
+        f"double-dummy defender need not.")
 
     no_tell_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs,
         always_shows_the_queen_from_qj_in_second_seat)
     print(
         f"\nAgainst a defender who always shows the queen from the queen "
-        f"and the jack together -- never the jack -- instead: "
-        f"P_make = {no_tell_value['p_make']:.4f}.")
+        f"and the jack: P_make = {no_tell_value['p_make']:.4f}.")
     _print_ace_vs_the_finesse(
         ace_vs_finesse_readings(sequence, source, always_shows_the_queen_from_qj_in_second_seat),
         "the always-shows-the-queen defender")
     print(
-        "    No longer close: a defender who never prefers the jack makes "
-        "showing it a dead giveaway (it is certainly a bare jack), while "
-        "showing the queen now absorbs every holding that could have "
-        "shown either one -- the single number this example reported "
-        "before adding this contrast was exactly that queen row. Still "
-        "higher than always rising overall, because every other node in "
-        "the tree is read on its own belief, not forced to this one "
-        "node's answer.")
+        "    The branches now differ. This defender never shows the jack "
+        "from the pair, so a jack must be bare. The queen covers every "
+        "holding that could show either card. Reading the beliefs still "
+        "beats always rising, because each node is read on its own "
+        "belief.")
 
     never_hides_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs, lowest_eligible_defender)
     print(
-        f"\nAnd against a defender who never hides a jack behind a queen "
-        f"at all -- plays its lowest legal card, full stop -- instead: "
+        f"\nAgainst a defender who never hides a jack behind a queen, and "
+        f"always plays the lowest legal card: "
         f"P_make = {never_hides_value['p_make']:.4f}.")
     _print_ace_vs_the_finesse(
         ace_vs_finesse_readings(sequence, source, lowest_eligible_defender),
         "a defender who never hides a jack behind a queen")
     print(
-        "    The exact mirror of the always-shows-the-queen defender "
-        "above, not a repeat of it: this one prefers the lower-ranked "
-        "card of a touching pair, the jack, so it is the *queen* that "
-        "becomes the dead giveaway here (a bare queen is the only way to "
-        "show it), while the jack now absorbs every holding that could "
-        "have shown either one.")
+        "    The exact mirror of the always-shows-the-queen defender. This "
+        "one plays the jack from the pair, so a queen must be bare. The "
+        "jack covers every holding that could show either card.")
 
     with_randomizing_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs,
         heuristic_defender(ctx, bsle.make_default_defender_heuristics(
             root["trump"], randomize_touching_honors=True)))
     print(
-        f"\nAgainst a caller-assembled heuristic chain (second-hand low, "
-        f"third-hand high/low, ...) with randomize_touching_honors=True "
-        f"instead: P_make = {with_randomizing_value['p_make']:.4f}.")
+        f"\nAgainst a caller-assembled heuristic chain (second hand low, "
+        f"third hand high or low, ...) with randomize_touching_honors=True: "
+        f"P_make = {with_randomizing_value['p_make']:.4f}.")
 
     without_randomizing_value = evaluate(
         sequence, source, cash_the_king_then_read_the_beliefs,
         heuristic_defender(ctx, bsle.make_default_defender_heuristics(
             root["trump"], randomize_touching_honors=False)))
     print(
-        f"\nThe identical chain with randomize_touching_honors=False "
-        f"instead: P_make = {without_randomizing_value['p_make']:.4f}. "
-        f"Higher than the row above, not a rounding difference: with "
-        f"randomisation on, `second_seat_low` detects every genuine "
-        f"touching pair this ending's own second-seat node ever reaches "
-        f"and defers to the chain's fallback spread there, which is "
-        f"exactly `DoubleDummyDefender`'s own uniform spread over the "
-        f"same solved position -- so the two agree exactly (both "
-        f"`P_make = 0.5159`, matching the `DoubleDummyDefender` row "
-        f"above bit for bit, not merely to four decimal places). With "
-        f"randomisation off, the same rule instead always shows the "
-        f"lower card of that pair -- the exact information leak this "
-        f"whole example is about -- and measured here, the "
-        f"belief-reading declarer is able to exploit it: this one "
-        f"toggle, isolated from every other difference between "
-        f"defenders this example measures (nothing else in the chain "
-        f"changes between these two rows), raises `P_make` by itself.")
+        f"\nThe same chain with randomize_touching_honors=False: "
+        f"P_make = {without_randomizing_value['p_make']:.4f}. Higher than "
+        f"the row above.\n"
+        f"With randomisation on, `second_seat_low` defers at every "
+        f"touching pair to the fallback spread of `DoubleDummyDefender`. "
+        f"So the row above is `P_make = 0.5159`, matching the "
+        f"`DoubleDummyDefender` row above bit for bit. With randomisation "
+        f"off, the rule always shows the lower card of the pair. That leaks "
+        f"which card the defender holds, and the belief-reading declarer "
+        f"exploits it. Nothing else in the chain changes between the two "
+        f"rows.")
 
     brute_force_start = time.perf_counter()
     opponent_model_calls = 0
@@ -862,14 +638,10 @@ def main() -> None:
         opponent_model_calls += 1
         return _internal_opponent_model(layout, seat, state)
 
-    # max_layouts caps this example's own committed run to a few seconds --
-    # an *unbounded* search over this ending's full 252-layout belief
-    # space was separately measured, once, during this row's own
-    # development: 104.18s and 1,759,826 internal opponent-model calls,
-    # the concrete cost figure this capability's own plan left as an open
-    # question. That number is cited below, not re-run here on every call
-    # -- a committed example's own golden test needs to run quickly, which
-    # is exactly why max_layouts exists at all.
+    # The limits keep this run to a few seconds, so the test stays fast.
+    # An unlimited search over all 252 layouts was measured once: 104.18s
+    # and 1,759,826 opponent-model calls. The output cites that figure; it
+    # is not re-run.
     brute_force_value = evaluate(
         sequence, source,
         brute_force_declarer(
@@ -878,39 +650,25 @@ def main() -> None:
         double_dummy_defender(ctx))
     brute_force_seconds = time.perf_counter() - brute_force_start
     print(
-        f"\nA brute-force (lookahead-search) declarer instead of "
-        f"`cash_the_king_then_read_the_beliefs`, against `DoubleDummyDefender`, "
-        f"capped to max_layouts=3, max_depth=3, of this ending's own 252 "
-        f"layouts and much deeper remaining play: "
+        f"\nA brute-force (lookahead) declarer against `DoubleDummyDefender`, "
+        f"limited to max_layouts=3, max_depth=3: "
         f"P_make = {brute_force_value['p_make']:.4f} "
         f"(searched in {brute_force_seconds:.2f}s, "
-        f"{opponent_model_calls} internal opponent-model calls) -- far from "
-        f"both the `0.5159` the plain `DoubleDummyDefender` row reads above "
-        f"and the `0.5952` an unbounded search over this same ending finds "
-        f"below: capped this aggressively, only 3 of this ending's own 252 "
-        f"layouts survive at every node that needs pruning, and which 3 is "
-        f"essentially arbitrary -- tie-broken by each layout's own content "
-        f"when posteriors are equal, as they routinely are in an "
-        f"exhaustively-enumerated space like this one, never by any "
-        f"bridge-meaningful preference. A concrete illustration of what "
-        f"max_layouts actually trades away at this scale, not a case where "
-        f"the cap happens to land near either anchor. An *unbounded* search over "
-        f"this same 252-layout belief space, measured separately once "
-        f"during this row's own development rather than re-run here on "
-        f"every call, found a materially different answer -- "
-        f"`P_make = 0.5952` in 104.18s and 1,759,826 internal "
-        f"opponent-model calls -- a concrete, measured answer to the open "
-        f"cost question this capability's own plan left unsettled, and a "
-        f"reminder that `max_layouts`/`max_depth` trade real search quality "
-        f"for speed, not merely time for nothing.")
+        f"{opponent_model_calls} internal opponent-model calls).\n"
+        f"This is far from both 0.5159 (the `DoubleDummyDefender` row "
+        f"above) and 0.5952 (an unlimited search). With this limit, only 3 "
+        f"of 252 layouts survive at each pruned node. Posteriors here are "
+        f"often equal, so the choice of those 3 is close to arbitrary.\n"
+        f"An unlimited search over the same 252 layouts, measured once, "
+        f"gave P_make = 0.5952 in 104.18s and 1,759,826 opponent-model "
+        f"calls. So `max_layouts` and `max_depth` trade search quality for "
+        f"speed.")
 
     print(
-        "\nA minimal, standalone position isolating the mechanism behind "
-        "the gap just measured, on the one card it actually turns on: "
-        "East leads a low spade (already played); South, second seat, "
-        "holds only the queen and the jack of spades. Nothing left "
-        "anywhere can beat either one, and the king between them is "
-        "already gone from play, so the two are a genuine touching pair.")
+        "\nA minimal position that shows the randomize_touching_honors "
+        "effect on one card. East has led a low spade. South, in second "
+        "seat, holds only the spade queen and jack. Nothing left can beat "
+        "them, so they are a touching pair.")
     minimal_layout = {
         "trump": NOTRUMP,
         "first": EAST,
@@ -938,11 +696,10 @@ def main() -> None:
     )(minimal_layout, SOUTH, minimal_state)
     print(f"    randomize_touching_honors=False: {_format_distribution(minimal_without)}")
     print(
-        "    With it on, the two are equally likely -- a defender holding "
-        "the bare queen looks identical to one holding the queen with the "
-        "jack behind it. With it off, the jack is certain -- the exact "
-        "information leak the gap above is made of, shown directly on the "
-        "one card South actually plays rather than through a P_make.")
+        "    With it on, both cards are equally likely, so a bare queen "
+        "looks the same as the queen with the jack. With it off, the jack "
+        "is certain. That is the information leak behind the P_make gap "
+        "above.")
 
 
 def evaluate(sequence, source, pi, delta, **options) -> dict:

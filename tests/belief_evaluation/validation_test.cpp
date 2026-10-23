@@ -8,6 +8,8 @@
 
 #include <belief_evaluation/validation.hpp>
 
+// Tests for validate_declarer_card and validate_defender_distribution.
+
 namespace be = dds::belief_evaluation;
 
 namespace
@@ -75,8 +77,8 @@ TEST(ValidateDeclarerCard, RejectsAnOutOfRangeRankWithoutUndefinedBehaviour)
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
     EXPECT_EQ(be::validate_declarer_card(deal, 2, be::Card{0, 15}), be::ValidationError::CardNotHeld);
     EXPECT_EQ(be::validate_declarer_card(deal, 2, be::Card{0, 1}), be::ValidationError::CardNotHeld);
-    // Close to the width of the shift in is_held(); must not be undefined
-    // behaviour even though it is nowhere near a legal rank.
+    // Near the width of the shift in is_held(). Must not be undefined
+    // behaviour.
     EXPECT_EQ(be::validate_declarer_card(deal, 2, be::Card{0, 31}), be::ValidationError::CardNotHeld);
 }
 
@@ -170,8 +172,8 @@ TEST(ValidateDefenderDistribution, AcceptsAnyHeldCardWhenVoidInTheLedSuit)
 TEST(ValidateDefenderDistribution, RejectsANaNProbability)
 {
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
-    // NaN fails every comparison, including `<= 0.0` and the final
-    // sum-tolerance check, so an unguarded NaN slips past both.
+    // NaN fails every comparison, including `<= 0.0` and the sum-tolerance
+    // check, so without a guard it would pass both.
     std::vector<be::WeightedCard> const distribution{
         {be::Card{0, 2}, std::numeric_limits<double>::quiet_NaN()}};
     EXPECT_EQ(
@@ -200,13 +202,10 @@ TEST(ValidateDefenderDistribution, RejectsAnOutOfRangeCardWithoutUndefinedBehavi
 
 TEST(ValidateDefenderDistribution, RejectsAnOutOfRangeSeatEvenForAnEmptyDistribution)
 {
-    // With a non-empty distribution, an invalid seat is already caught by
-    // is_held()'s per-entry guard. An *empty* distribution never enters that
-    // loop, so without an explicit upfront check it fell through to
-    // ProbabilitiesDoNotSumToOne (0.0 is never close to 1.0) — a misleading
-    // error that names the wrong problem, and inconsistent with
-    // validate_declarer_card, which always reports an invalid seat as
-    // CardNotHeld regardless of the card.
+    // A non-empty distribution meets is_held()'s per-entry seat guard. An
+    // empty one skips that loop, so the seat needs a separate upfront check.
+    // Without it the result would be ProbabilitiesDoNotSumToOne, which names
+    // the wrong problem. CardNotHeld matches validate_declarer_card.
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
     std::vector<be::WeightedCard> const empty_distribution;
     EXPECT_EQ(
@@ -219,9 +218,8 @@ TEST(ValidateDefenderDistribution, RejectsAnOutOfRangeSeatEvenForAnEmptyDistribu
 
 TEST(ValidateDefenderDistribution, RejectsAnEmptyDistributionForAValidSeat)
 {
-    // A defender must return at least one card; distinct from the seat
-    // check above, this is still ProbabilitiesDoNotSumToOne when the seat
-    // itself is fine.
+    // A defender must return at least one card. With a valid seat, an empty
+    // distribution is ProbabilitiesDoNotSumToOne.
     Deal const deal = deal_with_south_holding_two_and_three_of_spades();
     std::vector<be::WeightedCard> const empty_distribution;
     EXPECT_EQ(

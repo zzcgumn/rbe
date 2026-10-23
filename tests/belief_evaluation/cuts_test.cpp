@@ -7,12 +7,15 @@
 
 #include "test_support.hpp"
 
+// Tests for evaluate()'s early cuts: tier 1's already-made cut, tier 2's
+// dead cut with the layout and predicate bounds, and tier 2's sampling gate.
+
 namespace be = dds::belief_evaluation;
 
-// Tier 1's already-made cut: a node where declarer has already banked every
-// trick the contract needs evaluates to node_mass(node) without recursing
-// further -- sound unconditionally, no gate, no precondition (see
-// evaluate.cpp's already_made()).
+// Tier 1's already-made cut: a node where declarer has every trick the
+// contract needs evaluates to node_mass(node) without recursing. It is
+// sound unconditionally: no gate, no precondition (see already_made() in
+// evaluate.cpp).
 
 namespace
 {
@@ -47,17 +50,15 @@ class AlreadyMadeCutTest : public ::testing::Test
 
 namespace
 {
-    /// North A,K / South 2,3 opposite each other; East and West split
-    /// {Q,J,4,5} between them, differently in the two layouts below, so
-    /// East's opening lead can be scripted to distinguish them while West's
-    /// own forced follow (via single_card_defender, unscripted) plays the
-    /// same rank in both -- keeping both layouts merged into the same
-    /// child all the way through trick 1.
+    /// North A,K and South 2,3. East and West split {Q,J,4,5} differently in
+    /// the two layouts, so East's lead can be scripted to tell them apart.
+    /// West's forced follow (single_card_defender, unscripted) is the same rank
+    /// in both, so both layouts stay in one child through trick 1.
     ///
     /// Layout A: East {Q,J}, West {4,5}.
     /// Layout B: East {J,5}, West {4,Q}.
-    /// J stays with East and 4 stays with West in both, so West's lowest
-    /// legal card is "4" in either layout -- no scripting needed for West.
+    /// East keeps the J and West the 4 in both, so West's lowest legal card is
+    /// the 4 either way.
     auto make_layout_a() -> Deal
     {
         Deal deal{};
@@ -82,13 +83,12 @@ namespace
         return deal;
     }
 
-    /// East's opening lead: layout A has a genuine choice between its two
-    /// honours, spread 0.5/0.5; layout B is scripted to certainly play its
-    /// jack -- deliberately not the "lowest legal" 5, so that both layouts'
-    /// jack branches merge into the same child (layout A's queen branch is
-    /// a separate child neither test below inspects). Every other query
-    /// (West's forced follow, either declarer-side play) falls back to
-    /// single_card_defender / single_card_declarer_play.
+    /// East's opening lead. Layout A chooses between its honours, 0.5/0.5.
+    /// Layout B is scripted to play the jack for certain, not its lowest card
+    /// (the 5), so both layouts' jack branches merge into one child. Layout A's
+    /// queen branch is a separate child that neither test inspects. Every other
+    /// query falls back to single_card_defender or
+    /// single_card_declarer_play.
     auto merging_delta(be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
     {
         bool const is_easts_lead = query.seat == East && query.layout.currentTrickRank[0] == 0;
@@ -114,36 +114,27 @@ TEST_F(AlreadyMadeCutTest, ReturnsTheHandDerivedMassOverSeveralLayoutsAtUnequalP
     be::assert_forms_one_belief_node({layout_a, layout_b}, North);
     be::VectorLayoutSource source({layout_a, layout_b});
 
-    // East's lead is the root's own defender decision, so it produces two
-    // root_children directly: the jack branch (both layouts, merged) and
-    // the queen branch (layout A alone -- layout B never plays queen).
-    // Derivation, kappa = 1/2 (two root layouts), p_i = 1 each at the root:
+    // East's lead is the root's defender decision. It gives two
+    // root_children: the jack branch (both layouts, merged) and the queen
+    // branch (layout A alone). kappa = 1/2 (two root layouts), and p_i = 1 at
+    // the root.
     //
-    //   jack branch: layout A contributes p = 1 * 0.5 = 0.5 (its half of
-    //     the genuine choice), layout B contributes p = 1 * 1.0 = 1.0
-    //     (certain). South (2), West (4, forced the same way in both
-    //     layouts) and North (K, the lower of its two honours, so it plays
-    //     first under single_card_declarer_play) then all play identically
-    //     across both layouts, so they stay merged: North's king beats
-    //     jack/two/four in every layout, winning trick 1.
-    //     tricks_won_by_declarer becomes 1, matching tricks_needed = 1 --
-    //     the cut fires at the node right after trick 1, still holding
-    //     both layouts: mass = kappa * (0.5 + 1.0) = 0.5 * 1.5 = 0.75.
-    //     Every hand still holds one more spade at this point (not
-    //     terminal -- North kept its ace, East kept its other honour,
-    //     South kept its three, West kept its five), so this is the cut
-    //     doing real work, not coincidence with terminal_value.
+    //   jack branch: layout A contributes p = 1 * 0.5 = 0.5, layout B
+    //     p = 1 * 1.0 = 1.0. South (2), West (4) and North (K, the lower
+    //     honour) play the same in both layouts, so they stay merged. North's
+    //     king wins trick 1, tricks_won_by_declarer becomes 1 = tricks_needed,
+    //     and the cut fires with both layouts present:
+    //     mass = kappa * (0.5 + 1.0) = 0.5 * 1.5 = 0.75. Every hand still holds
+    //     a spade, so the node is not terminal: this is the cut at work, not
+    //     terminal_value.
     //
-    //   queen branch: layout A alone, p = 1 * 0.5 = 0.5. South (2), West
-    //     (4, unaffected by the other branch) and North (K again) play
-    //     out the same way; North's king beats queen/two/four too, so
-    //     tricks_won_by_declarer reaches 1 here as well and the cut fires
-    //     again: mass = kappa * 0.5 = 0.5 * 0.5 = 0.25.
+    //   queen branch: layout A alone, p = 1 * 0.5 = 0.5. The play is the same;
+    //     North's king wins, and the cut fires again:
+    //     mass = kappa * 0.5 = 0.5 * 0.5 = 0.25.
     //
-    //   p_make = 0.75 + 0.25 = 1.0 (mass conservation across the root's
-    //   own two children) -- so the jack branch's own root_children entry,
-    //   not the summed p_make, is what actually isolates the cut's
-    //   unequal-p value; that entry is what this test pins.
+    //   p_make = 0.75 + 0.25 = 1.0 by mass conservation. So the jack branch's
+    //   root_children entry, not p_make, isolates the cut's unequal-p value,
+    //   and that entry is what this test pins.
     constexpr double ExpectedJackBranchMass = 0.75;
     constexpr double ExpectedQueenBranchMass = 0.25;
 
@@ -168,12 +159,10 @@ TEST_F(AlreadyMadeCutTest, ReturnsTheHandDerivedMassOverSeveralLayoutsAtUnequalP
     }
     ASSERT_NE(jack_branch, nullptr);
     ASSERT_NE(queen_branch, nullptr);
-    // Bitwise, not EXPECT_DOUBLE_EQ: 0.5 and 1.0 are both exactly
-    // representable, so every value derived above is exact too,
-    // and each is the same value an uncut recursion would reach at its own
-    // true terminal node further down, by mass conservation through every
-    // defender expansion in between -- confirmed directly by temporarily
-    // disabling the cut and rebuilding (see commit message).
+    // Bitwise, not EXPECT_DOUBLE_EQ: 0.5 and 1.0 are exact, so every value
+    // above is exact. By mass conservation an uncut recursion reaches the same
+    // value at its terminal node. With the cut disabled, the uncut path gives
+    // the same values.
     EXPECT_EQ(jack_branch->value, ExpectedJackBranchMass);
     EXPECT_EQ(queen_branch->value, ExpectedQueenBranchMass);
     EXPECT_EQ(value.p_make, ExpectedJackBranchMass + ExpectedQueenBranchMass);
@@ -183,11 +172,10 @@ TEST_F(AlreadyMadeCutTest, ReturnsTheHandDerivedMassOverSeveralLayoutsAtUnequalP
 
 namespace
 {
-    /// A single, deterministic layout: North A,K / East Q,J / South 2,3 /
-    /// West 4,5, East on lead. Two certain tricks for North regardless of
-    /// tricks_needed -- used to compare node counts with the cut firing
-    /// early (tricks_needed = 1) against the same recursion run to its
-    /// natural end (tricks_needed = 2).
+    /// One deterministic layout: North A,K / East Q,J / South 2,3 / West 4,5,
+    /// East on lead. North wins two certain tricks. Node counts compare the cut
+    /// firing early (tricks_needed = 1) with the recursion run to its end
+    /// (tricks_needed = 2).
     auto make_two_certain_tricks() -> Deal
     {
         Deal deal{};
@@ -203,45 +191,36 @@ namespace
 
 TEST_F(AlreadyMadeCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison)
 {
-    // There is no flag to disable tier 1's cut (it is unconditional by
-    // design -- see already_made()'s own doxygen), so "the cut actually
-    // fired" is verified by comparing this fixture's node count under two
-    // different tricks_needed values instead: 1 (the cut fires the instant
-    // trick 1 is won, before trick 2 is ever touched) versus 2 (declarer
-    // needs *both* tricks, so tricks_won never reaches tricks_needed early
-    // and the recursion runs all the way to its natural terminal node).
-    // Same layout, same delta, same pi -- the only difference between the
-    // two runs is whether the cut gets a chance to fire, so the gap in
-    // node count is attributable only to it.
+    // Tier 1 has no off switch (see already_made()), so the test compares node
+    // counts for two tricks_needed values instead. With 1, the cut fires as
+    // soon as trick 1 is won. With 2, tricks_won never reaches tricks_needed
+    // early, and the recursion runs to its terminal node. Layout, delta and pi
+    // are the same, so the difference in node count is the cut's alone.
     Deal const root_layout = make_two_certain_tricks();
     be::VectorLayoutSource source({root_layout});
 
-    // Hand-counted tree with tricks_needed = 1 (single_card_defender/
-    // single_card_declarer_play are both fully deterministic here, so
-    // there is exactly one path):
+    // Hand-counted tree with tricks_needed = 1. Both scripted strategies are
+    // deterministic here, so there is one path:
     //   root: East to lead, defender node                          -- 1
     //     East plays J -> South to play, declarer/dummy node       -- 2
     //       South plays 2 -> West to play, defender node           -- 3
     //         West plays 4 -> North to play, declarer node         -- 4
     //           North plays K -> trick 1 resolves, North to lead
-    //                            trick 2 -- tricks_won (1) >=
-    //                            tricks_needed (1): CUT FIRES here,
+    //                            trick 2. tricks_won (1) >=
+    //                            tricks_needed (1): CUT FIRES,
     //                            node visited but not expanded       -- 5
     constexpr std::uint64_t NodesWithEarlyCut = 5;
 
-    // The same tree with tricks_needed = 2: node 5 is visited but the cut
-    // does NOT fire (tricks_won 1 < needed 2), so trick 2 is played out in
-    // full to its natural terminal node:
+    // The same tree with tricks_needed = 2. At node 5 the cut does NOT fire
+    // (tricks_won 1 < needed 2), so trick 2 is played to its terminal node:
     //     [node 5, not cut] North plays A -> East to play             -- 6
     //       East plays Q -> South to play                             -- 7
     //         South plays 3 -> West to play                           -- 8
     //           West plays 5 -> trick 2 resolves, every hand empty,
-    //                           terminal (tricks_won 2 >= needed 2,
-    //                           so this is where terminal_value's own
-    //                           made-branch would fire if the cut's
-    //                           already_made() check textually before it
-    //                           did not already catch the same condition
-    //                           first)                                -- 9
+    //                           terminal (tricks_won 2 >= needed 2).
+    //                           already_made() runs before
+    //                           terminal_value's made branch and
+    //                           catches it first                      -- 9
     constexpr std::uint64_t NodesWithoutEarlyCut = 9;
 
     be::EvaluationResult const with_early_cut = be::evaluate(
@@ -277,9 +256,9 @@ TEST_F(AlreadyMadeCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison
 
 TEST_F(AlreadyMadeCutTest, PiIsNotCalledWhenTheContractIsAlreadyMadeAtTheRoot)
 {
-    // tricks_needed = 0: the contract is already made before a single card
-    // is played, so the cut fires at the root itself, before seat_on_play
-    // is even consulted -- pi must never be asked which card to lead.
+    // tricks_needed = 0: the contract is made before any card is played, so
+    // the cut fires at the root, before seat_on_play is consulted. pi must
+    // never be asked for a lead.
     Deal const root_layout = make_two_certain_tricks();
     be::VectorLayoutSource source({root_layout});
     be::RecordingDeclarerStrategy recording(be::Card{Spades, King});  // never actually asked
@@ -295,23 +274,21 @@ TEST_F(AlreadyMadeCutTest, PiIsNotCalledWhenTheContractIsAlreadyMadeAtTheRoot)
     ASSERT_FALSE(result.error.has_value());
     EXPECT_TRUE(recording.calls().empty());
     // RecordingDeclarerStrategy::as_strategy() fixes id = 0.
-    // Single root layout, p = 1, kappa = 1 -- node_mass is trivially 1.0
-    // here, which is fine: this test is about the call count, not the
-    // value (the dedicated test above covers the value).
+    // One root layout, p = 1, kappa = 1, so node_mass is 1.0. This test is
+    // about the call count; the test above covers the value.
     EXPECT_EQ(result.by_strategy.at(0u).p_make, 1.0);
     EXPECT_TRUE(result.by_strategy.at(0u).root_children.empty());
 }
 
 TEST_F(AlreadyMadeCutTest, TierCutCountersFireAtTheRootBlockSite)
 {
-    // Same fixture and tricks_needed as
-    // PiIsNotCalledWhenTheContractIsAlreadyMadeAtTheRoot above -- that test
-    // pins the cut firing at the root by call count; this one pins the
-    // same firing by its counter. The cut fires through evaluate()'s own
-    // root-handling block, never reaching a p_make() call at all -- the
-    // site a sweep of p_make() alone would miss. counters_test.cpp's
-    // TierCutCountersDistinguishTheAlreadyMadeCutFromTheOthers has the
-    // p_make()-site half of this counter's own proof.
+    // The same fixture and tricks_needed as
+    // PiIsNotCalledWhenTheContractIsAlreadyMadeAtTheRoot, which pins the root
+    // cut by call count. This one pins it by its counter. The cut fires in
+    // evaluate()'s root handling, never in p_make(), so a counter incremented
+    // only in p_make() would miss it. counters_test.cpp's
+    // TierCutCountersDistinguishTheAlreadyMadeCutFromTheOthers covers the
+    // p_make() site.
     Deal const root_layout = make_two_certain_tricks();
     be::VectorLayoutSource source({root_layout});
 
@@ -332,18 +309,19 @@ TEST_F(AlreadyMadeCutTest, TierCutCountersFireAtTheRootBlockSite)
     EXPECT_EQ(value.counters->tier2_cuts, 0u);
 }
 
-// Tier 1's dead cut, the mirror of the already-made cut above: a node where
-// declarer cannot reach tricks_needed even by winning every remaining trick
-// evaluates to 0.0 without recursing further -- sound unconditionally, same
-// argument as already_made(), no gate (see evaluate.cpp's is_dead()).
+// Tier 1's dead cut, the mirror of the already-made cut: a node where
+// declarer cannot reach tricks_needed even by winning every remaining
+// trick evaluates to 0.0 without recursing. Sound unconditionally, for the
+// same reason as already_made(); no gate (see is_dead() in
+// evaluate.cpp).
 
 namespace
 {
-    /// East holds the top two spades, North (declarer) and South (dummy)
-    /// the bottom two, West the middle two -- East wins trick 1 outright
-    /// however anyone else plays, so declarer's tricks_won stays 0 through
-    /// it regardless of tricks_needed. East on lead (defender root), fully
-    /// deterministic under single_card_defender / single_card_declarer_play.
+    /// East holds the top two spades, West the queen and jack, North
+    /// (declarer) the two and three, and South (dummy) the four and five.
+    /// East wins trick 1 whatever anyone
+    /// plays, so declarer's tricks_won stays 0. East on lead (defender root),
+    /// deterministic under the scripted strategies.
     auto make_east_wins_first_trick() -> Deal
     {
         Deal deal{};
@@ -363,42 +341,37 @@ class DeadCutTest : public ::testing::Test
 
 TEST_F(DeadCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison)
 {
-    // No flag to disable tier 1's cuts, same as the already-made cut above,
-    // so "the cut actually fired" is verified by comparing node counts
-    // across two tricks_needed values on the same deterministic fixture: 2
-    // (impossible the instant trick 1 is lost to East, since only trick 2
-    // remains) versus 1 (still possible after losing trick 1, so the
-    // recursion runs to its natural terminal node without the cut ever
-    // firing early).
+    // No off switch here either, so the test compares node counts on the same
+    // fixture: tricks_needed = 2 (impossible as soon as East wins trick 1,
+    // with one trick left) against 1 (still possible, so the recursion runs to
+    // its terminal node).
     Deal const root_layout = make_east_wins_first_trick();
     be::VectorLayoutSource source({root_layout});
 
-    // Hand-counted tree with tricks_needed = 2 (East leads, rotation
+    // Hand-counted tree with tricks_needed = 2 (East leads; rotation
     // East -> South -> West -> North):
     //   root: East to lead, defender node                        -- 1
     //     East plays K -> South to play, declarer/dummy node     -- 2
     //       South plays 4 -> West to play, defender node         -- 3
     //         West plays J -> North to play, declarer node       -- 4
     //           North plays 2 -> trick 1 resolves (East's king
-    //                            beats jack/four/two), East to
-    //                            lead trick 2 -- tricks_won (0) +
-    //                            tricks_remaining (1) < tricks_needed
-    //                            (2): DEAD, CUT FIRES here, node
-    //                            visited but not expanded          -- 5
+    //                            wins), East to lead trick 2.
+    //                            tricks_won (0) + tricks_remaining
+    //                            (1) < tricks_needed (2): DEAD,
+    //                            CUT FIRES, node visited but not
+    //                            expanded                          -- 5
     constexpr std::uint64_t NodesWithEarlyDeadCut = 5;
 
-    // The same tree with tricks_needed = 1: node 5 is visited but the cut
-    // does NOT fire (0 + 1 is not < 1 -- trick 2 could still be made), so
-    // trick 2 plays out in full to its natural terminal node:
+    // The same tree with tricks_needed = 1. At node 5 the cut does NOT fire
+    // (0 + 1 is not < 1), so trick 2 is played to its terminal node:
     //     [node 5, not cut] East plays A -> South to play           -- 6
     //       South plays 5 -> West to play                           -- 7
     //         West plays Q -> North to play                         -- 8
-    //           North plays 3 -> trick 2 resolves (East's ace beats
-    //                            queen/five/three too), every hand
-    //                            empty, terminal -- and also dead
-    //                            (0 + 0 < 1), so is_dead() firing
-    //                            first here is what actually returns
-    //                            0.0, not terminal_value()           -- 9
+    //           North plays 3 -> trick 2 resolves (East's ace
+    //                            wins), every hand empty. Terminal
+    //                            and also dead (0 + 0 < 1), so
+    //                            is_dead() returns the 0.0 before
+    //                            terminal_value() does             -- 9
     constexpr std::uint64_t NodesWithoutEarlyDeadCut = 9;
 
     be::EvaluationResult const with_early_cut = be::evaluate(
@@ -429,31 +402,25 @@ TEST_F(DeadCutTest, StopsExpansionAssertedAgainstAOneTrickShortComparison)
         with_early_cut.by_strategy.at(1u).counters->nodes_visited,
         without_early_cut.by_strategy.at(1u).counters->nodes_visited);
 
-    // The cut computes the right value -- zero, both ways, whether via the
-    // cut or (tricks_needed = 1's own coincidental dead terminal) via
-    // natural completion.
+    // Zero both ways: by the cut, and by natural completion (with
+    // tricks_needed = 1 the terminal node happens to be dead too).
     EXPECT_EQ(with_early_cut.by_strategy.at(1u).p_make, 0.0);
     EXPECT_EQ(without_early_cut.by_strategy.at(1u).p_make, 0.0);
-    // Bitwise agreement with the uncut path: both exactly 0.0, and
-    // confirmed directly (not just reasoned about) by temporarily
-    // disabling is_dead() at both call sites and rebuilding: the
-    // tricks_needed = 2 fixture still evaluates to exactly 0.0 at its true
-    // terminal node four plies further down, then reverted (see commit
-    // message).
+    // Bitwise agreement with the uncut path: both exactly 0.0. With is_dead()
+    // disabled, the tricks_needed = 2 fixture still evaluates to 0.0 at its
+    // terminal node four plies down.
 }
 
 TEST_F(DeadCutTest, TierCutCountersDistinguishTheDeadCutFromTheOthers)
 {
-    // Same fixture and tricks_needed as this class's own
-    // StopsExpansionAssertedAgainstAOneTrickShortComparison above (the
-    // with_early_cut run: the dead cut fires at node 5, deep in p_make(),
-    // not at the root -- the root here, node 1, is not yet dead either).
-    // Neither of the other two cuts is ever in a position to fire on this
-    // fixture: nothing here is ever already made before it is dead, and no
-    // bound is supplied. This is the "vice versa" half of the proof that
-    // each counter counts its own tier -- counters_test.cpp's own
-    // TierCutCountersDistinguishTheAlreadyMadeCutFromTheOthers is the
-    // other half.
+    // The same fixture and tricks_needed as
+    // StopsExpansionAssertedAgainstAOneTrickShortComparison (its
+    // with_early_cut run): the dead cut fires at node 5, inside p_make(), not
+    // at the root (node 1 is not yet dead). Neither other cut can fire here:
+    // no node is made before it is dead, and no bound is supplied. This half
+    // shows that the dead counter counts only its tier; counters_test.cpp's
+    // TierCutCountersDistinguishTheAlreadyMadeCutFromTheOthers is the other
+    // half.
     Deal const root_layout = make_east_wins_first_trick();
     be::VectorLayoutSource source({root_layout});
 
@@ -476,10 +443,9 @@ TEST_F(DeadCutTest, TierCutCountersDistinguishTheDeadCutFromTheOthers)
 
 TEST_F(DeadCutTest, PiAndDeltaAreNotCalledWhenTheRootIsAlreadyDead)
 {
-    // tricks_needed = 4: no suit here has four tricks in it at all
-    // (tricks_remaining(root) = 2, North's own card count), so the root
-    // itself is dead before a single card is played -- neither pi nor
-    // delta should ever be asked for one.
+    // tricks_needed = 4, but tricks_remaining(root) is 2 (North's card
+    // count), so the root is dead before any card is played. Neither pi nor
+    // delta may be asked for a card.
     Deal const root_layout = make_east_wins_first_trick();
     be::VectorLayoutSource source({root_layout});
     be::RecordingDeclarerStrategy recording_pi(be::Card{Spades, Two});  // never actually asked
@@ -503,12 +469,11 @@ TEST_F(DeadCutTest, PiAndDeltaAreNotCalledWhenTheRootIsAlreadyDead)
 
 TEST_F(DeadCutTest, TierCutCountersFireAtTheRootBlockSite)
 {
-    // Same fixture and tricks_needed as
-    // PiAndDeltaAreNotCalledWhenTheRootIsAlreadyDead above -- that test
-    // pins the cut firing at the root by call count; this one pins the
-    // same firing by its counter. The cut fires through evaluate()'s own
-    // root-handling block, never reaching a p_make() call at all --
-    // the site a sweep of p_make() alone would miss.
+    // The same fixture and tricks_needed as
+    // PiAndDeltaAreNotCalledWhenTheRootIsAlreadyDead, which pins the root cut
+    // by call count. This one pins it by its counter. The cut fires in
+    // evaluate()'s root handling, which a counter in p_make() alone would
+    // miss.
     Deal const root_layout = make_east_wins_first_trick();
     be::VectorLayoutSource source({root_layout});
 
@@ -529,11 +494,10 @@ TEST_F(DeadCutTest, TierCutCountersFireAtTheRootBlockSite)
     EXPECT_EQ(value.counters->tier2_cuts, 0u);
 }
 
-// The LayoutBound injection seam: a caller-supplied double-dummy upper
-// bound on tricks, and the separate delta_is_double_dummy_optimal
-// declaration a future node-level cut will gate on. Nothing in this module
-// consumes either yet -- these tests pin the seam itself: the scripted test
-// double behaves correctly, and supplying a bound cannot perturb the
+// The LayoutBound seam: a caller-supplied double-dummy upper bound on
+// tricks, and the separate delta_is_double_dummy_optimal declaration that
+// tier 2 is gated on. These tests pin the seam: the scripted test double
+// behaves correctly, and a bound without the declaration cannot change the
 // answer.
 
 class LayoutBoundTest : public ::testing::Test
@@ -553,13 +517,12 @@ TEST_F(LayoutBoundTest, ScriptedBoundRecordsWhatItWasAskedAndReturnsTheScriptedV
 
 TEST_F(LayoutBoundTest, SupplyingABoundWithoutTheDeclarationDoesNotChangeTheAnswerEitherDirection)
 {
-    // A bound scripted to claim zero tricks for declarer -- exactly the
-    // value that fires tier 2's node-level cut (see TierTwoCutTest below)
-    // when the caller has also made the delta_is_double_dummy_optimal
-    // declaration. Withhold the declaration here, and both runs must still
-    // agree bitwise: supplying a bound alone is not itself the switch (see
-    // EvaluateOptions::delta_is_double_dummy_optimal's own doxygen for why
-    // the two are kept separate).
+    // A bound scripted to claim zero tricks for declarer: the value that
+    // fires tier 2's cut (see TierTwoCutTest below) once the declaration is
+    // made. Without the declaration both runs must agree bitwise: a bound
+    // alone does not switch the cut on (see
+    // EvaluateOptions::delta_is_double_dummy_optimal for why the two are
+    // separate).
     Deal const root_layout = make_east_wins_first_trick();
     be::VectorLayoutSource source({root_layout});
     be::ScriptedBound scripted({{root_layout, 0}});
@@ -573,7 +536,7 @@ TEST_F(LayoutBoundTest, SupplyingABoundWithoutTheDeclarationDoesNotChangeTheAnsw
         source,
         strategy(1),
         be::single_card_defender,
-        be::EvaluateOptions{.bound = scripted.as_bound()});  // delta_is_double_dummy_optimal left unset
+        be::EvaluateOptions{.bound = scripted.as_bound()});  // no delta_is_double_dummy_optimal
 
     ASSERT_FALSE(without_bound.error.has_value());
     ASSERT_FALSE(with_bound.error.has_value());
@@ -587,16 +550,15 @@ TEST_F(LayoutBoundTest, SupplyingABoundWithoutTheDeclarationDoesNotChangeTheAnsw
             without_bound.by_strategy.at(1u).root_children[i].value,
             with_bound.by_strategy.at(1u).root_children[i].value);
     }
-    // The bound is never even called: tier2_dead() checks the declaration
-    // before ever touching options.bound, so scripting a single entry
-    // above and never seeing ScriptedBound's own ADD_FAILURE fire is
-    // itself part of what this test pins.
+    // The bound is never called: tier2_dead() checks the declaration before
+    // it reads options.bound. ScriptedBound's ADD_FAILURE not firing is part
+    // of what this test pins.
 }
 
-// Tier 2's node-level cut: every layout at a node dead by the injected
-// bound, under the caller's own delta_is_double_dummy_optimal declaration,
-// evaluates to 0.0 without recursing further. Tested entirely with
-// scripted bounds -- no solver anywhere in this file.
+// Tier 2's node-level cut: a node whose every layout is dead by the
+// injected bound, under the caller's delta_is_double_dummy_optimal
+// declaration, evaluates to 0.0 without recursing. Every bound here is
+// scripted; no solver is used in this file.
 
 class TierTwoCutTest : public ::testing::Test
 {
@@ -604,10 +566,9 @@ class TierTwoCutTest : public ::testing::Test
 
 TEST_F(TierTwoCutTest, FiresWhenEveryLayoutIsDeadAndTheDeclarationIsMade)
 {
-    // Reuses make_layout_a()/make_layout_b() and merging_delta() from
-    // AlreadyMadeCutTest above -- the scripted bound here is independent
-    // of what merging_delta would actually produce, since tier2_dead()
-    // never inspects delta's own behaviour, only the bound.
+    // Reuses make_layout_a(), make_layout_b() and merging_delta() from
+    // AlreadyMadeCutTest. The scripted bound need not match what
+    // merging_delta does: tier2_dead() reads only the bound, never delta.
     Deal const layout_a = make_layout_a();
     Deal const layout_b = make_layout_b();
     be::VectorLayoutSource source({layout_a, layout_b});
@@ -629,13 +590,11 @@ TEST_F(TierTwoCutTest, FiresWhenEveryLayoutIsDeadAndTheDeclarationIsMade)
 
 TEST_F(TierTwoCutTest, TierCutCountersFireAtTheRootBlockSite)
 {
-    // Same fixture, bound and declaration as
-    // FiresWhenEveryLayoutIsDeadAndTheDeclarationIsMade above -- that test
-    // pins the cut's value; this one pins the same firing by its counter.
-    // Both layouts are dead by the bound before a single card is played,
-    // so the cut fires through evaluate()'s own root-handling block, never
-    // reaching a p_make() call at all -- the site a sweep of p_make()
-    // alone would miss.
+    // The same fixture, bound and declaration as
+    // FiresWhenEveryLayoutIsDeadAndTheDeclarationIsMade, which pins the
+    // value. This one pins the same firing by its counter. Both layouts are
+    // dead before any card is played, so the cut fires in evaluate()'s root
+    // handling, which a counter in p_make() alone would miss.
     Deal const layout_a = make_layout_a();
     Deal const layout_b = make_layout_b();
     be::VectorLayoutSource source({layout_a, layout_b});
@@ -662,35 +621,28 @@ TEST_F(TierTwoCutTest, TierCutCountersFireAtTheRootBlockSite)
 }
 
 
-// tier2_dead() is checked at *every* node, not just the root -- a fixture
-// spanning several plies needs a bound that can answer for every layout at
-// every depth the recursion actually reaches. A fixed per-Deal table
-// (ScriptedBound's own exact-Deal matching) cannot do that once a card has
-// been played, since play() returns a genuinely different Deal each time.
-// The tests below that need the cut to stay suppressed (or a single query
-// to matter) past the root use a fixture built so both layouts always take
-// the *same* path with no branching at all -- so a lambda keyed on a
-// filler suit no play here ever touches can tell them apart at any depth.
-// ScriptedBound itself remains right where a check is confined to one node
-// (an all-dead root that fires immediately, or a root check whose early
-// exit is the whole point).
+// tier2_dead() runs at every node, not only the root, so a fixture over
+// several plies needs a bound that answers for every layout at every
+// depth. ScriptedBound matches exact Deals, and every play() returns a new
+// Deal, so it cannot answer past the root. The tests below that need a
+// bound beyond the root use a fixture where both layouts take the same
+// single path. A lambda keyed on a club filler that is never played then
+// tells them apart at any depth. ScriptedBound is still right where the
+// check happens at one node only (an all-dead root, or a root check whose
+// early exit is the point).
 
 namespace
 {
-    /// North holds the two top spades outright (a certain trick), so
-    /// however East and West's *spades* are split, North always wins
-    /// trick 1 the same way -- no branching, one path through the whole
-    /// recursion. The two layouts differ only in an untouched club filler,
-    /// redistributed between the defenders (East holds Six in layout_a,
-    /// Seven in layout_b) -- clubs are never played (tricks_needed = 1 is
-    /// met the instant trick 1 resolves, well before any second trick), so
-    /// that filler is a stable discriminator at every depth this recursion
-    /// ever reaches.
+    /// North holds the two top spades, so however East and West split their
+    /// spades, North wins trick 1 the same way: one path through the whole
+    /// recursion. The layouts differ only in a club filler swapped between the
+    /// defenders (East holds the Six in layout_a, the Seven in layout_b). Clubs
+    /// are never played (tricks_needed = 1 is met as trick 1 resolves), so the
+    /// filler tells the layouts apart at every depth.
     ///
-    /// East on lead (defender root): East -> South -> West -> North.
-    /// East's own spades ({Queen, Jack}) are identical in both layouts, so
-    /// East's forced (single_card_defender) lead is the jack in both --
-    /// merged from the very first ply.
+    /// East on lead (defender root): East -> South -> West -> North. East's
+    /// spades ({Queen, Jack}) are the same in both layouts, so East's forced
+    /// lead is the jack in both, merged from the first ply.
     auto make_declarer_certain_win_with_club_filler(int east_club_rank, int west_club_rank) -> Deal
     {
         Deal deal{};
@@ -716,23 +668,19 @@ namespace
 
 TEST_F(TierTwoCutTest, OneLiveLayoutSuppressesTheCut)
 {
-    // layout_a (East's club filler = Six) is scripted dead throughout;
-    // layout_b (East's club filler = Seven) is scripted live throughout,
-    // exactly at the boundary (still_needed itself, not comfortably
-    // above it) so this test also pins the >= in tier2_dead()'s own
-    // condition, not just its direction. Both layouts are present
-    // together at every node on the single path this fixture has (see
-    // the fixture's own comment), so the live one must suppress the cut
-    // at every one of those checks. Full evaluation then reaches the
-    // already-made cut right after trick 1 (both AK tricks are certain,
-    // but only one is needed): node_mass = kappa * (p_a + p_b) =
-    // 0.5 * (1 + 1) = 1.0 -- neither layout's p is ever touched, since
-    // single_card_defender never gives either a genuine choice.
+    // layout_a (East's club Six) is scripted dead throughout. layout_b
+    // (East's club Seven) is scripted live, at exactly still_needed, so this
+    // test also pins the >= in tier2_dead(), not only its direction. Both
+    // layouts share every node on the single path, so the live one must
+    // suppress the cut at every check. Evaluation then reaches the
+    // already-made cut after trick 1 (both AK tricks are certain; one is
+    // needed): node_mass = kappa * (p_a + p_b) = 0.5 * (1 + 1) = 1.0. No p
+    // changes, since single_card_defender never gives a choice.
     Deal const layout_a = make_declarer_certain_win_with_club_filler(Six, Seven);
     Deal const layout_b = make_declarer_certain_win_with_club_filler(Seven, Six);
     be::VectorLayoutSource source({layout_a, layout_b});
     auto const bound = [](Deal const& layout) -> int
-    { return is_layout_a_by_club_filler(layout) ? 0 : 1; };  // 1 == still_needed exactly
+    { return is_layout_a_by_club_filler(layout) ? 0 : 1; };  // 1 is exactly still_needed
 
     be::EvaluationResult const result = be::evaluate(
         layout_a,
@@ -749,11 +697,10 @@ TEST_F(TierTwoCutTest, OneLiveLayoutSuppressesTheCut)
 
 TEST_F(TierTwoCutTest, NeverFiresWithoutTheDeclarationWhateverTheBoundSays)
 {
-    // Same fixture as above, but every layout scripted dead throughout
-    // (layout_b's own branch would normally suppress the cut -- scripted
-    // dead here instead, so this test would fail the moment the
-    // declaration gate stopped being checked first) and the declaration
-    // withheld. Full evaluation must still proceed to the same 1.0.
+    // The same fixture, but every layout scripted dead and the declaration
+    // withheld. layout_b would normally suppress the cut; dead here, it makes
+    // this test fail if the declaration stopped being checked first.
+    // Evaluation must still reach the same 1.0.
     Deal const layout_a = make_declarer_certain_win_with_club_filler(Six, Seven);
     Deal const layout_b = make_declarer_certain_win_with_club_filler(Seven, Six);
     be::VectorLayoutSource source({layout_a, layout_b});
@@ -772,7 +719,7 @@ TEST_F(TierTwoCutTest, NeverFiresWithoutTheDeclarationWhateverTheBoundSays)
     be::EvaluationValue const& value = result.by_strategy.at(1u);
     EXPECT_EQ(value.p_make, 1.0);
     ASSERT_TRUE(value.counters.has_value());
-    // Hand-counted tree, single path (both layouts always merged):
+    // Hand-counted tree, one path (both layouts always merged):
     //   root: East to lead                                    -- 1
     //     East plays J -> South to play                        -- 2
     //       South plays 2 -> West to play                      -- 3
@@ -786,16 +733,13 @@ TEST_F(TierTwoCutTest, NeverFiresWithoutTheDeclarationWhateverTheBoundSays)
 
 TEST_F(TierTwoCutTest, TheBoundIsNeverConsultedForAMakeCut)
 {
-    // The strategy-fusion trap, made concrete: North holds only the queen
-    // of spades, East only the king -- East, on lead, is forced to play
-    // its only card (the king), so North's queen always loses. The true
-    // double-dummy value is 0, and a bound reflecting that correctly would
-    // be < needed -- but this bound instead claims 5 (comfortably "not
-    // dead") at every node it is ever asked about, the case a symmetric
-    // make-cut would misread as permission to report the node's full
-    // mass. No make-cut exists in this implementation, so evaluation must
-    // proceed for real and return the true value, 0.0, not node_mass
-    // (which would be 1.0 for this single, p = 1, kappa = 1 layout).
+    // The strategy-fusion trap. North holds only the spade queen, East only
+    // the king. East, on lead, must play the king, so North's queen always
+    // loses: the double-dummy value is 0. This bound wrongly claims 5 ("not
+    // dead") at every node. A symmetric make cut would read that as licence
+    // to return the node's full mass (1.0 here: one layout, p = 1,
+    // kappa = 1). There is no make cut, so evaluation must return the true
+    // value, 0.0.
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = East;
@@ -821,32 +765,23 @@ TEST_F(TierTwoCutTest, TheBoundIsNeverConsultedForAMakeCut)
 
 TEST_F(TierTwoCutTest, StopsAtTheFirstLiveLayoutWithoutQueryingTheRest)
 {
-    // Built so the *whole* evaluation touches tier2_dead exactly once:
-    // the root starts three cards into trick 1 already (South, West and
-    // North -- the Ace -- already played), so East, the fourth and last
-    // player, is on play at the root itself. Whatever East plays, North's
-    // already-played ace has already won the trick, so the very next node
-    // is already-made (tricks_won reaches 1, meeting tricks_needed = 1)
-    // and short-circuits before tier2_dead is ever reached there --
-    // tier2_dead's only invocation anywhere in this test is the root's own
-    // single call, over its two (unadvanced) layouts.
+    // Built so tier2_dead runs exactly once in the whole evaluation. The root
+    // starts three cards into trick 1 (South, West and North's Ace already
+    // played), so East, the last player, is on play at the root. Whatever East
+    // plays, North's ace wins, so the next node is already made (tricks_won
+    // reaches tricks_needed = 1) and returns before tier2_dead. The only call
+    // is the root's, over its two layouts.
     //
-    // layout_a is scripted live and appears first in node.layouts (the
-    // VectorLayoutSource order); layout_b has no scripted entry at all, so
-    // if the early exit inside tier2_dead's loop works, it is never asked.
+    // layout_a is scripted live and comes first in node.layouts (the
+    // VectorLayoutSource order). layout_b has no scripted entry, so if the
+    // early exit in tier2_dead's loop works, it is never asked.
     //
-    // The two layouts must actually be a same-pool split between the
-    // defenders, not two different pools -- East and West's club filler
-    // is swapped between the two (matching
-    // make_declarer_certain_win_with_club_filler()'s own pattern earlier
-    // in this file), so the union pool {Six, Seven} is identical between
-    // layout_a and layout_b and both genuinely survive make_root() into
-    // the same node. Asserted directly below, not assumed: an earlier
-    // version of this fixture only changed East's own filler and left
-    // West's at zero, which gave the two layouts different pools --
-    // make_root()'s own consistency filter silently dropped layout_b, and
-    // the test passed for the wrong reason (there was only ever one
-    // layout to query).
+    // The two layouts must be splits of the same pool. The club filler is
+    // swapped between East and West (as in
+    // make_declarer_certain_win_with_club_filler()), so the pool {Six, Seven}
+    // is the same and both layouts survive make_root() into one node. This is
+    // asserted below. With different pools, make_root()'s consistency filter
+    // drops layout_b, and the test passes for the wrong reason.
     Deal layout_a{};
     layout_a.trump = DDS_NOTRUMP;
     layout_a.first = South;
@@ -855,8 +790,8 @@ TEST_F(TierTwoCutTest, StopsAtTheFirstLiveLayoutWithoutQueryingTheRest)
     layout_a.currentTrickSuit[1] = Spades;
     layout_a.currentTrickRank[1] = Three;  // West's card, already played
     layout_a.currentTrickSuit[2] = Spades;
-    layout_a.currentTrickRank[2] = Ace;    // North's card, already played -- already winning
-    layout_a.remainCards[East][Spades] = be::holding({Four});  // East's own card, about to play
+    layout_a.currentTrickRank[2] = Ace;    // North's card, already played and winning
+    layout_a.remainCards[East][Spades] = be::holding({Four});  // East's card, about to play
     layout_a.remainCards[East][Clubs] = be::holding({Six});    // untouched filler pool, split one way
     layout_a.remainCards[West][Clubs] = be::holding({Seven});
 
@@ -866,9 +801,8 @@ TEST_F(TierTwoCutTest, StopsAtTheFirstLiveLayoutWithoutQueryingTheRest)
 
     be::VectorLayoutSource source({layout_a, layout_b});
 
-    // Confirm both layouts actually survive make_root() into one node
-    // before trusting the early-exit assertion below -- see the fixture
-    // comment above for why this is checked directly rather than assumed.
+    // Check that both layouts survive make_root() into one node before
+    // trusting the early-exit assertion (see the fixture comment).
     std::optional<be::BeliefNode> const root =
         be::make_root(layout_a, North, /*tricks_needed=*/1, source).node;
     ASSERT_TRUE(root.has_value());
@@ -893,15 +827,11 @@ TEST_F(TierTwoCutTest, StopsAtTheFirstLiveLayoutWithoutQueryingTheRest)
 
 TEST_F(TierTwoCutTest, BitwiseAgreementWithTheUncutPathVerifiedByTemporarilyDisablingTheCut)
 {
-    // No flag to disable tier 2's cut either, same as both tier 1 cuts --
-    // this test documents that the bitwise-agreement check was done by
-    // temporarily changing evaluate.cpp's tier2_dead() call
-    // sites to `false && tier2_dead(...)`, rebuilding, and confirming
-    // FiresWhenEveryLayoutIsDeadAndTheDeclarationIsMade's fixture still
-    // evaluates to exactly 0.0 via natural recursion to its true terminal
-    // node, then reverting -- see the commit message for the record. This
-    // test itself just re-pins the cut's own value, which the disabled-cut
-    // check was run against.
+    // Tier 2 has no off switch either. With the tier2_dead() calls in
+    // evaluate.cpp disabled, the fixture of
+    // FiresWhenEveryLayoutIsDeadAndTheDeclarationIsMade still evaluates to
+    // exactly 0.0 through natural recursion. This test pins that value with
+    // the cut on.
     Deal const layout_a = make_layout_a();
     Deal const layout_b = make_layout_b();
     be::VectorLayoutSource source({layout_a, layout_b});
@@ -951,14 +881,10 @@ TEST_F(TierTwoCutTest, PiAndDeltaAreNotCalledWhenTheRootIsDeadByTheBound)
 }
 
 // PredicateBound: the depth-independent alternative to ScriptedBound (see
-// test_support.hpp for the full rationale). ScriptedBound's own exact-Deal
-// matching cannot serve a fixture spanning more than one ply -- each play
-// produces a genuinely different Deal, so a table entry scripted for the
-// root answers nothing one ply down, and tier2_dead() is checked at every
-// node. Confirmed directly: scripting only this fixture's own root layout
-// into a ScriptedBound and driving it through evaluate() hits
-// ScriptedBound's ADD_FAILURE the moment a second, different Deal is
-// queried, one ply in (see the commit message).
+// test_support.hpp). ScriptedBound matches exact Deals, and each play
+// produces a new Deal, so an entry scripted for the root answers nothing
+// one ply down. tier2_dead() runs at every node, so driving a
+// ScriptedBound through evaluate() hits its ADD_FAILURE one ply in.
 
 class PredicateBoundTest : public ::testing::Test
 {
@@ -968,15 +894,12 @@ namespace
 {
     constexpr int Hearts = 1;
 
-    /// North holds two certain winners spanning two separate tricks (AK of
-    /// spades, AK of hearts) -- North's own remaining card count is 4 for
-    /// every node in trick 1, then drops once North plays its first card
-    /// (winning trick 1 and leading trick 2), giving two genuinely
-    /// different regimes for a predicate to distinguish without a table
-    /// entry per node. East on lead (defender root): East -> South -> West
-    /// -> North, fully deterministic under single_card_defender /
-    /// single_card_declarer_play (each seat holds exactly one card per
-    /// suit it can legally play at every step).
+    /// North holds two certain winners in two tricks (the AK of spades and
+    /// of hearts). North holds 4 cards at every node in trick 1, then fewer
+    /// once it plays. That gives a predicate two regimes to tell apart without
+    /// an entry per node. East on lead (defender root): East -> South -> West
+    /// -> North. Each seat holds two cards in each of two suits, and the play
+    /// is deterministic because the strategies are scripted.
     auto make_two_trick_declarer_certain_win() -> Deal
     {
         Deal deal{};
@@ -999,14 +922,12 @@ TEST_F(PredicateBoundTest, AnswersEveryNodeInATwoTrickFixtureWithoutATableEntryP
     Deal const root_layout = make_two_trick_declarer_certain_win();
     be::assert_equal_hand_sizes(root_layout);
     be::VectorLayoutSource source({root_layout});
-    // Two predicates, tried in order: "North still holds every one of its
-    // four cards" (true for every node in trick 1) claims a bound of 2,
-    // comfortably not less than still_needed (2, since nothing is won
-    // yet); the catch-all claims 1, comfortably not less than still_needed
-    // (1, once trick 1 is won) for every node in trick 2. Both values are
-    // live, so this fixture's tier2 cut never actually fires here -- this
-    // test is about the double answering every node correctly, not about
-    // provoking the cut (TierTwoCutTest's own tests already cover firing).
+    // Two predicates, tried in order. "North still holds all four cards"
+    // (every node in trick 1) gives a bound of 2, not less than still_needed
+    // (2, nothing won yet). The catch-all gives 1, not less than still_needed
+    // (1, once trick 1 is won) at every node in trick 2. Both are live, so the
+    // cut never fires. This test is about the double answering every node;
+    // TierTwoCutTest covers firing.
     be::PredicateBound predicate_bound(
         {{[](Deal const& layout) -> bool { return be::card_count(layout, North) >= 4; }, 2},
          {[](Deal const&) -> bool { return true; }, 1}});
@@ -1022,32 +943,27 @@ TEST_F(PredicateBoundTest, AnswersEveryNodeInATwoTrickFixtureWithoutATableEntryP
             .bound = predicate_bound.as_bound(), .delta_is_double_dummy_optimal = true});
 
     ASSERT_FALSE(result.error.has_value());
-    // Both tricks are certain, so the whole recursion is one deterministic
-    // path (single root layout, kappa = 1, p = 1 throughout, no genuine
-    // choice anywhere) reaching node_mass = 1.0 the instant trick 2 is
-    // won -- same value the cut being suppressed the whole way would
-    // produce, since nothing here is ever actually dead by the bound.
+    // Both tricks are certain, so the recursion is one deterministic path
+    // (one root layout, kappa = 1, p = 1, no choice) and reaches
+    // node_mass = 1.0 when trick 2 is won. Nothing is dead by the bound, so
+    // suppressing the cut gives the same value.
     EXPECT_EQ(result.by_strategy.at(1u).p_make, 1.0);
-    // Hand-counted: tier2_dead() is checked at every node up to and
-    // including the one right before North's own winning play in trick 2
-    // (8 nodes total -- East/South/West/North's turns in trick 1, then
-    // North/East/South/West's turns in trick 2) and not at the 9th node,
-    // where the already-made cut fires first and consumes it. The first
-    // four queries see North holding all four of its cards (trick 1, the
-    // first predicate's own branch); the last four see fewer (trick 2, the
-    // catch-all's branch) -- two genuinely different plies answered
-    // through the same two-entry table, which is the whole point.
+    // Hand-counted: tier2_dead() runs at every node until trick 2
+    // resolves. That is 8 nodes: East, South, West and
+    // North in trick 1, then North, East, South and West in trick 2. At the
+    // 9th node the already-made cut fires first. The first four queries see
+    // North holding all four cards (the first predicate); the last four see
+    // fewer (the catch-all). Two different plies, one two-entry table.
     ASSERT_EQ(predicate_bound.queries().size(), 8u);
     EXPECT_EQ(be::card_count(predicate_bound.queries().front(), North), 4);
     EXPECT_LT(be::card_count(predicate_bound.queries().back(), North), 4);
 }
 
 // The sampling gate: tier2_dead() is gated on !node.is_sample; neither
-// tier-1 cut is. These tests construct a BeliefNode directly rather than
-// driving is_sample true through evaluate() (which make_root can do now),
-// to isolate the predicate itself from the rest of the recursion.
-// already_made()/is_dead() are exposed the same way is_terminal()/
-// terminal_value() are, precisely so a test can do this.
+// tier-1 cut is. These tests build a BeliefNode by hand, rather than
+// reaching is_sample through evaluate(), to test the predicate alone.
+// already_made() and is_dead() are public, like is_terminal() and
+// terminal_value(), so a test can do this.
 
 class SamplingGateTest : public ::testing::Test
 {
@@ -1065,7 +981,7 @@ TEST_F(SamplingGateTest, Tier2DoesNotFireOnASampledNodeEvenWhenEveryLayoutIsDead
     node.layouts = {layout};
     node.p = {1.0};
     node.kappa = 1.0;
-    node.is_sample = true;  // still constructed by hand here to isolate the predicate
+    node.is_sample = true;  // set by hand to isolate the predicate
 
     auto const bound = [](Deal const&) -> int { return 0; };  // dead, if it were consulted
     be::EvaluateOptions const options{.bound = bound, .delta_is_double_dummy_optimal = true};
@@ -1075,10 +991,9 @@ TEST_F(SamplingGateTest, Tier2DoesNotFireOnASampledNodeEvenWhenEveryLayoutIsDead
 
 TEST_F(SamplingGateTest, BothTier1CutsStillFireOnASampledNode)
 {
-    // Testing this separately is not padding: gating "the cuts" as a group
-    // instead of tier 2 alone would disable both of these on every sampled
-    // node too. Pinning that with a separate assertion per tier, rather
-    // than leaving it to a comment someone can talk themselves out of.
+    // Tested separately on purpose: gating all the cuts instead of tier 2
+    // alone would disable these two on every sampled node. One assertion per
+    // tier pins it.
     be::BeliefNode already_made_node{};
     already_made_node.state.declarer = North;
     already_made_node.state.tricks_needed = 1;
@@ -1090,7 +1005,7 @@ TEST_F(SamplingGateTest, BothTier1CutsStillFireOnASampledNode)
     dead_node.state.declarer = North;
     dead_node.state.tricks_needed = 5;  // impossible: nothing left to win 5 tricks from
     dead_node.state.tricks_won_by_declarer = 0;
-    dead_node.state.known_holdings = Deal{};  // every hand empty -- tricks_remaining() == 0
+    dead_node.state.known_holdings = Deal{};  // every hand empty, so tricks_remaining() == 0
     dead_node.is_sample = true;
     EXPECT_TRUE(be::is_dead(dead_node.state));
 }

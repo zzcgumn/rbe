@@ -7,12 +7,14 @@
 
 #include "test_support.hpp"
 
-// A namespace alias plus targeted `using` declarations, not `using namespace
-// dds::belief_evaluation;` -- this file includes api/dds_data_types.hpp
-// directly (declaring global ::Card), so a `using namespace` here would make
-// any future bare `Card` reference ambiguous between ::Card and
-// dds::belief_evaluation::Card rather than a clear compile error naming
-// which one was meant.
+// EvaluationCounters, filled only when EvaluateOptions::collect_counters is
+// set. This file covers nodes_visited, the per-tier cut counters,
+// sample_size_by_depth and replenishment_by_depth.
+
+// A namespace alias and targeted `using` declarations, not `using
+// namespace dds::belief_evaluation;`. This file includes
+// api/dds_data_types.hpp, which declares a global ::Card, so a bare `Card`
+// would be ambiguous instead of a clear compile error.
 namespace be = dds::belief_evaluation;
 using be::DeclarerStrategy;
 using be::EvaluateOptions;
@@ -24,10 +26,6 @@ using be::evaluate;
 using be::holding;
 using be::single_card_declarer_play;
 using be::single_card_defender;
-
-// The module's instrumentation mechanism: EvaluationCounters, populated only
-// behind EvaluateOptions::collect_counters. This file covers nodes_visited,
-// the per-tier cut counters, and sample_size_by_depth.
 
 namespace
 {
@@ -44,10 +42,9 @@ namespace
     constexpr int South = 2;  // dummy
     constexpr int West = 3;   // a defender
 
-    /// A single full trick, exactly one legal card at every seat's turn:
-    /// North's ace always wins regardless of what anyone plays, so the
-    /// whole recursion has one path through it and node count is fully
-    /// determined by the fixture's shape rather than by any strategy.
+    /// One full trick with one legal card at every turn. North's ace wins
+    /// whatever anyone plays, so there is one path, and the node count depends
+    /// only on the fixture's shape, not on any strategy.
     auto make_one_trick_one_legal_card_each() -> Deal
     {
         Deal deal{};
@@ -75,17 +72,16 @@ TEST_F(CountersTest, NodesVisitedMatchesTheHandCountedTree)
     Deal const root_layout = make_one_trick_one_legal_card_each();
     VectorLayoutSource source({root_layout});
 
-    // The tree (single layout, exactly one legal card at every step, so
-    // there is exactly one path and every node below the root has exactly
-    // one child):
+    // The tree (one layout, one legal card at every step, so one path and one
+    // child per node):
     //   root: North to lead, declarer node                       -- node 1
     //     North plays SA -> East to play, defender node           -- node 2
     //       East plays S2 -> South to play, declarer/dummy node   -- node 3
     //         South plays S3 -> West to play, defender node       -- node 4
     //           West plays SJ -> trick resolves, hand empty,
     //                            terminal, not expanded further    -- node 5
-    // nodes_visited counts every node reached and evaluated for a value,
-    // terminal or not, including the root -- 5 total.
+    // nodes_visited counts every node evaluated, terminal or not, including
+    // the root: 5.
     constexpr std::uint64_t ExpectedNodesVisited = 5;
 
     EvaluationResult const result = evaluate(
@@ -115,11 +111,9 @@ TEST_F(CountersTest, CountersAreAbsentByDefault)
     EXPECT_FALSE(result.by_strategy.at(1u).counters.has_value());
 }
 
-// This is the check that would otherwise go unenforced silently: every
-// test either turns counters on or leaves them off, never both, so nothing
-// forces the two runs to actually agree unless a test does so directly.
-// Bitwise, not EXPECT_DOUBLE_EQ -- a counters flag that perturbs the last
-// bit of p_make is exactly the kind of bug this test exists to catch.
+// Every other test turns counters on or off, never both, so only a direct
+// test checks that the two runs agree. Bitwise, not EXPECT_DOUBLE_EQ: a counters
+// flag that moves the last bit of p_make is the bug this catches.
 TEST_F(CountersTest, CollectingCountersDoesNotChangeTheAnswerEitherDirection)
 {
     Deal const root_layout = make_one_trick_one_legal_card_each();
@@ -151,19 +145,15 @@ TEST_F(CountersTest, CollectingCountersDoesNotChangeTheAnswerEitherDirection)
     }
 }
 
-// tier1_made_cuts, tier1_dead_cuts and tier2_cuts, alongside nodes_visited:
-// each counts its own tier's cut and no other's. This fixture's own
-// already-made cut (see NodesVisitedMatchesTheHandCountedTree's hand-counted
-// tree above -- node 5, the instant tricks_won_by_declarer first reaches
-// tricks_needed) fires through p_make()'s own write site, not the mirrored
-// one in evaluate()'s root-handling block, since the root here (node 1) has
-// not yet won any tricks. Neither of the other two cuts is ever in a
-// position to fire on this fixture: nothing here is ever dead, and no bound
-// is supplied. cuts_test.cpp's DeadCutTest has the "vice versa" half of this
-// proof (a fixture where the dead cut fires and the made cut does not), and
-// its own tests for both cuts firing through evaluate()'s root-handling
-// block instead of p_make() -- the site a sweep of p_make() alone would
-// miss.
+// tier1_made_cuts, tier1_dead_cuts and tier2_cuts each count only their own
+// tier. This fixture's already-made cut (node 5 in the tree of
+// NodesVisitedMatchesTheHandCountedTree, where tricks_won_by_declarer
+// first reaches tricks_needed) is counted in p_make(), not in evaluate()'s
+// root handling, since the root has won no tricks. Neither other cut can
+// fire: nothing is dead, and no bound is supplied. cuts_test.cpp's
+// DeadCutTest has the other half (the dead cut fires, the made cut does
+// not), and tests both cuts firing in evaluate()'s root handling, which a
+// counter in p_make() alone would miss.
 TEST_F(CountersTest, TierCutCountersDistinguishTheAlreadyMadeCutFromTheOthers)
 {
     Deal const root_layout = make_one_trick_one_legal_card_each();
@@ -186,23 +176,20 @@ TEST_F(CountersTest, TierCutCountersDistinguishTheAlreadyMadeCutFromTheOthers)
     EXPECT_EQ(value.counters->tier2_cuts, 0u);
 }
 
-// sample_size_by_depth: a per-depth aggregate of how many layouts a node
-// held, root at depth 0 -- the number that says how fast a sample
-// collapses as defenders play.
+// sample_size_by_depth: per-depth totals of how many layouts a node held,
+// root at depth 0. It shows how fast a sample collapses as defenders
+// play.
 
 TEST_F(CountersTest, SampleSizeByDepthMatchesTheHandCountedTreeOnTheExhaustivePath)
 {
-    // Same fixture, same hand-counted tree as
-    // NodesVisitedMatchesTheHandCountedTree above -- one layout, one path,
-    // five nodes at depths 0 through 4 (root at depth 0; the root's own
-    // contribution is written from evaluate()'s root-handling block, not
-    // from p_make(), the same asymmetry nodes_visited and the tier
-    // counters already have). Every node holds
-    // exactly the fixture's single layout throughout, so every depth's
-    // entry is {nodes=1, layout_sum=1, layout_min=1} -- asserted per field,
-    // per depth, not just the vector's length or its last element: an
-    // aggregate this uniform could hide an off-by-one in which depth a
-    // node landed at just as easily as it could hide a wrong count.
+    // The fixture and tree of NodesVisitedMatchesTheHandCountedTree: one
+    // layout, one path, five nodes at depths 0 to 4. The root's entry is
+    // written in evaluate()'s root handling, not p_make(), as for
+    // nodes_visited and the tier counters. Every node holds the one layout, so
+    // every depth reads {nodes=1, layout_sum=1, layout_min=1}. Each field is
+    // asserted at each depth, not only the length or last entry: a uniform
+    // total could hide a node counted at the wrong depth as easily as a wrong
+    // count.
     Deal const root_layout = make_one_trick_one_legal_card_each();
     VectorLayoutSource source({root_layout});
 
@@ -235,18 +222,14 @@ namespace
     constexpr int Six = 6;
     constexpr int King = 13;
 
-    /// North holds a certain trick (Ace/King of spades) regardless of what
-    /// anyone else plays; South (dummy) holds two low spades unrelated to
-    /// any layout's identity (Five, Six); East holds exactly one of a
-    /// three-card pool {Two, Three, Four}, West the other two -- so three
-    /// layouts share the same union pool (and so are all mutually
-    /// consistent, surviving make_root's filter together) but each gives
-    /// East a genuinely different single legal card. East on lead, forced
-    /// (single_card_defender): each layout's own card is the only one it
-    /// has, so expand_defender_node's own grouping-by-card splits the
-    /// three layouts into three distinct singleton children the instant
-    /// East plays -- the collapse this file exists to measure, made to
-    /// happen predictably rather than left to a solver or a script.
+    /// North holds a certain trick (spade Ace and King); South (dummy) holds
+    /// two low spades (Five, Six) that play no part. East holds one card of
+    /// the pool {Two, Three, Four} and West the other two. So three layouts
+    /// share one pool, all survive make_root's filter together, and each gives
+    /// East a different single card. East leads its only card
+    /// (single_card_defender), so expand_defender_node's grouping by card
+    /// splits the three layouts into three singleton children at once: a
+    /// collapse on demand, with no solver or script.
     auto make_layout_with_easts_card(int east_rank) -> Deal
     {
         Deal deal{};
@@ -270,21 +253,18 @@ namespace
 
 TEST_F(CountersTest, SampleSizeByDepthShowsTheCollapseFromASampledRootAcrossAPly)
 {
-    // Three consistent layouts exist (make_layout_with_easts_card(Two),
-    // (Three), (Four)); sample_size = 2 draws the first two in source
-    // order (Two then Three) -- a genuine sample, is_sample true at the
-    // root. East's forced play immediately splits those two sampled
-    // layouts apart (see make_layout_with_easts_card's own comment): by
-    // depth 1 there are two singleton nodes, one per branch, and nothing
-    // further splits them (South's and West's own plays are each forced
-    // too, within a branch already down to one layout). North's ace/king
-    // then wins trick 1 in both branches, meeting tricks_needed = 1, so
-    // the already-made cut fires at depth 4 in both branches (the same
-    // node-4-away-from-root shape NodesVisitedMatchesTheHandCountedTree's
-    // fixture has) -- depths 1 through 4 all read {nodes=2, layout_sum=2,
-    // layout_min=1}, depth 0 alone reads {nodes=1, layout_sum=2,
-    // layout_min=2}. The collapse this counter exists to measure is
-    // exactly that depth-0-to-depth-1 drop, read directly off the vector.
+    // Three consistent layouts exist (East holding Two, Three or Four).
+    // sample_size = 2 draws the first two in source order (Two, Three): a real
+    // sample, so is_sample is true at the root. East's forced lead splits
+    // them, so depth 1 has two singleton nodes, one per branch. Nothing splits
+    // them further: South's and West's plays are forced too. North's ace wins
+    // trick 1 in both branches, meeting tricks_needed = 1, so the already-made
+    // cut fires at depth 4 in both (the shape of
+    // NodesVisitedMatchesTheHandCountedTree).
+    //
+    // So depths 1 to 4 read {nodes=2, layout_sum=2, layout_min=1}, and depth
+    // 0 reads {nodes=1, layout_sum=2, layout_min=2}. The collapse is the drop
+    // from depth 0 to depth 1.
     Deal const layout_two = make_layout_with_easts_card(Two);
     Deal const layout_three = make_layout_with_easts_card(Three);
     Deal const layout_four = make_layout_with_easts_card(Four);
@@ -319,27 +299,22 @@ TEST_F(CountersTest, SampleSizeByDepthShowsTheCollapseFromASampledRootAcrossAPly
     }
 }
 
-// replenishment_by_depth: a per-depth aggregate of every node-local
-// replenishment scan -- attempted, succeeded, layouts added, at() calls.
+// replenishment_by_depth: per-depth totals of the node-local replenishment
+// scans: attempted, succeeded, layouts added, at() calls.
 //
-// A node's own layout count only ever drops via a defender split (a
-// declarer ply always copies its parent's count unchanged), so a fixture
-// that wants replenishment to have anything to do needs a split first --
-// sample_size alone controls both the root's own draw and what
-// replenishment tops up towards, so a node still holding exactly
-// sample_size layouts always computes a wanted count of zero. This is the
-// same split-then-replenish shape replenishment_test.cpp's own
-// no-more-available fixture uses.
+// A node's layout count drops only at a defender split (a declarer ply
+// keeps its parent's count), so replenishment needs a split first.
+// sample_size sets both the root draw and the top-up target, so a node
+// still holding sample_size layouts wants zero. replenishment_test.cpp's
+// no-more-available fixture has the same split-then-replenish shape.
 
 namespace
 {
-    /// East holds a genuine choice of two spade fillers (three or five,
-    /// split against West by the same fixed pool); North holds only the
-    /// spade ace, so evaluate()'s root block has no alternative first
-    /// card to explore. A third source entry (spade = three again, a
-    /// different heart filler) is a second, genuinely new root-space
-    /// layout the "three" branch's own scan can find; nothing equivalent
-    /// exists anywhere in source for the "five" branch.
+    /// East holds one of two spade fillers (three or jack), split against West
+    /// from a fixed pool. North holds only the spade ace, so evaluate()'s root
+    /// has no other first card to explore. A third source entry (spade three
+    /// again, another heart filler) is a new layout the "three" branch can
+    /// find; the source has nothing similar for the "jack" branch.
     auto make_split_layout(int east_spade, int east_heart_filler) -> Deal
     {
         Deal deal{};
@@ -357,10 +332,9 @@ namespace
 
 TEST_F(CountersTest, CollectingCountersDoesNotChangeTheAnswerEitherDirectionWithReplenishment)
 {
-    // Same paired-run check as CollectingCountersDoesNotChangeTheAnswer-
-    // EitherDirection above, extended to a fixture where replenishment
-    // actually fires -- collecting counters must not perturb the answer
-    // there either.
+    // The paired-run check of CollectingCountersDoesNotChangeTheAnswer-
+    // EitherDirection, on a fixture where replenishment fires. Collecting
+    // counters must not change the answer here either.
     std::vector<Deal> const layouts{
         make_split_layout(Three, Two), make_split_layout(Jack, Two), make_split_layout(Three, Three)};
     VectorLayoutSource source(layouts);
@@ -393,23 +367,22 @@ TEST_F(CountersTest, CollectingCountersDoesNotChangeTheAnswerEitherDirectionWith
 TEST_F(CountersTest, ReplenishmentByDepthMatchesTheHandDerivedVector)
 {
     // sample_size = 2 draws one layout of each spade filler at the root
-    // (source order: three, jack). East's spade ply (depth 1, node still
-    // at 2 layouts -- 2 < replenish_below(2) is false, no attempt there)
-    // splits them into two one-layout branches, both reached at depth 2.
+    // (source order: three, jack). East's spade ply (depth 1, still 2
+    // layouts, and 2 < replenish_below(2) is false, so no attempt) splits them
+    // into two one-layout branches, both at depth 2.
     //
-    // The "three" branch: 1 < 2 triggers, wants 1. Its scan examines all
-    // 3 source entries: "three, two" already present (1 at() call), "jack,
-    // two" does not hold the recorded spade (1 at() call, no delta), "three,
-    // three" is new and matches (1 at() call, delta certain) -- 3 at()
-    // calls, 1 layout added, exhausted (reached the end of source).
+    // The "three" branch: 1 < 2 triggers, wanting 1. Its scan examines all 3
+    // source entries: "three, two" is present (1 at() call), "jack, two" lacks
+    // the recorded spade (1 at() call, no delta), and "three, three" is new
+    // and matches (1 at() call, delta certain). 3 at() calls, 1 layout added,
+    // exhausted (end of source).
     //
-    // The "five" branch: 1 < 2 triggers, wants 1. Its scan also examines
-    // all 3 entries -- "three, two" and "three, three" both fail the
-    // recorded-spade check (1 at() call each, no delta), "jack, two" is
-    // already present (1 at() call) -- 3 at() calls, nothing added,
-    // exhausted.
+    // The "jack" branch: 1 < 2 triggers, wanting 1. Its scan also examines all
+    // 3: "three, two" and "three, three" fail the recorded-spade check (1 at()
+    // call each, no delta), and "jack, two" is present (1 at() call). 3 at()
+    // calls, nothing added, exhausted.
     //
-    // Both attempts land at depth 2: attempted = 2, succeeded = 1,
+    // Both attempts are at depth 2: attempted = 2, succeeded = 1,
     // layouts_added = 1, at_calls = 3 + 3 = 6.
     std::vector<Deal> const layouts{
         make_split_layout(Three, Two), make_split_layout(Jack, Two), make_split_layout(Three, Three)};
@@ -429,10 +402,9 @@ TEST_F(CountersTest, ReplenishmentByDepthMatchesTheHandDerivedVector)
     ASSERT_TRUE(value.counters.has_value());
     std::vector<be::DepthReplenishmentStats> const& by_depth = value.counters->replenishment_by_depth;
 
-    // Grown only as far as the one depth that ever attempted a scan
-    // (depth 2): depths 0 and 1 exist only as the same structurally-zero
-    // entries sample_size_by_depth's own doxygen describes for the same
-    // reason, never explicitly written.
+    // Grown only to the one depth that attempted a scan (depth 2). Depths 0
+    // and 1 are zero entries that are never written, as sample_size_by_depth
+    // documents for the same reason.
     ASSERT_EQ(by_depth.size(), 3u);
     EXPECT_EQ(by_depth[0].attempted, 0u);
     EXPECT_EQ(by_depth[1].attempted, 0u);
@@ -442,11 +414,10 @@ TEST_F(CountersTest, ReplenishmentByDepthMatchesTheHandDerivedVector)
     EXPECT_EQ(by_depth[2].layouts_added, 1u);
     EXPECT_EQ(by_depth[2].at_calls, 6u);
 
-    // sample_size_by_depth reflects the post-replenishment
-    // count at depth 2 -- the "three" branch grew to 2, the "five" branch
-    // stayed at 1, so layout_min (the smaller of the two) is 1, but
-    // layout_sum (3) already shows the top-up: 1 + 1 pre-replenishment
-    // would have summed to 2, not 3.
+    // sample_size_by_depth shows the count after replenishment at depth 2:
+    // the "three" branch grew to 2 and the "jack" branch stayed at 1. So
+    // layout_min is 1, but layout_sum is 3, not the 1 + 1 = 2 before the
+    // top-up.
     ASSERT_GT(value.counters->sample_size_by_depth.size(), 2u);
     EXPECT_EQ(value.counters->sample_size_by_depth[2].layout_sum, 3u);
     EXPECT_EQ(value.counters->sample_size_by_depth[2].layout_min, 1u);

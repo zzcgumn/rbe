@@ -9,17 +9,9 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    // Duplicated from high_in_third.cpp rather than shared: each concrete
-    // rule in this module is a small, independently-readable .cpp, kept
-    // separate from its neighbours despite some overlap between them.
-    //
-    // The card played at the trick's second position -- always index 1,
-    // never "dummy's card" specifically; see high_in_third.cpp's own
-    // comment on this same function for why (a prior version derived
-    // dummy's seat and assumed its position, which could read past
-    // currentTrickRank's bound). Effective rank, not the raw one, since
-    // the second player may have ruffed (beats every candidate) or
-    // discarded a third suit (beats none) instead of following suit.
+    // A copy of the function in high_in_third.cpp: each rule is a small,
+    // separate file. Reads trick index 1 directly, and uses the effective
+    // rank. See high_in_third.cpp.
     auto second_hand_effective_rank(DefenderHeuristicContext const& ctx) -> int
     {
         constexpr int kBeatsNothing = 0;
@@ -51,10 +43,8 @@ namespace
         return highest;
     }
 
-    // All candidates follow the same led suit here, so comparing by raw
-    // (representative) rank already finds the right entry -- see
-    // true_lowest_rank's own doxygen for why the search itself needs no
-    // resolving, only the value ultimately returned for it.
+    // All candidates are in the led suit, so raw rank finds the right entry.
+    // See true_lowest_rank.
     auto lowest_candidate_index(std::vector<Card> const& best_cards) -> std::size_t
     {
         std::size_t lowest = 0;
@@ -87,7 +77,7 @@ auto third_seat_low() -> DefenderHeuristic
         Card const& highest = best_cards[highest_candidate_index(best_cards)];
         if (highest.rank > second_hand_effective_rank(ctx))
         {
-            return std::nullopt;  // high_in_third's own case: defer to it
+            return std::nullopt;  // the high_in_third case: defer to it
         }
         std::size_t const lowest = lowest_candidate_index(best_cards);
         return Card{best_cards[lowest].suit, true_lowest_rank(best_cards, ctx.fut, lowest)};

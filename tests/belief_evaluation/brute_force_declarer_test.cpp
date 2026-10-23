@@ -20,6 +20,10 @@
 
 #include "test_support.hpp"
 
+// Tests for BruteForceDeclarer: leaves and the depth cutoff, the search, the
+// max_layouts cap, cache scoping under max_depth, and agreement with
+// DoubleDummyBound.
+
 namespace be = dds::belief_evaluation;
 
 namespace
@@ -46,9 +50,8 @@ namespace
     constexpr int South = 2;  // dummy
     constexpr int West = 3;
 
-    // North (declarer) on lead, one legal card -- enough to prove play()
-    // returns a legal card and that state_key is wired up, without
-    // depending on any search logic yet.
+    // North (declarer) on lead with one legal card. Enough to show play()
+    // returns a legal card and state_key is wired up, with no search.
     auto make_one_card_root() -> be::ObservationState
     {
         Deal layout{};
@@ -106,11 +109,10 @@ TEST_F(BruteForceDeclarerTest, ConstructionAcceptsACallerSuppliedOpponentModel)
 
 TEST_F(BruteForceDeclarerTest, ConstructionRejectsZeroMaxLayouts)
 {
-    // max_layouts = 0 means "keep the 0 highest-posterior layouts" --
-    // every non-terminal node search() ever prunes would collapse to zero
-    // layouts, and make_brute_force_cache_key's own layouts.front() would
-    // then read past an empty vector. Rejected at construction instead,
-    // the same way make_root() rejects sample_size == 0 (node.cpp).
+    // max_layouts = 0 would keep no layouts: every pruned node would be
+    // empty, and layouts.front() in make_brute_force_cache_key would read
+    // past the end. It is rejected at construction, as make_root() rejects
+    // sample_size == 0 (node.cpp).
     SolverContext ctx;
     be::BruteForceOptions options{};
     options.max_layouts = 0;
@@ -121,11 +123,9 @@ TEST_F(BruteForceDeclarerTest, ConstructionRejectsZeroMaxLayouts)
 
 TEST_F(BruteForceDeclarerTest, ConstructionRejectsNegativeMaxDepth)
 {
-    // max_depth is a ply count from 1 (as_strategy()'s own play lambda),
-    // so a negative value is not a smaller-but-valid budget -- it is
-    // check_leaf's own `depth >= *max_depth` test firing on the very
-    // first node for every negative value alike, silently behaving as an
-    // immediate cutoff rather than reporting the caller's mistake.
+    // max_depth counts plies from 1. A negative value is not a smaller
+    // budget: check_leaf's `depth >= *max_depth` fires on the first node,
+    // silently cutting off at once instead of reporting the mistake.
     SolverContext ctx;
     be::BruteForceOptions options{};
     options.max_depth = -1;
@@ -137,13 +137,10 @@ TEST_F(BruteForceDeclarerTest, ConstructionRejectsNegativeMaxDepth)
 TEST_F(BruteForceDeclarerTest, IsNeitherCopyableNorMovable)
 {
     // The default opponent model's lambda (DoubleDummyDefender::as_strategy())
-    // captures `this` as the address of *this instance's own*
-    // `default_opponent_` member -- a copy or move would duplicate or
-    // relocate that member but leave `opponent_model_` still bound to the
-    // original's address. Checked at compile time: there is no runtime
-    // symptom to EXPECT_THROW against, the bug is the callback silently
-    // calling back into the wrong (or, once the source is destroyed,
-    // freed) object.
+    // captures the address of this instance's `default_opponent_`. A copy or
+    // move would leave `opponent_model_` bound to the original's address.
+    // Checked at compile time, because there is no runtime symptom to test:
+    // the callback silently calls the wrong, or freed, object.
     static_assert(! std::is_copy_constructible_v<be::BruteForceDeclarer>);
     static_assert(! std::is_copy_assignable_v<be::BruteForceDeclarer>);
     static_assert(! std::is_move_constructible_v<be::BruteForceDeclarer>);
@@ -152,28 +149,24 @@ TEST_F(BruteForceDeclarerTest, IsNeitherCopyableNorMovable)
 
 TEST_F(BruteForceDeclarerTest, ReusingOneInstanceForASecondDeclarerSeatThrows)
 {
-    // This class's own doxygen already documents "one declarer seat for
-    // its whole lifetime" -- this is the runtime check for that
-    // precondition, not assert() (which compiles out entirely under
-    // NDEBUG, this repo's own --config=opt, and would otherwise silently
-    // keep the first declarer's DoubleDummyBound and compute wrong cutoff
-    // values for the second rather than failing at all).
+    // The class requires one declarer seat for its lifetime. This is the
+    // runtime check, not an assert(), which --config=opt compiles out (NDEBUG).
+    // Without it, the first declarer's DoubleDummyBound would silently give
+    // wrong cutoff values for the second.
     SolverContext ctx;
     be::BruteForceDeclarer declarer(ctx);
     be::DeclarerStrategy const pi = declarer.as_strategy();
 
-    // Named, outliving the pi.play() call below -- BeliefEntry::layout is
-    // a Deal const&, so a braced temporary passed straight into
-    // make_entries() would dangle the moment make_entries() returns (see
-    // PicksTheCardThatWinsTheTrickOverTheOneThatLosesIt's own comment on
-    // this same hazard).
+    // Named so it outlives the pi.play() call. BeliefEntry::layout is a
+    // Deal const&, so a braced temporary passed to make_entries() would
+    // dangle once make_entries() returns.
     be::ObservationState const first_root = make_one_card_root();  // declarer = North
     std::vector<Deal> const first_layouts = {first_root.known_holdings};
     std::vector<be::BeliefEntry> const first_entries = make_entries(first_layouts, {1.0});
     pi.play(first_root, be::BeliefView{first_entries, false, first_entries.size()});
 
-    // A second root for a *different* declarer seat -- East/West as
-    // declarer/dummy this time, North/South as the defenders.
+    // A second root for a different declarer seat: East and West are declarer
+    // and dummy, North and South the defenders.
     Deal layout{};
     layout.trump = DDS_NOTRUMP;
     layout.first = East;
@@ -270,7 +263,7 @@ TEST_F(BruteForceDeclarerTest, TerminalLeafUsesMassDirectlyForProbabilityToMake)
     node.p = {0.3, 0.7};
     node.kappa = 1.0;
     node.state.tricks_needed = 2;
-    node.state.tricks_won_by_declarer = 2;  // made, in every layout -- common knowledge at a terminal node
+    node.state.tricks_won_by_declarer = 2;  // made in every layout; common knowledge at a terminal node
 
     EXPECT_DOUBLE_EQ(
         be::terminal_leaf_value(node, be::DeclarerObjective::MaximizeProbabilityToMake), 1.0);
@@ -289,28 +282,23 @@ TEST_F(BruteForceDeclarerTest, TerminalLeafGivesTrickCountForExpectedTricks)
 
 TEST_F(BruteForceDeclarerTest, CutoffLeafUsesPerLayoutBoundsNotANodeWideNumber)
 {
-    // North (declarer) holds King, Eight, Five of spades. In deal_a, East
-    // alone holds the one dangerous spade (the Nine) and is forced to
-    // spend it on North's first-round King lead, going void before
-    // North's Eight is ever at risk (the same mechanism
-    // suit_top_tricks_test.cpp's own
-    // UndercountsWhenTheShorterOpponentHoldsTheOnlyDangerousCard fixture
-    // describes). In deal_b, the Nine moves to the *longer* defending hand
-    // (West, holding Nine and Two), which can duck the first round with
-    // its Two and keep the Nine in reserve to beat North's Eight on the
-    // second round instead. Same North/South spade holdings, a different
-    // defender split: the two deals' own double-dummy bounds are read off
-    // the solver directly below, not asserted by hand, and need only
-    // differ from each other for this test to exercise per-layout
-    // branching at all.
-    // Every hand must hold the same total card count for solve_board to
-    // report a real score rather than its own failure sentinel (measured
-    // directly against this solver build, not assumed -- see
-    // double_dummy_bound_test.cpp's own "filler suit" note); North's own
-    // 3-card spade holding sets that count, so South/East/West are padded
-    // with filler clubs nobody has a real choice over, identically in both
-    // deals, so any filler-suit effect on the result is the same constant
-    // in both and isolates the spades difference between them.
+    // North (declarer) holds the King, Eight and Five of spades.
+    // - deal_a: East alone holds the dangerous Nine and must spend it on
+    //   North's King lead, going void before the Eight is at risk (as in
+    //   UndercountsWhenTheShorterOpponentHoldsTheOnlyDangerousCard in
+    //   suit_top_tricks_test.cpp).
+    // - deal_b: West, the longer hand, holds the Nine and Two. West ducks the
+    //   first round with the Two and keeps the Nine to beat the Eight.
+    // North and South hold the same spades in both; only the defender split
+    // differs. The bounds are read from the solver below, not asserted by
+    // hand. They need only differ for this test to exercise per-layout
+    // branching.
+    //
+    // solve_board returns a real score only when every hand holds the same
+    // number of cards (see the filler-suit note in
+    // double_dummy_bound_test.cpp). North's three spades set that count, so
+    // South, East and West get filler clubs no one has a choice over, the
+    // same in both deals. Any filler effect is then the same in both.
     Deal deal_a{};
     deal_a.trump = DDS_NOTRUMP;
     deal_a.first = North;
@@ -334,9 +322,8 @@ TEST_F(BruteForceDeclarerTest, CutoffLeafUsesPerLayoutBoundsNotANodeWideNumber)
     SolverContext ctx;
     be::DoubleDummyBound bound(ctx, /*declarer=*/North);
 
-    // Confirmed by a direct solve_board call -- not assumed from the
-    // comment above -- per the per-layout bound each deal actually
-    // yields.
+    // Read from a direct solve_board call, not assumed from the comment
+    // above.
     int const bound_a = bound.as_bound()(deal_a);
     int const bound_b = bound.as_bound()(deal_b);
     ASSERT_NE(bound_a, 14);  // not the solver-failure sentinel
@@ -351,10 +338,9 @@ TEST_F(BruteForceDeclarerTest, CutoffLeafUsesPerLayoutBoundsNotANodeWideNumber)
     node.kappa = 1.0;
     node.state.declarer = North;
     node.state.tricks_won_by_declarer = 0;
-    // The higher of the two bounds, so the layout with that bound makes
-    // and the other does not -- a P(make) fixture that actually
-    // discriminates between the two layouts, whatever their real bounds
-    // turn out to be.
+    // The higher bound, so the layout with that bound makes and the other
+    // does not. The fixture discriminates between the layouts whatever their
+    // bounds are.
     node.state.tricks_needed = std::max(bound_a, bound_b);
 
     double const expected_expected_tricks = 0.4 * (0 + bound_a) + 0.6 * (0 + bound_b);
@@ -370,43 +356,34 @@ TEST_F(BruteForceDeclarerTest, CutoffLeafUsesPerLayoutBoundsNotANodeWideNumber)
         expected_p_make);
 }
 
-// --- the actual search: branching, both sides -----------------------------
+// --- the search itself: branching, both sides -----------------------------
 //
-// Trick mechanics always need all four seats to play, so no realistic
-// fixture reaches a declarer decision without also reaching a defender's
-// turn soon after -- the two branches below are therefore exercised
-// together, not in isolation.
+// A trick needs all four seats, so no realistic fixture reaches a
+// declarer decision without a defender's turn soon after. The two
+// branches are tested together.
 
 TEST_F(BruteForceDeclarerTest, PicksTheCardThatWinsTheTrickOverTheOneThatLosesIt)
 {
-    // Every hand holds the same card count (2) throughout -- a real
-    // bridge ending always does, since every trick removes exactly one
-    // card from each hand, and the engine's own trick mechanics assume
-    // it: an unbalanced fixture leaves some seat void mid-ending with no
-    // legal card to offer. North (declarer) holds Jack, Two; South
+    // Every hand holds two cards throughout, as in a real ending: each trick
+    // takes one card from each hand, and an unbalanced fixture leaves some
+    // seat without a legal card. North (declarer) holds Jack, Two; South
     // (dummy) Three, Five; East King, Six; West Four, Seven.
-    // single_card_defender always offers each defender's own *lowest*
-    // remaining card first, so East's King only ever appears once East's
-    // low Six is already spent.
+    // single_card_defender plays each defender's lowest card first, so East's
+    // King appears only after its Six.
     //
-    // Leading the Jack first: trick 1 is {Jack(North), Six(East, forced
-    // low), dummy's low filler, Four(West)} -- the Jack beats every one
-    // of those, so declarer wins trick 1 outright and leads trick 2 too;
-    // trick 2 is {Two(North, forced), King(East, forced -- only card
-    // left), dummy's other filler, Seven(West)} -- King wins trick 2 for
-    // East. One trick for declarer.
+    // Leading the Jack: trick 1 is {Jack (North), Six (East, forced low),
+    // dummy's low card, Four (West)}. The Jack wins and North leads again.
+    // Trick 2 is {Two (North, forced), King (East, its last card), dummy's
+    // other card, Seven (West)}. The King wins. One trick for declarer.
     //
-    // Leading the Two first: trick 1 is {Two(North), Six(East, forced
-    // low), dummy's low filler, Four(West)} -- East's own low Six already
-    // beats North's Two, so East wins trick 1 (without even needing the
-    // King) and leads trick 2; trick 2 is {King(East, forced -- only card
-    // left), Jack(North, forced), dummy's other filler, Seven(West)} --
-    // King wins trick 2 too. Zero tricks for declarer.
+    // Leading the Two: trick 1 is {Two (North), Six (East, forced low),
+    // dummy's low card, Four (West)}. East's Six beats the Two, so East wins
+    // and leads. Trick 2 is {King (East, its last card), Jack (North,
+    // forced), dummy's other card, Seven (West)}. The King wins again. Zero
+    // tricks for declarer.
     //
-    // tricks_needed = 1: leading the Jack makes the contract, leading the
-    // Two does not -- a clean, hand-traced, discriminating choice reached
-    // only by actually searching both legal cards through two real
-    // tricks, both sides.
+    // tricks_needed = 1: the Jack makes, the Two does not. Only a search of
+    // both cards through two real tricks finds that.
     Deal layout{};
     layout.trump = DDS_NOTRUMP;
     layout.first = North;
@@ -424,9 +401,9 @@ TEST_F(BruteForceDeclarerTest, PicksTheCardThatWinsTheTrickOverTheOneThatLosesIt
     state.known_holdings = layout;
     state.ranks = be::make_rank_map(layout);
 
-    // Named, outliving the pi.play() call below -- BeliefEntry::layout is
-    // a Deal const&, so a braced temporary passed straight into
-    // make_entries() would dangle the moment make_entries() returns.
+    // Named so it outlives the pi.play() call. BeliefEntry::layout is a
+    // Deal const&, so a braced temporary passed to make_entries() would
+    // dangle once make_entries() returns.
     std::vector<Deal> const layouts = {layout};
     std::vector<be::BeliefEntry> const entries = make_entries(layouts, {1.0});
 
@@ -443,31 +420,23 @@ TEST_F(BruteForceDeclarerTest, PicksTheCardThatWinsTheTrickOverTheOneThatLosesIt
 
 TEST_F(BruteForceDeclarerTest, ACacheHitSkipsRecomputingASubtreeReachedByTransposition)
 {
-    // Three independent one-round suits, North holding the Ace and South
-    // (dummy) a low filler in each, East/West low fillers too -- North's
-    // Ace always wins whichever suit it leads, so North stays on lead and
-    // the root decision recurs at every trick: which of the remaining
-    // suits to lead next.
+    // Three independent one-round suits. North holds the Ace in each, South
+    // (dummy), East and West low cards. North's Ace always wins, so North
+    // stays on lead and chooses at every trick which remaining suit to lead.
     //
-    // This is a tree with shared prefixes, not six independent flat
-    // paths -- counting nodes, not paths, is what gets the baseline
-    // right: trick 1's East/West queries are reached once per ROOT choice
-    // (3 queries each, 6 total); trick 2's are reached once per (root
-    // choice x which-of-the-remaining-two-suits), i.e. 3*2 = 6 times each
-    // (12 total); trick 3 is forced (only one suit left) but still reached
-    // once per (root x trick-2 choice) = 6 times each (12 total). Baseline
-    // with no caching at all: 6 + 12 + 12 = 30 opponent-model queries.
+    // The tree shares prefixes, so count nodes, not paths. Trick 1's East and
+    // West queries happen once per root choice (3 each, 6 in total). Trick 2's
+    // happen once per root choice and remaining suit, 3 * 2 = 6 times each
+    // (12). Trick 3 is forced but still reached 6 times each (12). With no
+    // cache: 6 + 12 + 12 = 30 opponent-model queries.
     //
-    // A genuine transposition exists at trick 3: for any one of the three
-    // suits, the other two can have been played in either order, and both
-    // orders leave an identical residual position (same declarer/dummy
-    // holdings, same single surviving layout, same tricks_won_by_declarer)
-    // -- the same BruteForceCacheKey either way. Three such "X remains"
-    // shapes exist, each reached by exactly two of the six (root, trick-2)
-    // combinations; the first visit computes and caches it (2 queries),
-    // the second is a pure cache hit (0 queries). That is 3 shapes * 2
-    // queries saved = 6 queries saved, for an exact expected total of
-    // 30 - 6 = 24 -- not merely "fewer than 30", a specific, derived count.
+    // Trick 3 has a real transposition. For each suit left last, the other
+    // two were played in one of two orders, and both orders leave the same
+    // position (the same holdings, layout and tricks_won_by_declarer), so the
+    // same BruteForceCacheKey. There are three such shapes, each reached by
+    // two of the six paths. The first visit computes and caches it (2
+    // queries); the second is a cache hit (0). That saves 3 * 2 = 6 queries,
+    // so the expected total is exactly 30 - 6 = 24.
     auto const make_suit_layout = [](int suit) -> Deal
     {
         Deal layout{};
@@ -501,8 +470,8 @@ TEST_F(BruteForceDeclarerTest, ACacheHitSkipsRecomputingASubtreeReachedByTranspo
     state.known_holdings = layout;
     state.ranks = be::make_rank_map(layout);
 
-    // Named, outliving the pi.play() call below -- see the same note in
-    // PicksTheCardThatWinsTheTrickOverTheOneThatLosesIt above.
+    // Named so it outlives the pi.play() call (see
+    // PicksTheCardThatWinsTheTrickOverTheOneThatLosesIt).
     std::vector<Deal> const layouts = {layout};
     std::vector<be::BeliefEntry> const entries = make_entries(layouts, {1.0});
 
@@ -524,13 +493,12 @@ TEST_F(BruteForceDeclarerTest, ACacheHitSkipsRecomputingASubtreeReachedByTranspo
 
 TEST_F(BruteForceDeclarerTest, AMalformedOpponentModelThrowsRatherThanMiscomputing)
 {
-    // East holds a card (so a real defender decision is reached), but the
-    // scripted opponent model offers an empty distribution -- the same
-    // ValidationError::DistributionEmpty case expand_defender_node already
-    // detects at evaluate()'s own outer level. DeclarerStrategy::play has
-    // no error channel of its own to report this through, so it must
-    // throw; the point of this test is that it throws a *specific*,
-    // inspectable type carrying the real cause, not a generic one.
+    // East holds a card, so a real defender decision is reached, but the
+    // scripted opponent model returns an empty distribution:
+    // ValidationError::DistributionEmpty, which expand_defender_node detects
+    // at evaluate()'s level. DeclarerStrategy::play has no error channel, so
+    // it must throw. The test checks that it throws a specific type carrying
+    // the real cause.
     Deal layout{};
     layout.trump = DDS_NOTRUMP;
     layout.first = North;
@@ -574,19 +542,15 @@ TEST_F(BruteForceDeclarerTest, AMalformedOpponentModelThrowsRatherThanMiscomputi
 
 TEST_F(BruteForceDeclarerTest, AMalformedInternalOpponentModelIsReportedNotThrownThroughEvaluate)
 {
-    // The same fixture and the same broken internal opponent model as
-    // AMalformedOpponentModelThrowsRatherThanMiscomputing just above, but
-    // driven through evaluate() -- the public entry point this capability's
-    // own spec says must never let a callback's contract violation escape
-    // as a C++ exception -- rather than through a bare pi.play() call.
-    // expand_declarer_node's own catch for DeclarerStrategyContractViolation
-    // is what makes this the case: without it, this test would terminate
-    // the process on an uncaught exception instead of merely failing an
-    // assertion. The error it reports is DefenderStrategy, East, and
-    // East's own layout -- the internal opponent model's own seat and
-    // exact layout, carried through from the exception rather than
-    // substituted with the root's own DeclarerPlay/North/known_holdings,
-    // which would misreport where the violation actually happened.
+    // The same fixture and broken internal opponent model as
+    // AMalformedOpponentModelThrowsRatherThanMiscomputing, but driven through
+    // evaluate(). The spec says no callback contract violation may escape
+    // evaluate() as an exception. expand_declarer_node catches
+    // DeclarerStrategyContractViolation; without that catch the process would
+    // terminate. The reported error is DefenderStrategy, East and East's
+    // layout: the internal model's seat and layout, carried from the
+    // exception. Reporting the root's DeclarerPlay, North and known_holdings
+    // would misplace the violation.
     Deal layout{};
     layout.trump = DDS_NOTRUMP;
     layout.first = North;
@@ -605,11 +569,9 @@ TEST_F(BruteForceDeclarerTest, AMalformedInternalOpponentModelIsReportedNotThrow
     be::BruteForceDeclarer declarer(
         ctx, be::DeclarerObjective::MaximizeExpectedTricks, broken_internal_opponent_model);
 
-    // The outer delta evaluate() itself drives is a perfectly ordinary,
-    // working one -- single_card_defender -- so the only broken callable
-    // anywhere in this call is BruteForceDeclarer's own internal delegate,
-    // reached only once pi.play() is called for the root's own declarer
-    // node and recurses internally.
+    // The outer delta is an ordinary working one (single_card_defender). The
+    // only broken callable is BruteForceDeclarer's internal opponent model,
+    // reached once pi.play() runs for the root's declarer node.
     be::VectorLayoutSource const source({layout});
     be::EvaluationResult result{};
     EXPECT_NO_THROW(
@@ -647,8 +609,8 @@ TEST_F(BruteForceDeclarerTest, DropLowestPosteriorLayoutsKeepsTheHighestWeighted
     ASSERT_EQ(pruned.p.size(), 2u);
     ASSERT_EQ(pruned.root_keys.size(), 2u);
     // deal_b (p=0.6, root_key=11) and deal_c (p=0.3, root_key=12) survive;
-    // deal_a (p=0.1, root_key=10) is dropped -- order among survivors is
-    // not asserted, only membership, via the parallel root_keys array.
+    // deal_a (p=0.1, root_key=10) is dropped. Only membership is asserted,
+    // through the parallel root_keys array, not order.
     bool const has_11 = (pruned.root_keys[0] == 11 || pruned.root_keys[1] == 11);
     bool const has_12 = (pruned.root_keys[0] == 12 || pruned.root_keys[1] == 12);
     EXPECT_TRUE(has_11);
@@ -691,13 +653,11 @@ TEST_F(BruteForceDeclarerTest, DropLowestPosteriorLayoutsIsANoOpWhenNothingExcee
 
 TEST_F(BruteForceDeclarerTest, DropLowestPosteriorLayoutsBreaksTiesByContentNotInputOrder)
 {
-    // Two layouts tied on posterior -- the survivor must be chosen by each
-    // layout's own content (layout_key), not by its position in
-    // node.layouts, so that two belief spaces that are pure permutations
-    // of each other (the same set of (deal, posterior) pairs, differently
-    // ordered -- which state_key/make_brute_force_cache_key's own sorted
-    // key already treats as identical) keep the same survivor regardless
-    // of which order the caller happened to enumerate them in.
+    // Two layouts tie on posterior. The survivor must be chosen by layout
+    // content (layout_key), not position in node.layouts. Two belief spaces
+    // that are permutations of each other, which the sorted state_key and
+    // make_brute_force_cache_key already treat as identical, then keep the
+    // same survivor.
     Deal deal_a{};
     deal_a.remainCards[North][Spades] = be::holding({Nine});
     deal_a.remainCards[South][Spades] = be::holding({Eight});
@@ -733,9 +693,9 @@ TEST_F(BruteForceDeclarerTest, DropLowestPosteriorLayoutsBreaksTiesByContentNotI
 
 TEST_F(BruteForceDeclarerTest, MaxLayoutsAbsentChangesNothing)
 {
-    // Re-run PicksTheCardThatWinsTheTrickOverTheOneThatLosesIt's own
-    // fixture with max_layouts left default (absent) -- identical result,
-    // proving this task introduced no regression to the unbounded path.
+    // The fixture of PicksTheCardThatWinsTheTrickOverTheOneThatLosesIt with
+    // max_layouts absent (the default): the unbounded path gives the same
+    // result.
     Deal layout{};
     layout.trump = DDS_NOTRUMP;
     layout.first = North;
@@ -768,16 +728,13 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsAbsentChangesNothing)
 
 TEST_F(BruteForceDeclarerTest, MaxLayoutsCapsHowManyLayoutsTheOpponentModelIsQueriedOver)
 {
-    // North holds exactly one card -- no declarer-side choice at all, so
-    // this test isolates max_layouts's own effect from declarer branching
-    // entirely. Two layouts in the belief space, differing only in which
-    // defender holds which filler (irrelevant to the outcome; only their
-    // count matters here). The one trick still has *two* defender turns
-    // (East, then West) before it resolves -- expand_defender_node
-    // queries the opponent model once per surviving layout, at each.
-    // Without a cap: 2 layouts x 2 defender turns = 4 queries. With
-    // max_layouts = 1: exactly one layout should survive pruning before
-    // either defender node is reached -- 1 layout x 2 turns = 2 queries.
+    // North holds one card, so declarer has no choice and the test isolates
+    // max_layouts. Two layouts differ only in which defender holds which
+    // filler; only their count matters. The trick has two defender turns
+    // (East, then West), and expand_defender_node queries the opponent model
+    // once per layout at each. Without a cap: 2 layouts * 2 turns = 4 queries.
+    // With max_layouts = 1, one layout survives pruning before either
+    // defender node: 1 * 2 = 2 queries.
     Deal layout_a{};
     layout_a.trump = DDS_NOTRUMP;
     layout_a.first = North;
@@ -821,29 +778,23 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsCapsHowManyLayoutsTheOpponentModelIsQue
 }
 
 // --- self-consistency: BruteForceDeclarer against DoubleDummyBound's
-// own ceiling, run through evaluate() end to end ---------------------------
+// ceiling, end to end through evaluate() ------------------------------------
 
 TEST_F(BruteForceDeclarerTest, EndToEndMatchesDoubleDummyBoundsOwnCeiling)
 {
-    // The same balanced, 2-card-per-hand fixture PicksTheCardThatWinsThe
-    // TrickOverTheOneThatLosesIt uses, now paired with a *real*
-    // DoubleDummyDefender (not the scripted single_card_defender) as both
-    // BruteForceDeclarer's own internal opponent model and evaluate()'s
-    // outer delta -- the intended, self-consistent configuration. One
-    // SolverContext, one DoubleDummyDefender instance reused for both
-    // roles: safe here since this test is single-threaded and
-    // DoubleDummyDefender's own non-thread-safety contract only concerns
-    // concurrent use, not reuse.
+    // The balanced two-card fixture of
+    // PicksTheCardThatWinsTheTrickOverTheOneThatLosesIt, now with a real
+    // DoubleDummyDefender as both BruteForceDeclarer's internal opponent model
+    // and evaluate()'s outer delta: the intended configuration. One
+    // SolverContext and one DoubleDummyDefender serve both roles. That is safe
+    // here: the test is single-threaded, and DoubleDummyDefender is only
+    // unsafe for concurrent use.
     //
-    // Under genuine double-dummy defence (not the earlier scripted
-    // "always lowest" model), East sees through either lead and denies
-    // declarer a trick either way: rising with the King when North leads
-    // the Jack (forcing it, rather than ducking with the Six as the
-    // scripted model always did), and refusing to waste the King on
-    // North's Two (playing the Six, which already beats it, and keeping
-    // the King to also beat North's remaining Jack next). Declarer's true
-    // double-dummy trick count from this layout is therefore 0, not 1 --
-    // verified below via DoubleDummyBound directly, not assumed.
+    // Under double-dummy defence East beats either lead. Against the Jack it
+    // rises with the King, rather than ducking with the Six as the scripted
+    // model did. Against the Two it plays the Six, which already wins, and
+    // keeps the King for the Jack. So declarer's double-dummy trick count is
+    // 0, not 1. DoubleDummyBound confirms this below.
     Deal layout{};
     layout.trump = DDS_NOTRUMP;
     layout.first = North;
@@ -873,10 +824,9 @@ TEST_F(BruteForceDeclarerTest, EndToEndMatchesDoubleDummyBoundsOwnCeiling)
     double const expected_p_make = (0 + true_ceiling >= 1) ? 1.0 : 0.0;
     EXPECT_NEAR(value.p_make, expected_p_make, be::ProbabilitySumTolerance);
 
-    // Stronger than just the aggregate: both of North's candidate leads,
-    // not only whichever one pi actually chose, should independently
-    // report the same value -- a genuine tie at the true ceiling, not a
-    // coincidence of which one happened to be picked.
+    // Stronger than the aggregate: both of North's leads, not only pi's
+    // choice, report the same value. A real tie at the ceiling, not the luck
+    // of which card was picked.
     ASSERT_TRUE(value.root_is_declaring_side);
     ASSERT_EQ(value.root_children.size(), 2u);
     for (be::RootChildValue const& child : value.root_children)
@@ -890,24 +840,19 @@ TEST_F(BruteForceDeclarerTest, EndToEndMatchesDoubleDummyBoundsOwnCeiling)
 
 TEST_F(BruteForceDeclarerTest, MaxDepthDoesNotCarryTheCacheAcrossSeparatePlayCalls)
 {
-    // The same three-independent-suits fixture
-    // ACacheHitSkipsRecomputingASubtreeReachedByTransposition uses, now
-    // with max_depth set. The cutoff a finite max_depth triggers depends
-    // on *call-relative* recursion depth: the same logical node reached
-    // at a different depth by a different play() call has a genuinely
-    // different correct cutoff-or-not answer, so carrying the cache
-    // across calls is only sound when max_depth is absent (see
-    // BruteForceDeclarer's own class doxygen). This test does not need to
-    // construct two *different* roots at two different depths to catch a
-    // regression here -- running the *identical* call twice is already
-    // decisive: if the cache were (wrongly) carried over, the second call
-    // would hit a cache entry for literally every node it visits (same
-    // root, same tree, same depths both times -- a transposition that
-    // really would be safe to reuse, which is exactly why this case alone
-    // cannot distinguish "reuse" from "correct reuse", only "reuse
-    // happened or did not"), collapsing its own opponent-model call count
-    // to near zero; with the fix, the second call recomputes everything
-    // fresh and its count matches the first call's exactly.
+    // The three-suit fixture of
+    // ACacheHitSkipsRecomputingASubtreeReachedByTransposition, now with
+    // max_depth set. A finite max_depth cuts off at a depth relative to the
+    // play() call, so the same node reached at another depth by another call
+    // can have a different correct answer. Carrying the cache across calls is
+    // sound only without max_depth (see BruteForceDeclarer).
+    //
+    // Running the identical call twice is enough to catch a regression. If
+    // the cache were carried over, the second call would hit for every node
+    // (same root, tree and depths), and its opponent-model count would drop
+    // to near zero. With a fresh cache per call, the two counts match
+    // exactly. This case shows only whether reuse happened, not whether it
+    // was correct: here the reuse would in fact be safe.
     auto const make_suit_layout = [](int suit) -> Deal
     {
         Deal layout{};
@@ -952,8 +897,9 @@ TEST_F(BruteForceDeclarerTest, MaxDepthDoesNotCarryTheCacheAcrossSeparatePlayCal
     };
 
     be::BruteForceOptions options{};
-    options.max_depth = 5;  // cuts off at trick 2's East response -- see the fixture's own
-                             // sibling test for the exact depth-by-depth layout
+    // Depth 1 is East's reply to North's lead, so depth 5 is East's reply in
+    // trick 2, where the search cuts off.
+    options.max_depth = 5;
     SolverContext ctx;
     be::BruteForceDeclarer declarer(ctx, be::DeclarerObjective::MaximizeExpectedTricks, spy, options);
     be::DeclarerStrategy const pi = declarer.as_strategy();
@@ -976,53 +922,38 @@ TEST_F(BruteForceDeclarerTest, MaxDepthDoesNotCarryTheCacheAcrossSeparatePlayCal
 
 TEST_F(BruteForceDeclarerTest, MaxLayoutsMustBeAppliedBeforeCutoffLeafValueNotAfter)
 {
-    // A regression for a cost-bound gap, not a correctness one: with
-    // max_depth set small enough to reach a cutoff before any node had a
-    // chance to prune (max_depth of 0 or 1 reaches the cutoff at the very
-    // first node search() visits), cutoff_leaf_value must still see at
-    // most max_layouts layouts -- it calls DoubleDummyBound, a real
-    // solver call, once per layout in whatever node it is handed.
+    // Tests a cost bound, not correctness. With max_depth small enough for a
+    // cutoff before any node prunes (0 or 1 cuts off at the first node),
+    // cutoff_leaf_value must still see at most max_layouts layouts. It calls
+    // DoubleDummyBound, a real solve, once per layout.
     //
-    // There is no way to observe this through play()'s own returned card:
-    // every legal card at one declarer node shares the exact same belief
-    // space, undivided (node.hpp's own "declarer nodes pass weight
-    // through undivided") -- make_declarer_children() gives every
-    // candidate the identical, full set of layouts, so a layout that
-    // contaminates one candidate's own eventual value contaminates every
-    // sibling candidate's by the same additive amount, and can therefore
-    // never change *which* one search()'s own max picks, only the
-    // absolute value nothing public exposes (search() itself is private;
-    // evaluate()'s own root_children, for a declarer root, are computed by
-    // evaluate()'s own outer recursion, not by this strategy's internal
-    // one). This test instead calls check_leaf() directly -- the exact
-    // free function search() itself calls, not a parallel
-    // reimplementation of its ordering -- for the depth-cutoff case
-    // specifically (prune, then check the depth cutoff; is_terminal is
-    // checked separately, before pruning, since a terminal leaf has no
-    // solver cost for max_layouts to bound; see the companion test
-    // MaxLayoutsMustNotBeAppliedBeforeATerminalLeaf below for that case).
-    // Because search() calls check_leaf() rather than reimplementing this
-    // ordering inline, a regression in check_leaf()'s own ordering (prune
-    // after the cutoff, or only in the branching case below it) would
-    // fail this test directly, not just a hand-copied simulation of it.
+    // play()'s returned card cannot show this. Every legal card at a declarer
+    // node shares the same, undivided belief space (see node.hpp), so an
+    // extra layout shifts every candidate's value by the same amount and
+    // never changes which one wins. The absolute value is not public:
+    // search() is private, and evaluate()'s root_children for a declarer root
+    // come from evaluate()'s own recursion. So this test calls check_leaf(),
+    // the function search() calls, for the depth-cutoff case: prune, then
+    // check the cutoff. is_terminal is checked before pruning, since a
+    // terminal leaf costs no solve (see
+    // MaxLayoutsMustNotBeAppliedBeforeATerminalLeaf below). A wrong order in
+    // check_leaf() (cutoff before pruning, or pruning only when branching)
+    // fails this test directly.
     //
-    // One well-formed layout (East holds the Clubs Ace; South/West hold
-    // low fillers; East's ace trivially wins the only remaining trick, so
-    // declarer's own continuation from here is 0 tricks -- confirmed below
-    // via a direct DoubleDummyBound call, not assumed) at the higher
-    // posterior (0.9), and one garbage layout (a default-constructed,
-    // all-empty Deal -- the same malformed input
-    // double_dummy_bound_test.cpp's own
-    // AMalformedLayoutSurfacesAsTheSentinelNotARealBound fixture uses,
-    // which DoubleDummyBound answers with its own too-high sentinel, 14,
-    // precisely because there is nothing there for the solver to analyse)
-    // at the lower posterior (0.1). max_layouts = 1 keeps only the
-    // well-formed one.
+    // Two layouts:
+    // - well-formed, posterior 0.9: East holds the Clubs Ace, South the King
+    //   and West the Three. East's ace wins the last trick, so declarer takes 0
+    //   more tricks (checked below with DoubleDummyBound);
+    // - garbage, posterior 0.1: a default, all-empty Deal, the malformed input
+    //   of AMalformedLayoutSurfacesAsTheSentinelNotARealBound in
+    //   double_dummy_bound_test.cpp. DoubleDummyBound answers it with its
+    //   too-high sentinel, 14.
+    // max_layouts = 1 keeps only the well-formed one.
     Deal well_formed{};
     well_formed.trump = DDS_NOTRUMP;
     well_formed.first = North;
     well_formed.currentTrickSuit[0] = Clubs;
-    well_formed.currentTrickRank[0] = Two;  // North's own already-played forced lead
+    well_formed.currentTrickRank[0] = Two;  // North's forced lead, already played
     well_formed.remainCards[South][Clubs] = be::holding({King});
     well_formed.remainCards[East][Clubs] = be::holding({Ace});
     well_formed.remainCards[West][Clubs] = be::holding({Three});
@@ -1048,8 +979,8 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsMustBeAppliedBeforeCutoffLeafValueNotAf
     node.kappa = 1.0;
     node.state = state;
 
-    // check_leaf() itself, called the exact way search() calls it: depth
-    // at the configured max_depth, so the depth-cutoff branch fires.
+    // check_leaf() called as search() calls it, with depth at max_depth so
+    // the depth cutoff fires.
     be::BruteForceOptions options{};
     options.max_depth = 1;
     options.max_layouts = 1;
@@ -1058,18 +989,13 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsMustBeAppliedBeforeCutoffLeafValueNotAf
         node, /*depth=*/1, options, bound.as_bound(), be::DeclarerObjective::MaximizeExpectedTricks);
 
     ASSERT_TRUE(result.value.has_value()) << "depth 1 >= max_depth 1 must select the cutoff leaf";
-    EXPECT_DOUBLE_EQ(*result.value, 0.0);  // only the well-formed layout's own mass contributes
+    EXPECT_DOUBLE_EQ(*result.value, 0.0);  // only the well-formed layout contributes
 
-    // What the regression this test is for would have produced: the wrong
-    // order (cutoff first, prune only in the branching case reached
-    // further down) runs cutoff_leaf_value over the *unpruned* node --
-    // the garbage layout's own sentinel-derived value (0 + 14 = 14) still
-    // contributes 0.1 * 14 = 1.4, a stark, unmissable difference from the
-    // correctly-pruned 0.0 that check_leaf() above now gives, not a
-    // rounding-level one. (This is illustrative color, computed by
-    // calling cutoff_leaf_value directly on the unpruned node -- not
-    // itself a check on check_leaf()'s own ordering, which the assertion
-    // above already is.)
+    // What the wrong order would give: cutoff first, pruning only further
+    // down, so cutoff_leaf_value runs on the unpruned node. The garbage
+    // layout's sentinel value (0 + 14 = 14) adds 0.1 * 14 = 1.4, far from the
+    // correct 0.0. This is illustration only, from calling cutoff_leaf_value
+    // directly; the assertion above is the check.
     double const wrong_order_value = be::cutoff_leaf_value(
         node, bound.as_bound(), be::DeclarerObjective::MaximizeExpectedTricks);
     EXPECT_NEAR(wrong_order_value, 1.4, 1e-9);
@@ -1078,27 +1004,18 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsMustBeAppliedBeforeCutoffLeafValueNotAf
 
 TEST_F(BruteForceDeclarerTest, MaxLayoutsMustNotBeAppliedBeforeATerminalLeaf)
 {
-    // The companion regression to the test above, for the opposite
-    // mistake: pruning *before* checking is_terminal. Unlike the
-    // depth-cutoff case, a terminal leaf calls no solver --
-    // terminal_leaf_value is O(1), reading only node.state's own
-    // tricks_won_by_declarer (common knowledge once nothing is left to
-    // play) and summing node.p -- so there is no cost here for max_layouts
-    // to bound, only mass it would silently lose with nothing gained in
-    // return. search() therefore checks is_terminal on the node exactly
-    // as given, before any pruning. This test calls check_leaf() directly
-    // -- the exact function search() calls -- so a regression in its own
-    // ordering (pruning before the terminal check) fails this test
-    // directly.
+    // The opposite mistake: pruning before checking is_terminal. A terminal
+    // leaf calls no solver. terminal_leaf_value is O(1): it reads
+    // tricks_won_by_declarer (common knowledge once nothing is left) and sums
+    // node.p. So max_layouts saves nothing there and would only lose mass.
+    // search() checks is_terminal on the node as given, before pruning. This
+    // test calls check_leaf() directly, so pruning first fails it.
     //
-    // Both layouts below are already fully played out (a default,
-    // all-empty Deal, same as node.hpp's own is_terminal doxygen
-    // describes: "no hand in the node has a card left" -- checking one
-    // representative layout suffices, so neither layout here needs any
-    // real cards at all, unlike the depth-cutoff test above, which goes
-    // through DoubleDummyBound and does). node.p is split 0.9/0.1, so
-    // max_layouts = 1 would drop the lower-posterior layout if pruning
-    // ran first.
+    // Both layouts are fully played out: a default, all-empty Deal, which
+    // node.hpp's is_terminal describes as "no hand in the node has a card
+    // left". Unlike the cutoff test above, no real cards are needed, since no
+    // DoubleDummyBound call is made. node.p is 0.9/0.1, so max_layouts = 1
+    // would drop the lower layout if pruning ran first.
     be::ObservationState state{};
     state.tricks_needed = 3;
     state.tricks_won_by_declarer = 3;  // already made, common knowledge once terminal
@@ -1116,11 +1033,10 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsMustNotBeAppliedBeforeATerminalLeaf)
     options.max_layouts = 1;  // would drop the lower-posterior layout if pruning ran first
     be::LayoutBound const unused_bound;  // never called: is_terminal fires before any bound is needed
 
-    // check_leaf() itself, called the exact way search() calls it: both
-    // layouts' mass counts, 0.9 + 0.1 = 1.0 of kappa, so
-    // MaximizeProbabilityToMake's own node_mass is 1.0 and
-    // MaximizeExpectedTricks's own mass-weighted trick count is
-    // 1.0 * 3 = 3.0 -- neither pruned down to just the 0.9 survivor.
+    // check_leaf() called as search() calls it. Both layouts count:
+    // 0.9 + 0.1 = 1.0 of kappa. So MaximizeProbabilityToMake gives node_mass
+    // 1.0, and MaximizeExpectedTricks gives 1.0 * 3 = 3.0, not values pruned
+    // to the 0.9 survivor.
     be::LeafCheckResult const p_make_result =
         be::check_leaf(node, /*depth=*/1, options, unused_bound, be::DeclarerObjective::MaximizeProbabilityToMake);
     ASSERT_TRUE(p_make_result.value.has_value()) << "a terminal node must always select the terminal leaf";
@@ -1131,14 +1047,11 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsMustNotBeAppliedBeforeATerminalLeaf)
     ASSERT_TRUE(expected_tricks_result.value.has_value());
     EXPECT_DOUBLE_EQ(*expected_tricks_result.value, 3.0);
 
-    // What the regression this test is for would have produced: pruning
-    // before the terminal check drops the lower-posterior layout first,
-    // so terminal_leaf_value only ever sees the 0.9 that survives --
-    // node_mass 0.9, not 1.0; mass-weighted tricks 0.9 * 3 = 2.7, not 3.0
-    // -- a silent under-count with no solver call saved to justify it.
-    // (Illustrative color, computed by calling drop_lowest_posterior_layouts
-    // and terminal_leaf_value directly -- not itself a check on
-    // check_leaf()'s own ordering, which the assertions above already are.)
+    // What pruning first would give: terminal_leaf_value sees only the 0.9
+    // survivor, so node_mass 0.9, not 1.0, and tricks 0.9 * 3 = 2.7, not 3.0.
+    // A silent under-count that saves no solve. Illustration only, from
+    // calling drop_lowest_posterior_layouts and terminal_leaf_value directly;
+    // the assertions above are the check.
     be::BeliefNode const wrongly_pruned_first = be::drop_lowest_posterior_layouts(node, 1);
     double const wrong_p_make = be::terminal_leaf_value(
         wrongly_pruned_first, be::DeclarerObjective::MaximizeProbabilityToMake);

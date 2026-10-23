@@ -2,139 +2,106 @@
 
 ## What this is
 
-Given a declarer strategy π and a defender strategy δ, this capability
-computes `P_make`: the probability the contract is made, over a *belief
-space* — the set of layouts consistent with everything observed so far —
-rather than over one assumed layout. It turns declarer play, a partially
-observable decision process over a hidden layout, into a search over the
-belief space instead. The theory is in
-[`docs/replenished_belief_evaluation/algorithm.md`](replenished_belief_evaluation/algorithm.md),
-cited throughout below and not restated; this document covers the
-vocabulary and both languages' entry points.
+This library computes `P_make`, the probability that a contract makes.
+It takes a declarer strategy π and a defender strategy δ. It averages
+over a *belief space*: every layout consistent with what has been seen so
+far.
 
-It exists as its own capability, separate from the double-dummy solver
-proper: a caller solving a single board has no reason to import belief
-evaluation to do it, and this capability's own vocabulary (a belief space,
-sampling, replenishment) is unrelated to solving one fixed layout.
+Declarer play is a decision process over a hidden layout. The library
+turns it into a search over the belief space. The theory is in
+[`algorithm.md`](replenished_belief_evaluation/algorithm.md). This
+document does not repeat it. It covers the terms and the entry points in
+Python and C++.
 
 ### The vocabulary
 
-- **A layout** is one fully-specified deal — who holds what, entirely.
-- **A belief space** is the set of layouts declarer considers plausible,
-  each carrying a probability. At the root, every layout is equally
-  likely.
-- **A layout source** enumerates candidate layouts, in a fixed order, for
-  the evaluator to filter down to the belief space and (when sampling)
-  draw a prefix from.
-- **π** (declarer's strategy) and **δ** (the shared defender strategy —
-  both defenders use it, fed different information) are the two decision
-  rules being evaluated against each other.
-- **Sampling** draws a bounded prefix of the source's own order for the
-  root, rather than enumerating every consistent layout, when the whole
-  space is too large to hold in memory.
-- **Replenishment** tops a node whose sample has collapsed back up
-  towards the target size, from the same source, once its own belief
-  space has shrunk below a threshold — node-local, and only to the extent
-  the source can still supply matching layouts.
-- **`P_make`** is the number this whole capability computes: the
-  probability the contract makes under π against δ, over the belief
-  space.
+These are the canonical terms. The rest of the documentation uses them.
 
-Both language surfaces below are built from exactly these pieces: a root
-layout, a declarer seat, a layout source, π, δ, and a small set of
-options controlling sampling and instrumentation.
+- **Layout:** one complete deal. It says who holds every card.
+- **Belief space:** the set of layouts declarer thinks possible. Each
+  layout has a probability. At the root, all layouts are equally likely.
+- **Layout source:** lists candidate layouts in a fixed order. The
+  evaluator keeps the consistent ones. When it samples, it takes a prefix
+  of that order.
+- **π (declarer strategy):** chooses declarer's and dummy's cards.
+- **δ (defender strategy):** chooses the defenders' cards. Both defenders
+  use the same δ, with different information.
+- **Sampling:** use only a prefix of the source order at the root. Use it
+  when the full belief space is too large to hold in memory.
+- **Replenishment:** add layouts from the same source to a node whose
+  sample has shrunk below a threshold. It works per node. It adds only as
+  many layouts as the source can still supply.
+- **`P_make`:** the probability that the contract makes, under π against
+  δ, over the belief space.
 
-## The four obligations nothing here can validate
+Both language surfaces use the same inputs: a root layout, a declarer
+seat, a layout source, π, δ, and options for sampling and instrumentation.
 
-Each of these is **silently wrong**, not an error — nothing in either
-language surface can detect a violation, so getting one wrong produces a
-plausible-looking number rather than a crash or an exception.
+## Four obligations the library cannot check
 
-1. **`state_key`'s coarseness.** π may optionally declare what its `play`
-   decision depends on beyond the position the evaluator already keys on,
-   for a future reuse cache. A key coarser than `play`'s real dependence
-   produces a *wrong probability*, not a slow one. It is currently never
-   called — there is no cache yet — so do not spend effort optimising it;
-   write it correctly anyway, since the contract is part of the surface.
-2. **An injected trick-count bound.** Both languages let a caller supply
-   an upper bound on declarer's double-dummy trick count from a given
-   layout, to let the evaluator skip subtrees that are provably dead. A
-   bound that is too *low* makes that cut fire when it should not,
-   silently reporting zero for a contract that in fact makes; a bound
-   that is too high only loses pruning, never soundness. **The
-   `DoubleDummyBound` shipped here satisfies this**: on a position the
-   solver declines to score, it answers too high rather than guessing —
-   see "Known gaps" below for what that costs in pruning, not soundness.
-3. **The declaration that δ is double-dummy optimal for trick count.**
-   Separate from the bound above, deliberately: a caller may want a bound
-   for instrumentation while δ does not actually qualify, and collapsing
-   the two into one flag would make that unsound configuration the easy
-   one to reach. The bound's own soundness (`R <= DD`) depends on this
-   declaration being true; nothing checks that it is.
-4. **That a caller-supplied layout source presents a randomised order.**
-   Sampling takes a *prefix* of the source's own order, on the premise
-   that the order is already effectively random with respect to which
-   layouts are consistent with any given root. A source that is sorted,
-   or grouped by anything correlated with consistency, yields a
-   systematically biased sample with no diagnostic anywhere — nothing here
-   can distinguish a well-shuffled source from a badly-ordered one, since
-   both simply return layouts in whatever order they are asked for. This
-   is the one a Python caller is most likely to get wrong: the obvious
-   subclass returns `self._deals[i]` from a list built in whatever order
-   it was assembled, which is exactly a sorted or grouped order in
-   practice. `ExhaustiveLayoutSource` (Python) / `ExhaustiveLayoutSource`
-   (C++) is a correct implementation of this obligation, keyed on a seed;
-   supply your own source only when you need a belief space narrower than
-   the root alone implies (what the bidding ruled out, say), and base its
-   ordering on the same kind of keyed shuffle if you do.
+If you break one of these, you get no error. You get a wrong number that
+looks plausible.
 
-## The play history: needed, not merely optional
+1. **`state_key` must not be too coarse.** π can declare a `state_key`.
+   It names what `play` depends on, beyond the position the evaluator
+   already keys on. It is for a future cache. A key that is too coarse
+   gives a *wrong probability*, not a slow one. Nothing calls `state_key`
+   yet, so do not optimise it. Write it correctly anyway: it is part of
+   the contract.
+2. **An injected trick bound must not be too low.** You can supply an
+   upper bound on declarer's double-dummy tricks. The evaluator uses it to
+   skip subtrees that cannot make. A bound that is too *low* makes the cut
+   fire wrongly: it reports zero for a contract that makes. A bound that
+   is too high only loses pruning. **The shipped `DoubleDummyBound` is
+   safe.** When the solver will not score a position, it answers too high.
+   See "Known gaps".
+3. **Declare δ double-dummy optimal only if it is.** This declaration is
+   separate from the bound. You may want a bound for instrumentation with
+   a δ that does not qualify. The bound-gated cut is sound (`R <= DD`) only
+   if the declaration is true. Nothing checks it.
+4. **A layout source you write must return layouts in random order.**
+   Sampling takes a prefix of the source order. A sorted or grouped order
+   gives a biased sample, and nothing reports it. This is the easiest one
+   to get wrong in Python: a subclass that returns `self._deals[i]` uses
+   the order the list was built in. `ExhaustiveLayoutSource` meets this
+   obligation, with a seeded shuffle. Write your own source only when you
+   need a narrower belief space than the root gives, for example to apply
+   the bidding. If you do, use a seeded shuffle too.
 
-`ExhaustiveLayoutSource`'s constructor takes an optional `PlayRecord` — a
-card sequence paired with the opening leader. It is optional in the sense
-that the type accepts its absence. **That is not the same claim as "not
-needed", and only the first is true.**
+## Supply the play history
 
-At a root built after trick one, omitting the history gives an answer
-computed over a belief space that includes **impossible layouts** —
-defenders holding suits they have already shown out of. This is not a
-small correction. With a pool of `n` cards and a defender holding `k` of
-them, the unconstrained enumeration gives that defender any specific card
-with probability `k/n`; if the defender has shown out of a suit with `h`
-cards still in the pool, the right probability is `k/(n-h)`. The odds are
-wrong for **every** card in the pool, not only the suit shown out of, and
-every remaining decision computed at that root inherits the wrong odds.
+`ExhaustiveLayoutSource` takes an optional `PlayRecord`: a card sequence
+and the opening leader. The type lets you omit it. **Omit it only if you
+do not have it.**
 
-The parameter is optional because **a play record is not always
-available** — not because it is not always needed. A caller with no
-history genuinely cannot be helped by any amount of implementation here;
-this is a limitation of the input, not a gap awaiting future work.
+After trick one, a belief space built without the history includes
+**impossible layouts**. In them, a defender holds a suit they have shown
+out of. This distorts the odds for **every** card in the pool, not only
+that suit. Example: a defender holds `k` of a pool of `n` cards. Without
+the history, they hold a given card with probability `k/n`. If they have
+shown out of a suit with `h` cards left in the pool, the correct value is
+`k/(n-h)`. Every decision at that root inherits the error.
 
-**Fact versus inference** is the line a caller has to know which side
-their own information falls on:
+A caller with no history cannot get a better answer. That limit is in the
+input, not in the library.
 
-- **fact, applied automatically by `ExhaustiveLayoutSource` given a
-  `PlayRecord`**: a defender showed out of a suit, so holds none of it.
-- **inference, still the caller's own to apply**: the auction suggests a
-  defender is short in a suit. Nothing here infers this — a caller with
-  bidding-derived information supplies their own, narrower layout source
-  reflecting it (the `LayoutSource` injection point, in either language).
+Know which kind of information you have:
 
-Supplying a play history does not cover bidding inference, and a reader
-who conflates the two will under-constrain their belief space without any
-signal that they have done so.
+- **Fact:** a defender showed out of a suit, so holds none of it.
+  `ExhaustiveLayoutSource` applies this when you pass a `PlayRecord`.
+- **Inference:** the bidding suggests a defender is short in a suit. The
+  library never infers this. Apply it with your own, narrower
+  `LayoutSource`.
 
-Everything above is about what the **layout source** does with a history —
-narrowing the belief space. π itself can read the pre-root record too, via
-`state.play_record`, when the caller supplies one to `evaluate()`: ordinary
-common knowledge (every card already played, face up to every seat), not a
-peek at the hidden split, and a different thing from `state.history`
-(root-relative, growing only as the search plays cards — see that field's
-own doxygen for the distinction). A caller supplying a history to the
-layout source and a `PlayRecord` to `evaluate()` is not supplying the same
-fact twice for two different purposes — one narrows the space every
-strategy searches over, the other lets π itself condition on what happened
-before the root.
+A play history does not cover inferences from the bidding. If you mix the
+two up, your belief space is too wide, with no warning.
+
+You can also pass a `PlayRecord` to `evaluate()`. That has a different
+purpose. The source uses the history to narrow the belief space. π reads
+the record from `state.play_record` to see what happened before the root.
+Every played card is public, so this reveals nothing hidden.
+`state.play_record` is not `state.history`: `history` holds only the
+root's trick in progress and the cards played since the root. See the doxygen on those fields.
 
 ## Python
 
@@ -142,56 +109,61 @@ before the root.
 import belief_space_local_evaluation as bsle
 ```
 
-A complete worked example — playing a hand out to a mid-play root, building
-the belief space from the play history, and evaluating one declarer line
-against three defences — is `examples/guess_6nt_belief_space.py`, runnable
-with `bazelisk run //examples:guess_6nt_belief_space`. Every **Python** code
-block below is exercised by
-`python/tests/test_belief_space_local_evaluation_docs_examples.py`, with the
-doc's placeholder names (`root`, `declarer`, `seed`, `tricks_needed`) bound to
-concrete values there -- so "exercised", not literally verbatim. The two C++
-blocks are not run by that test.
+For a complete example, see `examples/guess_6nt_belief_space.py`. It plays
+a hand to a mid-play root, builds the belief space from the history, and
+evaluates one declarer line against three defences. Run it with
+`bazelisk run //examples:guess_6nt_belief_space`.
+
+`python/tests/test_belief_space_local_evaluation_docs_examples.py` runs
+each Python code block below. It gives the placeholder names (`root`,
+`declarer`, `seed`, `tricks_needed`) concrete values. It does not run the
+C++ blocks.
 
 ### The building blocks
 
-- **`bsle.Card(suit, rank)`** — `suit` is `0=♠ 1=♥ 2=♦ 3=♣`; `rank` is
-  **absolute**, `2..14`, never relative to a node's outstanding pool. This
-  is the type π returns and δ's weighted cards carry. Hashable and
-  compares by value, so it can be a `dict` key or `set` member — mutable,
-  though, so the hash follows the fields and mutating a `Card` already
-  used as a key loses it.
-- **A deal** crosses as a plain `dict`, the same shape `dds3` already
-  documents: `trump`, `first`, `remain_cards` (a 4×4 array of bitmasks,
-  `[hand][suit]`), `current_trick_suit`, `current_trick_rank`.
-- **`bsle.ObservationState`** — read-only, handed to π's `play` at every
-  call: `trump`, `first`, `history` (a list of `Card`, in order),
-  `declarer`, `tricks_needed`, `tricks_won_by_declarer`, `known_holdings`
-  (a deal dict; declarer's and dummy's entries are exact, a defender's
-  entry is the **union pool** of both defenders' outstanding cards, not
-  that defender's own actual holding), and `ranks` (a `bsle.RankMap`:
-  `.aggr`, `.to_relative(suit, rank)`, `.to_absolute(suit, ordinal)` — the
-  precomputed rank mapping a C++ strategy conditions on directly; a Card
-  is always absolute, so a strategy reasoning in relative terms converts
-  with `to_absolute` before returning one). `play` and `state_key` share
-  this same type, but `state_key` is not itself called yet — see
-  obligation 1 above.
+- **`bsle.Card(suit, rank)`.** `suit` is `0=♠ 1=♥ 2=♦ 3=♣`. `rank` is
+  **absolute**, `2..14`, never relative to a node's outstanding cards. π
+  returns a `Card`, and δ returns weighted `Card`s. A `Card` compares by
+  value and is hashable, so it can be a `dict` key or `set` member. It is
+  also mutable. If you change a `Card` that is already a key, the lookup
+  fails.
+- **A deal** is a plain `dict`, in the shape `dds3` documents: `trump`,
+  `first`, `remain_cards` (a 4×4 array of bitmasks, `[hand][suit]`),
+  `current_trick_suit`, `current_trick_rank`.
+- **`bsle.ObservationState`** is read-only. π's `play` receives it on
+  every call. Stored fields:
+  - `trump`, `first`, `declarer`, `tricks_needed`,
+    `tricks_won_by_declarer`.
+  - `history`: the `Card`s of the root's trick in progress, then those
+    played since the root, in order.
+  - `known_holdings`: a deal dict. Declarer's and dummy's entries are
+    exact. Each defender entry is the **union** of both defenders' cards,
+    not that defender's actual hand.
+  - `ranks`: a `bsle.RankMap` with `.aggr`, `.to_relative(suit, rank)`
+    and `.to_absolute(suit, ordinal)`. A strategy that reasons in relative
+    ranks must convert with `to_absolute` before it returns a `Card`.
 
-  Seven more are **derived**, computed on access rather than stored, so a
-  strategy that reads none of them pays nothing: `seat_on_play` (the seat
-  this call is for — not otherwise told); `trick_leader` (the trick *in
-  progress*'s leader — not `first`, which is the root's and never moves,
-  so a strategy reading `first` here is right at the root and wrong from
-  the second trick on); `current_trick` (list of `Card` already played to
-  it, empty when leading); `position_in_trick` (0 = leading); `legal_cards`
-  (`Card`s, follow-suit already applied, suit-then-rank ascending);
-  `can_follow_led_suit` (false when leading, there being no suit to
-  follow); `is_declaring_side` (true for declarer *or* dummy).
-- **`bsle.BeliefView`** — what π reasons over: `entries` (a sequence of
-  `BeliefEntry`, each with `.layout`, a deal dict, and `.posterior`),
-  `is_sample`, `space_size`. **Valid only for the duration of the call it
-  was handed to** — accessing it, or anything obtained from it besides an
-  already-read `.layout`, afterwards raises `ExpiredBeliefViewError`. Do
-  not store a `BeliefView` past the callback that received it.
+  `state_key` takes the same type. Nothing calls it yet (obligation 1).
+
+  Seven more fields are computed on access, so a strategy pays only for
+  what it reads:
+  - `seat_on_play`: the seat this call is for.
+  - `trick_leader`: the leader of the current trick. **Do not use
+    `first` for this.** `first` is the root leader and never changes, so
+    it is wrong from the second trick on.
+  - `current_trick`: the `Card`s already played to this trick. Empty when
+    leading.
+  - `position_in_trick`: 0 when leading.
+  - `legal_cards`: `Card`s with follow-suit applied, sorted by suit, then
+    rank ascending.
+  - `can_follow_led_suit`: false when leading.
+  - `is_declaring_side`: true for declarer *or* dummy.
+- **`bsle.BeliefView`** is what π reasons over. It has `entries` (a
+  sequence of `BeliefEntry`, each with `.layout`, a deal dict, and
+  `.posterior`), `is_sample` and `space_size`. **It is valid only during
+  the call that received it.** After that call, any access raises
+  `ExpiredBeliefViewError`. A `.layout` you already read stays valid. Do
+  not store a `BeliefView`.
 
 ### A layout source
 
@@ -199,27 +171,26 @@ blocks are not run by that test.
 source = bsle.ExhaustiveLayoutSource(root, declarer, seed)
 ```
 
-`size()` and `at(i)` enumerate every layout consistent with `root`. Pass a
-`PlayRecord` to narrow the space to what it establishes as fact:
+`size()` and `at(i)` list every layout consistent with `root`. Pass a
+`PlayRecord` to remove the layouts that the history rules out:
 
 ```python
 record = bsle.PlayRecord([bsle.Card(0, 14), bsle.Card(1, 2)], opening_leader=0)
 source = bsle.ExhaustiveLayoutSource(root, declarer, seed, record=record)
 ```
 
-A rejected record (one that does not belong to `root`, or belongs but
-leaves no legal split) raises immediately, from the constructor — see
-"Where Python is stricter than C++" below.
+The constructor raises if it rejects the record. That happens when the
+record does not belong to `root`, or leaves no legal layout. See "Where
+Python is stricter than C++".
 
-`bsle.SingleLayoutSource(layout)` is a ready-made source over exactly one
-layout — `size()` is 1, `at(0)` is `layout` — for evaluating one candidate
-on its own, which is how `P_make` over a belief space gets cross-checked
-against the mean of `P_make` over each layout alone. One element having
-only one order, it is also exempt from the randomised-order obligation
-below.
+`bsle.SingleLayoutSource(layout)` holds exactly one layout: `size()` is 1
+and `at(0)` is `layout`. Use it to evaluate one layout alone. For example,
+check that `P_make` over a belief space equals the mean of `P_make` over
+each layout. A single layout has only one order, so obligation 4 does not
+apply.
 
-For anything else, subclass `bsle.LayoutSource` and override
-`size()`/`at(i)` to supply a narrower space than the root alone implies:
+For any other source, subclass `bsle.LayoutSource` and override
+`size()` and `at(i)`:
 
 ```python
 class MySource(bsle.LayoutSource):
@@ -232,10 +203,9 @@ class MySource(bsle.LayoutSource):
 
 ### Playing a hand out
 
-Four free functions, bound from `src/belief_evaluation/trick.hpp` — the same
-ones the evaluator itself uses to walk a position, so a caller reaching a
-mid-play root applies the identical follow-suit and trick-winner rules the
-evaluator will apply to whatever root it is handed:
+Four free functions apply the same follow-suit and trick-winner rules as
+the evaluator. They are bound from `src/belief_evaluation/trick.hpp`. Use
+them to reach a mid-play root:
 
 ```python
 seat = bsle.seat_on_play(deal)              # int, 0..3
@@ -245,17 +215,17 @@ after = bsle.play(deal, card)               # a new deal; the one passed in is u
 ```
 
 `bsle.play_out(deal, history, opening_leader, declarer)` replays a whole
-history in one call and returns `(root, tricks_won_by_declarer)` together —
-deliberately, since the two disagreeing is the hazard: an off-by-one in a
-caller's own trick count evaluates a different contract from the one
-`tricks_needed` was meant to describe, and does so with no diagnostic.
-Dummy's tricks count for declarer's side. A trailing incomplete trick is
-replayed but counts for nobody, having no winner yet. A card that is not a
-legal play at the point it is reached raises `ValueError` naming its index
-in `history` — the check that catches a transcribed hand record with a card
-in the wrong place, or an `opening_leader` inconsistent with the history.
+history. It returns `(root, tricks_won_by_declarer)`. It returns both so
+that they cannot disagree. A wrong trick count evaluates a different
+contract, with no warning.
 
-`PlaySequence` is the convenience wrapper built on top of these:
+- Dummy's tricks count for declarer.
+- An incomplete last trick is replayed but counts for nobody.
+- An illegal card raises `ValueError` with its index in `history`. This
+  catches a card in the wrong place in a transcribed hand. It also catches
+  an `opening_leader` that does not match the history.
+
+`PlaySequence` wraps these functions:
 
 ```python
 from belief_space_local_evaluation import PlaySequence
@@ -265,34 +235,30 @@ sequence.play_trick("C6 C4 C9 CQ")
 root, tricks_needed = sequence.current_deal, sequence.tricks_needed
 ```
 
-It plays cards via `seat_on_play`, `legal_cards` and `play` above, derives
-`tricks_needed` via `play_out` rather than asking the caller to track it, and
-collects the history and `opening_leader` pair an `ExhaustiveLayoutSource`
-needs — the three things `evaluate()` wants, from one object instead of
-separately hand-derived inputs that can silently disagree with each other. See
-`belief_space_local_evaluation/play_sequence.py`'s own docstring for the
-full surface (`play`, `play_trick`, `history`, `tricks_won_by_declarer`,
+It plays cards with `seat_on_play`, `legal_cards` and `play`. It computes
+`tricks_needed` with `play_out`. It records the history and the opening
+leader that `ExhaustiveLayoutSource` needs. So one object gives you all
+three inputs to `evaluate()`, and they cannot disagree. The docstring in
+`belief_space_local_evaluation/play_sequence.py` lists the full surface
+(`play`, `play_trick`, `history`, `tricks_won_by_declarer`,
 `format_tricks`).
 
-`sequence.declarer_view()` is the safe way to inspect a position outside a
-real `evaluate()` call — for a quick declarer heuristic tried against a
-`PlaySequence` directly, or for printing what declarer would know before
-running the search. It returns a small, frozen snapshot (own and dummy's
-remaining cards, the current trick, legal cards, the full play history, and
-more) built entirely from what declarer legitimately knows. **The returned
-object never holds `sequence.current_deal` itself** — which holds all four
-real hands including the defenders' — only the fields derived from it that
-declarer may legitimately see. **It raises `ValueError` when a defender is
-on play**, rather than answering from the wrong hand: `legal_cards` and the
-hand-in-turn can only be derived from a hand the caller may see, and a
-defender's remaining cards are not one.
+`sequence.declarer_view()` shows a position safely outside `evaluate()`.
+Use it to try a declarer heuristic, or to print what declarer knows. It
+returns a small, frozen snapshot of what declarer may see: declarer's and
+dummy's remaining cards, the current trick, the legal cards, the play
+history, and more.
+
+- **The snapshot never holds `sequence.current_deal`.** That deal holds
+  all four hands, including the defenders'.
+- **It raises `ValueError` when a defender is on play.** The legal cards
+  would come from a defender's hand, which declarer cannot see.
 
 ### π and δ
 
-The shape, not a working strategy -- `Card(0, 14)`/`Card(0, 2)` here are
-schematic fixed plays, legal only at a node that happens to hold exactly
-those cards, not derived from `state`/`layout` the way a real strategy
-must be:
+This shows the shape only. The cards are fixed for illustration. They
+are legal only at a node that holds exactly those cards. A real strategy
+derives its card from `state` or `layout`.
 
 ```python
 def pi(state, view):
@@ -306,14 +272,13 @@ def delta(layout, seat, state):
     return [(bsle.Card(0, 2), 1.0)]
 ```
 
-**Both must be pure functions of their arguments.** The evaluator walks
-the tree in its own order and revisits sibling subtrees; a strategy that
-accumulates state across calls (most commonly a *seeded* strategy drawing
-from one PRNG stream across the whole search) will silently return
-different cards for the same node and corrupt the result. If you want
-variety without breaking purity, derive the choice from the arguments
-themselves — `choice = hash(seed, state) mod n` — rather than from a
-stream.
+**π and δ must be pure functions of their arguments.** The evaluator
+visits nodes in its own order, and visits some more than once. A strategy
+that keeps state between calls can return different cards for the same
+node. That corrupts the result silently. The common case is a seeded
+strategy that draws from one random stream for the whole search. For
+variety, derive the choice from the arguments instead, for example
+`choice = hash(seed, state) mod n`.
 
 ### `evaluate()`
 
@@ -321,12 +286,11 @@ stream.
 result = bsle.evaluate(root, declarer, tricks_needed, source, pi, delta)
 ```
 
-Every `EvaluateOptions` field from the C++ type is a keyword-only
-argument with the same default: `retain_root`, `collect_counters`,
-`bound`, `delta_is_double_dummy_optimal`, `sample_size`, `scan_budget`,
-`replenish_below`. `state_key` is also keyword-only here (it is not an
-`EvaluateOptions` field in C++ — it belongs to the declarer strategy —
-but π crosses as a bare callable rather than a bundled object).
+Each field of the C++ `EvaluateOptions` is a keyword-only argument with
+the same default: `retain_root`, `collect_counters`, `bound`,
+`delta_is_double_dummy_optimal`, `sample_size`, `scan_budget`,
+`replenish_below`. `state_key` is keyword-only too. In C++ it belongs to
+the declarer strategy, but in Python π is a bare callable.
 
 ```python
 result = bsle.evaluate(
@@ -339,37 +303,43 @@ value["root_children"]           # [(Card, float), ...] -- see below
 value["root_is_declaring_side"]  # bool -- which shape root_children has
 ```
 
-`root_children` is alternatives at a declarer root (`p_make` equals
-whichever entry π actually chose, not their sum) and a genuine partition
-at a defender root (the entries *do* sum to `p_make`, since defender
-children partition mass by construction); empty at a terminal root.
-Summing them and comparing to `p_make` therefore agrees sometimes and not
-others — **branch on `root_is_declaring_side` rather than working out which
-kind of root you have.** It is true when declarer *or dummy* is on lead, which
-is the part a caller deriving it from the root's seat gets wrong, and it is
-present even where `root_children` is empty.
+`root_children` has three shapes:
 
-`counters` (present only with `collect_counters=True`) and `retained_root`
-(present only with `retain_root=True`, and **the root node alone, never a
-tree**) are documented on the returned dict's own keys; see
-`test_belief_space_local_evaluation_results.py` for their full shape.
+- **At a declarer root**, the entries are alternatives. `p_make` equals
+  the entry π chose, not the sum.
+- **At a defender root**, the entries partition the mass. They sum to
+  `p_make`.
+- **At a terminal root**, it is empty.
+
+**Use `root_is_declaring_side` to tell which shape you have.** Do not
+work it out from the root seat. It is true when declarer *or dummy* is on
+lead, which is the part callers get wrong. It is present even when
+`root_children` is empty.
+
+`counters` is present only with `collect_counters=True`. `retained_root`
+is present only with `retain_root=True`. It is **the root node only,
+never a tree**. For their full shape, see
+`test_belief_space_local_evaluation_results.py`.
 
 ### Exceptions
 
-Every `RootFailure` and every `ValidationError` cause raises a
-distinguishable exception, all rooted at
-`bsle.BeliefSpaceLocalEvaluationError`. A rejected record raises from
-`PlayRecord`'s own constructor for a shape/duplicate cause, and otherwise
-from `ExhaustiveLayoutSource`'s own constructor, under a **separate**
-family (`HistoryRejectedError`/`ConstrainedSpaceEmptyError`, still under
-the same root) — never catchable as the same thing as an ordinary
-`NoLayoutSurvivedError`, since the fix in each case is different (fix your
-history, versus fix your source). A Python exception raised inside π
-(`play`), δ, or a Python source's `size()`/`at()` propagates out of
-`evaluate()` unchanged — own type, own message — rather than being
-converted into one of this module's own exceptions. `state_key` is not
-listed here: it is never called yet (there is no cache to key), so it has
-no exception to propagate — see obligation 1 above.
+All exceptions derive from `bsle.BeliefSpaceLocalEvaluationError`. Each
+`RootFailure` cause and each `ValidationError` cause has its own
+exception.
+
+A rejected play record raises from a constructor:
+
+- `PlayRecord` raises for a bad shape or a duplicate card.
+- `ExhaustiveLayoutSource` raises `HistoryRejectedError` or
+  `ConstrainedSpaceEmptyError` for the other causes.
+
+These are separate from `NoLayoutSurvivedError`, because the fix is
+different. For a rejected record, fix the history. For
+`NoLayoutSurvivedError`, fix the source.
+
+An exception raised in π (`play`), in δ, or in a Python source's `size()`
+or `at()` passes out of `evaluate()` unchanged. `state_key` cannot raise
+here, because nothing calls it yet.
 
 ### The solver seam
 
@@ -384,45 +354,46 @@ chain = bsle.make_default_defender_heuristics(trump)     # convenience: the ship
 delta = bsle.HeuristicDefender(ctx, chain)                # also usable directly as delta
 ```
 
-A `SolverContext` built through `dds3` works here directly — the two
-modules share one type. `DoubleDummyBound` **prunes nothing on positions the
-solver will not score** — sound, but weaker than it looks; see "Known gaps"
-below. It also **fixes `declarer` at construction and is not reusable across declarers**; reusing one across
-two declarers produces a silently wrong bound, which then feeds the
-bound-gated cut, whose soundness depends on the bound being right for the
-declarer actually being evaluated. `DoubleDummyDefender` **maximises
-tricks, not the contract** — it is explicitly not best defence against a
-contract, and will sometimes concede the contract to hold the trick count
-down — while still satisfying `delta_is_double_dummy_optimal`, since that
-declaration is about trick count, which trick-maximising play delivers
-for both sides regardless of the contract. `SpreadPolicy.TouchingSequence`
-spreads uniformly over the single best card's own touching-sequence group
-(restricted choice, the canonical distribution over a genuine equivalence
-class); `SpreadPolicy.AllOptimal` spreads over every tied-for-best
-candidate's own group, across suits — those cards are equally *good* but
-not otherwise equivalent, so this is a more advanced justification, not a
-drop-in alternative.
+A `SolverContext` from `dds3` works here directly. The two modules share
+the type.
 
-`HeuristicDefender` is a second `delta` implementation, not a
-replacement for `DoubleDummyDefender` — both are usable anywhere
-`evaluate()`'s `delta` argument is accepted. It solves the same way
-`DoubleDummyDefender` does, then hands the double-dummy-optimal
-candidates to a chain of small, independently-testable conventions
-(second-hand low, third-hand high/low, fourth-hand low, ruff small,
-discard keeping winners), falling back to `DoubleDummyDefender`'s own
-uniform spread only when every rule in the chain defers. It exists
-because that uniform spread sometimes includes a card no competent human
-defender would actually choose there — not because it scores worse (a
-tied card, by definition, does not), but because ordinary defensive
-technique picks one specific card from the tie for reasons double-dummy
-trick-counting cannot see.
+**`DoubleDummyBound`:**
 
-**The chain is entirely caller-assembled: any order, any subset of the
-built-in rules, a caller's own rules on equal footing with them.**
-`make_default_defender_heuristics(trump, randomize_touching_honors=True)`
-builds the chain shown above purely as a convenience — the shipped order,
-nothing more — and is never special-cased by `HeuristicDefender` or
-anything else that consumes a chain. Building one by hand instead:
+- It **fixes `declarer` when you construct it.** Do not reuse it for
+  another declarer. The bound would be wrong, and the bound-gated cut
+  would give a wrong answer.
+- It **prunes nothing on positions the solver will not score.** That is
+  safe but weaker than it looks. See "Known gaps".
+
+**`DoubleDummyDefender`:**
+
+- It **maximises tricks, not the contract.** It is not best defence
+  against a contract. Sometimes it gives up the contract to hold the
+  trick count down.
+- It still satisfies `delta_is_double_dummy_optimal`, because that
+  declaration is about trick count.
+- `SpreadPolicy.TouchingSequence` spreads evenly over the touching
+  sequence of the single best card. This is restricted choice.
+- `SpreadPolicy.AllOptimal` spreads over the touching sequences of every
+  card tied for best, across suits. Those cards are equally good but not
+  equivalent. This is an advanced choice, not a drop-in alternative.
+
+**`HeuristicDefender`** is a second δ. It does not replace
+`DoubleDummyDefender`. Use either one as `evaluate()`'s `delta`. It
+solves like `DoubleDummyDefender`. Then it passes the double-dummy-optimal
+cards to a chain of rules: second hand low, third hand high or low,
+fourth hand low, ruff small, and discards that keep winners. If every
+rule defers, it falls back to the even spread of `DoubleDummyDefender`.
+
+Why it exists: the even spread sometimes includes a card that no
+competent defender would play. Tied cards score the same double-dummy.
+But normal defensive technique picks one of them, for reasons that trick
+counting cannot see.
+
+**You build the chain: any order, any subset of the built-in rules, and
+your own rules.** `make_default_defender_heuristics(trump,
+randomize_touching_honors=True)` only builds the shipped order for
+convenience. Nothing treats it as special. To build a chain by hand:
 
 ```python
 chain = bsle.DefenderHeuristicChain()
@@ -434,22 +405,19 @@ chain.add(my_own_rule)                      # a plain Python function,
 chain.add(bsle.discard_keep_winners())
 ```
 
-`second_seat_low`'s `randomize_touching_honors` (default `True`) governs
-exactly the restricted-choice behaviour `SpreadPolicy.TouchingSequence`
-already licenses: off, it always plays the lower card of a touching pair
-rather than randomising between them, which leaks which specific card was
-held — a real cost when it fires, though not every position reaches a
-genuinely touching pair at that rule's own gate, in which case the two
-settings agree. This holds only so long as no rule placed *after*
-`second_seat_low` in the same chain also fires at the same decision point
-— the chain tries every later rule before ever reaching the fallback
-spread, so such a rule would silently win instead, regardless of this
-setting. Put `second_seat_low` last among any rules that could fire
-where it does (see `second_seat_low.hpp`'s own doxygen).
+`second_seat_low` has a `randomize_touching_honors` flag, default `True`.
+It controls the restricted choice that `SpreadPolicy.TouchingSequence`
+allows. With `False`, the rule always plays the lower of two touching
+cards. That shows which card the defender held. When no touching pair
+reaches the rule, both settings give the same result.
 
-`BruteForceDeclarer` is this module's first lookahead `pi`, usable
-directly as `evaluate()`'s `pi` argument the same way the two defenders
-above are usable directly as `delta`:
+**Put `second_seat_low` after any other rule that can fire at the same
+point.** The chain tries every later rule before the fallback spread. A
+later rule that fires wins, whatever this flag says. See the doxygen in
+`second_seat_low.hpp`.
+
+**`BruteForceDeclarer`** is a lookahead π. Use it directly as
+`evaluate()`'s `pi`:
 
 ```python
 pi = bsle.BruteForceDeclarer(
@@ -457,100 +425,83 @@ pi = bsle.BruteForceDeclarer(
                                                               # an owned DoubleDummyDefender
 ```
 
-At a declarer/dummy node it tries every legal card and keeps the best
-under its fixed `DeclarerObjective` (`MaximizeExpectedTricks` or
-`MaximizeProbabilityToMake`, locked for the instance's whole lifetime);
-at a defender node it sums each surviving layout's own response from its
-own internal `opponent_model` — a second `delta`-shaped callable, separate
-from whatever `delta` is paired with it in the `evaluate()` call itself.
-**Its result is only a faithful stand-in for "the double-dummy-optimal
-declarer" when `opponent_model` matches the outer `delta`** — paired with
-anything else, `evaluate()` still returns a well-defined `P_make`, just
-for that specific pairing, not for "optimal play" in general. `ctx` here
-plays the same two roles `double_dummy_defender`'s own `ctx` already
-does: solving a position directly (via its own internal
-`DoubleDummyBound`, when `max_depth` is reached) and, when `opponent_model`
-is left unset, backing the owned `DoubleDummyDefender` the search falls
-back to by default.
+- At a declarer or dummy node, it tries every legal card. It keeps the
+  best one for its `DeclarerObjective`: `MaximizeExpectedTricks` or
+  `MaximizeProbabilityToMake`. The objective is fixed for the life of the
+  instance.
+- At a defender node, it sums the response of each surviving layout. It
+  gets each response from its own `opponent_model`, a δ-shaped callable.
+  That is separate from the `delta` you pass to `evaluate()`.
+- `ctx` solves positions directly, through an internal
+  `DoubleDummyBound`, when the search reaches `max_depth`. If you leave
+  `opponent_model` unset, `ctx` also backs the default
+  `DoubleDummyDefender`.
 
-**A caller-supplied `opponent_model` must answer from position alone,
-never from the `state` argument's history or play-record fields**, even
-though a legitimate `delta`-shaped callable may read them (`ScriptedDefender`
-is a real example that keys its own response off history). The internal
-cache's own key omits both, which is what lets two different `pi` calls
-along one actually-played line share a cached value — sound only when
-`opponent_model` cannot tell those two calls apart. Nothing checks this
-at runtime; it is a caller obligation, like the `DeclarerObjective`/
-`opponent_model` instance-locking below.
+**It plays as "the double-dummy-optimal declarer" only when
+`opponent_model` matches the outer `delta`.** With any other pairing,
+`evaluate()` still returns a well-defined `P_make`, but only for that
+pairing.
 
-`max_depth` and `max_layouts` bound an otherwise-exhaustive search — both
-`None` by default, which searches to a genuine terminal over the whole
-belief space every time. Affordable on a small, fully-enumerable ending;
-measured directly on one such ending with a real, non-trivial belief
-space (252 layouts): over 100 seconds and 1.7 million calls into
-`opponent_model` for the unbounded search. `max_layouts`, when set, drops
-a node's lowest-posterior layouts rather than searching all of them before
-a depth cutoff's own per-layout solver cost is paid — the dropped mass is
-never redistributed onto the survivors, a deliberate under-count rather
-than an approximation that could go either way. Does not apply to a
-genuine terminal node, which calls no solver and is already cheap: there
-is nothing there for the cap to bound, only mass it would otherwise lose
-for no reason.
+**An `opponent_model` you supply must answer from the position only.** It
+must not read `state.history` or `state.play_record`, although an
+ordinary δ may. A scripted defender that replays a fixed history is an
+example that reads them. The internal cache key leaves those fields out,
+so two `pi` calls on one line of play can share a value. Nothing checks
+this at run time.
 
-**The cache `BruteForceDeclarer` owns internally is private to one
-instance, and safe to share across calls only when `max_depth` is left
-`None`.** With it absent, sharing across any number of `evaluate()` calls
-that instance is used in never returns a wrong value — but an actual hit
-*across two different calls* is rare in practice, not the common case
-"safe to share" might suggest: each call's own root is freshly
-renormalised to sum to 1, while this search's own internal recursion
-never renormalises a descendant, so a node several plies into one call's
-own exploration is generally scaled differently from the same position
-reached afresh by a later call. A hit across calls only survives a chain
-of probability-1 choices on both sides — not the genuinely uncertain,
-multi-layout belief space this cache exists to help. Reuse *within* one
-call's own internal recursion (a transposition reached by two different
-move orders in the same lookahead) is unaffected. With `max_depth` set,
-the cutoff it triggers depends on how deep *that one call's own*
-lookahead is, not on anything inherent to the position, so each `play()`
-call starts from a clean cache instead — correct, and, given how rarely
-cross-call reuse fires anyway, a smaller cost than it first appears.
-Never shared across two instances built with a different
-`DeclarerObjective` or a different `opponent_model` either way, which
-would silently corrupt backed-up values. Nothing about this cache is
-visible to, or shared with, `evaluate()` itself: the search is entirely
-private to one `play()` call,
-and `evaluate()` has no idea a lookahead happened inside it at all.
+`max_depth` and `max_layouts` limit the search. Both default to `None`,
+which searches to the end of play over the whole belief space. That is
+affordable only on a small ending. On one ending with 252 layouts, the
+unlimited search took over 100 seconds and 1.7 million calls to
+`opponent_model`.
 
-**A `SolverContext` is not thread-safe** (its own C++ contract: one
-context per thread), and `DoubleDummyDefender`/`DoubleDummyBound`/
-`HeuristicDefender` release the GIL around the actual solve, while
-`BruteForceDeclarer` releases it around its whole search (every
-`DoubleDummyBound`/`DoubleDummyDefender` call its own recursion makes,
-not just one) — so, unlike most of this module, two Python threads
-really do run concurrently here if they share one. Build one
-`SolverContext` (and one of whichever defender/bound/declarer types)
-per worker; do not share either across threads.
+`max_layouts` keeps a node's highest-posterior layouts and drops the rest.
+It drops them before the solver cost of a depth cutoff is paid. The
+dropped mass is not given to the other layouts. So the result is a
+deliberate under-count, never an over-count. The cap does not apply at a
+terminal node. A terminal node calls no solver, so the cap would only
+lose mass.
 
-### Where Python is deliberately stricter than C++
+**The internal cache belongs to one instance.**
 
-Two places, both for the same reason: **C++ chose the weaker behaviour
-because the language left it no choice, not because the weaker behaviour
-is better.**
+- With `max_depth` set to `None`, the cache is kept between `evaluate()`
+  calls and never returns a wrong value. But hits between two calls are
+  rare. Each call scales its root to sum to 1, and the search never
+  rescales below that. So the same position usually has different values
+  in two calls. A hit between calls happens only along a chain of
+  probability-1 choices on both sides.
+- Within one call, a position reached by two move orders still hits the
+  cache.
+- With `max_depth` set, a cutoff depends on how deep the current call
+  searches. So each `play()` call starts with an empty cache. This costs
+  little, because hits between calls are rare anyway.
+- The objective and `opponent_model` are fixed per instance, so one cache
+  never mixes them. Mixing them would corrupt the backed-up values.
+- `evaluate()` cannot see the cache. The whole search happens inside one
+  `play()` call.
 
-- **`replenish_below` without `sample_size`.** In C++ this is a
-  documented silent no-op — the field lives on a nested `SamplingOptions`
-  type whose *shape* makes the coupling visible to a reader with the
-  doxygen open. The Python surface flattens every option to a keyword
-  argument, which makes the coupling invisible again to a caller with no
-  doxygen at all — so this raises `ValueError` here rather than silently
-  doing nothing.
-- **A rejected play history.** In C++, `history_verdict()` and
-  `constrained_space_status()` are accessors, because a constructor
-  cannot report and an earlier review already ruled out a factory
-  indirection for this type. Python has no such constraint: a
-  non-`Consistent` verdict raises directly from the constructor, so a
-  caller who never thinks to call the accessors still finds out.
+**A `SolverContext` is not thread-safe.** Its C++ contract is one context
+per thread. `DoubleDummyDefender`, `DoubleDummyBound` and
+`HeuristicDefender` release the GIL during each solve.
+`BruteForceDeclarer` releases it for its whole search. So, unlike most of
+this module, two Python threads sharing a context really do run at the
+same time. Create one `SolverContext`, and one of each defender, bound or
+declarer, per worker thread. Do not share them between threads.
+
+### Where Python is stricter than C++
+
+In two places, Python reports an error where C++ does not. C++ is weaker
+here only because the language forces it.
+
+- **`replenish_below` without `sample_size`.** In C++ this does nothing,
+  as documented. The field is inside a nested `SamplingOptions`, so the
+  dependency is visible. Python flattens every option into a keyword
+  argument, which hides the dependency. So Python raises `ValueError`.
+- **A rejected play history.** In C++, you read the result from the
+  `history_verdict()` and `constrained_space_status()` accessors, because a
+  constructor cannot report it. In Python, the constructor raises for any
+  verdict other than `Consistent`. A caller who never calls the accessors
+  still finds out.
 
 ## C++
 
@@ -561,15 +512,19 @@ is better.**
 namespace be = dds::belief_evaluation;
 ```
 
-The same pieces, as C++ types: `Card` (`suit`, `rank`, absolute),
-`ObservationState`, `BeliefView`/`BeliefEntry`, `LayoutSource` (an
-abstract class — `size()`/`at(index)` — implement it directly, no
-trampoline needed), `ExhaustiveLayoutSource`, `DeclarerStrategy` (`id`,
-`play`, optional `state_key`), `DefenderStrategy` (a
-`std::function<std::vector<WeightedCard>(DefenderQuery const&)>`), and
-`evaluate()` itself, taking an `EvaluateOptions` whose fields match the
-Python keyword arguments above one for one (nested `sampling` for the
-three coupled fields).
+The C++ types match the Python ones:
+
+- `Card` (`suit`, `rank`, absolute).
+- `ObservationState`, `BeliefView`, `BeliefEntry`.
+- `LayoutSource`: an abstract class with `size()` and `at(index)`.
+  Implement it directly.
+- `ExhaustiveLayoutSource`.
+- `DeclarerStrategy`: `id`, `play`, and an optional `state_key`.
+- `DefenderStrategy`: a
+  `std::function<std::vector<WeightedCard>(DefenderQuery const&)>`.
+- `evaluate()`, which takes an `EvaluateOptions`. Its fields match the
+  Python keyword arguments one for one. The three sampling fields are in a
+  nested `sampling` struct.
 
 ```cpp
 Deal const root = /* ... */;
@@ -593,46 +548,37 @@ if (! result.error.has_value()) {
 }
 ```
 
-`EvaluationResult::error`, when set, carries `callback` (which of π, δ, or
-root construction), `seat`, `layout`, and either `validation` or
-`root_failure` — the evaluator **reports** a contract violation here
-rather than throwing, since a callback is caller input, not an internal;
-a genuine internal invariant failure asserts instead. The Python surface
-collapses this same distinction back into ordinary exceptions at its own
-boundary instead, since raising is the idiomatic thing to do there and
-reporting is not.
+`evaluate()` **reports** a contract violation by a callback in
+`EvaluationResult::error`. It does not throw, because a callback is
+caller input. The error holds `callback` (π, δ, or root construction),
+`seat`, `layout`, and either `validation` or `root_failure`. A broken
+internal invariant asserts instead. Python turns these reports into
+exceptions, because raising is normal there.
 
-`DoubleDummyDefender` and `DoubleDummyBound` (`#include
-<belief_evaluation/double_dummy_defender.hpp>` /
-`<belief_evaluation/double_dummy_bound.hpp>`) both take `SolverContext&`,
-not owned — create, configure and outlive it yourself — and carry the same
-two caveats as their Python counterparts above (fixed `declarer`;
-trick-maximising, not contract-aware).
+`DoubleDummyDefender` (`<belief_evaluation/double_dummy_defender.hpp>`)
+and `DoubleDummyBound` (`<belief_evaluation/double_dummy_bound.hpp>`)
+take a `SolverContext&`. They do not own it. Create and configure it
+yourself, and keep it alive longer than they are. The two caveats from
+Python apply: the bound fixes `declarer`, and the defender maximises
+tricks, not the contract.
 
 ## Known gaps
 
-Found by writing `examples/`, and recorded here rather than left in an
-example's docstring. Each is a property of this implementation, not of the
-approach.
+These are limits of this implementation, not of the approach.
 
-### `DoubleDummyBound` asks twice on positions the solver will not score
+### `DoubleDummyBound` cannot always get a score
 
-`DoubleDummyBound` asks the solver for `solutions = 1`. On some positions this
-evaluator reaches, `solve_board` answers `score[0] == -2` — *not evaluated*,
-rather than a trick count — and pairs it with a **success** status, so the
-status check cannot catch it. `as_bound()` therefore range-checks the raw score
-against `[0, tricks_remaining(layout)]` before converting it. Anything outside
-it is not a number to repair but the absence of an answer, so the bound asks
-again at `solutions = 3` — which scores every position measured to decline at
-`solutions = 1` — and falls back to `SolverFailureSentinel` (14, deliberately
-higher than any deal's trick count) only if that declines too. A bound is read
-as an upper limit, so too high costs pruning and nothing else.
+On some positions, the solver returns `score[0] == -2` ("not evaluated")
+with a success status. `DoubleDummyBound` checks the range of every
+score. If a score is out of range, it asks again with `solutions = 3`.
+That has scored every position measured so far. If the retry also fails,
+the bound returns `SolverFailureSentinel` (14). That is higher than any
+trick count, so it costs pruning but never correctness.
 
-Correctness is unaffected either way, and pairing `DoubleDummyBound` with
-`DoubleDummyDefender` is sound. Measured on the four-card ending in
-`examples/`, the pair takes nodes visited from 6283 to 3159 with 197 tier-2
-cuts, and is faster in wall-clock terms than tier 1 alone — the retry costs
-less than searching the subtrees it lets the cut remove.
+Results stay correct, and `DoubleDummyBound` with `DoubleDummyDefender` is
+a sound pair. On the four-card ending in `examples/`, the pair cuts nodes
+visited from 6283 to 3159, with 197 tier-2 cuts. It is also faster than
+tier 1 alone.
 
 Measured on a four-card ending, declarer playing low, over 70 layouts:
 
@@ -644,75 +590,39 @@ Measured on a four-card ending, declarer playing low, over 70 layouts:
 | both | 0.2000 |
 | the 70 layouts evaluated one at a time, averaged | 0.2000 |
 
-**The `both` row read 0.0000 before the range check existed** — a contract that
-makes, reported as certain to fail. The −2 went straight through as a bound,
-and being negative it was below any `tricks_needed`, so the bound-gated cut
-fired on a live node. Worth knowing if you are reading an older revision, and
-worth knowing as the shape of the failure a bound can produce: a wrong bound
-does not raise, it silently answers a different question.
+**A wrong bound does not raise. It silently answers a different
+question.** For example, a bound of 0 reports a contract that makes as
+certain to fail. This is why a missing score must map to a value that is
+too high. A value that is merely in range is not safe.
 
-Note that a clamp into the range would **not** have fixed it: clamping −2 gives
-0, which is still below every `tricks_needed >= 1`, so the cut would have kept
-firing while the bug looked fixed. The replacement value has to be too high,
-not merely in range.
+Which positions the solver declines to score is not known.
+`tests/belief_evaluation/double_dummy_bound_test.cpp` pins the solver
+behaviour and the guard. The doxygen in `double_dummy_bound.hpp` has the
+details. `DoubleDummyDefender` is not affected, because it does not read
+the score.
 
-One asymmetry, since it decides what you see when probing an older revision:
-the −2 only became a *low* bound with declarer or dummy on lead, where the raw
-score is already declarer's own. With a defender on lead the conversion is
-`tricks_remaining - score`, so −2 became `tricks_remaining + 2` — too high, and
-therefore harmless. Both conversions read the same raw score and one check now
-covers both.
+### Not used by any example
 
-**Which positions the solver answers this way is not established.** The retry
-sidesteps the question rather than answering it. An earlier revision of this section
-asserted a trigger that turned out to be wrong; do not trust a trigger story,
-including that one. What is pinned, by
-`tests/belief_evaluation/double_dummy_bound_test.cpp`, is the solver's
-behaviour, the guard, and a refutation of the obvious explanations: a
-no-search solve can also return a *correct* score, the same holdings score
-correctly when only the seat on lead changes, a two-suit position also fails,
-and a forced play does not.
+- `state_key`. Nothing calls it, because there is no cache.
+- Sampling and replenishment (`sample_size`, `replenish_below`).
 
-`DoubleDummyDefender` was never affected: it reads card identity and `equals`
-from the same result, not the score.
+### Missing from the Python surface
 
-### Never exercised by any example
-
-`state_key` (never called — there is no cache), and sampling and replenishment
-(`sample_size` / `replenish_below`). `SingleLayoutSource` no longer belongs on
-this list: `examples/test_guess_6nt_belief_space.py` uses it to cross-check
-`P_make` against a per-layout average, which is the property it exists for.
-
-### Python surface: candidates
-
-What is still missing from the Python surface, recorded so the next contributor
-sees what to do and not only what goes wrong. What's left says what a caller
-writes today, because that is the evidence: it is a thing `examples/` writes
-by hand.
-
-The list was longer. The trick primitives, the derived `ObservationState`
-properties, `Card.__hash__`, `SingleLayoutSource`, `root_is_declaring_side`,
-deriving declarer's trick count, and letting the play history arrive as one
-object (`PlayRecord`, accepted by both `ExhaustiveLayoutSource` and
-`evaluate()`) were all on it and have landed; each was removed as it did,
-along with the gap above that it closed.
-
-**Bridge notation on `Card`.** Turning a `Card` or a deal into `♠Q` or PBN text
-is something every caller invents for itself — `bridge_notation` is mostly
-that — and a `__str__` plus a parse/format pair on `Card` itself would stop
-each caller reinventing it independently.
+**Bridge notation on `Card`.** Callers must convert a `Card` or a deal to
+text such as `♠Q` or PBN themselves. The `bridge_notation` package does
+most of this. A `__str__` and a parse/format pair on `Card` would remove
+the need.
 
 ## See also
 
-- [`docs/replenished_belief_evaluation/algorithm.md`](replenished_belief_evaluation/algorithm.md) —
-  the theory: the belief-space formulation, why it turns a POMDP into a
-  belief MDP, and the derivation `P_make` implements.
-- [`docs/module_map.md`](module_map.md) — which header holds what, and the
-  conventions that hold across all of them. For changing the library
-  rather than using it.
-- [`specs/replenished-belief-evaluation.md`](../specs/replenished-belief-evaluation.md) —
-  the design record: every capability-wide contract and invariant, with
-  the reasoning behind each.
-- The double-dummy solver proper, which this capability reaches only
-  through the optional solver seam above, documents its own Python and C++
-  interfaces in the [dds](https://github.com/dds-bridge/dds) repository.
+- [`algorithm.md`](replenished_belief_evaluation/algorithm.md): the
+  theory. It covers the belief-space formulation, why it turns a POMDP
+  into a belief MDP, and the derivation of `P_make`.
+- [`module_map.md`](module_map.md): which header holds what, and the
+  conventions for all headers. Read it to change the library.
+- [`specs/replenished-belief-evaluation.md`](../specs/replenished-belief-evaluation.md):
+  the design record. It holds every capability-wide contract and
+  invariant, and the reason for each.
+- The [dds](https://github.com/dds-bridge/dds) repository documents the
+  double-dummy solver's Python and C++ interfaces. This library reaches
+  the solver only through the solver seam.

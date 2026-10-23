@@ -5,15 +5,10 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    /// A record carries no `Deal`, so its own validation reuses
-    /// `verify_history` against a throwaway empty root purely to reach its
-    /// two root-independent checks (shape, internal duplicates) -- both run,
-    /// and can return, before `verify_history` ever reads `root`: neither
-    /// touches `root` at all. Any verdict *other than*
-    /// `InvalidInput`/`DuplicatedCard` therefore means those two checks
-    /// already passed, whatever the placeholder root made `verify_history`'s
-    /// later, root-dependent checks say -- their answer is meaningless here
-    /// and is exactly why it's discarded rather than surfaced.
+    /// Runs `verify_history` against an empty placeholder root, to reach its
+    /// two checks that need no root: shape and duplicates. Both run before
+    /// `root` is read. Any other verdict comes from the placeholder and is
+    /// discarded.
     auto verify_shape_and_duplicates(PlayTraceBin const& cards, int opening_leader) -> HistoryVerdict
     {
         Deal const placeholder_root{};

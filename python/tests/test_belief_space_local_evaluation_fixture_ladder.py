@@ -1,14 +1,9 @@
-"""Proves the benchmarks' own fixture ladder is reachable from Python too --
-same deals, same sizes -- reading them from
-benchmarks/belief_evaluation/ladder_reference, a small C++ program run once
-as a subprocess and its stdout parsed as Python literals.
+"""Checks that the benchmark fixture ladder gives the same deals and sizes
+from Python. benchmarks/belief_evaluation/ladder_reference, a C++ program, runs
+once as a subprocess and prints the ladder as Python literals.
 
-Same "build both sides of every comparison from one description" mechanism
-as test_belief_space_local_evaluation_parity.py's own REFERENCE: hand-
-transcribing the ladder a second time in Python is exactly how a slip
-hides, so this reads the C++ program's own output instead. See that test
-file's module docstring for the fuller rationale, which applies here
-unchanged.
+Reading the C++ output avoids a second, hand-copied ladder, as in
+test_belief_space_local_evaluation_parity.py.
 """
 
 import subprocess
@@ -21,10 +16,9 @@ from belief_space_local_evaluation import PlayRecord
 
 
 def _repo_root(start: Path | None = None) -> Path:
-    # Do not Path.resolve() -- under `bazel test` this file is often a
-    # runfiles symlink into the execroot/source tree, and resolving leaves
-    # the runfiles tree where the ladder_reference data dep lives. Mirrors
-    # test_belief_space_local_evaluation_parity.py's own _repo_root exactly.
+    # Do not call Path.resolve(). Under `bazel test` this file is often a
+    # runfiles symlink, and resolving it leaves the runfiles tree that holds
+    # ladder_reference. Same as _repo_root in the parity test.
     here = (start or Path(__file__)).absolute()
     for parent in here.parents:
         workflows = parent / ".github" / "workflows"
@@ -34,10 +28,8 @@ def _repo_root(start: Path | None = None) -> Path:
 
 
 def _ladder_reference_binary() -> Path:
-    # Bazel emits a cc_binary's runfile as the bare target name on
-    # Linux/macOS but with a .exe suffix on Windows -- prefer the bare
-    # name, fall back to the suffixed one only when that is what actually
-    # exists. Same reasoning as the parity test's own binary lookup.
+    # A cc_binary runfile has no suffix on Linux and macOS, and .exe on
+    # Windows. Try both, bare name first, as the parity test does.
     root = _repo_root() / "benchmarks" / "belief_evaluation" / "ladder_reference"
     for candidate in (root, root.with_suffix(".exe")):
         if candidate.is_file():
@@ -53,9 +45,9 @@ def _run_ladder_reference() -> dict:
         text=True,
     ).stdout
     namespace: dict = {}
-    # Trusted, self-generated output (this process's own data dependency,
-    # not external input) -- exec rather than ast.literal_eval because the
-    # output is a sequence of assignment statements, not one literal.
+    # The output comes from this test's data dependency, so it is trusted.
+    # It is a series of assignments, not one literal, so ast.literal_eval
+    # cannot read it.
     exec(compile(output, "<ladder_reference>", "exec"), namespace)  # noqa: S102
     return namespace
 
@@ -64,10 +56,8 @@ REFERENCE = _run_ladder_reference()
 
 
 class TestFixtureLadderIsReachableFromPython(unittest.TestCase):
-    # Every rung the C++ side reports, in both its unconstrained
-    # (without-history) and history-constrained forms -- the same pairing
-    # fixtures.hpp's own Rung documents, read from the same root each
-    # program printed rather than a second, hand-built one.
+    # Every rung, without and with its history, as Rung in fixtures.hpp
+    # pairs them.
     def test_every_rung_without_history_size_matches(self) -> None:
         for rung in REFERENCE["RUNGS"]:
             with self.subTest(rung=rung["unconstrained_size"]):
@@ -83,9 +73,8 @@ class TestFixtureLadderIsReachableFromPython(unittest.TestCase):
                 self.assertEqual(source.size(), rung["constrained_size"])
 
     def test_at_least_five_rungs_spanning_two_orders_of_magnitude(self) -> None:
-        # Not a re-derivation of fixtures_test.cpp's own shape assertions
-        # (it already owns that claim in C++) -- just confirming the
-        # Python-visible mirror is not a truncated or stale copy of it.
+        # fixtures_test.cpp checks the ladder's shape. This only checks that
+        # the Python copy is not truncated.
         sizes = [rung["unconstrained_size"] for rung in REFERENCE["RUNGS"]]
         self.assertGreaterEqual(len(sizes), 5)
         self.assertGreaterEqual(max(sizes), min(sizes) * 100)

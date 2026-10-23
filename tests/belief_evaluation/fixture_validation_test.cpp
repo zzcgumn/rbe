@@ -8,23 +8,21 @@
 
 #include "test_support.hpp"
 
-// A namespace alias plus targeted `using` declarations, not `using namespace
-// dds::belief_evaluation;` -- this file includes api/dds_data_types.hpp
-// directly (declaring global ::Card), so a `using namespace` here would make
-// any future bare `Card` reference ambiguous between ::Card and
-// dds::belief_evaluation::Card rather than a clear compile error naming
-// which one was meant.
+// Guard rails for building fixtures. Each helper turns a kind of fixture
+// mistake into an assertion that names it. Otherwise the mistake shows up
+// as a confusing failure deep in the recursion: an unheld card several
+// frames into a callback, or a BeliefView with fewer entries than
+// expected.
+
+// A namespace alias and targeted `using` declarations, not `using
+// namespace dds::belief_evaluation;`. This file includes
+// api/dds_data_types.hpp, which declares a global ::Card, so a bare `Card`
+// would be ambiguous instead of a clear compile error.
 namespace be = dds::belief_evaluation;
 using be::assert_equal_hand_sizes;
 using be::assert_forms_one_belief_node;
 using be::assert_pool_matches;
 using be::holding;
-
-// Guard rails for fixture construction: each helper converts a class of
-// fixture mistake that would otherwise surface as a confusing failure deep
-// inside the recursion (an unheld card several frames into a callback, or a
-// BeliefView with fewer entries than the test author expected) into an
-// assertion that names the fixture problem directly.
 
 namespace
 {
@@ -36,9 +34,9 @@ namespace
     constexpr int Spades = 0;
     constexpr int Hearts = 1;
 
-    /// Every hand holds exactly two cards, one spade and one heart, at a
-    /// trick boundary (no cards currently in progress) -- the baseline
-    /// "good" fixture every test below perturbs.
+    /// Every hand holds two cards, one spade and one heart, at a trick
+    /// boundary (no trick in progress). The good baseline that every test
+    /// below changes.
     auto make_equal_hands_deal() -> Deal
     {
         Deal deal{};
@@ -101,9 +99,9 @@ TEST_F(FixtureValidationTest, MatchingLayoutsFormOneBeliefNode)
 {
     Deal const layout0 = make_equal_hands_deal();
     Deal layout1 = make_equal_hands_deal();
-    // Same declarer/dummy holdings and same defender pool, but the pool
-    // split between the two defenders (East/West) differs -- exactly what
-    // one belief node is supposed to tolerate.
+    // Same declarer and dummy holdings and the same defender pool, but East
+    // and West split the pool differently. One belief node allows exactly
+    // this.
     layout1.remainCards[East][Spades] = holding({8});
     layout1.remainCards[West][Spades] = holding({4});
 
@@ -123,7 +121,7 @@ TEST_F(FixtureValidationTest, DifferingDeclarerHoldingIsRejected)
 {
     Deal const layout0 = make_equal_hands_deal();
     Deal layout1 = make_equal_hands_deal();
-    layout1.remainCards[North][Spades] = holding({10});  // declarer's own holding changed
+    layout1.remainCards[North][Spades] = holding({10});  // declarer's holding changed
 
     EXPECT_NONFATAL_FAILURE(
         assert_forms_one_belief_node({layout0, layout1}, North), "declarer holding");

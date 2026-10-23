@@ -12,16 +12,13 @@ namespace dds::belief_evaluation
 
 auto defender_pool_decomposition(Deal const& root, int declarer) -> DefenderPool
 {
-    // declarer and dummy are never read: the pool is exactly the two
-    // defenders' union, and neither holding contributes to it whatever it
-    // is.
+    // declarer and dummy are not read: the pool is the defenders' cards only.
     int const fixed_seat = (declarer + 1) % DDS_HANDS;
     int const other_seat = (declarer + 3) % DDS_HANDS;
 
     DefenderPool pool;
-    // std::popcount, not half of the eventual cards.size(): mid-trick the
-    // two defenders' counts legitimately differ by one, and this must read
-    // the fixed seat's own remaining holding rather than assume symmetry.
+    // std::popcount of the fixed seat, not half the pool: mid-trick the two
+    // defenders' counts differ by one.
     for (int suit = 0; suit < DDS_SUITS; ++suit)
     {
         pool.fixed_seat_count += std::popcount(root.remainCards[fixed_seat][suit]);
@@ -30,10 +27,8 @@ auto defender_pool_decomposition(Deal const& root, int declarer) -> DefenderPool
     for (int suit = 0; suit < DDS_SUITS; ++suit)
     {
         unsigned const suit_pool = root.remainCards[fixed_seat][suit] | root.remainCards[other_seat][suit];
-        // Ranks ascending, bit r for absolute rank r -- Deal::remainCards'
-        // own convention, no >> 2 shift (that compacted convention belongs
-        // to aggr and the lookup tables, not here; see rank_map.cpp's own
-        // comment on the distinction).
+        // Ranks ascending, bit r for absolute rank r (the Deal convention, no
+        // >> 2).
         for (int rank = 2; rank <= 14; ++rank)
         {
             if ((suit_pool & (1u << rank)) != 0)
@@ -47,8 +42,7 @@ auto defender_pool_decomposition(Deal const& root, int declarer) -> DefenderPool
 
 namespace
 {
-    // Thirteen tricks, so at most 26 cards are ever outstanding between two
-    // defenders -- see binomial_coefficient's own doxygen.
+    // At most 26 cards are outstanding between two defenders.
     constexpr int MaxOutstandingCards = 26;
 
     constexpr auto make_pascals_triangle()
@@ -59,10 +53,8 @@ namespace
             table[n][0] = 1;
             for (int k = 1; k <= n; ++k)
             {
-                // table[n - 1][k] is 0 by the zero-initialisation above
-                // when k == n (row n - 1 only ever had entries up to
-                // column n - 1 written to it) -- exactly C(n - 1, n) == 0,
-                // so no separate bounds check is needed here.
+                // When k == n, table[n - 1][k] is still 0 from initialisation, which is
+                // C(n - 1, n). No bounds check is needed.
                 table[n][k] = table[n - 1][k - 1] + table[n - 1][k];
             }
         }
@@ -74,12 +66,9 @@ namespace
 
 auto binomial_coefficient(int n, int k) -> std::uint64_t
 {
-    // n outside [0, MaxOutstandingCards] is a caller error -- the domain
-    // this function is documented for -- and, unlike k outside [0, n]
-    // (a legitimate, well-defined "zero" case), indexing PascalsTriangle
-    // with it would read straight past the end of the table. Asserted for
-    // a build where that is caught loudly; the range check below is what
-    // stops it becoming an out-of-bounds read in a build where it is not.
+    // n outside [0, MaxOutstandingCards] is a caller error and would read past
+    // the table. Asserted; the range check below stops the read when asserts
+    // are off.
     assert(n >= 0 && n <= MaxOutstandingCards);
     if (n < 0 || n > MaxOutstandingCards || k < 0 || k > n)
     {
@@ -90,10 +79,8 @@ auto binomial_coefficient(int n, int k) -> std::uint64_t
 
 auto unrank_combination(std::uint64_t index, int n, int k) -> std::vector<int>
 {
-    // Combinatorial-number-system unranking in colex order: for each
-    // position from k down to 1, find the largest remaining candidate v
-    // with C(v, i) <= index, take it, and subtract that many combinations
-    // before moving on. Builds descending, reversed to ascending below.
+    // Colex unranking: for each position i from k down to 1, take the largest
+    // v with C(v, i) <= index and subtract. Builds descending, then reverses.
     std::vector<int> result;
     result.reserve(static_cast<std::size_t>(k));
     int v = n - 1;
@@ -117,33 +104,22 @@ auto apply_defender_split(
     int const fixed_seat = (declarer + 1) % DDS_HANDS;
     int const other_seat = (declarer + 3) % DDS_HANDS;
 
-    Deal result = root;  // copy-and-overwrite: everything but the two defenders' holdings is root's own
+    Deal result = root;  // copy-and-overwrite: only the defenders' holdings change
     for (int suit = 0; suit < DDS_SUITS; ++suit)
     {
         result.remainCards[fixed_seat][suit] = 0;
         result.remainCards[other_seat][suit] = 0;
     }
 
-    // The complement is derived from pool itself (every card not named
-    // goes to other_seat), never from root's own other-defender holding --
-    // see this function's own doxygen for why. A fixed-size array, not
-    // std::vector<bool>: this is on ExhaustiveLayoutSource::at()'s hot
-    // path, the pool is bounded by MaxOutstandingCards regardless of the
-    // root (thirteen tricks, so at most 26 cards are ever outstanding
-    // between two defenders -- see binomial_coefficient's own doxygen),
-    // and a per-call heap allocation for a bound this small is waste a
-    // large enumeration pays for on every single at() call.
+    // The complement comes from pool, not from root (see the header). A
+    // fixed-size array, not std::vector<bool>: this is the hot path of
+    // ExhaustiveLayoutSource::at(), and the pool is at most 26 cards.
     assert(pool.cards.size() <= MaxOutstandingCards);
     std::array<bool, MaxOutstandingCards> is_fixed_seat_card{};
     for (int index : fixed_seat_cards)
     {
-        // A bad index here is a caller error (this function trusts
-        // fixed_seat_cards for legality -- see its own doxygen), asserted
-        // for a build where that catches it loudly; the range check below
-        // is what stops it becoming an out-of-bounds write into
-        // is_fixed_seat_card in a build where the assert has been compiled
-        // away, rather than silently corrupting memory the size check
-        // above alone does not guard against.
+        // A bad index is a caller error. Asserted; the range check below stops an
+        // out-of-bounds write when asserts are off.
         assert(index >= 0 && static_cast<std::size_t>(index) < pool.cards.size());
         if (index < 0 || static_cast<std::size_t>(index) >= pool.cards.size())
         {

@@ -1,11 +1,9 @@
 """Guard that the wheel ships both packages and both compiled extensions.
 
-py_wheel packages a py_library's `srcs`, but not whatever its `data`
-points at. So a wheel can carry dds3/__init__.py and no dds3/_dds3.so: it
-builds clean, installs clean, imports clean, and raises on the first call
-into the solver. That is precisely what this wheel did before
-:_dds3_in_package was added to its deps, which is why the assertion is on
-the archive rather than on an import.
+py_wheel packages a py_library's `srcs` but not its `data`. A wheel can
+then carry dds3/__init__.py without dds3/_dds3.so. It builds, installs and
+imports cleanly, and fails on the first solver call. So the test reads the
+archive, not an import.
 """
 
 from __future__ import annotations
@@ -32,11 +30,9 @@ _REQUIRED_EXTENSIONS = (
 
 
 def _wheel() -> Path:
-    # The data dep lands beside this test in the runfiles tree, under the
-    # package that declares it. Do not Path.resolve(): under `bazel test`
-    # this file is a runfiles symlink into the source tree, and resolving
-    # leaves the runfiles tree where the wheel lives. Mirrors
-    # ci_belief_evaluation_opt_test.py's own _repo_root reasoning.
+    # The wheel is in the runfiles tree, under the package that declares
+    # it. Do not call Path.resolve(). Under `bazel test` this file is a
+    # runfiles symlink, and resolving it leaves the runfiles tree.
     here = Path(__file__).absolute()
     for parent in here.parents:
         wheels = sorted((parent / "python").glob("*.whl"))

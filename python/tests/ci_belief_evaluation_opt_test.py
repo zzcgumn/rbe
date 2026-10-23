@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 """Guard that CI builds and tests belief_evaluation under -c opt (--config=opt).
 
-belief_evaluation was never compiled under NDEBUG across six plans: nothing
-in CI ever passed --config=opt for it, so the -Werror=unused-variable this
-plan fixed went unnoticed until someone happened to build it by hand. An
-instruction alone did not hold for the leak sweep this same plan repairs
-elsewhere, so this follows the repository's existing ci_*_test.py
-precedent instead: assert the CI configuration directly, rather than the
-build outcome (which would just re-run the build this workflow already
-runs), so the assertion fails the moment the job disappears or its target
-pattern narrows away from this module -- not only when someone remembers to
-check.
+Without an optimised CI job, an NDEBUG-only error such as
+-Werror=unused-variable goes unnoticed. The test reads the workflow files, not
+the build outcome. It fails as soon as the job is removed or its target pattern
+stops covering this module.
 """
 
 from __future__ import annotations
@@ -21,9 +15,9 @@ from pathlib import Path
 
 
 def _repo_root(start: Path | None = None) -> Path:
-    # Do not Path.resolve() — under `bazel test` this file is often a runfiles
-    # symlink into the execroot/source tree, and resolving leaves the runfiles
-    # tree where //.github/workflows data deps live.
+    # Do not call Path.resolve(). Under `bazel test` this file is often a
+    # runfiles symlink, and resolving it leaves the runfiles tree that holds
+    # the //.github/workflows data.
     here = (start or Path(__file__)).absolute()
     for parent in here.parents:
         workflows = parent / ".github" / "workflows"
@@ -32,10 +26,9 @@ def _repo_root(start: Path | None = None) -> Path:
     raise AssertionError("could not locate repository root from test file path")
 
 
-# Platforms this module's optimised build is guarded on. DDS_CPPOPTS and
-# DDS_LINKOPTS give macOS -flto=thin (ThinLTO) on top of the -O3 both
-# platforms share, so Linux and macOS are genuinely different builds here —
-# a Linux-only guard would leave macOS, the untested one, uncovered.
+# Both platforms are guarded. DDS_CPPOPTS and DDS_LINKOPTS add -flto=thin on
+# macOS to the shared -O3, so the two optimised builds differ. A Linux-only
+# guard would leave macOS uncovered.
 _GUARDED_WORKFLOWS = ("ci_linux.yml", "ci_macos.yml")
 
 _OPT_BUILD_TARGET = "//src/belief_evaluation"
@@ -43,12 +36,9 @@ _OPT_TEST_TARGET = "//tests/belief_evaluation/..."
 
 
 def _line_covers_module_under_opt(line: str, subcommand: str, target: str) -> bool:
-    """True if `line` invokes `bazelisk <subcommand>` with both --config=opt
-    and `target` present, in either order -- flag order is not significant to
-    Bazel, so neither is it here, matching ci_windows_cppopts_test.py's own
-    _bazelisk_invocation_has_config_opt convention. Full-line and trailing
-    comments are stripped first so a commented-out invocation cannot satisfy
-    the guard.
+    """True if `line` runs `bazelisk <subcommand>` with --config=opt and
+    `target`, in either order, as Bazel ignores flag order. Comments are
+    stripped first, so a commented-out invocation does not count.
     """
     code = line.split("#", 1)[0]
     if not code.strip():
@@ -82,10 +72,8 @@ class TestOptBuildCoversBeliefEvaluation(unittest.TestCase):
 
 
 class TestOptRegexRejectsNarrowedOrRemovedCoverage(unittest.TestCase):
-    """Exercises the two ways coverage can quietly regress: the invocation
-
-    disappearing entirely, or staying but no longer naming this module —
-    without waiting for either to actually happen in a workflow file.
+    """The two ways coverage can regress: the invocation disappears, or it
+    stays but no longer names this module.
     """
 
     def test_rejects_a_build_missing_config_opt(self) -> None:
@@ -142,9 +130,7 @@ class TestOptRegexRejectsNarrowedOrRemovedCoverage(unittest.TestCase):
         )
 
     def test_accepts_config_opt_and_the_target_in_either_order(self) -> None:
-        """--config=opt need not precede the target pattern: a harmless flag
-        reordering in the workflow YAML must not false-fail this guard.
-        """
+        """Reordering flags in the workflow must not fail the guard."""
         self.assertTrue(
             _line_covers_module_under_opt(
                 "bazelisk build //src/belief_evaluation --config=opt --verbose_failures",

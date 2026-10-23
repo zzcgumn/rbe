@@ -3,44 +3,41 @@
     North   S KJ7    H QJ     D QT65   C AJ42
     South   S T9     H AKT    D AK98   C KQ73
 
-South plays 6NT on a club lead. Nine tricks cash themselves -- four clubs,
-four diamonds, one heart -- and then declarer is in the four-card ending
+South plays 6NT on a club lead. After nine tricks (four clubs, four
+diamonds, one heart), this four-card ending is left:
 
     North   S KJ7    H Q
     South   S T9     H AT
 
-needing three more. Two are hearts: North's queen crashes under the ace, but
-the defenders hold only H 92, so the ten is good as well. The third has to
-come from spades, against East and West holding S AQ6542 and H 92 between
-them -- six spades and two hearts, the eight cards the 70 layouts split --
-and which defender holds the spade queen is not known. That is the whole
-problem, and it is exactly the kind of problem belief-space evaluation is
-for: the answer is not a card, it is a probability over the layouts still
-consistent with the play so far.
+Declarer needs three more tricks. Two come from hearts: the queen falls
+under the ace, and the ten is good because the defenders hold only H 92.
+The third must come from spades. East and West hold S AQ6542 and H 92,
+split over 70 layouts. Nobody knows which defender holds the spade queen.
 
-This example gets to that ending, builds the belief space, and evaluates
-2 declarers against 3 defences over it -- six evaluations, printed as a grid.
+**The question:** which line gives the best chance to make, and against
+which defence? The answer is a probability, not a card.
 
-The declarers are the **fixed line** (cash the heart ace, then the ten, then a
-spade, covering the queen if it appears) and the **belief finesse** (the same,
-except that the spade guess is read off the belief space instead of decided in
-advance). The defences are **low**, **double dummy**, and **cover when it
-wins**. `DECLARERS` and `defences_with()` below are the single source of both
-the grid and the counts in this paragraph, and a test asserts they agree,
-because this paragraph has twice drifted from the code underneath it.
+**The example:**
 
-The finding is that **neither declarer dominates**. Reading the belief space
-beats the fixed line against two of the three defences and loses to it
-against the third, so "best line" is not defined independently of the defence
-assumed -- which is the question belief-space evaluation exists to ask, and
-the reason a number is the answer rather than a card.
+1. Play the nine tricks to reach the ending.
+2. Build the belief space from the play history.
+3. Evaluate 2 declarers against 3 defences: six values, printed as a grid.
 
-**Scope.** One of the two declarers reads the BeliefView; that is deliberate
-and is the smallest thing that makes the library's point visible. The more
-elaborate view-reading examples -- conditioning on a sampled space, a
-strategy that updates across tricks -- are deliberately not here. They wait
-on the API changes this example was written to find, which are listed under
-"Known gaps" in docs/belief_space_local_evaluation.md.
+The declarers:
+
+- **fixed line:** cash the heart ace, then the ten, then play a spade.
+  Cover the queen if it appears.
+- **belief finesse:** the same, but read the spade guess from the belief
+  space. This is the only strategy here that reads the `BeliefView`.
+
+The defences are **low**, **double dummy** and **cover when it wins**.
+
+**The result:** neither declarer dominates. The belief finesse beats the
+fixed line against two defences and loses against the third. So the best
+line depends on the defence you assume.
+
+`DECLARERS` and `defences_with()` define the grid. A test checks that this
+docstring matches them.
 
 Run it with:
 
@@ -101,17 +98,14 @@ def guess_6nt() -> PlaySequence:
 
 
 def cash_two_hearts_and_play_a_spade(state, view):
-    """pi: cash the heart ace, then the heart ten, then play a spade,
-    covering the queen if it appears.
+    """pi: cash the heart ace, then the heart ten, then play a spade.
+    Cover the queen if it appears.
 
-    Chosen from `legal_cards`, which has already applied the follow-suit
-    rule, so every branch below is a preference among cards that are legal
-    rather than a claim that the preferred card is available. Falling
-    through to "lowest" is therefore always safe.
+    Every choice comes from `legal_cards`, so it is always legal. The
+    fallback, the lowest card, is always safe.
 
-    The same function plays for declarer and for dummy -- pi is called for
-    whichever of the two is on play -- so it is written in terms of what is
-    on the trick, not in terms of the seat.
+    pi plays for both declarer and dummy. So this function looks at the
+    cards on the trick, not at the seat.
     """
     del view  # This line is fixed in advance; it does not read the beliefs.
     deal = state.known_holdings
@@ -119,16 +113,15 @@ def cash_two_hearts_and_play_a_spade(state, view):
     legal = legal_cards(deal, seat)
     on_trick = cards_on_trick(deal)
 
-    # An empty trick means *we* are leading. Not the same test as
-    # current_trick_suit[0] == SPADES, which is also true of an empty trick,
-    # spades being suit 0 -- see cards_on_trick's own docstring.
+    # An empty trick means we are leading. Do not test
+    # current_trick_suit[0] == SPADES: spades is suit 0, so an empty trick
+    # also passes that test.
     if not on_trick:
         return (_pick(legal, HEARTS, ACE)
                 or _pick(legal, HEARTS, TEN)
                 or min(legal, key=lambda card: (card.rank, card.suit)))
 
-    # Following. Cover the queen: if the spade queen is already on this
-    # trick and the king is still ours to play, put it up.
+    # Following. If the spade queen is on the trick, cover with the king.
     if Card(SPADES, QUEEN) in on_trick:
         king = _pick(legal, SPADES, KING)
         if king is not None:
@@ -137,13 +130,11 @@ def cash_two_hearts_and_play_a_spade(state, view):
     return min(legal, key=lambda card: (card.rank, card.suit))
 
 
-# The grid's two axes, at module scope so that this module's own docstring can
-# be checked against them (see test_the_docstring_matches_the_grid) rather than
-# drifting from them, which it has done twice.
+# The two axes of the grid. They are at module scope so that
+# test_the_docstring_matches_the_grid can check the docstring against them.
 DECLARERS = (
     ("fixed line", cash_two_hearts_and_play_a_spade),
-    # The only strategy here that reads the BeliefView -- see the docstring's
-    # own Scope note for why exactly one does.
+    # The only strategy here that reads the BeliefView.
     ("belief finesse", finesse_the_queen_from_the_beliefs),
 )
 
@@ -151,25 +142,24 @@ DEFENCE_NAMES = ("low", "double dummy", "cover when it wins")
 
 
 def defences_with(ctx):
-    """The three defences. Takes a SolverContext because one of them solves.
+    """The three defences. Takes a SolverContext, because one of them solves.
 
-    `DoubleDummyDefender` maximises *tricks*, not the contract, and assumes
-    declarer plays double dummy from here -- which neither declarer above
-    does. Both are why it is not best defence here.
+    `DoubleDummyDefender` is not best defence here, for two reasons:
 
-    It also does **not** spread over every tied-for-best card. Under the
-    default `SpreadPolicy.TouchingSequence` it takes the canonical best card
-    -- highest score, ties broken by dds's own ordering -- and that one card's
-    touching group, discarding the other tied entries. Measured at one node
-    here, `solutions = 2` returns three cards tied at the maximum and the
+    - It maximises tricks, not the contract.
+    - It assumes declarer plays double dummy. Neither declarer here does.
+
+    It also does not spread over every card tied for best. With the default
+    `SpreadPolicy.TouchingSequence`, it takes the single best card and that
+    card's touching sequence. dds breaks ties between equal scores. At one
+    node here, `solutions = 2` returns three cards tied for best, and the
     defender plays one of them with probability 1.0. So the "double dummy"
-    column is partly determined by dds's ordering among non-touching equals,
-    not by anything about double-dummy defence. `SpreadPolicy.AllOptimal` is
-    the policy that spreads over all of them.
+    column partly reflects dds's tie order. `SpreadPolicy.AllOptimal`
+    spreads over all tied cards.
 
-    `queen_of_spades_when_it_wins` is optimal against the fixed line
-    (exhaustive minimax over every defensive choice lets that line through in
-    exactly the same layouts) and not against the belief finesse.
+    `queen_of_spades_when_it_wins` is optimal against the fixed line. A full
+    minimax over every defensive choice lets that line make in exactly the
+    same layouts. It is not optimal against the belief finesse.
     """
     return (
         ("low", lowest_eligible_defender),
@@ -189,16 +179,11 @@ def main() -> None:
     print(f"\nDeclarer has {sequence.tricks_won_by_declarer} tricks and needs "
           f"{sequence.tricks_needed} more from:\n")
 
-    # Printed the way declarer sees it, not the way the dealer dealt it:
-    # declarer's and dummy's cards exactly, and the defenders' outstanding
-    # cards as one pool. That is precisely what `ObservationState` gives pi --
-    # both defender entries there hold this same union, never one hand -- and
-    # printing the real split here would undercut the whole point one line
-    # after claiming the queen's location is unknown.
-    # Computed as a union, not read off a seat. `root` is a real layout, so
-    # each defender entry there is that defender's own hand -- the pooled
-    # entry only exists in `ObservationState.known_holdings`. Reading one
-    # seat here would silently print half the pool, and look plausible.
+    # Print what declarer sees: declarer's and dummy's cards, and the
+    # defenders' cards as one pool. This matches what `ObservationState`
+    # gives pi. Printing the real split would reveal the queen.
+    # `root` is a real layout, so each defender entry is one real hand.
+    # Compute the union. Reading one seat would print half the pool.
     lho, rho = (declarer + 1) % 4, (declarer + 3) % 4
     pool = [root["remain_cards"][lho][s] | root["remain_cards"][rho][s] for s in range(4)]
     for seat, label in ((dummy, "dummy"), (declarer, "declarer")):
@@ -207,11 +192,9 @@ def main() -> None:
     print(f"\n{SEAT_NAMES[root['first']]} to play. Which defender holds the "
           f"{format_card(Card(SPADES, QUEEN))} is what the belief space is over.\n")
 
-    # The play history is what makes this the *right* belief space rather than
-    # merely a plausible one: it rules out the layouts in which a defender
-    # holds a suit they have already shown out of. Omitting it is not an error
-    # and raises nothing -- it silently answers a different question. See "The
-    # play history: needed, not merely optional" in
+    # The play history rules out layouts in which a defender holds a suit
+    # they have shown out of. Without it, nothing raises, but the answer is
+    # for a different question. See "Supply the play history" in
     # docs/belief_space_local_evaluation.md.
     record = bsle.PlayRecord(sequence.history, sequence.opening_leader)
     source = bsle.ExhaustiveLayoutSource(root, declarer, SEED, record=record)
@@ -220,17 +203,14 @@ def main() -> None:
     print(f"Belief space, with history: {source.size()} layouts")
     print(f"       ... without history: {unconstrained.size()} layouts")
     if source.size() == unconstrained.size():
-        # True here, and worth printing rather than quietly agreeing: both
-        # defenders showed out of clubs and diamonds, but no club or diamond
-        # is left to hold, so on this root the history rules out nothing the
-        # root did not already. That is a property of this ending, not a
-        # reason to stop passing the history -- move the root one trick
-        # earlier and the two numbers part company.
+        # True here. Both defenders showed out of clubs and diamonds, but no
+        # clubs or diamonds are left. So the history rules out nothing new.
+        # This is a property of this ending only. One trick earlier, the two
+        # sizes differ.
         print("       (equal here: every suit shown out of is already exhausted)")
     print()
 
-    # Every pair over the same belief space. One axis at a time is what makes
-    # any of it readable.
+    # Evaluate every pair over the same belief space.
     ctx = dds3.SolverContext()
     declarers, defences = DECLARERS, defences_with(ctx)
 
@@ -272,11 +252,10 @@ def evaluate(sequence, source, pi, delta, **options) -> dict:
 def report_root_children(heading: str, value: dict) -> None:
     print(f"{heading}: P_make = {value['p_make']:.4f}")
 
-    # value["root_is_declaring_side"] says which shape these have; it is True
-    # here, so they are *alternatives*, not a partition. Each is what the
-    # contract is worth if declarer plays that card now and follows the same pi
-    # afterwards -- whichever pi was passed, not a lowest-card rule. They do
-    # not sum to P_make, and P_make is whichever one pi chose.
+    # root_is_declaring_side is True here, so the entries are alternatives,
+    # not a partition. Each is P_make if declarer plays that card now and
+    # then follows the same pi. They do not sum to P_make. P_make is the
+    # entry that pi chose.
     assert value["root_is_declaring_side"], "a defender root would partition"
     for card, p_make in sorted(value["root_children"], key=lambda entry: -entry[1]):
         print(f"    lead {format_card(card)}   {p_make:.4f}")

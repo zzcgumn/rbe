@@ -10,41 +10,32 @@
 namespace dds::belief_evaluation
 {
 
-/// Every card played before an evaluation's root, and the seat that opened
-/// it -- common knowledge, immutable, and independent of any particular
-/// root: unlike `ExhaustiveLayoutSource`'s own `history`/`opening_leader`
-/// pair, a `PlayRecord` is never checked against a `Deal` at construction,
-/// since it does not have one. What it *can* guarantee on its own: the
-/// cards are shape-valid and no card appears twice, and `opening_leader` is
-/// a seat in range. What it cannot: that `opening_leader` is the seat that
-/// actually led `cards`' first trick -- that check needs a root to replay
-/// against, and `ExhaustiveLayoutSource` is the only site that makes it
-/// (via `verify_history`, whether reached through this type or its own
-/// legacy `history`/`opening_leader` pair). `evaluate()`'s own
-/// `EvaluateOptions::play_record` is never checked against a root at
-/// all -- keeping it consistent with whatever `LayoutSource` an
-/// evaluation uses is the caller's own obligation, not something
-/// `evaluate()` enforces.
+/// Every card played before an evaluation's root, and the seat that led
+/// first. Common knowledge, immutable, and not tied to any root.
 ///
-/// Deliberately does not carry a contract or a score -- `evaluate()`
-/// already takes `declarer` and `tricks_needed` separately, and a record
-/// that also carried the contract would let a caller pass one inconsistent
-/// with the arguments beside it.
+/// It checks on its own that the cards are well-formed and distinct, and
+/// that `opening_leader` is a valid seat. It cannot check that
+/// `opening_leader` led the first trick: that needs a root.
+/// `ExhaustiveLayoutSource` makes that check, through `verify_history`.
+///
+/// **`evaluate()` never checks `EvaluateOptions::play_record` against a
+/// root.** Keeping it consistent with the `LayoutSource` is the caller's
+/// job.
+///
+/// It holds no contract or score. `evaluate()` takes `declarer` and
+/// `tricks_needed` as arguments, and a second copy could disagree.
 class PlayRecord
 {
 public:
-    /// Rejects with the same `HistoryVerdict` vocabulary
-    /// `verify_history`/`ExhaustiveLayoutSource` already use, restricted to
-    /// the two causes that need no `Deal` to mean anything: `InvalidInput`
-    /// (`cards.number` outside `[0, 52]`, `opening_leader` outside
-    /// `[0, DDS_HANDS)`, or a card's own `suit`/`rank` out of range) and
-    /// `DuplicatedCard` (the same card twice within `cards` itself). An
-    /// empty record and a trailing incomplete trick are both legal --
-    /// there is nothing to reject in either shape alone.
+    /// Rejects with the `HistoryVerdict` values that need no `Deal`:
+    /// - `InvalidInput`: `cards.number` outside `[0, 52]`, `opening_leader`
+    ///   outside `[0, DDS_HANDS)`, or a card's `suit` or `rank` out of range;
+    /// - `DuplicatedCard`: the same card twice in `cards`.
     ///
-    /// No way to reach a live `PlayRecord` whose cards and leader failed
-    /// this check: the only constructor is private, reached only from
-    /// here.
+    /// An empty record and an incomplete last trick are both legal.
+    ///
+    /// The only constructor is private, so every `PlayRecord` has passed this
+    /// check.
     static auto create(PlayTraceBin const& cards, int opening_leader)
         -> std::pair<std::optional<PlayRecord>, HistoryVerdict>;
 

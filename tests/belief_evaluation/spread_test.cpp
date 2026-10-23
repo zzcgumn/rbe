@@ -9,22 +9,22 @@
 #include <belief_evaluation/spread.hpp>
 #include <belief_evaluation/validation.hpp>
 
-// A namespace alias plus targeted `using` declarations, not `using namespace
-// dds::belief_evaluation;` -- this file also includes api/dds_data_types.hpp
-// (declaring global ::Card) via belief_evaluation/spread.hpp's own chain, so
-// a `using namespace` here would make any future bare `Card` reference in
-// this file ambiguous between ::Card and dds::belief_evaluation::Card rather
-// than a clear compile error naming which one was meant.
+// Tests for spread() under both SpreadPolicy values, on hand-built
+// FutureTricks: the equals bit convention, ties and deduplication.
+
+// A namespace alias and targeted `using` declarations, not `using
+// namespace dds::belief_evaluation;`. The include of spread.hpp brings in
+// the global ::Card from api/dds_data_types.hpp, so a bare `Card` would be
+// ambiguous instead of a clear compile error.
 namespace be = dds::belief_evaluation;
 using be::ProbabilitySumTolerance;
 using be::SpreadPolicy;
 using be::WeightedCard;
 using be::spread;
 
-// spread() and SpreadPolicy have no solver dependency and no solve_board
-// call anywhere in this file -- FutureTricks values below are hand-built,
-// pinning the two policies' behaviour against values a reader can check
-// without running the solver.
+// spread() and SpreadPolicy need no solver. The FutureTricks values below
+// are built by hand, so a reader can check them without running the
+// solver.
 
 namespace
 {
@@ -51,13 +51,11 @@ class SpreadTest : public ::testing::Test
 
 TEST_F(SpreadTest, EqualsIsReadInDealsBitConventionWithNoShift)
 {
-    // solver_if.cpp sets futp->equals[i] = mp->sequence << 2 at every
-    // population site -- bit r = absolute rank r, matching
-    // Deal::remainCards, not the compacted (r - 2) convention legal_plays()
-    // and the lookup tables use. A three-card touching sequence king,
-    // queen, jack: entry 0 is the king, and equals[0] names queen and jack
-    // as touching it -- bits 12 and 11 of a Deal-convention mask, i.e.
-    // (1u << Queen) | (1u << Jack), unshifted.
+    // dds's solver_if.cpp sets futp->equals[i] = mp->sequence << 2, so bit r
+    // is absolute rank r, as in Deal::remainCards. It is not the compacted
+    // (r - 2) convention of legal_plays() and the lookup tables. For the
+    // touching sequence KQJ, entry 0 is the king and equals[0] holds bits 12
+    // and 11: (1u << Queen) | (1u << Jack), unshifted.
     FutureTricks fut = empty_future_tricks();
     fut.cards = 1;
     fut.suit[0] = Spades;
@@ -97,8 +95,7 @@ TEST_F(SpreadTest, ASingleCandidateGetsProbabilityOne)
     EXPECT_EQ(distribution[0].card.rank, Ace);
     EXPECT_DOUBLE_EQ(distribution[0].probability, 1.0);
 
-    // AllOptimal agrees here too: with only one candidate, it is trivially
-    // also the maximum.
+    // AllOptimal agrees: with one candidate, it is also the maximum.
     std::vector<WeightedCard> const all_optimal = spread(fut, SpreadPolicy::AllOptimal);
     ASSERT_EQ(all_optimal.size(), 1u);
     EXPECT_EQ(all_optimal[0].card.rank, Ace);
@@ -122,8 +119,8 @@ TEST_F(SpreadTest, ASingletonEqualsGroupIsJustTheOneCard)
 
     std::vector<WeightedCard> const distribution = spread(fut, SpreadPolicy::TouchingSequence);
 
-    // TouchingSequence: the single canonical best entry (index 0, the ace)
-    // spread over its own (empty) equals group -- just the ace.
+    // TouchingSequence spreads the best entry (index 0, the ace) over its
+    // empty equals group: just the ace.
     ASSERT_EQ(distribution.size(), 1u);
     EXPECT_EQ(distribution[0].card.suit, Spades);
     EXPECT_EQ(distribution[0].card.rank, Ace);
@@ -154,14 +151,13 @@ TEST_F(SpreadTest, AThreeCardTouchingSequenceSplitsEvenlyAcrossAllThree)
     EXPECT_NEAR(total, 1.0, ProbabilitySumTolerance);
 }
 
-// --- two suits tied on score -- the case distinguishing the two policies ---
+// --- two suits tied on score: the case that separates the two policies ---
 
 TEST_F(SpreadTest, TouchingSequenceSpreadsOnlyOverTheCanonicalBestEntrysGroup)
 {
-    // Two entries tie for the maximum score (9): the spade king (with a
-    // touching queen) and the heart ace (a singleton). dds's own ordering
-    // makes entry 0 the canonical best, so TouchingSequence spreads only
-    // over the spade king's group.
+    // Two entries tie for the top score (9): the ♠K, with a touching queen,
+    // and the ♥A, a singleton. dds orders entry 0 first, so TouchingSequence
+    // spreads only over the ♠K's group.
     FutureTricks fut = empty_future_tricks();
     fut.cards = 2;
     fut.suit[0] = Spades;
@@ -198,7 +194,7 @@ TEST_F(SpreadTest, AllOptimalSpreadsOverEveryTiedEntrysGroupAcrossBothSuits)
 
     std::vector<WeightedCard> const distribution = spread(fut, SpreadPolicy::AllOptimal);
 
-    // Three cards total: spade king, spade queen (touching), heart ace.
+    // Three cards: ♠K, ♠Q (touching) and ♥A.
     ASSERT_EQ(distribution.size(), 3u);
     double total = 0.0;
     int spade_count = 0;
@@ -248,11 +244,10 @@ TEST_F(SpreadTest, AllOptimalPicksOnlyTheStrictWinnerWhenNothingTies)
 
 TEST_F(SpreadTest, AllOptimalDoesNotDoubleCountTwoEntriesInOneSequence)
 {
-    // dds sometimes lists more than one entry from the same touching
-    // sequence (each naming the others via equals) when solutions = 3.
-    // Both entries here tie for the maximum and both belong to the same
-    // KQJ sequence -- the union must still be exactly {K, Q, J}, not six
-    // weighted entries.
+    // With solutions = 3, dds can list several entries from one touching
+    // sequence, each naming the others in equals. Both entries here tie for
+    // the top score and belong to KQJ. The union must be exactly {K, Q, J},
+    // not six weighted entries.
     FutureTricks fut = empty_future_tricks();
     fut.cards = 2;
     fut.suit[0] = Spades;

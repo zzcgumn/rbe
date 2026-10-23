@@ -16,27 +16,17 @@ auto DoubleDummyDefender::as_strategy() -> DefenderStrategy
     return [this](DefenderQuery const& query) -> std::vector<WeightedCard>
     {
         FutureTricks fut{};
-        // solutions = 2: measured directly (see
-        // SolutionsTwoReportsEveryScoreTiedCandidateAcrossSuits in this
-        // module's tests) that it reports every entry tied for the maximum
-        // score -- across suits, not just within one -- with the same
-        // scores and equals groups solutions = 3 gives those same entries.
-        // It also collapses a touching sequence to one representative entry
-        // per sequence, exactly as spread() needs. The entries solutions = 3
-        // additionally returns (every legal card, not just the tied ones)
-        // are strictly sub-optimal and are discarded by spread()'s own
-        // score filter regardless (both SpreadPolicy values only ever keep
-        // entries at the maximum score), so solutions = 2 already reports
-        // everything spread() consumes, at less solver cost per query.
+        // solutions = 2 reports every entry tied for the best score, across
+        // suits, with the same scores and equals groups as solutions = 3
+        // (SolutionsTwoReportsEveryScoreTiedCandidateAcrossSuits). solutions = 3
+        // adds only sub-optimal entries, which spread() discards. So 2 is enough,
+        // and cheaper.
         int const status =
             solve_board(ctx_, query.layout, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &fut);
         if (status != RETURN_NO_FAULT)
         {
-            // Not silently empty-and-ignored: expand_defender_node reports
-            // an empty distribution as ValidationError::DistributionEmpty
-            // directly, so this surfaces as a real
-            // ExpandDefenderResult::error naming its actual cause (a solver
-            // failure, not a malformed script) rather than being swallowed.
+            // expand_defender_node reports an empty distribution as
+            // DistributionEmpty, so a solver failure is not swallowed.
             return {};
         }
         return spread(fut, policy_);

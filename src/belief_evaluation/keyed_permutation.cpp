@@ -8,12 +8,9 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    /// Mixes `value`, `seed` and `round` into one 64-bit word with no
-    /// discernible structure -- a splitmix64-shaped finaliser, chosen for
-    /// being a small, well-known bit mixer rather than anything this module
-    /// invents. Only ever consumed masked down to a round's own half-width,
-    /// so nothing about this function's own bijectivity (it is not a
-    /// bijection, and does not need to be) matters to keyed_permutation's.
+    /// Mixes `value`, `seed` and `round` into one 64-bit word: a
+    /// splitmix64-style finaliser. It need not be a bijection: the Feistel
+    /// structure provides that.
     auto mix(std::uint64_t value, std::uint64_t seed, int round) -> std::uint64_t
     {
         std::uint64_t h = value ^ (seed + 0x9E3779B97F4A7C15ULL * static_cast<std::uint64_t>(round));
@@ -25,13 +22,11 @@ namespace
         return h;
     }
 
-    /// See keyed_permutation.hpp's own doxygen for the measurement behind
-    /// this number.
+    /// See keyed_permutation.hpp for the measurement.
     constexpr int Rounds = 3;
 
-    /// One Feistel pass over `[0, 2^b)`: a bijection on that domain for any
-    /// round function and any width split, by the alternating-XOR
-    /// construction documented on keyed_permutation's own doxygen.
+    /// One Feistel pass over `[0, 2^b)`. A bijection for any round function
+    /// and any split (see keyed_permutation.hpp).
     auto feistel_permute(std::uint64_t x, int b, std::uint64_t seed) -> std::uint64_t
     {
         int const low_bits = b / 2;
@@ -60,23 +55,13 @@ auto keyed_permutation(std::uint64_t index, std::uint64_t n, std::uint64_t seed)
 {
     if (n == 0)
     {
-        // n == 0 is always a contract violation -- an empty domain has no
-        // valid index -- but it must be handled as a hard, deterministic
-        // case rather than only an asserted one: n - 1 below would
-        // underflow to UINT64_MAX, and the cycle-walking loop's own exit
-        // condition (x < n) can then never be satisfied, hanging forever
-        // rather than merely computing a wrong answer. A release build
-        // compiles the assert below away, so that failure mode would
-        // survive exactly where it matters least to hit it. No return
-        // value is meaningful for an empty domain; 0 is returned only
-        // because *some* value must be, promptly and repeatably.
+        // n == 0 is a contract violation, but must still return: n - 1 below
+        // would underflow, and the cycle-walking loop would never end in a
+        // release build. 0 is an arbitrary, repeatable answer.
         return 0;
     }
     assert(index < n);
-    // Smallest b with 2^b >= n: std::bit_width(n - 1) is the number of bits
-    // needed to represent n - 1, so 2^that value is the smallest power of
-    // two strictly greater than n - 1, i.e. >= n. n >= 1 from here on (the
-    // n == 0 case returned above), so n - 1 never underflows.
+    // The smallest b with 2^b >= n is std::bit_width(n - 1). n >= 1 here.
     int const b = std::bit_width(n - 1);
 
     std::uint64_t x = index;

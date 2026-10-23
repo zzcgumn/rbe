@@ -8,11 +8,14 @@
 #include <belief_evaluation/trick.hpp>
 #include <belief_evaluation/types.hpp>
 
+// Tests for the trick helpers: seat_on_play, legal_cards,
+// enumerate_legal_cards, trick_complete_winner and play.
+
 namespace be = dds::belief_evaluation;
 
 namespace
 {
-    // Rank bits, spelled out for readability at the call sites below.
+    // Rank numbers, named for readability below.
     constexpr int Two = 2;
     constexpr int Three = 3;
     constexpr int Queen = 12;
@@ -42,7 +45,7 @@ TEST_F(TrickTest, SeatOnPlayAdvancesFromLeaderByCardsAlreadyPlayed)
     deal.trump = DDS_NOTRUMP;
     deal.first = East;
     deal.currentTrickSuit[0] = Spades;
-    deal.currentTrickRank[0] = Ace;  // East played the ace of spades
+    deal.currentTrickRank[0] = Ace;  // East led the ace of spades
     EXPECT_EQ(be::seat_on_play(deal), South);
 }
 
@@ -111,27 +114,20 @@ TEST_F(TrickTest, LegalCardsAreEveryHeldCardWhenVoidInTheLedSuit)
     EXPECT_EQ(legal[Clubs], 1u << Two);
 }
 
-// --- trick_complete_winner --------------------------------------------------
-//
-// Concrete bridge facts, asserted directly rather than by re-deriving
-// trick_winner()'s comparison logic in the test.
-
 // --- enumerate_legal_cards ------------------------------------------------
 //
-// The Card-list form of legal_cards, for callers that want cards rather than
-// bitmasks. Order is part of the contract, not an accident of the loop: suit
-// ascending, then rank ascending within a suit. make_declarer_children() and
-// the root-child-value loop in evaluate.cpp both index into this, so
-// root_children's own order is this order -- a caller comparing two runs, or a
-// test asserting a particular child first, depends on it.
+// legal_cards as a list of Cards instead of a bitmask. The order is part of
+// the contract: suit ascending, then rank ascending. make_declarer_children()
+// and the root-child loop in evaluate.cpp index into this list, so it fixes
+// the order of root_children.
 
 TEST_F(TrickTest, EnumerateLegalCardsWhenLeadingIsEveryHeldCardSuitThenRank)
 {
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = North;
-    // North to lead: two spades, void in hearts, one diamond, one club --
-    // chosen so the expected order exercises both axes at once.
+    // North to lead: two spades, void in hearts, one diamond, one club. The
+    // expected order tests both suit and rank.
     deal.remainCards[North][Spades] = (1u << Queen) | (1u << Three);
     deal.remainCards[North][Hearts] = 0;
     deal.remainCards[North][Diamonds] = 1u << King;
@@ -163,8 +159,8 @@ TEST_F(TrickTest, EnumerateLegalCardsMustFollowTheLedSuitWhenHoldingIt)
 
     std::vector<be::Card> const legal = be::enumerate_legal_cards(deal, East);
 
-    // The heart is held and is not enumerated: the list carries the
-    // follow-suit rule, it does not merely list the hand.
+    // East's heart is held but not listed: the list applies the
+    // follow-suit rule.
     ASSERT_EQ(legal.size(), 2u);
     EXPECT_EQ(legal[0].suit, Spades);
     EXPECT_EQ(legal[0].rank, Three);
@@ -202,10 +198,15 @@ TEST_F(TrickTest, EnumerateLegalCardsIsEmptyForASeatWithNoCards)
     EXPECT_TRUE(be::enumerate_legal_cards(deal, North).empty());
 }
 
+// --- trick_complete_winner --------------------------------------------------
+//
+// Each test states a bridge fact directly instead of re-deriving
+// trick_winner()'s comparison.
+
 TEST_F(TrickTest, HighestCardOfTheLedSuitWinsInNotrump)
 {
-    // North leads the K of diamonds, East follows low, South follows low,
-    // West (the fourth card) follows the Q. North's king is highest.
+    // North leads the ♦K, East and South follow low, and West's ♦Q is the
+    // fourth card. North's king is highest.
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = North;
@@ -221,10 +222,9 @@ TEST_F(TrickTest, HighestCardOfTheLedSuitWinsInNotrump)
 
 TEST_F(TrickTest, ADiscardNeverWinsEvenIfItOutranksTheLedSuit)
 {
-    // North leads the K of diamonds. East, void in diamonds, discards the
-    // ace of spades — numerically the highest card played, but off-suit in
-    // a notrump contract and therefore never a winner. South and West (the
-    // fourth card) follow diamonds low. North's king still wins.
+    // North leads the ♦K. East, void in diamonds, discards the ♠A. It is the
+    // highest card played, but a discard never wins in notrump. South follows
+    // low in diamonds, and West's ♦Q is the fourth card. North's king wins.
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = North;
@@ -240,10 +240,9 @@ TEST_F(TrickTest, ADiscardNeverWinsEvenIfItOutranksTheLedSuit)
 
 TEST_F(TrickTest, ATrumpRuffWinsOverAHigherCardOfTheLedSuit)
 {
-    // Hearts are trump. North leads the K of spades. East, void in spades,
-    // discards a low club. South, void in spades, ruffs with a heart. West
-    // (the fourth card) follows spades with the Q. South's ruff wins,
-    // despite North's king and West's queen both outranking it in spades.
+    // Hearts are trump. North leads the ♠K. East, void in spades, discards a
+    // low club. South, void in spades, ruffs with a heart. West (the fourth
+    // card) follows with the ♠Q. South's ruff wins.
     Deal deal{};
     deal.trump = Hearts;
     deal.first = North;

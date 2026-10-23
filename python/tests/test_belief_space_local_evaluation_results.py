@@ -1,3 +1,6 @@
+"""Tests for the dict evaluate() returns: p_make, root_children, counters
+and the retained root."""
+
 import unittest
 
 from belief_space_local_evaluation import Card
@@ -17,9 +20,9 @@ def holding(*ranks: int) -> int:
 
 
 def make_one_card_finesse_root() -> dict:
-    # A defender (East) leads at the root -- East/West share a seven-card
-    # pool, North/South hold one card each. Mirrors
-    # exhaustive_layout_source_integration_test.cpp's own fixture.
+    # East, a defender, leads. East and West share a seven-card pool, and
+    # North and South hold one card each. Mirrors the fixture in
+    # exhaustive_layout_source_integration_test.cpp.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = holding(9)
     remain_cards[South][Spades] = holding(8)
@@ -35,11 +38,9 @@ def make_one_card_finesse_root() -> dict:
 
 
 def make_declarer_choice_root() -> dict:
-    # North (declarer) leads at the root and holds two cards -- a genuine
-    # choice, both of which beat every other hand's single card, so
-    # whichever North picks wins the trick: every root_children entry has
-    # value 1.0, and their sum (2.0) does not equal p_make (1.0) -- the
-    # shape the "alternatives, not a partition" distinction needs.
+    # North (declarer) leads with a choice of the ♠A or ♠9. Either beats
+    # every other card, so each root_children entry is 1.0. Their sum, 2.0,
+    # is not p_make, 1.0: the entries are alternatives, not a partition.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = holding(9, 14)
     remain_cards[South][Spades] = holding(8)
@@ -107,14 +108,13 @@ class TestRootChildren(unittest.TestCase):
             self.assertIsInstance(card, Card)
             self.assertEqual(value, 1.0)  # each wins the trick regardless of which is played
         total = sum(value for _card, value in children)
-        self.assertNotEqual(total, entry["p_make"])  # 2.0 != 1.0 -- not a partition here
+        self.assertNotEqual(total, entry["p_make"])  # 2.0 != 1.0: not a partition here
         self.assertEqual(entry["p_make"], 1.0)
 
     def test_root_is_declaring_side_says_which_of_the_two_shapes_it_is(self) -> None:
-        # The two tests above each know which shape they built. A consumer does
-        # not, and cannot tell from the values: summing is meaningful at one
-        # root and meaningless at the other. The flag is what makes that
-        # readable, so it is asserted against the two roots those tests use.
+        # A consumer cannot tell the two shapes apart from the values, and
+        # summing is only meaningful at a defender root. The flag tells
+        # them. It is checked on the two roots used above.
         defender_root = make_one_card_finesse_root()  # East leads
         declarer_root = make_declarer_choice_root()   # North leads
 
@@ -129,8 +129,8 @@ class TestRootChildren(unittest.TestCase):
         self.assertIs(at_declarer["root_is_declaring_side"], True)
 
     def test_root_is_declaring_side_is_present_at_a_terminal_root_too(self) -> None:
-        # root_children is empty there, and the flag still describes the root:
-        # a consumer branching on it must not have to special-case emptiness.
+        # root_children is empty, but the flag still describes the root, so
+        # a consumer need not special-case an empty list.
         root = make_one_card_finesse_root()
         result = evaluate(root, North, 0, ExhaustiveLayoutSource(root, North, 5),
                           declarer_play, defender_play)
@@ -174,17 +174,15 @@ class TestCounters(unittest.TestCase):
             for field in ("nodes", "layout_sum", "layout_min"):
                 self.assertIn(field, depth)
 
-        # replenish_below is unset, so no scan ever ran -- the vector can
-        # legitimately be empty (an index beyond it means "no node was
-        # ever visited at this depth", not that a scan attempted nothing).
+        # replenish_below is unset, so no scan ran and the list may be
+        # empty. A depth past its end means no node was visited there.
         for depth in counters["replenishment_by_depth"]:
             for field in ("attempted", "succeeded", "layouts_added", "at_calls"):
                 self.assertIn(field, depth)
 
     def test_collecting_counters_changes_no_answer(self) -> None:
-        # Mirrors counters_test.cpp's own paired-run check, from Python:
-        # the same fixture with and without collect_counters, p_make
-        # bitwise equal both directions.
+        # As in counters_test.cpp: p_make is bitwise equal with and without
+        # collect_counters.
         root = make_one_card_finesse_root()
 
         without = evaluate(
@@ -217,10 +215,10 @@ class TestRetainedRoot(unittest.TestCase):
         self.assertEqual(len(retained["root_keys"]), 7)
         self.assertIn("is_sample", retained)
         self.assertIn("no_more_available", retained)
-        # kappa must never cross -- the evaluator's own sample-weight
-        # bookkeeping, not something a caller reading a result needs.
+        # kappa is the evaluator's internal sample weight and must not
+        # appear.
         self.assertNotIn("kappa", retained)
-        # Not a tree: nothing here names a child or a further recursion.
+        # The root node only, not a tree.
         self.assertNotIn("children", retained)
 
 

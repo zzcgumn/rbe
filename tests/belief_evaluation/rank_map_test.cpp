@@ -7,12 +7,13 @@
 #include <belief_evaluation/types.hpp>
 #include <belief_evaluation/rank_map.hpp>
 
-// A namespace alias plus targeted `using` declarations, not `using namespace
-// dds::belief_evaluation;` -- this file includes api/dds_data_types.hpp
-// directly (declaring global ::Card), so a `using namespace` here would make
-// any future bare `Card` reference ambiguous between ::Card and
-// dds::belief_evaluation::Card rather than a clear compile error naming
-// which one was meant.
+// Tests for make_rank_map: the round trip between absolute and relative
+// ranks, bounds safety, the aggr convention and masking of stray bits.
+
+// A namespace alias and targeted `using` declarations, not `using
+// namespace dds::belief_evaluation;`. This file includes
+// api/dds_data_types.hpp, which declares a global ::Card, so a bare `Card`
+// would be ambiguous instead of a clear compile error.
 namespace be = dds::belief_evaluation;
 using be::RankMap;
 using be::make_rank_map;
@@ -94,10 +95,10 @@ TEST_F(RankMapTest, BuildsAggrAsUnionOfAllFourHandsHoldingsPerSuit)
 
 TEST_F(RankMapTest, MasksAggrTo13BitsEvenWithStrayRemainCardsBitsAboveRankFourteen)
 {
-    // A well-formed Deal never sets a remainCards bit above rank 14, but
-    // nothing in the type enforces that. Without masking after `>> 2`,
-    // aggr[suit] could exceed 0x1FFF (8191) and later index rel_rank/
-    // win_ranks/highest_rank (all sized [8192]) out of bounds.
+    // A well-formed Deal never sets a remainCards bit above rank 14, but the
+    // type allows it. Without the mask after `>> 2`, aggr[suit] could exceed
+    // 0x1FFF (8191). It would then index rel_rank, win_ranks and highest_rank
+    // (each sized [8192]) out of bounds.
     Deal deal{};
     deal.remainCards[0][0] = (1u << 2) | (1u << 20);  // deuce, plus a stray high bit
 

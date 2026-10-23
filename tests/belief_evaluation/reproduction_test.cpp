@@ -10,12 +10,15 @@
 
 #include "test_support.hpp"
 
-// A namespace alias plus targeted `using` declarations, not `using namespace
-// dds::belief_evaluation;` -- this file includes api/dds_data_types.hpp
-// directly (declaring global ::Card), so a `using namespace` here would make
-// any future bare `Card` reference ambiguous between ::Card and
-// dds::belief_evaluation::Card rather than a clear compile error naming
-// which one was meant.
+// End-to-end evidence that the early cuts fire on a fixture shaped like the
+// oracle fixtures (several tricks, several layouts) and change no answer.
+// cuts_test.cpp tests each cut on its own. The run with tier 2 needs the
+// solver, so it is in double_dummy_bound_test.cpp.
+
+// A namespace alias and targeted `using` declarations, not `using
+// namespace dds::belief_evaluation;`. This file includes
+// api/dds_data_types.hpp, which declares a global ::Card, so a bare `Card`
+// would be ambiguous instead of a clear compile error.
 namespace be = dds::belief_evaluation;
 using be::DeclarerStrategy;
 using be::EvaluateOptions;
@@ -29,30 +32,6 @@ using be::evaluate;
 using be::holding;
 using be::single_card_declarer_play;
 using be::single_card_defender;
-
-// The headline acceptance criterion for early cuts: every cut lands with
-// no change to any answer, and this file is where that end-to-end claim
-// gets made, not just per-cut in cuts_test.cpp.
-//
-// Every pre-existing test in this suite passing unchanged is verified by
-// diffing this directory against the commit this work branched from and
-// confirming zero deletions -- not asserted here, since it is a property
-// of the diff, not of any one test's runtime behaviour. Recorded in the
-// commit history for this work.
-//
-// Run (a) -- tier 1 only, against a fixture whose shape is representative
-// of this suite's own oracle-style fixtures (several tricks, several
-// layouts) -- lives below. Tier 1 has no flag to disable, so it is already
-// exercised by literally every one of the 150 pre-existing tests, whatever
-// their own delta; this file adds the missing half of that claim, evidence
-// that the cuts actually *fire* on a fixture of that shape, which no
-// individual pre-existing test was asked to demonstrate.
-//
-// Run (b) -- tier 1 and tier 2 together, against a delta that satisfies
-// EvaluateOptions::delta_is_double_dummy_optimal -- needs the solver
-// (DoubleDummyDefender paired with DoubleDummyBound, the intended sound
-// configuration), so it lives in double_dummy_bound_test.cpp instead,
-// alongside the double-dummy machinery it depends on.
 
 namespace
 {
@@ -85,12 +64,10 @@ class ReproductionTest : public ::testing::Test
 
 TEST_F(ReproductionTest, TierOneCutsFireOnAThreeTrickOracleShapedFixture)
 {
-    // North holds the top three spades outright (three certain tricks,
-    // whoever leads and whatever the defenders' three-way split), East on
-    // lead, fully deterministic under single_card_defender /
-    // single_card_declarer_play. North needs only 2 of the 3 available
-    // tricks -- the already-made cut must fire right after trick 2, saving
-    // the whole of trick 3's recursion.
+    // North holds the top three spades: three certain tricks, whatever the
+    // defenders hold. East on lead, deterministic under the scripted
+    // strategies. North needs only 2 of the 3 tricks, so the already-made cut
+    // fires right after trick 2 and skips trick 3.
     Deal deal{};
     deal.trump = DDS_NOTRUMP;
     deal.first = East;
@@ -114,22 +91,18 @@ TEST_F(ReproductionTest, TierOneCutsFireOnAThreeTrickOracleShapedFixture)
     EvaluationValue const& value = with_cuts.by_strategy.at(1u);
     EXPECT_EQ(value.p_make, 1.0);
     ASSERT_TRUE(value.counters.has_value());
-    // Hand-counted tree, single deterministic path, needed = 2 of 3: root,
-    // then one node per card played -- East, South, West, North for trick 1
-    // (nodes 2-5). North's queen/king/ace always beats the defenders' low
-    // cards, so North wins trick 1 and leads trick 2 -- North, East, South,
-    // West this time (nodes 6-9). Node 9, the one reached right after
-    // West's card resolves trick 2 (tricks_won 2 >= needed 2), is where the
-    // already-made cut fires -- visited but not expanded, so trick 3 is
-    // never touched at all.
+    // Hand-counted tree, one deterministic path, needing 2 of 3: the root,
+    // then one node per card. Trick 1 is East, South, West, North (nodes
+    // 2-5). North's honours beat the defenders' low cards, so North wins and
+    // leads trick 2: North, East, South, West (nodes 6-9). At node 9, after
+    // trick 2 resolves (tricks_won 2 >= needed 2), the already-made cut fires:
+    // visited but not expanded, so trick 3 is never touched.
     constexpr std::uint64_t NodesWithCuts = 9;
     EXPECT_EQ(value.counters->nodes_visited, NodesWithCuts);
 
-    // The uncut comparison: needing all 3 tricks instead of 2 removes any
-    // opportunity for the already-made cut to fire early, so the
-    // recursion runs to its natural terminal node -- the same technique
-    // cuts_test.cpp's own fixtures use throughout, since tier 1 has no flag
-    // to disable directly.
+    // The uncut comparison: needing all 3 tricks gives the already-made cut no
+    // chance to fire early, so the recursion runs to its terminal node. Tier 1
+    // has no off switch, so cuts_test.cpp uses the same technique.
     EvaluationResult const uncut_comparison = evaluate(
         deal,
         North,
@@ -140,43 +113,33 @@ TEST_F(ReproductionTest, TierOneCutsFireOnAThreeTrickOracleShapedFixture)
         EvaluateOptions{.collect_counters = true});
     ASSERT_FALSE(uncut_comparison.error.has_value());
     ASSERT_TRUE(uncut_comparison.by_strategy.at(1u).counters.has_value());
-    // root + 3 full tricks (4 plies each) = 1 + 12 = 13, the natural
-    // terminal node included (is_dead()/already_made() both false there
-    // until the very last card, so no cut intercepts it early either).
+    // root + 3 tricks of 4 plies = 1 + 12 = 13, including the terminal node
+    // (is_dead() and already_made() stay false until the last card).
     constexpr std::uint64_t NodesWithoutTheEarlyCut = 13;
     EXPECT_EQ(
         uncut_comparison.by_strategy.at(1u).counters->nodes_visited, NodesWithoutTheEarlyCut);
 
-    // The cut rate: 4 of 13 nodes the uncut recursion would have visited
-    // (the whole of trick 3) were pruned by tier 1 on this fixture --
-    // roughly 31%, for a fixture with only one real cut opportunity.
+    // The cut removed 4 of the 13 nodes (all of trick 3), about 31%, on a
+    // fixture with one cut opportunity.
     EXPECT_LT(NodesWithCuts, NodesWithoutTheEarlyCut);
 }
 
-// Convergence toward the exhaustive answer as the sample size M rises, on a
-// fixture whose exhaustive answer is neither 0 nor 1 -- required, since a
-// fixture that always makes or always fails would satisfy "converges" by
-// luck, proving nothing about M actually mattering.
+// Convergence towards the exhaustive answer as the sample size M rises.
+// The exhaustive answer must be neither 0 nor 1: a fixture that always
+// makes or always fails would "converge" by luck.
 
 namespace
 {
-    /// North holds a single middling card (Nine); South (dummy) holds a
-    /// single safely-lower card (Eight, never the trick's highest);
-    /// East and West share a seven-card pool {Two..Seven, Ten} -- six
-    /// ranks below North's Nine and exactly one (Ten) above it. East on
-    /// lead, forced (single_card_defender: its only card), West forced
-    /// too (its own lowest remaining, which is always one of the six low
-    /// ranks regardless of which one East took, since removing one low
-    /// rank still leaves several lower than Ten in West's hand). Whoever
-    /// holds Ten decides the trick: if East does, East's own led card
-    /// (10) already exceeds North's Nine before anyone else plays, and
-    /// nothing West or North holds beats it -- declarer's side loses this
-    /// trick outright. If West holds Ten instead (every other `east_rank`
-    /// choice), West's forced *lowest* card is never the Ten it happens to
-    /// also hold, so nothing ever beats North's Nine -- declarer's side
-    /// wins. Six of the seven pool assignments to East are winning, one is
-    /// not: the true, hand-derived answer is 6/7, confirmed independently
-    /// by the exhaustive run below rather than assumed.
+    /// North holds the Nine and South (dummy) the Eight, never the highest
+    /// card. East and West share the pool {Two..Seven, Ten}: six ranks below
+    /// the Nine and one (Ten) above it. East leads its only card. West plays
+    /// its lowest card, always one of the low ranks.
+    ///
+    /// Whoever holds the Ten decides the trick. If East holds it, East's lead
+    /// beats the Nine and nothing beats it: declarer loses. If West holds it,
+    /// West's lowest card is never the Ten, so the Nine wins: declarer wins.
+    /// Six of the seven assignments to East win, so the true answer is 6/7.
+    /// The exhaustive run below confirms it.
     auto make_finesse_style_layout(int east_rank) -> Deal
     {
         Deal deal{};
@@ -200,13 +163,10 @@ namespace
 
 TEST_F(ReproductionTest, ConvergesTowardTheExhaustiveAnswerAsMRises)
 {
-    // Two identical rounds of the seven pool assignments, Ten last in
-    // each round, for 14 layouts total -- larger than any fixture this
-    // module has built so far, since a sample of 3 from a space of 4
-    // shows nothing. The two rounds
-    // being identical is deliberate: it keeps the true ratio exactly 6/7
-    // at M = 7 as well as at M = 14, so the comparison below is against a
-    // value pinned two independent ways, not just the one full run.
+    // Two identical rounds of the seven assignments, Ten last in each: 14
+    // layouts. (A sample of 3 from a space of 4 would show nothing.) The
+    // rounds are identical so the true ratio is exactly 6/7 at M = 7 and at
+    // M = 14, pinning the comparison two ways.
     std::vector<Deal> layouts;
     for (int round = 0; round < 2; ++round)
     {
@@ -225,15 +185,13 @@ TEST_F(ReproductionTest, ConvergesTowardTheExhaustiveAnswerAsMRises)
         evaluate(layouts.front(), North, /*tricks_needed=*/1, source, pi, single_card_defender);
     ASSERT_FALSE(exhaustive.error.has_value());
     double const true_p_make = exhaustive.by_strategy.at(1u).p_make;
-    // The hand-derived answer, confirmed rather than assumed: 6/7 was
-    // reasoned out above from the fixture's own construction, not read
-    // off this run and pasted back.
+    // The hand-derived answer: 6/7 was reasoned from the construction above,
+    // not read off this run.
     EXPECT_NEAR(true_p_make, 6.0 / 7.0, 1e-9);
 
-    // M = 6: source order puts Ten last in each round, so the first six
-    // layouts scanned are exactly the six winning assignments -- the
-    // sample has not yet seen the one losing case, and reports total
-    // (false) certainty.
+    // M = 6: Ten is last in each round, so the first six layouts are the six
+    // winners. The sample has not seen the losing case and reports false
+    // certainty.
     EvaluationResult const m6 = evaluate(
         layouts.front(),
         North,
@@ -245,10 +203,9 @@ TEST_F(ReproductionTest, ConvergesTowardTheExhaustiveAnswerAsMRises)
     ASSERT_FALSE(m6.error.has_value());
     EXPECT_DOUBLE_EQ(m6.by_strategy.at(1u).p_make, 1.0);
 
-    // M = 7: exactly one full round, so the sample now contains the one
-    // losing assignment in the same proportion the whole 14-layout space
-    // does -- the estimate lands on the true ratio, not merely closer to
-    // it.
+    // M = 7: one full round, so the sample holds the losing assignment in the
+    // same proportion as the whole space. The estimate is exactly the true
+    // ratio.
     EvaluationResult const m7 = evaluate(
         layouts.front(),
         North,
@@ -260,12 +217,10 @@ TEST_F(ReproductionTest, ConvergesTowardTheExhaustiveAnswerAsMRises)
     ASSERT_FALSE(m7.error.has_value());
     EXPECT_NEAR(m7.by_strategy.at(1u).p_make, true_p_make, 1e-9);
 
-    // Convergence, stated as a distance that strictly decreases: M = 6's
-    // estimate is 1/7 away from the truth (a false certainty caused by
-    // missing the one rare bad case entirely); M = 7's is 0. This is the
-    // number that matters for a future replenishment scheme to size
-    // itself against -- how far down a small sample can be from the
-    // truth, not just that a large enough one eventually matches it.
+    // Convergence as a strictly decreasing distance: M = 6 is 1/7 from the
+    // truth (false certainty from missing the one losing case), M = 7 is 0.
+    // This is how far a small sample can be from the truth, not only that a
+    // large enough one matches it.
     double const error_at_six = std::abs(m6.by_strategy.at(1u).p_make - true_p_make);
     double const error_at_seven = std::abs(m7.by_strategy.at(1u).p_make - true_p_make);
     EXPECT_LT(error_at_seven, error_at_six);
@@ -275,11 +230,10 @@ TEST_F(ReproductionTest, ConvergesTowardTheExhaustiveAnswerAsMRises)
 // Replenishment: reproduction, convergence, and the measurements.
 // ===========================================================================
 
-// M >= N still reproduces the exhaustive run bitwise, with
-// replenishment enabled. If a scan at depth accepts even one layout here,
-// either the exclusion set is missing a duplicate or the replay is
-// producing a layout that differs from the one already present -- both
-// bugs this criterion exists to catch, not a tolerance to reach for.
+// M >= N still reproduces the exhaustive run bitwise with replenishment
+// enabled. If a scan accepts even one layout here, either the exclusion
+// set misses a duplicate or the replay produces a layout different from
+// the one present. Both are bugs; no tolerance applies.
 TEST_F(ReproductionTest, MGreaterThanOrEqualToNReproducesExhaustiveBitwiseWithReplenishmentEnabled)
 {
     std::vector<Deal> layouts;
@@ -297,12 +251,10 @@ TEST_F(ReproductionTest, MGreaterThanOrEqualToNReproducesExhaustiveBitwiseWithRe
         evaluate(layouts.front(), North, /*tricks_needed=*/1, source, pi, single_card_defender);
     ASSERT_FALSE(exhaustive.error.has_value());
 
-    // sample_size = 14 = N, and replenish_below set wide enough (100) that
-    // the trigger fires at every node below it -- effectively everywhere,
-    // since no node in this fixture ever holds more than 14 layouts. Every
-    // one of those scans must find nothing: the root already drew every
-    // consistent layout, so every node below it already holds the true
-    // complete set for its own narrower path too.
+    // sample_size = 14 = N, and replenish_below = 100, so the trigger fires at
+    // every node (no node holds more than 14 layouts). Every scan must find
+    // nothing: the root drew every consistent layout, so each node already
+    // holds the complete set for its path.
     EvaluationResult const with_replenishment = evaluate(
         layouts.front(),
         North,
@@ -315,18 +267,13 @@ TEST_F(ReproductionTest, MGreaterThanOrEqualToNReproducesExhaustiveBitwiseWithRe
     EXPECT_EQ(exhaustive.by_strategy.at(1u).p_make, with_replenishment.by_strategy.at(1u).p_make);
 }
 
-// Convergence, on the fixture above -- and an honest
-// finding about it. Node-local replenishment can only ever add a
-// candidate to a node whose own layout count has already dropped below
-// `sample_size`, which requires a defender split to have already
-// happened on that path; and it can only accept a candidate matching
-// every defender ply already played there. On this specific fixture,
-// the only defender ply *is* the one that distinguishes the missing
-// "ten" layout from the six present at M = 6 -- there is no earlier,
-// separate split to create room before it, so no node exists yet for
-// "ten" to join by the time any node on this path could accept it.
-// Replenishment cannot recover this fixture's own M = 6 case, whatever
-// replenish_below is set to -- confirmed directly below, not assumed.
+// Replenishment cannot recover this fixture's M = 6 case, whatever
+// replenish_below is. A node can gain a layout only once its count has
+// dropped below `sample_size`. That needs an earlier defender split on its
+// path. The node also accepts only candidates that match every defender ply
+// played there. Here the only defender ply is the one that separates the
+// missing Ten layout from the six present. No earlier split creates a node
+// the Ten layout could join. The test below confirms this.
 TEST_F(ReproductionTest, ReplenishmentCannotRecoverThisFixturesOwnMEqualsSixBecauseItHasNoEarlierSplit)
 {
     std::vector<Deal> layouts;
@@ -349,24 +296,21 @@ TEST_F(ReproductionTest, ReplenishmentCannotRecoverThisFixturesOwnMEqualsSixBeca
         single_card_defender,
         EvaluateOptions{.sampling = {.sample_size = 6u, .replenish_below = 100u}});
     ASSERT_FALSE(result.error.has_value());
-    EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);  // unchanged from the no-replenishment M = 6 case
+    EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);  // the same as M = 6 without replenishment
 }
 
 namespace
 {
-    /// The same finesse pool and true ratio as make_finesse_style_layout,
-    /// reshaped so a node-local scan can actually reach the missing
-    /// layout: a harmless spade split (East holds one of two fillers,
-    /// jack or queen, split against West by a fixed two-card pool) comes
-    /// *before* the heart finesse position, giving replenishment a node
-    /// already below sample_size to act on before the heart ply -- the
-    /// one that matters -- has happened. East leads (not North): East's
-    /// own delta picks its lowest-indexed held suit when leading (spades,
-    /// forcing the harmless split first), and a defender root has no
-    /// "explore every other legal first card" step the way a declarer
-    /// root does, so North holding two cards (the spade ace and the heart
-    /// nine, one per trick) never causes an alternate subtree to be
-    /// explored the way it would if North itself were on lead.
+    /// The finesse pool and ratio of make_finesse_style_layout, reshaped so a
+    /// node-local scan can reach the missing layout. A harmless spade split
+    /// (East holds the jack or the queen, West the other) comes before the
+    /// heart finesse. That gives replenishment a node below sample_size before
+    /// the heart ply, the one that matters.
+    ///
+    /// East leads, not North. East's delta leads its lowest-indexed suit
+    /// (spades), forcing the split first. A defender root does not explore
+    /// every other legal first card, as a declarer root does, so North's two
+    /// cards (the spade ace and heart nine) open no extra subtree.
     auto make_split_then_finesse_layout(int east_spade, int east_heart) -> Deal
     {
         Deal deal{};
@@ -394,12 +338,10 @@ namespace
 
 TEST_F(ReproductionTest, ConvergesViaReplenishmentOnASplitThenFinesseVariantOfTheFixtureAbove)
 {
-    // Eight layouts: three winning hearts under each spade filler (six
-    // total, matching the fixture above's own M = 6 count), then the one
-    // losing heart (ten) under each filler, last in source order --
-    // sample_size = 6 draws exactly the six winning layouts, missing both
-    // "ten" variants, exactly as the fixture above's own M = 6 does for
-    // its seventh.
+    // Eight layouts: three winning hearts under each spade filler (six,
+    // matching the M = 6 count above), then the losing heart (Ten) under each
+    // filler, last in source order. sample_size = 6 draws the six winners and
+    // misses both Ten layouts, as M = 6 did above.
     std::vector<Deal> const layouts{
         make_split_then_finesse_layout(Jack, Two),
         make_split_then_finesse_layout(Queen, Three),
@@ -417,11 +359,10 @@ TEST_F(ReproductionTest, ConvergesViaReplenishmentOnASplitThenFinesseVariantOfTh
     EvaluationResult const exhaustive =
         evaluate(layouts.front(), North, /*tricks_needed=*/2, source, pi, single_card_defender);
     ASSERT_FALSE(exhaustive.error.has_value());
-    // Hand-derived: 6 of 8 layouts win (every heart but the two tens), 2
-    // lose -- 6/8 = 3/4. A different ratio from the earlier fixture's own
-    // 6/7, by construction: recovering the *same* ratio would need the
-    // missing layout to be the fixture's only defender ply, which is
-    // exactly the shape the test above proves replenishment cannot reach.
+    // Hand-derived: 6 of 8 layouts win (every heart but the two Tens), so
+    // 6/8 = 3/4. The ratio differs from 6/7 by construction: the same ratio
+    // would need the missing layout to sit at the only defender ply, the shape
+    // the test above shows replenishment cannot reach.
     EXPECT_NEAR(exhaustive.by_strategy.at(1u).p_make, 0.75, 1e-9);
 
     EvaluationResult const m6_no_replenishment = evaluate(
@@ -444,8 +385,7 @@ TEST_F(ReproductionTest, ConvergesViaReplenishmentOnASplitThenFinesseVariantOfTh
         single_card_defender,
         EvaluateOptions{.sampling = {.sample_size = 6u, .replenish_below = 6u}});
     ASSERT_FALSE(m6_with_replenishment.error.has_value());
-    // Side by side: 1.0 without replenishment, 0.75 with it -- exactly the
-    // exhaustive answer, not merely closer to it.
+    // 1.0 without replenishment, 0.75 with it: exactly the exhaustive answer.
     double const p_make_without = m6_no_replenishment.by_strategy.at(1u).p_make;
     double const p_make_with = m6_with_replenishment.by_strategy.at(1u).p_make;
     EXPECT_DOUBLE_EQ(p_make_without, 1.0);
@@ -453,20 +393,15 @@ TEST_F(ReproductionTest, ConvergesViaReplenishmentOnASplitThenFinesseVariantOfTh
     EXPECT_LT(std::abs(p_make_with - 0.75), std::abs(p_make_without - 0.75));
 }
 
-// This one is deliberately EXPECT_EQ on a double, not EXPECT_NEAR or
-// EXPECT_DOUBLE_EQ (which itself tolerates a 4-ULP difference): a sampled,
-// replenishing fixture -- exercising the kappa rescale, the node-local
-// scan and the replenishment trigger, not just straight-line arithmetic --
-// where the true answer happens to be exactly representable (6 winning of
-// 8 layouts, 0.75, no rounding in the ratio itself). That makes bitwise
-// equality the right bar rather than an unreasonably tight one: this is
-// the fixture proving the default build and -c opt agree exactly, not
-// merely to within tolerance, on a path where NDEBUG-only divergence (a
-// discarded assert argument computing something with a side effect, an
-// -DNDEBUG-conditional code path) would actually have somewhere to show
-// up. If this ever starts failing under -c opt while the default build
-// still passes, that is exactly the class of bug this test exists to
-// catch -- do not loosen it to EXPECT_NEAR.
+// EXPECT_EQ on a double on purpose, not EXPECT_NEAR or EXPECT_DOUBLE_EQ
+// (which allows 4 ULP). The fixture samples and replenishes, so it runs
+// the kappa rescale, the node-local scan and the trigger. Its true answer,
+// 6 of 8 = 0.75, is exactly representable, so bitwise equality is the
+// right bar. It shows that the default build and -c opt agree exactly on a
+// path where an NDEBUG-only difference (an assert argument with a side
+// effect, an NDEBUG-conditional path) could show up. If it fails under
+// -c opt but passes in the default build, that is the bug it exists to
+// catch. Do not loosen it to EXPECT_NEAR.
 TEST_F(ReproductionTest, PMakeOnASampledReplenishingFixtureIsExactlyThreeQuarters)
 {
     std::vector<Deal> const layouts{
@@ -495,14 +430,11 @@ TEST_F(ReproductionTest, PMakeOnASampledReplenishingFixtureIsExactlyThreeQuarter
     EXPECT_EQ(result.by_strategy.at(1u).p_make, 0.75);
 }
 
-// Mass conserved across a fixture that replenishes
-// repeatedly -- both spade branches above replenish once each, so the
-// same fixture already exercises this; checked here against the total
-// mass directly (kappa * layout count is not observable from outside,
-// but node_mass's own invariant is exactly what the exhaustive-vs-
-// replenished agreement above already certifies: if either replenishment
-// had rescaled kappa wrongly, the two runs above would not agree to
-// floating-point tolerance, and they do).
+// Mass is conserved when replenishment runs more than once: both spade
+// branches above replenish once each. kappa times the layout count is not
+// observable from outside, but the agreement with the exhaustive answer
+// above certifies it. A wrongly rescaled kappa in either branch would break
+// that agreement.
 TEST_F(ReproductionTest, MassIsConservedAcrossRepeatedReplenishmentOnTheSplitThenFinesseFixture)
 {
     std::vector<Deal> const layouts{
@@ -529,8 +461,7 @@ TEST_F(ReproductionTest, MassIsConservedAcrossRepeatedReplenishmentOnTheSplitThe
     ASSERT_FALSE(result.error.has_value());
     ASSERT_TRUE(result.by_strategy.at(1u).counters.has_value());
 
-    // Both spade branches replenish (2 attempts, both succeeding) -- the
-    // repeated-replenishment case this criterion asks for.
+    // Both spade branches replenish: 2 attempts, both succeed.
     std::uint64_t total_attempted = 0;
     std::uint64_t total_succeeded = 0;
     for (be::DepthReplenishmentStats const& stats : result.by_strategy.at(1u).counters->replenishment_by_depth)
@@ -541,14 +472,10 @@ TEST_F(ReproductionTest, MassIsConservedAcrossRepeatedReplenishmentOnTheSplitThe
     EXPECT_EQ(total_attempted, 2u);
     EXPECT_EQ(total_succeeded, 2u);
 
-    // Mass conservation itself: the total probability mass this run
-    // reports (p_make summed with what every dead branch discarded is not
-    // observable from outside, but the exhaustive-agreement test above
-    // already is the mass-conservation check in its strongest form -- a
-    // kappa rescaled even one ULP wrong at either branch would show up
-    // there as a p_make that does not match the true 3/4 to tolerance.
-    // Restated here directly: p_make itself is a mass (node_mass summed
-    // up the tree), and it lands on the hand-derived value.
+    // The exhaustive agreement above is the strongest mass check: a kappa
+    // rescaled even one ULP wrong in either branch would move p_make off the
+    // true 3/4. Restated here: p_make is a mass (node_mass summed up the
+    // tree), and it equals the hand-derived value.
     EXPECT_NEAR(result.by_strategy.at(1u).p_make, 0.75, 1e-9);
 }
 
@@ -586,15 +513,13 @@ TEST_F(ReproductionTest, ScanToHitAndDeltaCallsPerReplenishmentAreReportedOnTheS
     ASSERT_FALSE(result.error.has_value());
     ASSERT_TRUE(result.by_strategy.at(1u).counters.has_value());
 
-    // Scan-to-hit by depth: at() calls per layout added, derived from the
-    // stored counts rather than timed. Both branches' scans land at depth
-    // 1 (East, the root's own seat, leads the spade split -- its children
-    // are reached at depth 1, not depth 2, since evaluate()'s own root
-    // block dispatches the split itself). Each branch's own scan examines
-    // all 8 source entries: its own already-present layouts, the other
-    // filler's layouts rejected on the recorded spade ply (no delta
-    // call), and the matching "ten" accepted -- 8 at() calls each, 16
-    // total, 2 layouts added -- a scan-to-hit of 8.
+    // Scan-to-hit by depth: at() calls per layout added, from the stored
+    // counts, not timed. Both scans happen at depth 1: East, on lead at the
+    // root, leads the spade split, and evaluate()'s root handling dispatches
+    // it. Each scan examines all 8 source entries: its own layouts, the other
+    // filler's layouts (rejected on the recorded spade ply, with no delta
+    // call), and the matching Ten layout (accepted). So 8 at() calls each,
+    // 16 in total, 2 layouts added: a scan-to-hit of 8.
     std::vector<be::DepthReplenishmentStats> const& by_depth =
         result.by_strategy.at(1u).counters->replenishment_by_depth;
     std::uint64_t total_at_calls = 0;
@@ -608,23 +533,19 @@ TEST_F(ReproductionTest, ScanToHitAndDeltaCallsPerReplenishmentAreReportedOnTheS
     double const scan_to_hit = static_cast<double>(total_at_calls) / static_cast<double>(total_layouts_added);
     EXPECT_EQ(total_at_calls, 16u);
     EXPECT_EQ(total_layouts_added, 2u);
-    EXPECT_DOUBLE_EQ(scan_to_hit, 8.0);  // the one genuinely derived (divided) quantity here
+    EXPECT_DOUBLE_EQ(scan_to_hit, 8.0);  // the one derived (divided) quantity here
 
-    // Delta calls, hand-derived from the fixture's own shape. Four
-    // defender plies exist in this two-trick ending -- East's spade lead
-    // (history 0), West's spade follow (history 2), East's heart follow
-    // (history 5), West's heart follow, completing trick 2 (history 7) --
-    // North and South are declarer-side throughout and call delta never.
-    // Ordinary expansion: East's spade ply queries delta once per root
-    // layout (6, since the root itself is the split here); each of the
-    // other three defender plies queries delta once per layout then
-    // present in each branch (4 per branch, post-replenishment, since
-    // both "ten" layouts join before West's spade ply is ever reached) --
-    // 3 plies * 4 layouts * 2 branches = 24. Replay: each replenished
-    // "ten" candidate's own p_j is accumulated by replaying delta at
-    // every defender ply already crossed at the point it joins (depth 1,
-    // right after East's spade lead) -- exactly the one ply, East's own
-    // spade lead -- so 1 replay delta call per candidate, 2 total.
-    // Grand total: 6 + 24 + 2 = 32.
+    // Delta calls, hand-derived. The two-trick ending has four defender
+    // plies: East's spade lead (history 0), West's spade follow (history 2),
+    // East's heart follow (history 5) and West's heart follow, ending trick 2
+    // (history 7). North and South never call delta.
+    // - Expansion: East's spade lead queries delta once per root layout (6).
+    //   Each of the other three plies queries it once per layout in each
+    //   branch: 4 per branch after replenishment, since both Ten layouts join
+    //   before West's spade ply. 3 plies * 4 layouts * 2 branches = 24.
+    // - Replay: each replenished Ten layout replays delta at every defender ply
+    //   already crossed where it joins (depth 1, after East's spade lead). That
+    //   is one ply, so 1 call per layout, 2 in total.
+    // Total: 6 + 24 + 2 = 32.
     EXPECT_EQ(delta_calls, 32u);
 }

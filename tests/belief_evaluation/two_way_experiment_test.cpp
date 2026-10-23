@@ -19,12 +19,11 @@
 
 #include "test_support.hpp"
 
-// The plan's headline: one hand, evaluated two ways -- a root at trick one
-// (the show-out occurring during the search) against a root built after
-// that trick (the play history supplied) -- giving the same p_make. See
-// docs/replenished_belief_evaluation/algorithm.md and this module's own
-// void_derivation.hpp / history_verification.hpp / constrained_decomposition.hpp
-// for the machinery this exercises end to end.
+// One hand evaluated two ways must give the same p_make: a root at trick
+// one, where the show-out happens during the search, and a root after that
+// trick, with the play history supplied. This exercises void_derivation.hpp,
+// history_verification.hpp and constrained_decomposition.hpp end to end
+// (see also docs/replenished_belief_evaluation/algorithm.md).
 
 namespace be = dds::belief_evaluation;
 
@@ -88,9 +87,8 @@ namespace
         return cards;
     }
 
-    /// Builds a root + history pair that together account for exactly the
-    /// 52-card deck -- see history_verification_test.cpp's own copy of this
-    /// helper for the full rationale.
+    /// Builds a root and history that together account for exactly the
+    /// 52-card deck (see the copy in history_verification_test.cpp).
     auto build_deal(
         std::vector<CardPair> const& played, std::function<int(int, int)> const& hand_for)
         -> std::pair<Deal, PlayTraceBin>
@@ -115,13 +113,10 @@ namespace
         return {root, history};
     }
 
-    /// A PlayRecord built from a (history, opening_leader) pair this
-    /// file's own fixtures already assert Consistent via
-    /// history_verdict() right after the ExhaustiveLayoutSource call that
-    /// follows -- a thin wrapper so that assertion stays the one place
-    /// each fixture's consistency is actually checked, rather than
-    /// repeating PlayRecord::create()'s own two-step return at every call
-    /// site.
+    /// A PlayRecord from a (history, opening_leader) pair. Each fixture asserts
+    /// the pair Consistent with history_verdict() right after building its
+    /// ExhaustiveLayoutSource, so that stays the one consistency check, and
+    /// this wrapper hides PlayRecord::create()'s two-part return.
     auto make_record(PlayTraceBin const& history, int opening_leader) -> PlayRecord
     {
         return *PlayRecord::create(history, opening_leader).first;
@@ -132,35 +127,29 @@ class TwoWayExperimentTest : public ::testing::Test
 {
 };
 
-// --- the headline: inside vs before, and the no-history contrast ----------
+// --- inside against before, and the no-history contrast --------------------
 //
-// North (declarer) holds the ace of hearts and the nine of spades; South
-// (dummy) the king of hearts and the eight of spades -- a two-trick
-// ending. Trick one: North leads the heart ace, East -- void in hearts --
-// discards a spade, South follows the king, West follows its lower heart.
-// North's ace wins, so North leads trick two: the nine of spades, low
-// toward dummy's eight. Whether North's nine wins now depends on whether
-// East's one remaining card beats it -- and East's pool, once its void in
-// hearts is applied, is the six spades {king, three, four, five, six,
-// ten} rather than those six plus the outstanding heart queen.
+// North (declarer) holds the heart ace and spade nine; South (dummy) the
+// heart king and spade eight: a two-trick ending. Trick one: North leads
+// the heart ace, East (void in hearts) discards a spade, South plays the
+// king and West its lower heart. North wins and leads the spade nine
+// towards dummy's eight. Whether the nine wins depends on whether East's
+// last card beats it. Once East's heart void is applied, East's pool is
+// the six spades {king, three, four, five, six, ten}, without the
+// outstanding heart queen.
 //
-// The "inside" construction searches from trick one, where East's actual
-// trick-one card is still uncertain -- so its root-level p_make averages
-// over every way that card could go, not only the branch that matches
-// what the "before" root's history records. What this test actually
-// compares against "before" is the belief view at the one node inside
-// that search which *does* match -- North on lead for trick two, having
-// just watched East discard specifically the two of spades -- captured
-// directly from pi, in restricted_choice_test.cpp's own style, rather
-// than trusted to survive intact through the root-level aggregate.
+// The "inside" root searches from trick one, where East's trick-one card
+// is still uncertain, so its root p_make averages over every way that card
+// could go. The test therefore compares "before" with the belief view at
+// the one inside node that matches it: North on lead for trick two, having
+// seen East discard the spade two. It is captured from pi, as in
+// restricted_choice_test.cpp, rather than read from the root aggregate.
 //
-// East's discard on trick one is scripted to be uniform among whatever it
-// holds when void, not "always the lowest": a deterministic "lowest
-// legal" choice would itself carry information about East's other card
-// (a restricted-choice-shaped effect), which the void-only model built
-// here deliberately does not track -- voids are the whole residual
-// constraint; which specific card showed the void is not. A uniform
-// discard carries none, so the captured node and "before" are answering
+// East's discard is scripted as uniform over what it holds, not "always
+// the lowest". A lowest-card rule would itself say something about East's
+// other card (restricted choice), which this void-only model does not
+// track: voids are the whole constraint, not which card showed them. A
+// uniform discard says nothing, so the captured node and "before" answer
 // the same question.
 TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
 {
@@ -172,8 +161,8 @@ TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
     inside_root.remainCards[North][Spades] = holding({Nine});
     inside_root.remainCards[South][Hearts] = holding({King});
     inside_root.remainCards[South][Spades] = holding({Eight});
-    // East's own representative split at this root -- any 2-card subset of
-    // the pool fixes the same C(9, 2) space; West gets the rest.
+    // A representative split for East at this root: any 2-card subset of the
+    // pool gives the same C(9, 2) space; West gets the rest.
     inside_root.remainCards[East][Spades] = holding({Two, Three});
     inside_root.remainCards[West][Hearts] = holding({Queen, Jack});
     inside_root.remainCards[West][Spades] = holding({King, Four, Five, Six, Ten});
@@ -181,10 +170,9 @@ TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
     ExhaustiveLayoutSource const inside_source(inside_root, North, /*seed=*/1u);
     ASSERT_EQ(inside_source.size(), 36u);  // C(9, 2)
 
-    // A defender strategy where East's void-in-hearts discard is uniform
-    // among whatever it holds; every other play (East's and West's forced
-    // follows, West's own forced-lowest at trick two) is single_card_defender's
-    // ordinary lowest-legal rule -- neither informative nor in question here.
+    // A defender strategy whose East discard, when void in hearts, is uniform
+    // over what it holds. Every other play (forced follows, West's lowest card
+    // at trick two) uses single_card_defender's lowest-legal rule.
     auto const east_uniform_discard = [](be::DefenderQuery const& query) -> std::vector<WeightedCard>
     {
         bool const led_hearts = query.layout.currentTrickSuit[0] == Hearts
@@ -214,15 +202,11 @@ TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
         return single_card_defender(query);
     };
 
-    // Captured from inside pi, at the one node this fixture's decision
-    // point can be recognised by: North on lead for trick two (history
-    // length 4), with East's second-card reply specifically the two of
-    // spades -- the exact discard the "before" root's own history records
-    // below. Computed directly from the belief view's own posteriors,
-    // exactly as restricted_choice_test.cpp inspects a decision node's
-    // view rather than trusting the root-level aggregate to isolate one
-    // branch -- the root-level aggregate is a different question (see this
-    // file's own commit message for why).
+    // Captured inside pi, at the node that matches "before": North on lead for
+    // trick two (history length 4), after East discarded the spade two, the
+    // card the "before" history records. Computed from the view's posteriors,
+    // as restricted_choice_test.cpp reads a decision node. The root aggregate
+    // answers a different question (see the comment above).
     double captured_p_make = -1.0;
     std::size_t captured_entry_count = 0;
 
@@ -234,9 +218,9 @@ TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
             int const seat = seat_on_play(state.known_holdings);
             if (seat == North && state.history.number == 0)
             {
-                // North's genuine opening-lead choice, scripted to hearts:
-                // lowest_legal_card would pick the lower-ranked spade nine
-                // instead, since nothing forces hearts here.
+                // North's real opening-lead choice, scripted to hearts.
+                // lowest_legal_card would pick the lower spade nine, since
+                // nothing forces hearts.
                 return be::Card{Hearts, Ace};
             }
             if (seat == North && state.history.number == 4 && state.history.suit[1] == Spades
@@ -289,7 +273,7 @@ TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
         {
             return West;
         }
-        return South;  // everything else -- dump on dummy's own pile
+        return South;  // everything else goes to dummy
     };
     auto [before_root, before_history] =
         build_deal({{Hearts, Ace}, {Spades, Two}, {Hearts, King}, {Hearts, Jack}}, hand_for);
@@ -301,29 +285,25 @@ TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
     ASSERT_EQ(before_source.history_verdict(), HistoryVerdict::Consistent);
     ASSERT_EQ(before_source.size(), 6u);  // C(6, 1): East's void removes the queen from its pool
 
-    // North holds exactly one card at this root (spade-nine) rather than
-    // being padded with the rest of the deck: evaluate() explores every
-    // legal first card at the root, not only pi's chosen one (to populate
-    // EvaluationValue::root_children), so a padded North would have the
-    // search explore leading a dumped heart or diamond too -- reaching,
-    // in some of those branches, a second trick East and West (whose own
-    // hands are exactly the enumerated pool, not padded) have no cards
-    // left for. Padding goes on South (dummy) instead: dummy is never the
-    // root's own first-card decision, and its forced follow at trick two
-    // (its only spade) is unambiguous regardless of what else it holds.
-    // Both single_card_declarer_play and single_card_defender are
-    // unambiguous for every other play in this fixture -- North's single
-    // legal card, South's single legal spade, East's and West's single
-    // enumerated cards -- so no custom declarer strategy is needed here,
-    // unlike inside_pi above.
+    // North holds one card at this root (the spade nine), not the rest of the
+    // deck. evaluate() explores every legal first card at the root (to fill
+    // EvaluationValue::root_children), so a padded North would also lead a
+    // spare heart or diamond. Some of those branches reach a second trick
+    // where East and West, holding only the enumerated pool, have no cards
+    // left. So the padding goes to South (dummy): dummy never makes the
+    // root's first-card decision, and its follow at trick two (its only
+    // spade) is forced. Every other play here is forced too (North's one
+    // card, South's one spade, East's and West's one enumerated card), so the
+    // standard single_card_declarer_play is enough. No custom strategy like
+    // inside_pi is needed.
     DeclarerStrategy const before_pi{
         .id = 1, .play = single_card_declarer_play, .state_key = nullptr};
     EvaluationResult const before_result =
         evaluate(before_root, North, /*tricks_needed=*/1, before_source, before_pi, single_card_defender);
     ASSERT_FALSE(before_result.error.has_value());
 
-    // The headline: the two constructions agree -- at the node the "before"
-    // root actually represents, captured from inside_pi above.
+    // The two constructions agree, at the node the "before" root represents,
+    // captured from inside_pi above.
     EXPECT_NEAR(captured_p_make, before_result.by_strategy.at(1u).p_make, 1e-9);
     EXPECT_NEAR(before_result.by_strategy.at(1u).p_make, 2.0 / 3.0, 1e-9);
 
@@ -334,7 +314,7 @@ TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
         before_root, North, /*tricks_needed=*/1, before_no_history_source, before_pi, single_card_defender);
     ASSERT_FALSE(before_no_history_result.error.has_value());
 
-    // The no-history value differs: the fix was necessary, not decorative.
+    // The no-history value differs, so applying voids changes the answer.
     EXPECT_NEAR(before_no_history_result.by_strategy.at(1u).p_make, 5.0 / 7.0, 1e-9);
     EXPECT_NE(
         before_result.by_strategy.at(1u).p_make, before_no_history_result.by_strategy.at(1u).p_make);
@@ -342,19 +322,17 @@ TEST_F(TwoWayExperimentTest, InsideAndBeforeAgreeAndNoHistoryDiffers)
 
 // --- both defenders void, in different suits -------------------------------
 //
-// Trick one (hearts): North leads the ace, East -- void in hearts --
-// discards a spade, South follows the king, West follows the queen (its
-// jack remains outstanding). Trick two (diamonds): North leads the ace
-// again, East follows the king (not void here), South follows the queen,
-// West -- void in diamonds -- discards a spade (its jack remains
-// outstanding). North wins both, so trick three (spades, the decisive
-// one) is North's own lead, exactly as in the headline fixture above:
-// North's nine, low toward dummy's eight.
+// Trick one (hearts): North leads the ace, East (void in hearts) discards a
+// spade, South plays the king, West the queen (its jack stays out). Trick
+// two (diamonds): North leads the ace, East follows with the king, South
+// the queen, and West (void in diamonds) discards a spade (its jack stays
+// out). North wins both, so North leads trick three (spades, the one that
+// decides): the nine towards dummy's eight, as above.
 //
-// East's void forces the outstanding heart jack to West; West's void
-// forces the outstanding diamond jack to East, which is already one of
-// East's two remaining cards -- so East's free choice is over the four
-// remaining spades {four, five, six, ten}, needing exactly one.
+// East's void forces the outstanding heart jack to West. West's void
+// forces the outstanding diamond jack to East, already one of East's two
+// cards. So East's free choice is one card from the four spades {four,
+// five, six, ten}.
 TEST_F(TwoWayExperimentTest, BothDefendersVoidInDifferentSuits)
 {
     auto const hand_for = [](int suit, int rank) -> int
@@ -416,17 +394,14 @@ TEST_F(TwoWayExperimentTest, BothDefendersVoidInDifferentSuits)
     EXPECT_NE(constrained.by_strategy.at(1u).p_make, no_history.by_strategy.at(1u).p_make);
 }
 
-// --- sampling composes with a constrained space, checked once -------------
+// --- sampling over a constrained space, checked once --------------------
 //
-// Not part of the exhaustive two-way comparison above -- sampling belongs
-// after it, since a sampled run would leave any disagreement ambiguous
-// between "the spaces differ" and "the samples differ". This reuses the
-// two-void fixture and asks only that a bounded sample over the
+// Kept apart from the exhaustive comparisons above: with sampling, a
+// disagreement could mean the spaces differ or the samples differ. This
+// reuses the two-void fixture and checks only that a sample over the
 // constrained space runs and, at sample_size >= size(), reproduces the
-// exhaustive answer exactly -- the same bitwise property
-// exhaustive_layout_source_integration_test.cpp already establishes
-// for the unconstrained case, re-checked here for a source built with a
-// history.
+// exhaustive answer exactly. exhaustive_layout_source_integration_test.cpp
+// checks the same bitwise property without a history.
 TEST_F(TwoWayExperimentTest, SamplingComposesWithAConstrainedSpace)
 {
     auto const hand_for = [](int suit, int rank) -> int
@@ -486,24 +461,20 @@ TEST_F(TwoWayExperimentTest, SamplingComposesWithAConstrainedSpace)
     EXPECT_EQ(exhaustive.by_strategy.at(1u).p_make, sampled.by_strategy.at(1u).p_make);
 }
 
-// --- the void changes which play is right, not merely the probability -----
+// --- the void changes which play is right, not only the probability -----
 //
-// A spade king is missing from a six-card spade pool {king, two, three,
-// four, five, six}; East holds four of the pool's ten cards (the other
-// four are the hearts a trick-one void removes). Unconstrained, P(East
-// holds the king) is East's plain share of the whole pool, 4/10 = 0.4 --
-// below even money, so the odds favour playing West for it. Once the
-// void removes the four hearts from contention, East's four cards must
-// all come from the six spades, and P(East holds the king) becomes
-// 4/6 ~= 0.667 -- above even money the other way. The same missing card,
-// the same defender, and the *side declarer should play* has flipped, not
-// merely the number attached to it.
+// The spade king is missing from a six-card spade pool {king, two, three,
+// four, five, six}. East holds four of the pool's ten cards; the other
+// four are hearts that a trick-one void removes. Without the void,
+// P(East holds the king) is East's share of the whole pool, 4/10 = 0.4:
+// below even money, so play West for it. With the void, East's four cards
+// must all be spades, and P(East holds the king) = 4/6 ~= 0.667: above
+// even money. The side declarer should play has flipped, not only the
+// number.
 //
-// This inspects the belief view directly (make_root + make_belief_view),
-// the same posterior a real decision would be read from, rather than
-// running a scripted two-line comparison through evaluate() -- the point
-// under test is the probability crossing even money, which the posterior
-// states directly.
+// This reads the belief view directly (make_root + make_belief_view), the
+// posterior a real decision would use. The point is the probability
+// crossing even money, which the posterior shows directly.
 TEST_F(TwoWayExperimentTest, TheVoidFlipsWhichDefenderIsFavouriteForTheMissingKing)
 {
     auto const hand_for = [](int suit, int rank) -> int
@@ -514,7 +485,7 @@ TEST_F(TwoWayExperimentTest, TheVoidFlipsWhichDefenderIsFavouriteForTheMissingKi
         }
         if (suit == Spades && (rank == Two || rank == Three || rank == Four || rank == Five))
         {
-            return East;  // East's own four-card spade holding
+            return East;  // East's four-card spade holding
         }
         if (suit == Spades && (rank == King || rank == Six))
         {
@@ -566,21 +537,19 @@ TEST_F(TwoWayExperimentTest, TheVoidFlipsWhichDefenderIsFavouriteForTheMissingKi
     EXPECT_NEAR(p_unconstrained, 0.4, 1e-9);
     EXPECT_NEAR(p_constrained, 2.0 / 3.0, 1e-9);
     EXPECT_LT(p_unconstrained, 0.5);  // unconstrained: play West for the king
-    EXPECT_GT(p_constrained, 0.5);    // constrained: play East for the king -- the flip
+    EXPECT_GT(p_constrained, 0.5);    // constrained: play East for the king (the flip)
 }
 
-// --- a trump contract, the show-out a ruff -----------------------------
+// --- a trump contract where the show-out is a ruff --------------------
 //
-// Hearts are trump. Trick one: North leads the ace of spades, East --
-// void in spades -- ruffs with its one heart (the deuce), South follows
-// the king, West follows the queen. The ruff wins the trick like any
-// other trump over a plain suit, and establishes exactly the same void a
-// discard would: the trap this task exists to catch is treating the ruff
-// as a special case that does not register as a show-out. East, having
-// won, leads trick two -- its one remaining card, a club, from a
-// four-card pool {two, three, four, ten}, low toward North's forced nine.
-// A spade jack remains outstanding (declarer's and dummy's own spades are
-// exhausted after trick one), so the void has a live card to force.
+// Hearts are trump. Trick one: North leads the spade ace, East (void in
+// spades) ruffs with its one heart, the deuce, South plays the king and
+// West the queen. The ruff wins the trick and establishes the same void a
+// discard would. A ruff must count as a show-out like any other. East,
+// having won, leads trick two: its last card, a club from the pool {two,
+// three, four, ten}, towards North's forced nine. The spade jack is still
+// out (declarer's and dummy's spades are gone after trick one), so the
+// void has a live card to force.
 TEST_F(TwoWayExperimentTest, ATrumpContractWhereTheShowOutIsARuff)
 {
     auto const hand_for = [](int suit, int rank) -> int

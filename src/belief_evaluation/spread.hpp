@@ -9,63 +9,53 @@
 namespace dds::belief_evaluation
 {
 
-/// Which set of cards a DoubleDummyDefender spreads probability over, given
-/// a solved position's `FutureTricks`. The two differ in more than
-/// behaviour: they differ in what *licenses* the resulting uniform
-/// distribution, so choosing between them is choosing which justification
-/// applies to your defender.
+/// The set of cards a DoubleDummyDefender spreads probability over, given
+/// the `FutureTricks` of a solved position. The two policies rest on
+/// different theory, so choose the one whose justification fits your
+/// defender.
 enum class SpreadPolicy
 {
-    /// Spread uniformly over the touching-card group of the single
-    /// canonical best card (the highest `score`, dds's own tie-break
-    /// order): `{rank[k]} u bits(equals[k])` for that one `k`.
+    /// Uniform over the touching cards of the one canonical best card
+    /// (highest `score`, dds tie-break order): `{rank[k]} u bits(equals[k])`
+    /// for that `k`.
     ///
-    /// Cards in one touching group are interchangeable given the layout:
-    /// king or queen from a held KQ leaves isomorphic positions under the
-    /// renumbering bijection. The uniform distribution over the group is
-    /// therefore the canonical distribution over an equivalence class the
-    /// theory already licenses, not a modelling guess, and algorithm.md's
-    /// elementary `W_{pi,delta}` derivation covers it unchanged. This is
-    /// what restricted choice actually is.
+    /// Touching cards are interchangeable: king or queen from KQ leaves
+    /// isomorphic positions. So the uniform spread is the canonical
+    /// distribution over an equivalence class, not a modelling guess. The
+    /// `W_{pi,delta}` derivation in algorithm.md covers it. This is
+    /// restricted choice.
     TouchingSequence,
 
-    /// Spread uniformly over the union of every candidate's touching-card
-    /// group, for every candidate tied on the maximum score, across suits.
+    /// Uniform over the touching cards of every candidate tied on the best
+    /// score, in any suit.
     ///
-    /// These cards are equally *good* but not otherwise equivalent: the
-    /// resulting positions are not isomorphic, and the distribution's shape
-    /// depends on how many suits happen to tie. This is what algorithm.md
-    /// warns about in saying a heuristic defender is "not guaranteed to
-    /// stay within the requirements for the `W_{pi,delta}` based
-    /// formulation"; the more general `Omega = S x B` construction is what
-    /// covers it. Selecting this policy moves to that justification.
+    /// These cards are equally *good* but not equivalent. The positions are
+    /// not isomorphic, and the spread depends on how many suits tie.
+    /// algorithm.md warns that such a defender may fall outside the
+    /// `W_{pi,delta}` formulation. The general `Omega = S x B` construction
+    /// covers it.
     AllOptimal,
 };
 
-/// The index `spread()`'s own `SpreadPolicy::TouchingSequence` branch
-/// treats as the single canonical entry: the highest `fut.score`,
-/// breaking ties by keeping the first entry reached (dds's own
-/// ordering). Exported so a caller choosing whether to defer to
-/// `spread(fut, SpreadPolicy::TouchingSequence)` can check in advance
-/// whether doing so actually reaches the group it means -- `fut` may
-/// hold more than one disjoint touching group tied for best score, and
-/// this is the one `spread()` itself will pick, not necessarily the one
-/// any particular caller has in mind. See `second_seat_low`'s own
-/// doxygen for the rule this matters to.
+/// The index that `spread()` treats as the canonical best entry under
+/// `SpreadPolicy::TouchingSequence`: the highest `fut.score`, with ties
+/// going to the first entry in dds order.
+///
+/// `fut` may hold several touching groups tied for best. Call this to see
+/// which one `spread()` will pick before deferring to it. See
+/// `second_seat_low`.
 auto canonical_best(FutureTricks const& fut) -> int;
 
-/// The candidate cards `policy` spreads probability over, given a solved
-/// position's `fut`, each with equal probability (`1 / candidate count`).
-/// `fut.suit`/`fut.rank` name each candidate entry's card; `fut.equals`
-/// (already in `Deal`'s own bit convention -- see `to_compacted` in
-/// `trick.hpp` for the other, compacted, convention this is *not*) names
-/// the other cards in that entry's touching sequence, excluding the entry's
-/// own card. Deduplicates: two `fut` entries in the same sequence (as dds
-/// may report when asked for every candidate's rank) must not double the
-/// weight of the cards they share.
+/// The cards `policy` spreads over, each with probability
+/// `1 / candidate count`.
 ///
-/// Pure and solver-free: takes an already-solved `FutureTricks`, no
-/// `solve_board` call. `fut.cards == 0` returns an empty distribution.
+/// `fut.suit` and `fut.rank` name each candidate. `fut.equals` names the
+/// other cards in its touching sequence, in the bit convention of `Deal`
+/// (not the compacted one of `to_compacted`). Duplicates are removed: two
+/// entries in one sequence do not double the weight of shared cards.
+///
+/// Pure: it takes a solved `FutureTricks` and calls no solver.
+/// `fut.cards == 0` returns an empty distribution.
 auto spread(FutureTricks const& fut, SpreadPolicy policy) -> std::vector<WeightedCard>;
 
 }  // namespace dds::belief_evaluation

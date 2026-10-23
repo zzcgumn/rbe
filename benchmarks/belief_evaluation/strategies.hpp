@@ -1,18 +1,14 @@
 #pragma once
 
-// The one declarer/defender strategy pair every fixture, guard, and
-// instrument under this directory needs when it does not care which
-// strategy is running -- only that the search has somewhere legal to go.
-// Deterministic and scripted (no solver, no randomness), matching
-// tests/belief_evaluation/test_support.hpp's own
-// lowest_legal_card/single_card_declarer_play/single_card_defender
-// precedent exactly; duplicated rather than reused because that header is
-// private to the core C++ test suite (its own comment says so) and a
-// ladder belongs beside the instrument that uses it, not folded into it.
+// The declarer and defender strategy pair every fixture, guard and
+// instrument here uses when it needs only a legal move, not a particular
+// strategy. Deterministic and scripted: no solver, no randomness. It
+// copies lowest_legal_card, single_card_declarer_play and
+// single_card_defender from tests/belief_evaluation/test_support.hpp,
+// which is private to the core C++ tests.
 //
-// A benchmark that needs a *different* strategy (a real double-dummy
-// delta, in particular) adds its own alongside this one -- this file is
-// the shared default, not the only strategy this directory will ever run.
+// A benchmark that needs another strategy, such as a real double-dummy
+// delta, adds it beside this one. This is the shared default.
 
 #include <vector>
 
@@ -26,9 +22,9 @@
 namespace dds::belief_evaluation::benchmarks
 {
 
-/// dds::belief_evaluation::Card, not the global ::Card of the same name --
-/// see namespace_collision_test.cpp for the two coexisting, and every
-/// caller here (WeightedCard, DeclarerStrategy::play) wants this one.
+/// dds::belief_evaluation::Card, not the global ::Card of the same name
+/// (see namespace_collision_test.cpp). Every caller here (WeightedCard,
+/// DeclarerStrategy::play) wants this one.
 inline auto lowest_legal_card(Deal const& deal, int seat) -> Card
 {
     int led = -1;
@@ -80,9 +76,8 @@ inline auto scripted_defender_play(DefenderQuery const& query) -> std::vector<We
     return {WeightedCard{lowest_legal_card(query.layout, query.seat), 1.0}};
 }
 
-/// A DeclarerStrategy built on scripted_declarer_play(), id 1 -- the only
-/// strategy id this directory's own instruments and guards compare
-/// against, so a caller never has to invent one.
+/// A DeclarerStrategy built on scripted_declarer_play(), with id 1: the
+/// only strategy id the instruments and guards here compare against.
 inline auto scripted_strategy() -> DeclarerStrategy
 {
     return DeclarerStrategy{.id = 1, .play = scripted_declarer_play, .state_key = nullptr};

@@ -11,15 +11,13 @@
 
 #include "test_support.hpp"
 
+// Tests for evaluate(): termination, error reporting, root-child values,
+// result options and the play_record option.
+
 namespace be = dds::belief_evaluation;
 
-// This file otherwise qualifies every belief_evaluation symbol with `be::`
-// throughout (its own established convention, predating this list, and
-// left as-is here rather than retrofitted -- see the zero-deletion
-// criterion this plan holds itself to). This short list covers only the
-// symbols the two SamplingOptions tests below use, so those two tests
-// follow the per-file `using be::X;` convention the task rules call for
-// without rewriting a single pre-existing line.
+// Most tests in this file qualify belief_evaluation symbols with `be::`.
+// The SamplingOptions and play_record tests below use this list instead.
 using be::EvaluateOptions;
 using be::EvaluationResult;
 using be::HistoryVerdict;
@@ -46,9 +44,9 @@ namespace
     constexpr int South = 2;  // dummy
     constexpr int West = 3;   // a defender
 
-    /// A single full trick declarer is certain to win: North leads the ace
-    /// of spades, East/South/West each hold one low spade and must follow
-    /// suit, so North's ace always wins regardless of what anyone plays.
+    /// One full trick declarer is certain to win. North leads the ace of
+    /// spades, and East, South and West each hold one lower spade and must
+    /// follow, so the ace wins whatever anyone plays.
     auto make_one_trick_certain_win() -> Deal
     {
         Deal deal{};
@@ -71,9 +69,8 @@ class EvaluateTest : public ::testing::Test
 {
 };
 
-// --- certainty and impossibility: proves the recursion terminates and
-// composes; the real oracle (hand-derived end-to-end cases) is in
-// oracle_test.cpp.
+// --- certainty and impossibility: the recursion terminates and composes.
+// The hand-derived end-to-end cases are in oracle_test.cpp.
 
 TEST_F(EvaluateTest, CertaintyGivesPMakeOfOne)
 {
@@ -93,7 +90,7 @@ TEST_F(EvaluateTest, ImpossibilityGivesPMakeOfZero)
     Deal const root_layout = make_one_trick_certain_win();
     be::VectorLayoutSource source({root_layout});
 
-    // Only one trick exists in the whole ending; needing two is impossible.
+    // The ending has only one trick, so needing two is impossible.
     be::EvaluationResult const result =
         be::evaluate(root_layout, North, /*tricks_needed=*/2, source, strategy(1), be::single_card_defender);
 
@@ -121,15 +118,13 @@ TEST_F(EvaluateTest, AnUnenumerableSourceSurfacesAsARootConstructionError)
 
 TEST_F(EvaluateTest, ANoLayoutSurvivingSourceSurfacesAsARootConstructionErrorWithADistinctCause)
 {
-    // The distinguishing half of the proof root_failure exists for: an unenumerable
-    // source and a source that enumerates fine but has nothing consistent
-    // with root_layout both surface as RootConstruction, but with different
-    // root_failure values -- the test right above this one pins the first,
-    // this one pins the second.
+    // root_failure tells two RootConstruction errors apart: an unenumerable
+    // source (the test above) and a source with nothing consistent with
+    // root_layout (this test).
     Deal const root_layout = make_one_trick_certain_win();
     Deal inconsistent_layout = root_layout;
-    // Declarer's own holding must match root_layout's exactly to survive
-    // make_root's filter -- this doesn't.
+    // Declarer's holding must match root_layout's exactly to survive
+    // make_root's filter. This one does not.
     inconsistent_layout.remainCards[North][Spades] = be::holding({Two});
     be::VectorLayoutSource source({inconsistent_layout});
 
@@ -184,13 +179,12 @@ TEST_F(EvaluateTest, AnIllegalDistributionFromDeltaSurfacesAsADefenderStrategyEr
 
 TEST_F(EvaluateTest, DeclarerRootChildrenAreAlternativesNotAPartition)
 {
-    // North holds two certain winners in different suits; East/South/West
-    // each hold one low card per suit, so either lead wins its trick and
-    // the other suit's trick follows automatically. Both candidate first
-    // cards are therefore winners on their own -- root_children must NOT
-    // sum to p_make (1.0 + 1.0 != 1.0), and p_make must equal whichever
-    // one pi actually chose (single_card_declarer_play scans suits in
-    // order, so pi leads the spade ace first).
+    // North holds two certain winners in different suits. East, South and
+    // West each hold one lower card per suit, so either lead wins its trick
+    // and the other suit's trick follows. Both first cards are winners on
+    // their own, so root_children must NOT sum to p_make (1.0 + 1.0 != 1.0).
+    // p_make must equal the one pi chose: single_card_declarer_play scans
+    // suits in order, so pi leads the spade ace.
     Deal root_layout{};
     root_layout.trump = DDS_NOTRUMP;
     root_layout.first = North;
@@ -213,31 +207,28 @@ TEST_F(EvaluateTest, DeclarerRootChildrenAreAlternativesNotAPartition)
     EXPECT_DOUBLE_EQ(value.root_children[0].value, 1.0);
     EXPECT_DOUBLE_EQ(value.root_children[1].value, 1.0);
     EXPECT_DOUBLE_EQ(value.p_make, 1.0);
-    // Presence of two alternatives that don't sum to p_make is the point:
+    // Two alternatives that do not sum to p_make are the point:
     EXPECT_DOUBLE_EQ(value.root_children[0].value + value.root_children[1].value, 2.0);
 
-    // Both candidates happen to tie at 1.0 here (no-trump, no-ruff, single
-    // layout: which suit's trick is won cannot depend on lead order), so
-    // the value assertions above cannot by themselves catch p_make being
-    // paired with the wrong root_children entry. single_card_declarer_play
-    // scans suits ascending, so pi's actual choice is deterministically
-    // the spade ace; pin that identity directly.
+    // Both candidates tie at 1.0 here (notrump, no ruffs, one layout), so the
+    // value assertions above cannot catch p_make paired with the wrong
+    // root_children entry. single_card_declarer_play scans suits ascending,
+    // so pi always picks the spade ace. Pin that directly.
     EXPECT_EQ(value.root_children[0].card.suit, Spades);
     EXPECT_EQ(value.root_children[0].card.rank, Ace);
 
-    // Which kind of root this is, reported rather than left to the consumer
-    // to derive. The flag is only worth having if it predicts the property
-    // above, so it is asserted here beside it and not on its own.
+    // The kind of root is reported, not left to the consumer to derive. The
+    // flag is useful only if it predicts the property above, so it is asserted
+    // beside it.
     EXPECT_TRUE(value.root_is_declaring_side);
 }
 
 TEST_F(EvaluateTest, RootIsDeclaringSideIsTrueWithDummyOnLeadNotOnlyDeclarer)
 {
-    // The whole reason this is a flag and not `root.first == declarer`.
-    // South is dummy to North's declarer, and a root led by dummy is a
-    // *declarer* root: pi chooses the card, the children are alternatives,
-    // and they do not sum. A consumer deriving "declarer root" as
-    // `first == declarer` gets this position exactly backwards.
+    // The reason this is a flag and not `root.first == declarer`. South is
+    // dummy to North's declarer, and a root led by dummy is a declarer root:
+    // pi chooses the card, the children are alternatives, and they do not sum.
+    // A consumer testing `first == declarer` gets this position backwards.
     Deal root_layout{};
     root_layout.trump = DDS_NOTRUMP;
     root_layout.first = South;  // dummy, with North as declarer
@@ -257,8 +248,8 @@ TEST_F(EvaluateTest, RootIsDeclaringSideIsTrueWithDummyOnLeadNotOnlyDeclarer)
     ASSERT_FALSE(result.error.has_value());
     be::EvaluationValue const& value = result.by_strategy.at(1u);
     EXPECT_TRUE(value.root_is_declaring_side);
-    // And the property the flag predicts: alternatives, so the sum exceeds
-    // p_make rather than matching it.
+    // The property the flag predicts: alternatives, so the sum exceeds
+    // p_make.
     ASSERT_EQ(value.root_children.size(), 2u);
     EXPECT_DOUBLE_EQ(value.root_children[0].value + value.root_children[1].value,
                      2.0 * value.p_make);
@@ -266,14 +257,12 @@ TEST_F(EvaluateTest, RootIsDeclaringSideIsTrueWithDummyOnLeadNotOnlyDeclarer)
 
 TEST_F(EvaluateTest, DefenderRootChildrenSumToPMake)
 {
-    // East leads first (a defender node at the root) and holds a card in
-    // each of two suits; delta splits 50/50 over which suit East leads.
-    // Everyone else holds one card in each of those two suits too, so
-    // whichever suit East leads, the trick is followed correctly and North
-    // wins with an ace either way -- and North then wins the other suit's
-    // trick too, since it is the only card left. Both children are
-    // therefore certain (0.5 each) and sum to p_make = 1.0 -- unlike the
-    // declarer case above, this is a genuine partition (defender-node mass
+    // East leads (a defender node at the root), holding a card in each of two
+    // suits, and delta splits 50/50 over which suit East leads. Everyone else
+    // holds one card in each of those suits too. Whichever suit East leads,
+    // North wins with the ace and then wins the other suit with its last card.
+    // Both children are certain (0.5 each) and sum to p_make = 1.0. Unlike the
+    // declarer case above, this is a true partition (defender-node mass
     // conservation).
     Deal root_layout{};
     root_layout.trump = DDS_NOTRUMP;
@@ -290,10 +279,9 @@ TEST_F(EvaluateTest, DefenderRootChildrenSumToPMake)
 
     auto const delta = [](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
     {
-        // East's leading decision: nothing played yet, and East still
-        // holds both suits. Every later query (East following the other
-        // suit's trick, or West following either trick) has only one
-        // legal card and falls through to single_card_defender.
+        // East's lead: nothing played yet, and East holds both suits. Every
+        // later query (East or West following to a trick) has one legal card and
+        // falls through to single_card_defender.
         bool const is_easts_lead = query.seat == East && query.layout.currentTrickRank[0] == 0;
         if (is_easts_lead)
         {
@@ -412,11 +400,10 @@ TEST_F(EvaluateTest, SuppliedPlayRecordDoesNotDisturbHistory)
     auto [record, verdict] = PlayRecord::create(cards, /*opening_leader=*/West);
     ASSERT_EQ(verdict, HistoryVerdict::Consistent);
 
-    // Not RecordingDeclarerStrategy: its single scripted card is North's
-    // only legal one, but pi is also asked for South (dummy)'s turn, where
-    // that same card is illegal (already played, and not South's own
-    // holding). single_card_declarer_play's own rule -- lowest_legal_card,
-    // seat-derived -- is correct for whichever of the two is asked.
+    // Not RecordingDeclarerStrategy: its one scripted card is North's only
+    // legal card, but pi is also asked for South (dummy). For South the card
+    // is illegal (already played, and not South's). single_card_declarer_play
+    // picks the lowest legal card for whichever seat is asked.
     std::vector<be::ObservationState> pi_states;
     be::DeclarerStrategy const pi{
         .id = 0,
@@ -479,12 +466,10 @@ TEST_F(EvaluateTest, SuppliedPlayRecordReachesTheRootStateUnchanged)
 
 TEST_F(EvaluateTest, ASampledRootWithAPlayRecordSupplied)
 {
-    // The plan's own "What does NOT change": sampling and play_record are
-    // independent inputs. This fixture's whole source is one layout, so
-    // sample_size=1 is not a meaningful narrowing -- it's the same
-    // lightweight shape SampleSizeScanBudgetAndReplenishBelowLiveOnANestedSamplingType
-    // above already uses, proving no crash and no interaction, not a
-    // statistical claim about sampling itself.
+    // Sampling and play_record are independent inputs. The source is one
+    // layout, so sample_size=1 narrows nothing. This is the same light shape
+    // as SampleSizeScanBudgetAndReplenishBelowLiveOnANestedSamplingType above:
+    // it shows no crash and no interaction, not a claim about sampling.
     Deal const root_layout = make_one_trick_certain_win();
     VectorLayoutSource source({root_layout});
 
@@ -508,12 +493,12 @@ TEST_F(EvaluateTest, ASampledRootWithAPlayRecordSupplied)
 
 TEST_F(EvaluateTest, RetainedRootsPlayRecordIsClearedEvenWhenOneWasSupplied)
 {
-    // retained_root survives inside the returned EvaluationResult, with no
-    // guarantee options (or the PlayRecord inside it) does too -- unlike
-    // every ObservationState an evaluation consumes synchronously during
-    // the call. evaluate() clears the copy embedded here rather than hand
-    // back a pointer that can dangle once the caller's options goes out of
-    // scope (a helper function building EvaluateOptions as a local, say).
+    // retained_root lives on inside the returned EvaluationResult, but
+    // options (and the PlayRecord inside it) may not. An ObservationState used
+    // only during the call has no such problem. So evaluate() clears the copy
+    // embedded here instead of returning a pointer that dangles once the
+    // caller's options goes out of scope (for example, a local EvaluateOptions
+    // built in a helper function).
     Deal const root_layout = make_one_trick_certain_win();
     VectorLayoutSource source({root_layout});
 

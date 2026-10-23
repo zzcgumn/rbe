@@ -1,21 +1,3 @@
-// Not a gtest binary: a plain program, invoked as a subprocess from
-// test_belief_space_local_evaluation_parity.py, that builds a handful of
-// fixtures, runs the real C++ evaluator over them, and prints both the
-// fixture (as a Python deal-dict literal) and the answer (also as a
-// Python literal) to stdout.
-//
-// This is the "build both sides of every comparison from one description"
-// mechanism the parity task calls for. The alternative -- writing the same
-// fixture twice, once by hand in each language -- is exactly how a
-// transcription slip hides: the Python side would still run, still
-// produce *some* answer, and pass or fail for a reason that has nothing
-// to do with the binding. Reading this binary's own output instead means
-// the Python test's fixture and the C++ answer it compares against both
-// come from the same construction, once.
-//
-// Solver-free, matching //src/belief_evaluation's own deps below:
-// nothing here needs solve_board, only the scripted strategies every
-// other C++ test in this suite already uses.
 #include <cstdint>
 #include <cstdio>
 #include <optional>
@@ -29,6 +11,11 @@
 
 #include "test_support.hpp"
 
+// Not a gtest binary: test_belief_space_local_evaluation_parity.py runs it,
+// and it prints fixtures and C++ answers as Python literals. Both sides of
+// each comparison come from one description, so a transcription slip
+// cannot hide. It needs no solver, only scripted strategies.
+
 namespace be = dds::belief_evaluation;
 
 namespace
@@ -41,9 +28,8 @@ namespace
     constexpr int South = 2;  // dummy
     constexpr int West = 3;
 
-    // --- three roots of different shapes, mirroring exhaustive_layout_source_test.cpp's
-    // own fixtures of the same names exactly (same file this binary's own
-    // BUILD target already depends on for its test coverage of the type) ---
+    // --- three roots of different shapes, the same as the fixtures of the
+    // same names in exhaustive_layout_source_test.cpp ---
 
     auto make_ten_card_pool_root() -> Deal
     {
@@ -85,11 +71,10 @@ namespace
         return root;
     }
 
-    // --- the sampled, replenishing fixture -- East holds
-    // two of a seven-card pool, matching
-    // exhaustive_layout_source_integration_test.cpp's own
-    // make_two_card_finesse_root, so depth-1 nodes have room to differ by
-    // sample and a node-local replenishment scan has real work to do ---
+    // --- the sampled, replenishing fixture, the same as
+    // make_two_card_finesse_root in exhaustive_layout_source_integration_test.cpp.
+    // East holds two of a seven-card pool, so depth-1 nodes can differ by sample
+    // and a replenishment scan has work to do ---
 
     auto make_two_card_finesse_root() -> Deal
     {
@@ -103,8 +88,8 @@ namespace
         return root;
     }
 
-    // --- oracle cases, mirroring oracle_test.cpp's own 9a,
-    // 9b and 9e exactly ---
+    // --- oracle cases, the same as oracle_test.cpp's certainty,
+    // impossibility and delta-matters tests ---
 
     auto make_certain_win_layout(int east_low, int west_low) -> Deal
     {
@@ -275,8 +260,8 @@ auto main() -> int
         }
     }
 
-    // --- oracle cases, mirroring oracle_test.cpp's own 9a
-    // (certainty), 9b (impossibility) and 9e (delta actually matters) ---
+    // --- oracle cases from oracle_test.cpp: certainty, impossibility
+    // and delta actually matters ---
 
     {
         be::VectorLayoutSource const source(

@@ -18,11 +18,8 @@ auto fourth_seat_low() -> DefenderHeuristic
             return std::nullopt;
         }
 
-        // All candidates follow the same led suit here, so two touching
-        // runs among them are disjoint, ordered intervals -- comparing by
-        // raw (representative) rank already finds the right entry; only
-        // the value returned for it needs resolving against ctx.fut.equals
-        // (see true_lowest_rank's own doxygen).
+        // All candidates are in the led suit, so raw rank finds the right entry.
+        // Only the rank returned needs resolving (see true_lowest_rank).
         std::size_t lowest = 0;
         for (std::size_t i = 1; i < best_cards.size(); ++i)
         {

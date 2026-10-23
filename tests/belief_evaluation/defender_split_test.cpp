@@ -15,6 +15,9 @@
 
 #include "test_support.hpp"
 
+// Tests for the defender pool decomposition, binomial_coefficient,
+// unrank_combination and apply_defender_split.
+
 namespace be = dds::belief_evaluation;
 
 using be::apply_defender_split;
@@ -54,10 +57,9 @@ namespace
 TEST(DefenderSplitTest, TwoSuitEndingDecomposesToTheHandDerivedPoolInCanonicalOrder)
 {
     // East holds one diamond and one club (2 cards); West holds one diamond
-    // and two clubs (3 cards) -- not mid-trick, just an ordinary shape with
-    // a two-suit pool, to pin the suit-then-rank ordering this decomposition
-    // is meant to produce. The mid-trick test below is the one with a count
-    // asymmetry that a naive "half the pool" derivation would get wrong.
+    // and two clubs (3 cards). Not mid-trick: an ordinary two-suit pool, to pin
+    // the suit-then-rank order. The mid-trick test below has the count
+    // asymmetry that "half the pool" gets wrong.
     Deal root{};
     root.trump = DDS_NOTRUMP;
     root.first = North;
@@ -70,7 +72,7 @@ TEST(DefenderSplitTest, TwoSuitEndingDecomposesToTheHandDerivedPoolInCanonicalOr
 
     DefenderPool const pool = defender_pool_decomposition(root, North);
 
-    // suits ascending (diamonds before clubs), ranks ascending within suit.
+    // Suits ascending (diamonds before clubs), ranks ascending within a suit.
     std::vector<std::pair<int, int>> const expected{
         {Diamonds, 3}, {Diamonds, 5}, {Clubs, 4}, {Clubs, 6}, {Clubs, 7}};
     EXPECT_EQ(suit_rank_pairs(pool.cards), expected);
@@ -79,10 +81,9 @@ TEST(DefenderSplitTest, TwoSuitEndingDecomposesToTheHandDerivedPoolInCanonicalOr
 
 TEST(DefenderSplitTest, MidTrickEndingWithOneDefenderAlreadyPlayedGivesAsymmetricCounts)
 {
-    // East already played the diamond 7 to the trick in progress -- it is
-    // in currentTrickSuit/Rank, not in East's remainCards -- so East holds
-    // one fewer diamond than West: 2 against 3, not the symmetric 2-2 or
-    // 3-3 a derivation from half the pool size would wrongly assume.
+    // A diamond is on the trick in progress, outside both defenders'
+    // remainCards. East holds two diamonds and West three: not the 2-2 or 3-3
+    // that half the pool size would give.
     Deal root{};
     root.trump = DDS_NOTRUMP;
     root.first = North;
@@ -122,13 +123,13 @@ TEST(DefenderSplitTest, ThreeSuitEndingWithADifferentShapeStillMatchesHandDeriva
     EXPECT_EQ(pool.fixed_seat_count, 4);  // East holds S2, H3, C4, C5
 }
 
-// --- matches node.cpp's own per-suit pool, cross-checked -------------------
+// --- matches node.cpp's per-suit pool, cross-checked -----------------------
 
 TEST(DefenderSplitTest, PerSuitPoolMatchesTheUnionOfBothDefendersRemainCardsDirectly)
 {
-    // Cross-checks defender_pool_decomposition's flattened cards against
-    // the same per-suit union node.cpp's own (unexported) defender_pool()
-    // computes, derived independently here rather than by calling it.
+    // Cross-checks defender_pool_decomposition's flattened cards against the
+    // per-suit union that node.cpp's unexported defender_pool() computes,
+    // derived here independently rather than by calling it.
     Deal root{};
     root.trump = DDS_NOTRUMP;
     root.first = North;
@@ -166,13 +167,13 @@ TEST(DefenderSplitTest, FixedSeatCountIsReadFromRootPopcountNotHalfThePoolSize)
     root.first = North;
     root.currentTrickSuit[0] = Clubs;
     root.currentTrickRank[0] = 9;
-    root.remainCards[East][Clubs] = holding({2});         // one card, already down one from the trick
+    root.remainCards[East][Clubs] = holding({2});         // one card
     root.remainCards[West][Clubs] = holding({3, 4, 5});    // three
 
     DefenderPool const pool = defender_pool_decomposition(root, North);
 
     EXPECT_EQ(pool.cards.size(), 4u);
-    EXPECT_EQ(pool.fixed_seat_count, 1);  // East -- not 2, which half of 4 would wrongly give
+    EXPECT_EQ(pool.fixed_seat_count, 1);  // East; half of 4 would wrongly give 2
 }
 
 // --- degenerate roots ------------------------------------------------------
@@ -209,9 +210,8 @@ TEST(DefenderSplitTest, AFixedSeatCountOfZeroOrTheWholePoolIsLegal)
 
 TEST(BinomialCoefficientTest, MatchesAHandWrittenPascalsTriangleForEveryNAndK)
 {
-    // Built independently of binomial_coefficient's own implementation --
-    // the addition rule applied directly in the test, not a call into the
-    // production function under test.
+    // Built without binomial_coefficient: the test applies the addition rule
+    // itself.
     constexpr int MaxN = 26;
     std::array<std::array<std::uint64_t, MaxN + 1>, MaxN + 1> triangle{};
     for (int n = 0; n <= MaxN; ++n)
@@ -250,12 +250,11 @@ TEST(BinomialCoefficientTest, KOutOfRangeIsZeroNotAnError)
 
 TEST(BinomialCoefficientTest, NOutOfRangeIsAnAssertedCallerErrorNotAnOutOfBoundsRead)
 {
-    // n is only ever meant to reach 26 (thirteen tricks, so at most 26
-    // cards outstanding between two defenders) -- the Pascal's triangle
-    // table backing this function is sized to exactly that, so n outside
-    // [0, 26] is not merely "a bigger answer", it is an index straight
-    // past the end of the table. EXPECT_DEBUG_DEATH, not EXPECT_DEATH --
-    // see ExhaustiveLayoutSourceTest's own sibling assertion for why.
+    // n must stay within [0, 26]: thirteen tricks leave at most 26 cards
+    // between the two defenders. The Pascal's triangle table is sized to
+    // exactly that, so any other n indexes outside the table.
+    // EXPECT_DEBUG_DEATH, not EXPECT_DEATH: see the sibling assertion in
+    // ExhaustiveLayoutSourceTest.
     EXPECT_DEBUG_DEATH({ binomial_coefficient(27, 0); }, "");
     EXPECT_DEBUG_DEATH({ binomial_coefficient(-1, 0); }, "");
 }
@@ -264,10 +263,9 @@ TEST(BinomialCoefficientTest, NOutOfRangeIsAnAssertedCallerErrorNotAnOutOfBounds
 
 namespace
 {
-    /// Every k-subset of {0, ..., n-1} `unrank_combination` produces over
-    /// the whole of [0, C(n, k)), as a set of sets -- the shape needed to
-    /// prove coverage over the whole range, not merely that consecutive
-    /// indices look different.
+    /// Every k-subset of {0, ..., n-1} that `unrank_combination` produces over
+    /// all of [0, C(n, k)), as a set of sets. This proves coverage of the
+    /// whole range, not just that consecutive indices differ.
     auto all_unranked_subsets(int n, int k) -> std::set<std::set<int>>
     {
         std::set<std::set<int>> subsets;
@@ -283,8 +281,8 @@ namespace
 
 TEST(UnrankCombinationTest, IsABijectionOntoTheKSubsetsOfATenElementDomain)
 {
-    // C(10, 5) = 252: large enough to actually exercise the enumeration,
-    // small enough to check exhaustively rather than by sampling.
+    // C(10, 5) = 252: large enough to exercise the enumeration, small enough
+    // to check every index.
     int const n = 10;
     int const k = 5;
     std::uint64_t const total = binomial_coefficient(n, k);
@@ -328,13 +326,10 @@ TEST(UnrankCombinationTest, EveryReturnedSubsetHasExactlyKDistinctInRangeElement
 
 TEST(UnrankCombinationTest, HandDerivedIndicesOnTheFiveChooseTwoDomain)
 {
-    // Worked out by hand in colex order (see the header's own doxygen for
-    // the construction): index 0 is the lexicographically-first pair by
-    // the colex rule, index C(n,k)-1 is the last, and index 3 is an
-    // interior value -- verified in the by-hand derivation above the
-    // header's binomial_coefficient... see BinomialCoefficientTest above,
-    // colex enumerates {0,1},{0,2},{1,2},{0,3},{1,3},{2,3},{0,4},{1,4},
-    // {2,4},{3,4} for indices 0..9 of C(5,2).
+    // Worked out by hand in colex order (see the header for the
+    // construction). For C(5, 2), colex gives {0,1}, {0,2}, {1,2}, {0,3},
+    // {1,3}, {2,3}, {0,4}, {1,4}, {2,4}, {3,4} for indices 0 to 9. The test
+    // checks the first index, the last, and index 3 in between.
     EXPECT_EQ(unrank_combination(0, 5, 2), (std::vector<int>{0, 1}));
     EXPECT_EQ(unrank_combination(9, 5, 2), (std::vector<int>{3, 4}));  // last index, C(5,2) - 1
     EXPECT_EQ(unrank_combination(3, 5, 2), (std::vector<int>{0, 3}));  // an interior index
@@ -365,8 +360,8 @@ TEST(UnrankCombinationTest, IsAPureFunctionSameIndexSameSubsetEveryTime)
 
 namespace
 {
-    /// Every field Deal carries, compared directly -- field-for-field
-    /// identity, not just the two defenders' remainCards.
+    /// Every field Deal carries, compared directly: the whole Deal, not just
+    /// the two defenders' remainCards.
     auto deals_are_field_identical(Deal const& a, Deal const& b) -> bool
     {
         if (a.trump != b.trump || a.first != b.first)
@@ -393,10 +388,10 @@ namespace
         return true;
     }
 
-    /// The indices into pool.cards that root's own defender split already
-    /// picks out for the fixed seat -- the round-trip subset the test below
-    /// feeds back into apply_defender_split, found directly from root
-    /// rather than by any part of the production code under test.
+    /// The indices into pool.cards that root's defender split gives the fixed
+    /// seat. The round-trip test below feeds these back into
+    /// apply_defender_split. They are read from root directly, without the
+    /// production code under test.
     auto own_split_indices(Deal const& root, int declarer, DefenderPool const& pool) -> std::vector<int>
     {
         int const fixed_seat = (declarer + 1) % DDS_HANDS;
@@ -412,10 +407,10 @@ namespace
         return indices;
     }
 
-    /// A five-card pool (diamonds and clubs), small enough to enumerate
-    /// C(5, 2) = 10 splits exhaustively, with trump/first/current-trick
-    /// fields set to values distinguishable from their defaults so
-    /// byte-identity checks are not passing by coincidence.
+    /// A five-card pool (diamonds and clubs), small enough to try all
+    /// C(5, 2) = 10 splits. trump, first and the current-trick fields differ
+    /// from their defaults, so the identity checks cannot pass by
+    /// coincidence.
     auto make_two_suit_pool_root() -> Deal
     {
         Deal root{};
@@ -447,13 +442,12 @@ TEST(ApplyDefenderSplitTest, TheRootsOwnSplitRoundTripsToTheRootLayoutFieldForFi
 
 TEST(ApplyDefenderSplitTest, AnOutOfRangeIndexIsAnAssertedCallerErrorNotAnOutOfBoundsWrite)
 {
-    // fixed_seat_cards is caller-supplied and this function trusts it for
-    // legality (see its own doxygen) -- but "trusts" must not mean "writes
-    // wherever a bad index points". Both a negative and a too-large index
-    // are asserted in a build where assert is active (EXPECT_DEBUG_DEATH,
-    // not EXPECT_DEATH -- see ExhaustiveLayoutSourceTest's own sibling
-    // assertion for why); the guard the assert pins is what stops the
-    // out-of-bounds write in a build where it is not.
+    // fixed_seat_cards comes from the caller, and this function trusts it for
+    // legality (see apply_defender_split). Trusting it must not mean writing
+    // wherever a bad index points. A negative and a too-large index are both
+    // asserted with EXPECT_DEBUG_DEATH, not EXPECT_DEATH (see the sibling
+    // assertion in ExhaustiveLayoutSourceTest). In a build without assert,
+    // the guard stops the out-of-bounds write.
     Deal const root = make_two_suit_pool_root();
     DefenderPool const pool = defender_pool_decomposition(root, North);
     EXPECT_DEBUG_DEATH({ apply_defender_split(root, North, pool, {-1}); }, "");
@@ -481,13 +475,11 @@ TEST(ApplyDefenderSplitTest, EveryResultOverTheWholeSpaceIsConsistentWithTheRoot
 
 TEST(ApplyDefenderSplitTest, EveryResultOverTheWholeSpaceIsALegalPosition)
 {
-    // Separate from the is_consistent check above on purpose: is_consistent
-    // never compares hand sizes (see DefenderPool's own doxygen), so this
-    // is the independent half of the correctness claim -- exact counts and
-    // disjointness, checked directly against what defender_pool_decomposition
-    // itself read from the root, rather than against the root re-read, so a
-    // bug in the decomposition surfaces here instead of being masked by
-    // reusing its own already-correct answer.
+    // Separate from the is_consistent check above: is_consistent never
+    // compares hand sizes (see DefenderPool). This checks exact counts and
+    // disjointness against what defender_pool_decomposition read from the
+    // root, not against the root read again. So a bug in the decomposition
+    // shows here instead of being hidden by reusing its answer.
     Deal const root = make_two_suit_pool_root();
     DefenderPool const pool = defender_pool_decomposition(root, North);
     int const n = static_cast<int>(pool.cards.size());
@@ -518,7 +510,7 @@ TEST(ApplyDefenderSplitTest, UntouchedFieldsAreByteIdenticalToRootEvenWhenTheSpl
     Deal const root = make_two_suit_pool_root();
     DefenderPool const pool = defender_pool_decomposition(root, North);
 
-    // A split different from root's own: all of the pool to West instead.
+    // A split different from root's: all of the pool to West.
     Deal const result = apply_defender_split(root, North, pool, /*fixed_seat_cards=*/{});
 
     EXPECT_EQ(result.trump, root.trump);
@@ -537,11 +529,10 @@ TEST(ApplyDefenderSplitTest, UntouchedFieldsAreByteIdenticalToRootEvenWhenTheSpl
 
 TEST(ApplyDefenderSplitTest, HandlesTheLargestPoolTheDomainEverAllows)
 {
-    // 26 pooled cards -- a full Diamonds suit to East, a full Clubs suit
-    // to West -- the largest pool this domain ever produces (thirteen
-    // tricks, so at most 26 cards are ever outstanding between two
-    // defenders). This is the exact boundary a fixed-size, rather than
-    // heap-allocated, internal buffer has to hold without overrunning.
+    // 26 pooled cards, all the diamonds to East and all the clubs to West.
+    // This is the largest pool possible: thirteen tricks leave at most 26
+    // cards between the two defenders. A fixed-size internal buffer must hold
+    // exactly this many without overrunning.
     Deal root{};
     root.trump = DDS_NOTRUMP;
     root.first = North;
@@ -559,9 +550,9 @@ TEST(ApplyDefenderSplitTest, HandlesTheLargestPoolTheDomainEverAllows)
     ASSERT_EQ(pool.cards.size(), 26u);
     ASSERT_EQ(pool.fixed_seat_count, 13);
 
-    // Canonical order is suits ascending: with no Spades/Hearts pool
-    // cards, Diamonds fills indices 0..12 and Clubs 13..25 -- so East's
-    // own split (all of Diamonds) is exactly indices 0..12.
+    // Canonical order is suits ascending. With no spades or hearts in the
+    // pool, diamonds fill indices 0 to 12 and clubs 13 to 25. So East's split
+    // (all the diamonds) is exactly indices 0 to 12.
     std::vector<int> east_indices;
     for (int i = 0; i < 13; ++i)
     {

@@ -13,11 +13,10 @@
 
 namespace be = dds::belief_evaluation;
 
-// The tests whose expected values are derived by hand rather than read off
-// the code. This evaluator is the reference every later, scalable
-// evaluator (sampling, cuts, replenishment) is measured against, so these
-// cases are what certifies the rest of the project — a wrong oracle here
-// would silently certify every later evaluator built against it.
+// Tests whose expected values are derived by hand, not read off the code.
+// The sampled, cut and replenishing evaluators are all measured against
+// this exhaustive evaluator, so a wrong value here would certify every one
+// of them wrongly.
 
 namespace
 {
@@ -38,9 +37,9 @@ namespace
     constexpr int South = 2;  // dummy
     constexpr int West = 3;   // a defender
 
-    /// ♠A opposite North's ♠2/♠3/♠4/♠J — North's side holds every remaining
-    /// winner in the suit. Certain, for any belief space over the split of
-    /// the low cards among the defenders.
+    /// North's ♠A is the only winner in the suit. South and the defenders
+    /// hold only low spades, so the contract is certain for any split of the
+    /// low cards between the defenders.
     auto make_certain_win_layout(int east_low, int west_low) -> Deal
     {
         Deal deal{};
@@ -63,28 +62,25 @@ class OracleTest : public ::testing::Test
 {
 };
 
-// --- 9a: certainty ---------------------------------------------------------
+// --- certainty --------------------------------------------------------------
 
 TEST_F(OracleTest, CertaintyOverASeveralLayoutBeliefSpace)
 {
-    // North's ace is the only winner needed and it is unconditionally the
-    // highest card in the suit, regardless of how the two low cards
-    // Two/Four are split between the defenders. P_make == 1 for any of
-    // three distinct splits, proving the belief machinery does not
-    // perturb a determined answer.
+    // North's ace is the only winner needed, and it is the highest card in
+    // the suit however the Two and Four are split. P_make == 1 for each of
+    // three splits, so the belief machinery does not disturb a determined
+    // answer.
     be::VectorLayoutSource source(
         {make_certain_win_layout(Two, /*west=*/4),
          make_certain_win_layout(4, /*west=*/Two),
          make_certain_win_layout(Two, /*west=*/Two)});
-    // (the third layout is degenerate -- both defenders "holding" rank 2 is
-    // not a real deal, but is_consistent() and the recursion do not care;
-    // it only needs to be self-consistent as a Deal, and demonstrates the
-    // machinery tolerates an arbitrary extra layout in the space.)
-    // Its defender pool ({2} only, both defenders "sharing" rank 2)
-    // genuinely disagrees with the other two layouts' pool ({2, 4}), so
-    // assert_pool_matches / assert_forms_one_belief_node are deliberately
-    // not applied across all three here -- each layout is still internally
-    // well-formed, which is all assert_equal_hand_sizes checks.
+    // The third layout is degenerate: both defenders "hold" the Two, which is
+    // not a real deal. is_consistent() and the recursion accept it; it only
+    // has to be a self-consistent Deal, and it shows that an extra arbitrary
+    // layout is tolerated. Its pool ({2}) differs from the others' ({2, 4}),
+    // so assert_pool_matches and assert_forms_one_belief_node are not applied
+    // across all three. Each layout is still well-formed, which is all
+    // assert_equal_hand_sizes checks.
     be::assert_equal_hand_sizes(source.at(0));
     be::assert_equal_hand_sizes(source.at(1));
     be::assert_equal_hand_sizes(source.at(2));
@@ -96,7 +92,7 @@ TEST_F(OracleTest, CertaintyOverASeveralLayoutBeliefSpace)
     EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 1.0);
 }
 
-// --- 9b: impossibility -------------------------------------------------
+// --- impossibility -----------------------------------------------------
 
 TEST_F(OracleTest, Impossibility)
 {
@@ -104,10 +100,8 @@ TEST_F(OracleTest, Impossibility)
     be::assert_equal_hand_sizes(layout);
     be::VectorLayoutSource source({layout});
 
-    // Only one trick exists in the whole ending; two is unreachable no
-    // matter what anyone does. Worth having even though it is trivially
-    // true: a mass-accounting bug that inflates everything would show up
-    // here immediately.
+    // The ending has one trick, so two is unreachable. Trivial, but a
+    // mass-accounting bug that inflates everything would show here at once.
     be::EvaluationResult const result =
         be::evaluate(layout, North, /*tricks_needed=*/2, source, strategy(1), be::single_card_defender);
 
@@ -115,15 +109,14 @@ TEST_F(OracleTest, Impossibility)
     EXPECT_DOUBLE_EQ(result.by_strategy.at(1u).p_make, 0.0);
 }
 
-// --- 9c: a single defender choice ---------------------------------------
+// --- a single defender choice ------------------------------------------
 
 TEST_F(OracleTest, ASingleDefenderChoiceCarriesNoMassOnTheUnchosenBranch)
 {
-    // East, on lead, holds the king and the two of a suit where North (on
-    // this trick's far side) holds the ace. Whichever card East leads,
-    // North's ace wins the trick -- but the test's point is not the
-    // winner, it is that delta's unchosen branch is *absent*, not present
-    // with zero mass.
+    // East, on lead, holds the king and two of a suit in which North holds the
+    // ace. North's ace wins whichever card East leads. The point is not the
+    // winner: delta's unchosen branch must be absent, not present with zero
+    // mass.
     Deal layout{};
     layout.trump = DDS_NOTRUMP;
     layout.first = East;
@@ -131,14 +124,11 @@ TEST_F(OracleTest, ASingleDefenderChoiceCarriesNoMassOnTheUnchosenBranch)
     layout.remainCards[East][Spades] = be::holding({King, Two});
     layout.remainCards[South][Spades] = be::holding({3});
     layout.remainCards[West][Spades] = be::holding({4});
-    // Not assert_equal_hand_sizes(layout): East genuinely holds one more
-    // card than the other three hands here (the whole point is giving East
-    // a real choice), so this fixture fails that check. It is not the
-    // "ending becomes unplayable" trap the check exists to catch, though,
-    // because this test calls expand_defender_node() directly for one node
-    // and never recurses through to the point where the imbalance would
-    // bite -- recorded as a finding rather than silently retrofitted or
-    // used to loosen the check.
+    // Not assert_equal_hand_sizes(layout): East holds one card more than the
+    // others, to give East a real choice, so that check would fail. It is not
+    // the unplayable-ending trap the check guards against: this test calls
+    // expand_defender_node() for one node and never recurses far enough for
+    // the imbalance to matter.
     be::VectorLayoutSource source({layout});
     be::BeliefNode const node = *be::make_root(layout, North, /*tricks_needed=*/1, source).node;
 
@@ -151,58 +141,49 @@ TEST_F(OracleTest, ASingleDefenderChoiceCarriesNoMassOnTheUnchosenBranch)
     ASSERT_EQ(result.children->size(), 1u);  // exactly one child: the king's
     EXPECT_EQ((*result.children)[0].layouts.size(), 1u);
     EXPECT_DOUBLE_EQ((*result.children)[0].p[0], 1.0);
-    // The two's branch does not exist at all -- there is no second child
-    // to inspect, which is the assertion.
+    // The Two's branch does not exist: there is no second child, which is
+    // the assertion.
 }
 
-// --- 9d: the two-way guess -- the most important test in the project ----
+// --- the two-way guess, the most important test in the project --------
 
 namespace
 {
-    /// North: Spade Two, Club Two (the club is a harmless filler so every
-    /// hand holds two cards and the ending stays well-formed to its true
-    /// end). South (dummy): Spade Ace, Spade Jack -- the deciding tenace.
-    /// East always holds two spades, West always one (plus a club filler)
-    /// -- fixed *seats*, not fixed cards; which specific ranks each holds
-    /// is what differs between the two layouts below.
+    /// North: spade Two and club Two (the club is filler so every hand holds
+    /// two cards and the ending stays well-formed). South (dummy): spade Ace
+    /// and Jack, the tenace that decides. East always holds two spades, West
+    /// one (plus a club filler). The seats are fixed; the two layouts differ in
+    /// which ranks each holds.
     ///
-    /// East's two-spade holding is what makes its play uninformative: with
-    /// a "play the lowest held" defender, East plays Six whether its other
-    /// card is the King (Layout 0) or the Seven (Layout 1) -- Six is lower
-    /// than both, so East's visible card is identical either way. West,
-    /// holding only one spade, has no such cover: whatever West holds is
-    /// revealed the moment it is forced to follow.
+    /// East's second spade hides its play. A "lowest held" defender makes East
+    /// play the Six whether its other card is the King (layout 0) or the Seven
+    /// (layout 1), since the Six is lower than both. West, with one spade, has
+    /// no such cover: its card shows when it must follow.
     ///
-    /// Hand-derivation of P_make == 0.5 for the fixed policy "always play
-    /// the jack": North leads its spade Two. East plays Six (see above --
-    /// identical in both layouts, so dummy's decision below is genuinely
-    /// blind). Dummy commits to the Jack:
+    /// P_make == 0.5 for the fixed policy "always play the jack". North leads
+    /// the spade Two, East plays the Six (the same in both layouts, so dummy
+    /// decides blind), and dummy plays the Jack:
     ///
-    ///   Layout 0 (East: King+Six, West: Seven): West, forced (its only
-    ///   spade), follows with Seven. Jack (11) beats North's Two, East's
-    ///   Six and West's Seven -- trick 1 to declarer's side, with the king
-    ///   still concealed in East's hand. Dummy leads trick 2 with its
-    ///   remaining Ace; North discards its club filler (void in spades);
-    ///   East is forced to follow with its remaining King; West discards
-    ///   its club filler (void in spades). Ace (14) beats King (13) --
-    ///   trick 2 to declarer's side too. 2 of 2 tricks: contract made.
+    ///   Layout 0 (East: King+Six, West: Seven): West must follow with the
+    ///   Seven. The Jack (11) beats the Two, Six and Seven, so declarer's side
+    ///   wins trick 1, with the King still hidden in East's hand. Dummy leads
+    ///   the Ace; North discards its club (void in spades); East must play the
+    ///   King; West discards its club. The Ace (14) beats the King (13), so
+    ///   declarer's side wins trick 2 too. 2 of 2 tricks: made.
     ///
-    ///   Layout 1 (East: Six+Seven, West: King): West, forced (its only
-    ///   spade), is *now* holding the king and must play it: King (13)
-    ///   beats Jack (11) -- trick 1 to the defence. West (won trick 1)
-    ///   leads trick 2 with its remaining club filler; North follows suit
-    ///   with its own club filler; East and South, void in clubs, discard
-    ///   their remaining spades (East's Seven, South's Ace) uselessly.
-    ///   West's own club is the only card that actually follows the led
-    ///   suit, so West wins its own trick. 0 of 2 tricks: contract fails.
+    ///   Layout 1 (East: Six+Seven, West: King): West must play its only
+    ///   spade, the King, which beats the Jack: trick 1 to the defence. West
+    ///   leads its club; North follows with its club; East and South, void in
+    ///   clubs, discard their last spades (East's Seven, South's Ace). West's
+    ///   club is the only card in the led suit, so West wins. 0 of 2 tricks:
+    ///   down.
     ///
-    /// Layout 0 and Layout 1 are equally likely (kappa = 1/2, p_i = 1
-    /// each), so P_make = 0.5*1 + 0.5*0 = 0.5. An evaluator that solved
-    /// each layout independently would find "always jack" wins Layout 0
-    /// and "always ace" wins Layout 1, and -- illegitimately, since it
-    /// cannot see which layout is real -- report 1.0 by picking whichever
-    /// line wins in each. That is strategy fusion, the failure this whole
-    /// project exists to avoid.
+    /// The layouts are equally likely (kappa = 1/2, p_i = 1 each), so
+    /// P_make = 0.5*1 + 0.5*0 = 0.5. An evaluator that solved each layout
+    /// separately would find "always jack" wins layout 0 and "always ace" wins
+    /// layout 1, and report 1.0 by picking the winning line in each, though it
+    /// cannot see which layout is real. That is strategy fusion, the failure
+    /// this project exists to avoid.
     auto make_two_way_guess_layout0() -> Deal
     {
         Deal deal{};
@@ -225,11 +206,10 @@ namespace
         return deal;
     }
 
-    /// pi for the two-way-guess test: forced/lowest-legal everywhere,
-    /// except at dummy's one real decision (South, still holding both
-    /// Ace and Jack), where it verifies the information set is genuine --
-    /// two equally-likely, observationally-identical entries -- before
-    /// committing, blind to the hidden layout, to the Jack.
+    /// pi for the two-way guess: forced or lowest-legal everywhere except
+    /// dummy's one real decision (South, holding Ace and Jack). There it checks
+    /// that the information set is real (two equally likely entries that look
+    /// the same) before committing to the Jack, blind to the layout.
     auto play_two_way_guess(be::ObservationState const& state, be::BeliefView const& view) -> be::Card
     {
         int const seat = be::seat_on_play(state.known_holdings);
@@ -250,13 +230,11 @@ namespace
         }
         EXPECT_NEAR(total_posterior.value(), 1.0, 1e-12);
 
-        // Declarer's and dummy's holdings -- the observable part of the
-        // position -- must be identical *between* the two entries (not
-        // against some fixed pre-play constant: North has already led by
-        // this point, so its own spade holding is legitimately 0 here,
-        // the same in both entries). If the two entries disagreed on any
-        // observable field, the ambiguity would already be resolved and
-        // 1.0 would be the *correct* answer, not a bug.
+        // The observable part of the position, declarer's and dummy's holdings,
+        // must be the same in both entries. The comparison is between entries,
+        // not against a pre-play constant: North has already led, so its spade
+        // holding is 0 in both. If the entries differed on anything observable,
+        // the ambiguity would be resolved and 1.0 would be correct.
         Deal const& first = view.entries[0].layout;
         Deal const& second = view.entries[1].layout;
         for (int hand : {North, South})
@@ -273,11 +251,10 @@ namespace
         return be::Card{Spades, Jack};
     }
 
-    /// The same fixed "always play the jack" policy, without the info-set
-    /// assertions -- for reuse against a *singleton* source (see
-    /// TheTwoWayGuessCollapsesToOneIfTheLinePerLayoutIsAllowedToDiffer),
-    /// where a genuine two-entry belief view never arises and asserting
-    /// one would be asserting the wrong thing.
+    /// The same "always play the jack" policy without the information-set
+    /// checks, for a singleton source (see
+    /// TheTwoWayGuessCollapsesToOneIfTheLinePerLayoutIsAllowedToDiffer), where
+    /// no two-entry view arises and the checks would be wrong.
     auto play_jack_forced(be::ObservationState const& state, be::BeliefView const&) -> be::Card
     {
         int const seat = be::seat_on_play(state.known_holdings);
@@ -313,15 +290,12 @@ TEST_F(OracleTest, TheTwoWayGuess)
 
 TEST_F(OracleTest, TheTwoWayGuessCollapsesToOneIfTheLinePerLayoutIsAllowedToDiffer)
 {
-    // The mutation this guards against: an evaluator that (incorrectly)
-    // solved each layout independently and picked whichever line wins in
-    // that specific layout would report 1.0 here instead of 0.5. Confirmed
-    // by literally doing that -- using a pi that inspects the *true*
-    // layout via delta's side channel is not possible (delta and pi don't
-    // share layout identity), so instead this recomputes P_make per layout
-    // directly against a *singleton* source, which is exactly what
-    // strategy fusion amounts to: solving each layout as if it were the
-    // whole world.
+    // The mutation this guards against: an evaluator that solved each layout
+    // separately and picked the winning line in each would report 1.0, not
+    // 0.5. pi cannot see the true layout (delta and pi share no layout
+    // identity), so this computes P_make per layout against a singleton
+    // source instead. That is what strategy fusion amounts to: solving each
+    // layout as if it were the whole world.
     Deal const layout0 = make_two_way_guess_layout0();
     Deal const layout1 = make_two_way_guess_layout1();
     be::assert_equal_hand_sizes(layout0);
@@ -342,25 +316,22 @@ TEST_F(OracleTest, TheTwoWayGuessCollapsesToOneIfTheLinePerLayoutIsAllowedToDiff
     ASSERT_FALSE(result1.error.has_value());
     // pi's fixed jack policy wins layout 0 alone outright...
     EXPECT_DOUBLE_EQ(result0.by_strategy.at(1u).p_make, 1.0);
-    // ...and loses layout 1 alone outright -- (1.0 + 0.0) / 2 != 1.0, so
-    // averaging single-layout results is not the same computation as
-    // evaluating the joint belief space, which is exactly the point.
+    // ...and loses layout 1 alone. (1.0 + 0.0) / 2 != 1.0, so averaging
+    // single-layout results is not the same as evaluating the joint belief
+    // space.
     EXPECT_DOUBLE_EQ(result1.by_strategy.at(1u).p_make, 0.0);
 }
 
-// --- 9e: delta actually matters -------------------------------------------
+// --- delta actually matters ----------------------------------------------
 
 TEST_F(OracleTest, DeltaActuallyMatters)
 {
-    // Same layout, same pi; East (on lead) holds both the King and the Two
-    // (a club filler on every other hand keeps the ending well-formed to
-    // its true end, though it is irrelevant here since tricks_needed = 1
-    // means the outcome is already decided once trick 1 resolves). Two
-    // different deltas force East's choice explicitly -- one lets North's
-    // side win the trick, the other does not -- confirming delta's answer
-    // is actually used, not merely consulted (which every earlier test in
-    // this suite would also pass even if delta were consulted and then
-    // ignored).
+    // One layout, one pi. East, on lead, holds the King and the Two (a club
+    // filler on the other hands keeps the ending well-formed, though
+    // tricks_needed = 1 settles the result at trick 1). Two deltas force East's
+    // choice: one lets North's side win the trick, the other does not. So
+    // delta's answer is used, not only consulted; the earlier tests would pass
+    // even if delta were consulted and ignored.
     Deal layout{};
     layout.trump = DDS_NOTRUMP;
     layout.first = East;
@@ -374,10 +345,9 @@ TEST_F(OracleTest, DeltaActuallyMatters)
     be::assert_equal_hand_sizes(layout);
     be::VectorLayoutSource source({layout});
 
-    // Each only overrides East's *leading* decision, i.e. only while East
-    // still holds both cards -- every other query (West following, or
-    // East's own forced follow-up in trick 2 once one of its two spades
-    // is already gone) falls back to the forced/lowest response.
+    // Each overrides only East's lead, while East still holds both cards.
+    // Every other query (West following, East's forced card in trick 2) falls
+    // back to the forced or lowest response.
     auto const east_still_has_the_choice = [](Deal const& layout)
     { return layout.remainCards[East][Spades] == be::holding({King, Two}); };
     auto const delta_plays_king = [=](be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
@@ -435,8 +405,8 @@ TEST_F(OracleTest, DeterminismAcrossRepeatedEvaluationAndLayoutOrder)
 
     ASSERT_FALSE(first.error.has_value());
     ASSERT_FALSE(second.error.has_value());
-    // Bitwise, not EXPECT_DOUBLE_EQ -- this is also the purity check on pi
-    // and delta: a strategy accumulating state across calls fails here.
+    // Bitwise, not EXPECT_DOUBLE_EQ. This is also the purity check on pi and
+    // delta: a strategy that keeps state across calls fails here.
     EXPECT_EQ(first.by_strategy.at(1u).p_make, second.by_strategy.at(1u).p_make);
 
     be::VectorLayoutSource source_ba({layout1, layout0});  // layouts in the opposite order

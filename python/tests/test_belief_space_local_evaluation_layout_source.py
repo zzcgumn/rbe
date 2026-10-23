@@ -1,3 +1,8 @@
+"""Tests for SingleLayoutSource, ExhaustiveLayoutSource and LayoutSource
+subclasses written in Python. They cover size and indexing, seeded order,
+how a play history shrinks the space, and every history and decomposition
+error."""
+
 import unittest
 
 from belief_space_local_evaluation import Card
@@ -43,9 +48,8 @@ def empty_root() -> dict:
 
 
 def build_deal(played, hand_for):
-    """Mirrors history_verification_test.cpp's own build_deal: `played`
-    (in order) becomes the history, every other card of the 52-card deck
-    goes to hand_for(suit, rank)."""
+    """Mirrors build_deal in history_verification_test.cpp. `played`, in
+    order, becomes the history. Every other card goes to hand_for(suit, rank)."""
     played_set = set(played)
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     for suit in range(4):
@@ -66,8 +70,8 @@ def everything_to_west(_suit: int, _rank: int) -> int:
 
 
 def make_ten_card_pool_root() -> dict:
-    # Ten pooled cards, five each -- C(10, 5) = 252. Mirrors
-    # exhaustive_layout_source_test.cpp's own fixture of the same name.
+    # Ten pooled cards, five to each defender: C(10, 5) = 252. Mirrors the
+    # fixture of the same name in exhaustive_layout_source_test.cpp.
     root = empty_root()
     root["remain_cards"][North][Spades] = (1 << 14) | (1 << 13)
     root["remain_cards"][South][Hearts] = (1 << 14) | (1 << 13)
@@ -83,9 +87,9 @@ def make_ten_card_pool_root() -> dict:
 
 
 def make_void_ending():
-    # East (the fixed seat) has shown void in diamonds; diamonds remain in
-    # the pool. D5/D7/D9 to West; three free clubs, East still needs one:
-    # C(3, 1) = 3. Mirrors exhaustive_layout_source_test.cpp's own fixture.
+    # East, the fixed seat, shows out of diamonds on the first trick. West
+    # must hold the ♦5, ♦7 and ♦9. Three clubs are free and East needs one:
+    # C(3, 1) = 3. Mirrors the fixture in exhaustive_layout_source_test.cpp.
     played = [(Diamonds, 14), (Spades, 2), (Diamonds, 13), (Diamonds, 12)]
 
     def hand_for(suit: int, rank: int) -> int:
@@ -99,9 +103,9 @@ def make_void_ending():
 
 
 def make_two_card_pool_root() -> dict:
-    """North and South a card each, the defenders sharing a two-card pool -- so
-    the belief space is the two ways of splitting it, which is the smallest
-    space in which a per-layout mean is not the same thing as the whole."""
+    """North and South hold a card each, and the defenders share two cards.
+    The two ways to split them give the smallest space where a per-layout mean
+    differs from a single layout."""
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = 1 << 13
     remain_cards[South][Spades] = 1 << 12
@@ -137,13 +141,11 @@ def lowest_defender_play(layout, seat, state):
 class TestSingleLayoutSource(unittest.TestCase):
     """A source over exactly one layout.
 
-    Worth shipping for a reason beyond convenience: P_make over a belief space
-    must equal the mean of P_make over each layout evaluated alone, which is the
-    natural check on any strategy pair -- and the check that caught
+    It makes a natural check cheap: P_make over a belief space must equal the
+    mean of P_make over each layout evaluated alone. That check caught
     DoubleDummyBound returning a "not evaluated" sentinel as a trick count.
-    Writing it by hand means subclassing LayoutSource, which is more ceremony
-    than the check deserves and is also where the randomised-order obligation is
-    most often got wrong.
+    Without this type, a caller must subclass LayoutSource and can get the
+    randomised-order rule wrong.
     """
 
     def test_size_is_one(self) -> None:
@@ -158,14 +160,13 @@ class TestSingleLayoutSource(unittest.TestCase):
         self.assertEqual(source.at(0)["trump"], layout["trump"])
 
     def test_at_is_repeatable(self) -> None:
-        # LayoutSource's own contract: repeated calls with the same index must
-        # return the same layout.
+        # The LayoutSource contract: the same index returns the same layout.
         source = SingleLayoutSource(make_ten_card_pool_root())
         self.assertEqual(source.at(0), source.at(0))
 
     def test_at_one_past_the_end_raises_index_error(self) -> None:
-        # Same contract as ExhaustiveLayoutSource, which the tests below pin:
-        # out of range is IndexError on every build, not an assert.
+        # As for ExhaustiveLayoutSource below: out of range raises IndexError
+        # in every build, not an assert.
         with self.assertRaises(IndexError):
             SingleLayoutSource(make_ten_card_pool_root()).at(1)
 
@@ -177,9 +178,9 @@ class TestSingleLayoutSource(unittest.TestCase):
         self.assertIsInstance(SingleLayoutSource(make_ten_card_pool_root()), LayoutSource)
 
     def test_it_agrees_with_a_hand_written_one_layout_source(self) -> None:
-        # A container with no evidence it reaches the evaluator correctly would
-        # pass every test above. This runs the same layout through both: the
-        # bound type, and the Python subclass a caller writes today.
+        # The tests above would pass even if the layout never reached the
+        # evaluator correctly. This runs one layout through the bound type and
+        # through a hand-written Python subclass.
         root = make_two_card_pool_root()
         layout = ExhaustiveLayoutSource(root, North, 1).at(0)
 
@@ -206,9 +207,8 @@ class TestSingleLayoutSource(unittest.TestCase):
                          by_hand["by_strategy"][1]["p_make"])
 
     def test_the_mean_over_layouts_equals_p_make_over_the_space(self) -> None:
-        # The property this type exists to make cheap, and the one that caught
-        # DoubleDummyBound: pi here ignores the view, so P_make over the belief
-        # space must be the mean of P_make over each layout evaluated alone.
+        # The check described in the class docstring. pi ignores the view, so
+        # P_make over the space must be the mean of P_make per layout.
         root = make_two_card_pool_root()
         space = ExhaustiveLayoutSource(root, North, 1)
         size = space.size()
@@ -250,16 +250,12 @@ class TestConstruction(unittest.TestCase):
             ExhaustiveLayoutSource(make_ten_card_pool_root(), DDS_HANDS_OUT_OF_RANGE, 1)
 
     def test_more_than_26_defender_cards_raises_value_error(self) -> None:
-        # dict_to_deal only validates each remain_cards value's own bit
-        # shape (a valid 2..14 mask), not that the two defender hands
-        # together hold at most 26 cards -- the domain
-        # binomial_coefficient (and so both constrained_space_size/size()
-        # and unrank_combination/at()) is documented for. A malformed
-        # root can put more than that in the pool (here, all 52 cards
-        # nominally on one defender) with no other check catching it
-        # first; asserted in a debug build, silently wrong (0, or a wrong
-        # layout out of at()) once built -c opt. Rejected here, at
-        # construction, before either accessor could ever reach it.
+        # dict_to_deal checks that each remain_cards mask uses ranks 2..14.
+        # It does not check that the defenders hold at most 26 cards
+        # together. binomial_coefficient, behind size() and at(), is only
+        # defined up to 26. Here East holds all 52 cards. A debug build would
+        # assert, and -c opt would silently return 0 or a wrong layout. The
+        # constructor rejects the root first.
         root = empty_root()
         for suit in range(4):
             root["remain_cards"][East][suit] = 0x7FFC  # every rank 2..14 in every suit
@@ -268,13 +264,9 @@ class TestConstruction(unittest.TestCase):
         self.assertIn("26", str(ctx.exception))
 
     def test_at_one_past_the_end_raises_index_error(self) -> None:
-        # ExhaustiveLayoutSource::at()'s own C++ precondition is an
-        # assert(index < total) -- a last resort against undefined
-        # behaviour, not a diagnostic, and a no-op entirely once built
-        # -c opt. Translated to a real IndexError at this binding boundary
-        # rather than exposed directly, the same reasoning
-        # list_to_history's own comment gives for why a boundary check
-        # exists at all here.
+        # In C++, at() only asserts index < total, and -c opt drops the
+        # assert. The binding checks the index and raises IndexError, as
+        # list_to_history does for its input.
         source = ExhaustiveLayoutSource(make_ten_card_pool_root(), North, 1)
         with self.assertRaises(IndexError):
             source.at(source.size())
@@ -285,29 +277,24 @@ class TestConstruction(unittest.TestCase):
             source.at(2**63)
 
     def test_at_an_index_beyond_uint64_raises_index_error_not_overflow_error(self) -> None:
-        # 2**64 does not fit in the C++ uint64_t at() itself takes -- if
-        # this binding cast the raw argument to uint64_t before its own
-        # range check ran, pybind11's own argument conversion would raise
-        # OverflowError here, before ever reaching that check.
+        # 2**64 does not fit in the uint64_t that C++ at() takes. If the
+        # binding converted to uint64_t before its range check, pybind11
+        # would raise OverflowError instead.
         source = ExhaustiveLayoutSource(make_ten_card_pool_root(), North, 1)
         with self.assertRaises(IndexError):
             source.at(2**64)
 
     def test_at_a_negative_index_raises_index_error_not_overflow_error(self) -> None:
-        # Same failure mode as the above, the more likely way a caller
-        # actually reaches it: a negative index has no valid uint64_t
-        # representation at all.
+        # The same failure, and the likelier one: a negative index has no
+        # uint64_t value.
         source = ExhaustiveLayoutSource(make_ten_card_pool_root(), North, 1)
         with self.assertRaises(IndexError):
             source.at(-1)
 
     def test_at_a_non_integral_float_raises_type_error(self) -> None:
-        # int(1.5) == 1 -- a lenient, int()-style conversion would
-        # silently truncate this to a real, in-range index (layout 1)
-        # rather than reporting the caller's mistake. Real Python
-        # indexing ([1, 2, 3][1.5]) rejects this with TypeError, the same
-        # operator.index() semantics this binding must match rather than
-        # accept anything int() would.
+        # int(1.5) == 1, so an int()-style conversion would silently return
+        # layout 1. Python indexing ([1, 2, 3][1.5]) raises TypeError, and
+        # the binding follows operator.index() to match.
         source = ExhaustiveLayoutSource(make_ten_card_pool_root(), North, 1)
         with self.assertRaises(TypeError):
             source.at(1.5)
@@ -367,24 +354,19 @@ class TestHistoryConstrainsTheSpace(unittest.TestCase):
 
 class TestEveryHistoryVerdictCauseRaises(unittest.TestCase):
     def test_invalid_input_out_of_range_declarer_with_a_non_empty_history(self) -> None:
-        # Caught by this binding's own declarer/opening_leader pre-check
-        # (see test_out_of_range_opening_leader_raises_even_with_no_history)
-        # before the C++ constructor -- and so before verify_history's own
-        # InvalidInput -- ever runs. Same exception either way; this pins
-        # that a non-empty history does not change that.
+        # The binding checks the declarer before the C++ constructor and
+        # verify_history run. Both checks raise the same exception. This
+        # pins that a non-empty history does not change that.
         root, history = make_void_ending()
         record = PlayRecord(history, North)
         with self.assertRaises(InvalidHistoryInputError):
             ExhaustiveLayoutSource(root, DDS_HANDS_OUT_OF_RANGE, 1, record=record)
 
     def test_invalid_input_out_of_range_suit_in_a_history_card(self) -> None:
-        # A malformed card inside history itself is caught by
-        # list_to_history's own conversion, inside PlayRecord's
-        # constructor, before a record capable of reaching
-        # ExhaustiveLayoutSource can even exist -- this must raise the
-        # same InvalidHistoryInputError a verify_history-derived
-        # InvalidInput does, not a bare ValueError with no relation to
-        # this type's own exception hierarchy.
+        # list_to_history rejects the card inside the PlayRecord
+        # constructor, before ExhaustiveLayoutSource sees it. It must raise
+        # InvalidHistoryInputError, as verify_history does, not a bare
+        # ValueError outside the history error hierarchy.
         history = [Card(4, 2)]  # suit 4 is out of range (0..3)
         with self.assertRaises(InvalidHistoryInputError):
             PlayRecord(history, North)
@@ -467,11 +449,10 @@ class TestEveryHistoryVerdictCauseRaises(unittest.TestCase):
 
 class TestEveryConstrainedSpaceStatusCauseRaises(unittest.TestCase):
     def test_contradictory_void(self) -> None:
-        # Both defenders void in diamonds, with a diamond still outstanding
-        # in the pool -- verify_history accepts this (the 52-card partition,
-        # the trailing trick and the free cross-check all pass), so this is
-        # the constrained decomposition's own empty cause, not a rejected
-        # history.
+        # Both defenders show out of diamonds, but West's root hand still
+        # holds the ♦J. verify_history accepts this: the 52-card partition,
+        # the trailing trick and the free cross-check all pass. The
+        # constrained decomposition then finds no layout.
         def hand_for(suit: int, rank: int) -> int:
             if suit == Diamonds and rank == 11:
                 return West
@@ -484,13 +465,10 @@ class TestEveryConstrainedSpaceStatusCauseRaises(unittest.TestCase):
             ExhaustiveLayoutSource(root, North, 1, record=record)
 
     def test_forced_exceeds_fixed_seat_count(self) -> None:
-        # West (the other seat) is void in diamonds, forcing all three
-        # outstanding diamonds onto East (the fixed seat) -- but East's own
-        # root hand size is only one card. Mirrors
-        # constrained_decomposition_test.cpp's own
-        # MoreCardsForcedToTheFixedSeatThanItHoldsIsRejected, reached here
-        # through a real root and history rather than decompose_constrained
-        # called directly.
+        # West shows out of diamonds, so all three outstanding diamonds go to
+        # East, the fixed seat. East's root hand has only one card. Mirrors
+        # MoreCardsForcedToTheFixedSeatThanItHoldsIsRejected in
+        # constrained_decomposition_test.cpp, through a root and history.
         def hand_for(suit: int, rank: int) -> int:
             if suit == Diamonds and rank in (5, 7, 9):
                 return West
@@ -505,13 +483,12 @@ class TestEveryConstrainedSpaceStatusCauseRaises(unittest.TestCase):
             ExhaustiveLayoutSource(root, North, 1, record=record)
 
     def test_insufficient_free_cards(self) -> None:
-        # East (the fixed seat) is void in diamonds, forcing all four
-        # outstanding diamonds onto West -- but East's own root hand size
-        # (four, held in diamonds despite the void: root bookkeeping only,
-        # not cross-checked against derived voids) leaves only one free
-        # club for East to actually reach it from. Mirrors
-        # constrained_decomposition_test.cpp's own
-        # TheFixedSeatCannotReachItsHandSizeFromWhatIsLeftIsRejected.
+        # East, the fixed seat, shows out of diamonds, so all four outstanding
+        # diamonds go to West. East's root hand has four cards. The root holds
+        # them in diamonds, which is not checked against the void. Only one
+        # free club is left for East. Mirrors
+        # TheFixedSeatCannotReachItsHandSizeFromWhatIsLeftIsRejected in
+        # constrained_decomposition_test.cpp.
         def hand_for(suit: int, rank: int) -> int:
             if suit == Diamonds and rank in (5, 7, 9, 11):
                 return East
@@ -528,16 +505,11 @@ class TestEveryConstrainedSpaceStatusCauseRaises(unittest.TestCase):
 
 class TestRejectedHistoryIsDistinguishableFromNoLayoutSurvived(unittest.TestCase):
     def test_a_rejected_history_does_not_read_as_an_ordinary_empty_source(self) -> None:
-        # A rejected history must raise a HistoryRejectedError, never the
-        # RootFailure.NoLayoutSurvived an ordinary empty source produces --
-        # they are different faults (fix the history vs. fix the source)
-        # and the exception types must never be confused. NoLayoutSurvived
-        # itself is a later task's to bind; this only pins that a rejected
-        # history raises something distinct from it. Raised here from
-        # PlayRecord's own construction -- a duplicated card needs no root
-        # to detect -- rather than from ExhaustiveLayoutSource, but the
-        # same exception class either way, so the distinction this test
-        # exists to pin is unaffected by which of the two raised it.
+        # A rejected history must raise a HistoryRejectedError, not the
+        # RootFailure.NoLayoutSurvived of an empty source. The caller fixes
+        # the history in one case and the source in the other. PlayRecord
+        # raises here, since a duplicated card needs no root.
+        # ExhaustiveLayoutSource raises the same class.
         history = [Card(Spades, 14), Card(Spades, 14)]
         with self.assertRaises(DuplicatedCardError) as ctx:
             PlayRecord(history, North)
@@ -558,13 +530,10 @@ class PythonLayoutSource(LayoutSource):
 
 class TestTrampoline(unittest.TestCase):
     def test_a_python_subclass_works_when_consumed_by_cpp(self) -> None:
-        # Calling source.size()/.at(i) directly from Python would never
-        # reach the C++ trampoline at all -- Python's own method
-        # resolution finds this subclass's plain method first. The two
-        # _layout_source_*_from_cpp probes stand in for the real consumer
-        # (evaluate()/make_root(), a later task): they hold this source as
-        # a be::LayoutSource const& and call through it, exactly as C++
-        # code actually will.
+        # Calling size() or at() from Python never reaches the C++
+        # trampoline. The two _layout_source_*_from_cpp probes hold the
+        # source as a be::LayoutSource const& and call through it, as
+        # evaluate() does.
         deals = [make_ten_card_pool_root(), make_ten_card_pool_root()]
         source = PythonLayoutSource(deals)
         self.assertEqual(_layout_source_size_from_cpp(source), 2)
@@ -617,9 +586,8 @@ class TestMalformedSubclassesFailComprehensibly(unittest.TestCase):
             _layout_source_at_from_cpp(source, 0)
 
     def test_at_returning_a_malformed_deal_raises_the_converters_value_error(self) -> None:
-        # Routes through the converters' own dict_to_deal, whose own
-        # ValueError is the right answer here -- pinned so a later change
-        # does not swallow it.
+        # dict_to_deal raises the ValueError. This pins that nothing
+        # swallows it.
         source = ReturnsAMalformedDealFromAt()
         with self.assertRaises(ValueError):
             _layout_source_at_from_cpp(source, 0)

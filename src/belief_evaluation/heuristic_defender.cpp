@@ -8,25 +8,14 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    // Whether `card` is actually among the double-dummy-optimal
-    // candidates `fut` reports -- either a fut entry's own
-    // representative, or a lower card folded into that entry's own
-    // `equals` field (dds's representative convention; see
-    // touching_group.hpp). A chain rule is a plain callable, not a type
-    // this class controls, so nothing stops a caller-authored one from
-    // returning an arbitrary Card -- this is the one place
-    // HeuristicDefender itself upholds the "never invents a candidate
-    // outside that set" claim specs/replenished-belief-evaluation.md
-    // makes for it, rather than trusting every rule in the chain to.
+    // Whether `card` is among the optimal candidates in `fut`: an entry's
+    // card, or a lower card in its `equals` (see touching_group.hpp). A chain
+    // rule can return any card. This check upholds the spec's claim that
+    // HeuristicDefender never plays outside the optimal set.
     auto is_double_dummy_optimal(Card const& card, FutureTricks const& fut) -> bool
     {
-        // card comes from a caller-authored chain rule, not from fut
-        // itself -- rank must be checked against the documented 2..14
-        // range before it is ever used to shift equals's bits; a
-        // negative or oversized rank (reachable from Python with no
-        // range check of its own) is undefined behaviour for `1u <<
-        // card.rank`, not merely a card this function can correctly
-        // recognise as non-optimal.
+        // card comes from a chain rule, possibly from Python. Check the rank
+        // before `1u << card.rank`, which is undefined for a bad rank.
         if (card.rank < 2 || card.rank > 14)
         {
             return false;
@@ -57,9 +46,7 @@ auto HeuristicDefender::as_strategy() -> DefenderStrategy
     return [this](DefenderQuery const& query) -> std::vector<WeightedCard>
     {
         FutureTricks fut{};
-        // Same call, same solutions = 2 justification, as
-        // DoubleDummyDefender::as_strategy() -- see that function's own
-        // comment.
+        // solutions = 2, as in DoubleDummyDefender::as_strategy().
         int const status =
             solve_board(ctx_, query.layout, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &fut);
         if (status != RETURN_NO_FAULT)
@@ -83,10 +70,8 @@ auto HeuristicDefender::as_strategy() -> DefenderStrategy
             {
                 return {WeightedCard{*card, 1.0}};
             }
-            // A misbehaving chain rule returned a card outside the
-            // solved optimal set -- fall through to spread() rather
-            // than ever returning it, so this guarantee never depends
-            // on every rule in the chain behaving itself.
+            // A chain rule returned a card outside the optimal set. Use spread()
+            // instead of returning it.
         }
 
         return spread(fut, fallback_policy_);

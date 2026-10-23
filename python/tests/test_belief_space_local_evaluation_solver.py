@@ -1,3 +1,7 @@
+"""Tests for DoubleDummyDefender and DoubleDummyBound from Python: a dds3
+SolverContext passed in, declarer checks, use as delta and as a bound, and
+keeping the context alive."""
+
 import gc
 import unittest
 
@@ -22,13 +26,10 @@ def holding(*ranks: int) -> int:
 
 
 def make_declarer_never_wins_a_trick() -> dict:
-    # North (declarer) holds only the queen and jack of spades -- East and
-    # West hold the ace and king between them, so declarer never wins a
-    # spade trick regardless of split or who leads. The club filler (one
-    # card each) always goes to West too, so declarer's true double-dummy
-    # value over the whole ending is 0. Mirrors double_dummy_bound_test.cpp's
-    # own ReproductionRunBTierOneAndTwoTogetherAgainstAQualifyingDelta
-    # fixture exactly.
+    # North (declarer) holds the ♠Q J. East holds the ♠A 4 and West the ♠K 5,
+    # and West holds the top club, so declarer's double-dummy value is 0. Mirrors the
+    # fixture of ReproductionRunBTierOneAndTwoTogetherAgainstAQualifyingDelta
+    # in double_dummy_bound_test.cpp.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = holding(12, 11)  # Q, J
     remain_cards[South][Spades] = holding(2, 3)
@@ -48,14 +49,9 @@ def make_declarer_never_wins_a_trick() -> dict:
 
 
 class FixedLayoutSource(LayoutSource):
-    # Mirrors the C++ tests' own VectorLayoutSource: returns exactly the
-    # one literal deal given, never re-enumerating a pool split the way
-    # ExhaustiveLayoutSource does. Needed here because the solver fixture
-    # below names an *exact* East/West split as part of what it tests
-    # (declarer never wins a trick under that specific split) --
-    # ExhaustiveLayoutSource would instead treat East/West's combined
-    # holding as a fungible pool and re-split it across every layout it
-    # enumerates, which is a different fixture entirely.
+    # Like VectorLayoutSource in the C++ tests: returns the one deal given.
+    # The fixture depends on its exact East-West split.
+    # ExhaustiveLayoutSource would enumerate every split of the pool.
     def __init__(self, deal):
         super().__init__()
         self._deal = deal
@@ -75,13 +71,10 @@ def _lowest_of(mask: int, suit: int):
 
 
 def seat_on_play(deal: dict) -> int:
-    # Mirrors trick.hpp's own seat_on_play(deal) exactly: deal["first"]
-    # (this *current node's* own trick leader -- updated trick to trick by
-    # whoever won the previous one, not the root's fixed opening leader)
-    # advanced by however many cards are already in the trick in progress.
-    # This fixture plays more than one trick (unlike every earlier task's
-    # own single-trick fixtures, where state.first and this always
-    # coincided trivially), so the distinction is load-bearing here.
+    # Mirrors seat_on_play(deal) in trick.hpp. deal["first"] is the leader
+    # of the current trick, not the root's opening leader. Add the cards
+    # already in the trick. This fixture plays more than one trick, so
+    # state.first would be wrong.
     played = 0
     for rank in deal["current_trick_rank"]:
         if rank == 0:
@@ -91,11 +84,9 @@ def seat_on_play(deal: dict) -> int:
 
 
 def lowest_legal_card(deal: dict, seat: int):
-    # This fixture has two suits (unlike every earlier task's own
-    # single-suit fixtures), so a strategy that ignores the led suit is
-    # not merely simplified -- it is wrong. Mirrors test_support.hpp's own
-    # lowest_legal_card(deal, seat) exactly: follow the led suit if held,
-    # otherwise the lowest card in any suit.
+    # This fixture has two suits, so the strategy must follow the led suit.
+    # Mirrors lowest_legal_card(deal, seat) in test_support.hpp: the lowest
+    # card in the led suit if held, else the lowest card in any suit.
     remain_cards = deal["remain_cards"][seat]
     if deal["current_trick_rank"][0] != 0:
         led = deal["current_trick_suit"][0]
@@ -114,11 +105,9 @@ def declarer_play(state, view):
 
 class TestCrossModuleHandover(unittest.TestCase):
     def test_a_solvercontext_constructed_in_dds3_works_here(self) -> None:
-        # A real test, not an argument from documentation: this module
-        # never registers py::class_<SolverContext> itself (see
-        # belief_space_local_evaluation.cpp's own comment) -- if it had,
-        # this would fail at runtime with a message about incompatible
-        # argument types naming the same class twice.
+        # This module does not register py::class_<SolverContext>. If it
+        # did, this call would fail with an incompatible-argument error that
+        # names the same class twice.
         ctx = dds3.SolverContext()
         defender = DoubleDummyDefender(ctx)
         self.assertIsNotNone(defender)
@@ -127,11 +116,9 @@ class TestCrossModuleHandover(unittest.TestCase):
 
 
 class TestOutOfRangeDeclarerRaises(unittest.TestCase):
-    # DoubleDummyBound stores declarer at construction (it is fixed for
-    # the object's whole lifetime -- see the type's own docstring) and
-    # as_bound() later indexes remainCards[declarer_] through
-    # tricks_remaining with no range check of its own. Validated here, the
-    # same way evaluate()'s own declarer argument is.
+    # DoubleDummyBound fixes declarer at construction. as_bound() indexes
+    # remainCards[declarer_] with no range check, so the constructor checks
+    # declarer as evaluate() does.
     def test_negative_declarer_raises_value_error(self) -> None:
         ctx = dds3.SolverContext()
         with self.assertRaises(ValueError) as ctx_manager:
@@ -147,9 +134,8 @@ class TestOutOfRangeDeclarerRaises(unittest.TestCase):
 
 class TestDoubleDummyDefenderUsableAsDelta(unittest.TestCase):
     def test_reaches_the_same_answer_as_the_c_plus_plus_equivalent(self) -> None:
-        # Mirrors ReproductionRunBTierOneAndTwoTogetherAgainstAQualifyingDelta:
-        # tier 1 alone and tier 1+2 together both reach the true value
-        # (0.0) bitwise, on the exact same fixture.
+        # As in the C++ test: tier 1 alone and tiers 1 and 2 together both
+        # give exactly 0.0.
         root = make_declarer_never_wins_a_trick()
         ctx = dds3.SolverContext()
         defender = DoubleDummyDefender(ctx)
@@ -171,8 +157,8 @@ class TestDoubleDummyDefenderUsableAsDelta(unittest.TestCase):
         self.assertEqual(tier1_only["by_strategy"][1]["p_make"], tier1_and_2["by_strategy"][1]["p_make"])
         self.assertEqual(tier1_and_2["by_strategy"][1]["p_make"], 0.0)
 
-        # Evidence tier 2 did real work tier 1 alone could not: the bound
-        # catches the all-dead position at the root itself.
+        # Tier 2 did work that tier 1 could not: the bound cuts the dead
+        # position at the root.
         self.assertLess(
             tier1_and_2["by_strategy"][1]["counters"]["nodes_visited"],
             tier1_only["by_strategy"][1]["counters"]["nodes_visited"])
@@ -190,17 +176,15 @@ class TestDoubleDummyDefenderUsableAsDelta(unittest.TestCase):
 
 class TestDoubleDummyBoundFixesDeclarerAtConstruction(unittest.TestCase):
     def test_a_bound_built_for_one_declarer_is_not_reused_for_another(self) -> None:
-        # Not asserting a specific wrong answer (that would pin an
-        # implementation accident) -- just that the object itself records
-        # which declarer it was built for, since a Python caller has no
-        # other way to learn this obligation exists.
+        # A bound is built for one declarer. This does not pin the wrong
+        # answer a misused bound gives, which is an accident of the
+        # implementation.
         ctx = dds3.SolverContext()
         bound_for_north = DoubleDummyBound(ctx, North)
         bound_for_east = DoubleDummyBound(ctx, East)
         root = make_declarer_never_wins_a_trick()
-        # Same layout, two different fixed declarers -- legitimately
-        # different questions, so nothing requires the two bounds to
-        # agree; this only confirms both are independently callable.
+        # Two declarers ask different questions, so the answers may
+        # differ. Both bounds must be callable.
         self.assertIsInstance(bound_for_north(root), int)
         self.assertIsInstance(bound_for_east(root), int)
 
@@ -213,8 +197,8 @@ class TestKeepAlive(unittest.TestCase):
             ctx = dds3.SolverContext()
             return DoubleDummyDefender(ctx)
 
-        defender = make_defender()  # the only remaining reference to ctx is
-        # the one py::keep_alive<1, 2>() ties to `defender` itself
+        defender = make_defender()  # only py::keep_alive<1, 2>() now
+        # holds ctx, through `defender`
         gc.collect()
 
         source = FixedLayoutSource(root)

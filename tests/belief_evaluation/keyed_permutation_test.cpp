@@ -7,14 +7,17 @@
 
 #include <belief_evaluation/keyed_permutation.hpp>
 
+// Tests for keyed_permutation: bijection over several domain sizes,
+// determinism, seed dependence, lack of structure and termination.
+
 namespace be = dds::belief_evaluation;
 
 using be::keyed_permutation;
 
 namespace
 {
-    /// Every output keyed_permutation produces over the whole of [0, n) --
-    /// the shape the exhaustive bijection check below needs.
+    /// Every output of keyed_permutation over [0, n), for the exhaustive
+    /// bijection check.
     auto all_outputs(std::uint64_t n, std::uint64_t seed) -> std::vector<std::uint64_t>
     {
         std::vector<std::uint64_t> outputs;
@@ -79,8 +82,8 @@ TEST(KeyedPermutationTest, IsABijectionExactlyAtAPowerOfTwo)
 
 TEST(KeyedPermutationTest, IsABijectionOnALargerSpaceCloseToTheBridgeSizedBound)
 {
-    // Not the full C(26, 13) -- too slow to enumerate exhaustively in a
-    // unit test -- but large enough to exercise a wide bit width.
+    // Not the full C(26, 13), which is too slow to enumerate in a unit test,
+    // but wide enough in bits.
     EXPECT_TRUE(is_bijection(100000u, 123456789u));
 }
 
@@ -136,14 +139,11 @@ TEST(KeyedPermutationTest, OutputIsNotMonotoneIncreasing)
 
 TEST(KeyedPermutationTest, NoWholeHalfOfTheBitsPassesThroughUnchanged)
 {
-    // A direct symptom this pins: an under-diffused round leaves one whole
-    // Feistel half literally untouched, so those bits of the output equal
-    // those same bits of the input for every index -- caught here as the
-    // low half-width bits of output vs input agreeing far more often than
-    // chance would predict, rather than by the avalanche measurement that
-    // originally picked the round count (documented on keyed_permutation's
-    // own doxygen; not re-run as a test since it is a measurement, not a
-    // pass/fail property of one call).
+    // A round that mixes too little leaves a whole Feistel half unchanged.
+    // Those output bits then equal the input bits for every index. This test
+    // counts how often the low half matches. The round count itself was chosen
+    // by an avalanche measurement (see the doxygen), which is not a pass/fail
+    // test.
     std::uint64_t const n = 1024u;  // b = 10, split 5/5
     std::uint64_t const low_mask = (1u << 5) - 1;
     int unchanged = 0;
@@ -155,12 +155,9 @@ TEST(KeyedPermutationTest, NoWholeHalfOfTheBitsPassesThroughUnchanged)
             ++unchanged;
         }
     }
-    // Chance alone predicts about n / 32 (~32) matches on 5 low bits;
-    // an under-diffused single-round map would instead match on every one
-    // of the n indices covered by that pass. A generous margin --
-    // comfortably above chance, comfortably below "every index" -- is
-    // enough to catch the structural failure without being a flaky
-    // statistical test.
+    // Chance predicts about n / 32 (about 32) matches on 5 low bits. A map
+    // that left that half unchanged would match on all n. The margin between
+    // the two catches the failure without making the test flaky.
     EXPECT_LT(unchanged, static_cast<int>(n) / 2);
 }
 
@@ -168,11 +165,9 @@ TEST(KeyedPermutationTest, NoWholeHalfOfTheBitsPassesThroughUnchanged)
 
 TEST(KeyedPermutationTest, TerminatesWithFewCycleWalkSteps)
 {
-    // Indirect: no step counter is exposed, so this instead checks the
-    // documented consequence of "expected steps under 2" -- every call in
-    // a modestly sized domain returns promptly (no test timeout) and the
-    // bijection property (checked exhaustively above) already proves the
-    // walk always lands in range rather than looping forever undetected.
+    // No step counter is exposed, so this checks the consequence of
+    // "expected steps under 2": every call returns promptly. The exhaustive
+    // bijection tests above prove the walk always lands in range.
     for (std::uint64_t index = 0; index < 500; ++index)
     {
         EXPECT_LT(keyed_permutation(index, 500u, 55u), 500u);
@@ -181,9 +176,8 @@ TEST(KeyedPermutationTest, TerminatesWithFewCycleWalkSteps)
 
 TEST(KeyedPermutationTest, TerminatesForAnNThatDoesNotDivideAPowerOfTwoAtAll)
 {
-    // n = 1 is the domain that most stresses cycle-walking's own
-    // termination argument: the tightest possible power-of-two domain
-    // (2^0 = 1) with nothing else in it to walk to.
+    // n = 1 is the hardest case for cycle-walking to end: the smallest
+    // power-of-two domain (2^0 = 1), with nothing else to walk to.
     EXPECT_EQ(keyed_permutation(0u, 1u, 123u), 0u);
 }
 
@@ -191,13 +185,10 @@ TEST(KeyedPermutationTest, TerminatesForAnNThatDoesNotDivideAPowerOfTwoAtAll)
 
 TEST(KeyedPermutationTest, AnEmptyDomainReturnsDeterministicallyRatherThanUnderflowingOrLooping)
 {
-    // n == 0 is always a contract violation (there is no valid index into
-    // an empty domain), but naively computing n - 1 would underflow to
-    // UINT64_MAX and the cycle-walking loop's own exit condition
-    // (x < n) can then never be satisfied, hanging forever rather than
-    // merely computing a wrong answer -- a release build compiles away
-    // an assert, so this must be a hard, deterministic case, not only an
-    // asserted one. No particular return value is meaningful for an
-    // empty domain; only that this returns promptly and repeatably.
+    // n == 0 is a contract violation: an empty domain has no valid index.
+    // Computing n - 1 would underflow to UINT64_MAX, and the loop's exit
+    // condition (x < n) could never hold. A release build compiles out the
+    // assert, so the function must still return. No return value is
+    // meaningful; it must only be prompt and repeatable.
     EXPECT_EQ(keyed_permutation(0u, 0u, 1u), keyed_permutation(0u, 0u, 1u));
 }

@@ -8,12 +8,16 @@
 
 #include "test_support.hpp"
 
-// A namespace alias plus targeted `using` declarations, not `using namespace
-// dds::belief_evaluation;` -- this file includes api/dds_data_types.hpp
-// directly (declaring global ::Card), so a `using namespace` here would make
-// any future bare `Card` reference ambiguous between ::Card and
-// dds::belief_evaluation::Card rather than a clear compile error naming
-// which one was meant.
+// Root sampling: make_root scans the source from index 0 and takes the
+// first RootOptions::sample_size consistent layouts (or fewer), not all of
+// them. Every fixture asserts layouts.size() directly. make_root has two
+// reasons to return fewer layouts than intended (the consistency filter
+// and the cap), and only a pinned count tells them apart.
+
+// A namespace alias and targeted `using` declarations, not `using
+// namespace dds::belief_evaluation;`. This file includes
+// api/dds_data_types.hpp, which declares a global ::Card, so a bare `Card`
+// would be ambiguous instead of a clear compile error.
 namespace be = dds::belief_evaluation;
 using be::DeclarerStrategy;
 using be::EvaluateOptions;
@@ -33,14 +37,6 @@ using be::make_root;
 using be::node_mass;
 using be::single_card_declarer_play;
 using be::single_card_defender;
-
-// Root sampling: make_root scans source from index 0 and takes the first
-// (up to) RootOptions::sample_size consistent layouts, rather than every
-// one -- the first place anything in this module samples. Every fixture
-// below asserts layouts.size() directly:
-// make_root now has two reasons to return fewer layouts than a fixture
-// author intended (the consistency filter and the cap), and a fixture that
-// does not pin the count cannot tell them apart.
 
 namespace
 {
@@ -66,18 +62,15 @@ namespace
         return DeclarerStrategy{.id = id, .play = single_card_declarer_play, .state_key = nullptr};
     }
 
-    /// `count` layouts, North holding the top two spades outright (a
-    /// certain trick, however East and West's own spades split) so the
-    /// contract's fate never depends on the club filler below -- an
-    /// untouched suit that lets several otherwise-identical layouts
-    /// coexist in one source and one belief node (mirroring
-    /// cuts_test.cpp's own club-filler fixtures, reused in spirit rather
-    /// than re-derived verbatim). The club filler is a fixed `count`-card
-    /// pool (ranks Two, Two+1, ..., Two+count-1), the same union pool in
-    /// every layout, split a different way each time: layout `i` gives
-    /// West the pool's `i`-th card alone and East every other one -- `count`
-    /// distinct splits of the identical pool, so every layout survives
-    /// make_root's consistency filter into the same node.
+    /// `count` layouts. North holds the top two spades, a certain trick however
+    /// the spades split, so the result never depends on the club filler. The
+    /// filler is an unplayed suit that lets otherwise identical layouts share
+    /// one source and one node (like the club-filler fixtures in
+    /// cuts_test.cpp). It is a fixed `count`-card pool (ranks Two, Two+1, ...,
+    /// Two+count-1), the same in every layout, split differently each time:
+    /// layout `i` gives West the pool's `i`-th card and East the rest. So there
+    /// are `count` splits of one pool, and every layout survives make_root's
+    /// consistency filter into the same node.
     auto make_layouts_with_distinct_fillers(int count) -> std::vector<Deal>
     {
         std::vector<int> pool;
@@ -131,9 +124,8 @@ TEST_F(SamplingTest, StopsAfterTheRequestedNumberOfConsistentLayoutsAndMarksIsSa
     ASSERT_TRUE(result.node.has_value());
     EXPECT_EQ(result.node->layouts.size(), 2u);
     EXPECT_DOUBLE_EQ(result.node->kappa, 0.5);
-    // The scan stopped short of the 5 consistent layouts actually
-    // available -- a genuine sample of a larger space, not the whole of
-    // it.
+    // The scan stopped before the 5 consistent layouts available: a real
+    // sample of a larger space.
     EXPECT_TRUE(result.node->is_sample);
 }
 
@@ -144,11 +136,10 @@ TEST_F(SamplingTest, MEqualToNLeavesIsSampleFalseAndMatchesExhaustiveBitwise)
     assert_forms_one_belief_node(layouts, North);
     VectorLayoutSource const source(layouts);
 
-    // Read directly on the node, not only inferred from p_make matching
-    // below: is_sample = options.sample_size.has_value() alone would pass
-    // the bitwise check further down while still being wrong here, since
-    // kappa and the layouts are unaffected by the mistake -- see
-    // make_root's own doxygen.
+    // Read on the node, not only inferred from p_make. Setting is_sample
+    // whenever options.sample_size is present would pass the bitwise check
+    // below but be wrong here, since kappa and the layouts are unaffected (see
+    // make_root).
     RootConstructionResult const capped =
         make_root(layouts.front(), North, /*tricks_needed=*/1, source, RootOptions{.sample_size = 3u});
     ASSERT_TRUE(capped.node.has_value());
@@ -168,8 +159,8 @@ TEST_F(SamplingTest, MEqualToNLeavesIsSampleFalseAndMatchesExhaustiveBitwise)
 
     ASSERT_FALSE(exhaustive.error.has_value());
     ASSERT_FALSE(sampled.error.has_value());
-    // Bitwise, not EXPECT_DOUBLE_EQ -- the criterion is byte-for-byte
-    // reproduction, not mere agreement within tolerance.
+    // Bitwise, not EXPECT_DOUBLE_EQ: the requirement is byte-for-byte
+    // reproduction.
     EXPECT_EQ(exhaustive.by_strategy.at(1u).p_make, sampled.by_strategy.at(1u).p_make);
     ASSERT_EQ(
         exhaustive.by_strategy.at(1u).root_children.size(),
@@ -184,9 +175,9 @@ TEST_F(SamplingTest, MEqualToNLeavesIsSampleFalseAndMatchesExhaustiveBitwise)
 
 TEST_F(SamplingTest, MGreaterThanNLeavesIsSampleFalseAndMatchesExhaustiveBitwise)
 {
-    // Same fixture and same proof as the M == N test above, at the other
-    // side of the M vs. N boundary: a cap that is never reached at all,
-    // not one that is reached exactly as the source runs out.
+    // The fixture and check of the M == N test, on the other side of the
+    // boundary: a cap that is never reached, not one reached exactly as the
+    // source runs out.
     std::vector<Deal> const layouts = make_layouts_with_distinct_fillers(3);
     assert_pool_matches(layouts);
     assert_forms_one_belief_node(layouts, North);
@@ -225,11 +216,10 @@ TEST_F(SamplingTest, MGreaterThanNLeavesIsSampleFalseAndMatchesExhaustiveBitwise
 
 TEST_F(SamplingTest, SampleSizeZeroIsRejectedRatherThanMisreportedAsNoLayoutSurvived)
 {
-    // sample_size = 0 must not be confused with "the source was checked and
-    // had nothing consistent in it" -- the source here genuinely holds
-    // three consistent layouts (the fixtures above already prove
-    // make_layouts_with_distinct_fillers produces layouts make_root
-    // accepts), never inspected because the request itself was degenerate.
+    // sample_size = 0 must not look like "the source was checked and held
+    // nothing consistent". The source holds three consistent layouts (the
+    // tests above show make_root accepts them); they are never inspected,
+    // because the request itself is degenerate.
     std::vector<Deal> const layouts = make_layouts_with_distinct_fillers(3);
     assert_pool_matches(layouts);
     assert_forms_one_belief_node(layouts, North);
@@ -245,18 +235,16 @@ TEST_F(SamplingTest, SampleSizeZeroIsRejectedRatherThanMisreportedAsNoLayoutSurv
 
 TEST_F(SamplingTest, TierTwoNeverFiresOnceTheRootIsAGenuineSample)
 {
-    // A bound scripted to claim every layout dead (0 tricks), which is
-    // false for this fixture (North's AK is a certain trick) -- the claim
-    // does not need to be true to test the mechanism, only to give tier 2
-    // a reason to fire if it is not gated off. Run A (exhaustive, no
-    // sample_size) shows the cut firing on exactly this input: is_sample
-    // is false there, so the bound is trusted and the wrong claim wins,
-    // p_make = 0.0. Run B (sample_size < N, is_sample genuinely true)
-    // shows the same cut gated off entirely -- tier2_cuts stays 0, the
-    // recursion runs for real, and the true value (1.0) is what comes back
-    // despite the same fictitious bound, proving sampling protects the
-    // answer from an over-aggressive bound rather than merely coinciding
-    // with a suppressed cut that would not have fired anyway.
+    // A bound scripted to claim every layout dead (0 tricks), which is false
+    // here (North's AK is a certain trick). The claim need not be true; it
+    // only gives tier 2 a reason to fire unless gated.
+    // - Run A (exhaustive, no sample_size): is_sample is false, so the bound is
+    //   trusted, the cut fires, and the wrong claim wins: p_make = 0.0.
+    // - Run B (sample_size < N, is_sample true): the cut is gated off.
+    //   tier2_cuts stays 0, the recursion runs, and the true value (1.0) comes
+    //   back despite the bound.
+    // So sampling protects the answer from an over-eager bound; it does not
+    // merely coincide with a cut that would not have fired.
     std::vector<Deal> const layouts = make_layouts_with_distinct_fillers(3);
     assert_pool_matches(layouts);
     assert_forms_one_belief_node(layouts, North);
@@ -297,19 +285,21 @@ TEST_F(SamplingTest, TierTwoNeverFiresOnceTheRootIsAGenuineSample)
     EXPECT_EQ(sampled.by_strategy.at(1u).p_make, 1.0);  // the true value, reached despite the bound
 }
 
-// The scan budget: caps RootOptions/EvaluateOptions::scan_budget calls to
-// source.at() specifically, independently of sample_size -- a degraded but
-// usable answer when it binds and still finds something, a genuine failure
-// (distinct from NoLayoutSurvived) when it binds and finds nothing at all.
+// The scan budget caps calls to source.at() (RootOptions or
+// EvaluateOptions::scan_budget), independently of sample_size. When it
+// binds and finds something, the answer is degraded but usable. When it
+// binds and finds nothing, it is a real failure, distinct from
+// NoLayoutSurvived.
 
 TEST_F(SamplingTest, ScanOutcomeReflectsWhyTheScanStopped)
 {
-    // Three runs against the same 5-layout, all-consistent source, one per
-    // ScanOutcome value: no caps at all (SourceExhausted -- the exhaustive
-    // case, which is why the enum has no separate "not sampling" value); a
-    // sample_size that binds before the source runs out (SampleFilled); a
-    // scan_budget that binds before sample_size and before the source runs
-    // out (BudgetExhausted).
+    // Three runs over the same 5-layout, all-consistent source, one per
+    // ScanOutcome:
+    // - no caps: SourceExhausted (the exhaustive case, which is why the enum
+    //   has no separate "not sampling" value);
+    // - a sample_size that binds before the source ends: SampleFilled;
+    // - a scan_budget that binds before sample_size and before the source
+    //   ends: BudgetExhausted.
     std::vector<Deal> const layouts = make_layouts_with_distinct_fillers(5);
     assert_pool_matches(layouts);
     assert_forms_one_belief_node(layouts, North);
@@ -341,12 +331,10 @@ TEST_F(SamplingTest, ScanOutcomeReflectsWhyTheScanStopped)
 
 TEST_F(SamplingTest, KappaStaysOneOverLayoutsActuallyDrawnUnderABudget)
 {
-    // The test that would catch kappa computed as 1/scan_budget's target
-    // instead of 1/(layouts actually drawn): node_mass = kappa *
-    // sum(p_i), and if kappa used the wrong denominator, mass would fall
-    // silently below 1 with nothing to flag it -- see make_root's own
-    // doxygen. Bitwise, not EXPECT_DOUBLE_EQ: this is the criterion, not
-    // an approximation of it.
+    // Catches kappa computed as 1/scan_budget's target instead of 1/(layouts
+    // drawn). node_mass = kappa * sum(p_i), so a wrong denominator would let
+    // mass fall silently below 1 (see make_root). Bitwise, not
+    // EXPECT_DOUBLE_EQ.
     std::vector<Deal> const layouts = make_layouts_with_distinct_fillers(5);
     assert_pool_matches(layouts);
     assert_forms_one_belief_node(layouts, North);
@@ -367,10 +355,9 @@ TEST_F(SamplingTest, KappaStaysOneOverLayoutsActuallyDrawnUnderABudget)
 
 namespace
 {
-    /// `base` with declarer's own holding changed so it fails
-    /// is_consistent() against any root sharing `base`'s original
-    /// declarer holding -- a candidate the scan will burn a source.at()
-    /// call on without ever adding a layout.
+    /// `base` with declarer's holding changed, so it fails is_consistent()
+    /// against any root with `base`'s declarer holding. The scan spends a
+    /// source.at() call on it and adds nothing.
     auto make_inconsistent_variant(Deal base) -> Deal
     {
         base.remainCards[North][Spades] = holding({Two, Three});
@@ -380,12 +367,11 @@ namespace
 
 TEST_F(SamplingTest, BudgetExhaustedBeforeAnyLayoutSurvivesIsAFailureDistinctFromNoLayoutSurvived)
 {
-    // Budget covers only the first two (both inconsistent) of three source
-    // entries; the third, past the budget, is consistent -- so this is
-    // genuinely "the budget ran out before finding one", not "the whole
-    // source was checked and rejected everything". The two must not be
-    // confused: a caller seeing NoLayoutSurvived would go fix their source,
-    // which would accomplish nothing here.
+    // The budget covers only the first two source entries, both
+    // inconsistent. The third, past the budget, is consistent. So this is "the
+    // budget ran out before finding one", not "the whole source was rejected".
+    // The two must differ: a caller told NoLayoutSurvived would fix the source,
+    // which would not help here.
     Deal const root_layout = make_layouts_with_distinct_fillers(1).front();
     std::vector<Deal> const source_layouts = {
         make_inconsistent_variant(root_layout),
@@ -436,13 +422,10 @@ TEST_F(SamplingTest, ABudgetLargeEnoughNotToBindMatchesExhaustiveBehaviourBitwis
 
 TEST_F(SamplingTest, ALargeSampleWithMGreaterThanNIsStillBitIdenticalToExhaustive)
 {
-    // A sample of 3 from a space of 4 shows nothing -- this fixture is
-    // larger than any this module has built for a sampling test so far:
-    // 25 consistent layouts (via the same distinct-club-filler pattern
-    // used throughout this file), sampled with an M generous enough never
-    // to bind. The claim under test is the same as the smaller M > N
-    // tests above; this is a larger fixture, not a materially different
-    // property.
+    // A sample of 3 from a space of 4 shows nothing, so this uses 25
+    // consistent layouts (the club-filler pattern of this file), with an M too
+    // large to bind. The property is that of the smaller M > N tests above, on
+    // a larger fixture.
     std::vector<Deal> const layouts = make_layouts_with_distinct_fillers(25);
     assert_pool_matches(layouts);
     assert_forms_one_belief_node(layouts, North);
@@ -477,16 +460,14 @@ namespace
 {
     constexpr int Hearts = 1;
 
-    /// North holds a certain winner in each of two independent suits
-    /// (spades' Ace, hearts' Ace) so both tricks always resolve North's
-    /// way regardless of the defenders' own split. East's own card in
-    /// each suit is independently one of {Two, Three} -- two bits, four
-    /// layouts -- so East's forced play (single_card_defender: its only
-    /// legal card) splits the tree at two genuinely different depths: the
-    /// spades bit at the very root (East leads trick 1), the hearts bit
-    /// only after trick 1 has fully resolved and North has led trick 2.
-    /// South holds a fixed, irrelevant low card (Four) in each suit; West
-    /// holds whichever of {Two, Three} East does not.
+    /// North holds a certain winner in each of two suits (the spade and heart
+    /// aces), so both tricks go North's way whatever the split. East's card in
+    /// each suit is independently Two or Three: two bits, four layouts. East
+    /// plays its only card (single_card_defender), so the tree splits at two
+    /// different depths: the spade bit at the root (East leads trick 1), the
+    /// heart bit after trick 1 resolves and North leads trick 2. South holds a
+    /// fixed low card (Four) in each suit; West holds whichever of {Two, Three}
+    /// East does not.
     auto make_deep_layout(int east_spade, int east_heart) -> Deal
     {
         Deal deal{};
@@ -506,32 +487,27 @@ namespace
 
 TEST_F(SamplingTest, SampleSizeByDepthShowsCollapseAcrossSeveralPliesOnADeepExhaustiveTree)
 {
-    // No sample_size here -- populated on the exhaustive path too, where
-    // it is a fact about the tree's own shape rather than about a sample
-    // (RootConstructionResult::outcome's own doxygen makes the same point
-    // about SourceExhausted). Four layouts, two independent splitting
-    // bits at two different depths:
+    // No sample_size: the counter is filled on the exhaustive path too, where
+    // it describes the tree's shape, not a sample (as
+    // RootConstructionResult::outcome says of SourceExhausted). Four layouts,
+    // with two splitting bits at two depths:
     //
-    //   depth 0: root, East on lead for trick 1 -- 1 node, all 4 layouts
-    //     merged (the spades bit has not been resolved yet).
-    //   depth 1-3: South, West, North play out trick 1 -- 2 nodes (the
-    //     spades bit split the moment East's own root-level play was
-    //     dispatched), 2 layouts each (the hearts bit is still
-    //     unresolved within each branch).
-    //   depth 4: North leads trick 2 -- still 2 nodes, 2 layouts each.
-    //   depth 5: East on play for trick 2 -- still 2 nodes (the split
-    //     happens going *to* depth 6, not here).
-    //   depth 6-8: South, West play out trick 2, then the node right
-    //     after West's own card resolves the trick and tricks_won reaches
-    //     tricks_needed (2) -- 4 nodes, 1 layout each; the already-made
-    //     cut fires at depth 8, but the node there is still visited and
-    //     recorded before it does.
+    //   depth 0: the root, East on lead for trick 1. 1 node, all 4 layouts
+    //     (the spade bit is not resolved yet).
+    //   depth 1-3: South, West and North play trick 1. 2 nodes (the spade bit
+    //     split when East's root play was dispatched), 2 layouts each (the
+    //     heart bit is unresolved in each branch).
+    //   depth 4: North leads trick 2. Still 2 nodes, 2 layouts each.
+    //   depth 5: East on play for trick 2. Still 2 nodes (the split happens on
+    //     the way to depth 6).
+    //   depth 6-8: South and West play, then the node where West's card
+    //     resolves the trick and tricks_won reaches tricks_needed (2). 4
+    //     nodes, 1 layout each. The already-made cut fires at depth 8, after
+    //     the node is visited and recorded.
     //
-    // Read together: min goes 4 -> 2 -> 2 -> 1, the collapse from a
-    // single root node down to four singletons, spread across two
-    // genuinely different plies rather than a single one -- deep enough,
-    // and derived from the fixture's own construction above, not read off
-    // a run.
+    // So layout_min goes 4 -> 2 -> 2 -> 1: from one root node to four
+    // singletons, over two different plies. Derived from the construction,
+    // not read off a run.
     std::vector<Deal> const layouts = {
         make_deep_layout(Two, Two),
         make_deep_layout(Two, Three),
@@ -554,7 +530,7 @@ TEST_F(SamplingTest, SampleSizeByDepthShowsCollapseAcrossSeveralPliesOnADeepExha
     ASSERT_FALSE(result.error.has_value());
     EvaluationValue const& value = result.by_strategy.at(1u);
     ASSERT_TRUE(value.counters.has_value());
-    EXPECT_EQ(value.p_make, 1.0);  // both tricks certain, no genuine choice anywhere
+    EXPECT_EQ(value.p_make, 1.0);  // both tricks certain, no real choice anywhere
     std::vector<be::DepthSampleStats> const& by_depth = value.counters->sample_size_by_depth;
     ASSERT_EQ(by_depth.size(), 9u);
 

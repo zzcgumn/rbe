@@ -13,11 +13,10 @@
 
 namespace be = dds::belief_evaluation;
 
-// The capability's central acceptance test: declarer's belief about where a
-// missing honour sits shifts correctly after a defender produces its
-// partner, and does not shift at all when the defender's play carries no
-// information (see docs/replenished_belief_evaluation/algorithm.md for the
-// theory this exercises).
+// Tests restricted choice: declarer's belief about where a missing honour
+// sits must shift after a defender plays an honour, unless that play
+// carries no information. See docs/replenished_belief_evaluation/algorithm.md
+// for the theory.
 
 namespace
 {
@@ -29,24 +28,21 @@ namespace
     constexpr int Ace = 14;
 
     constexpr int Diamonds = 2;  // the suit under test
-    constexpr int Clubs = 3;     // harmless filler, keeps every hand equal-sized
+    constexpr int Clubs = 3;     // filler, keeps every hand the same size
 
     constexpr int North = 0;  // declarer
     constexpr int East = 1;   // the defender who may hold both honours
     constexpr int South = 2;  // dummy
     constexpr int West = 3;   // the other defender
 
-    /// Spades A-J opposite xxx, missing the king and queen -- declarer
-    /// leads low from hand (North's 3) toward dummy's ace (South), which
-    /// stays untouched until the decision point.
+    /// Diamonds: North (declarer) leads the ♦3 toward South's (dummy's) ♦A.
+    /// South keeps the ace until the decision point.
     ///
-    /// East's diamonds (and West's complementary holding) are what differ
-    /// between the two layouts; both keep the same 4-card pool
-    /// {King, Queen, Two, Four} between them, differing only in the split:
-    ///   layout A: East holds king AND queen (a genuine choice).
-    ///   layout B: East holds king only; West holds queen (forced).
-    /// A club filler in North and South keeps every hand at exactly two
-    /// cards, so the ending is well-formed to its true end.
+    /// The two layouts split the same pool {K, Q, 4, 2} differently:
+    ///   layout A: East holds ♦KQ (a real choice), West ♦42.
+    ///   layout B: East holds ♦K4, West ♦Q2 (East plays the king for sure).
+    /// A club in North and in South gives every hand two cards, so the ending
+    /// plays out to the end.
     auto make_layout_a() -> Deal
     {
         Deal deal{};
@@ -69,13 +65,11 @@ namespace
         return deal;
     }
 
-    /// East's decision: 0.5/0.5 over king and queen when it genuinely holds
-    /// both (layout A); certainty on whichever single honour it holds
-    /// otherwise (layout B) -- "restricted choice" itself, that a defender
-    /// with only one honour reveals it with certainty while a defender
-    /// with both reveals either only half the time. Every other query
-    /// (West's forced follow, any later forced play) falls back to
-    /// lowest_legal_card, matching single_card_defender.
+    /// East plays the king or queen with 0.5 each when holding both (layout
+    /// A), and the one honour with certainty otherwise (layout B). This is
+    /// restricted choice: one honour is always shown, while from two each is
+    /// shown half the time. Every other query (West's follow, later forced
+    /// plays) falls back to lowest_legal_card, like single_card_defender.
     auto restricted_choice_delta(be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
     {
         unsigned const east_diamonds = query.layout.remainCards[East][Diamonds];
@@ -94,10 +88,9 @@ namespace
         return {be::WeightedCard{be::Card{Diamonds, honour}, 1.0}};
     }
 
-    /// The same fixture's delta with no information content: East plays
-    /// the king with certainty whenever it holds one, whether or not it
-    /// also holds the queen. A defender that always plays the king from KQ
-    /// tells declarer nothing about the queen.
+    /// A delta with no information: East plays the king with certainty
+    /// whenever it holds one, with or without the queen. A defender who always
+    /// plays the king from KQ tells declarer nothing about the queen.
     auto deterministic_delta(be::DefenderQuery const& query) -> std::vector<be::WeightedCard>
     {
         unsigned const east_diamonds = query.layout.remainCards[East][Diamonds];
@@ -108,15 +101,11 @@ namespace
         return be::single_card_defender(query);
     }
 
-    /// True at the one node this fixture's decision point can be recognised
-    /// by: South (dummy) is on play, still holding its ace of diamonds, and
-    /// East's reply (the second card in history) was specifically the king
-    /// -- not the queen. Both East's card-key branches reach a South-on-
-    /// play node (North's lead is a single, layout-independent declarer
-    /// node either way), but only the king branch is the two-layout
-    /// decision point this test derives; the queen branch holds layout A
-    /// alone (East never plays the queen in layout B) and asserting a
-    /// two-entry view there would be asserting the wrong node.
+    /// True only at the decision point: South (dummy) is on play, still
+    /// holds the ♦A, and East's reply (the second card in history) was the
+    /// king. East's queen branch also reaches South on play, but it holds only
+    /// layout A, since East never plays the queen in layout B. The two-layout
+    /// view this test checks exists only in the king branch.
     auto is_dummys_decision(be::ObservationState const& state) -> bool
     {
         int const seat = be::seat_on_play(state.known_holdings);
@@ -128,10 +117,9 @@ namespace
         return seat == South && south_still_holds_the_ace && easts_reply_was_the_king;
     }
 
-    /// Shared by both pi variants below: North's forced opening lead, and
-    /// (once past the decision point) every other play is forced/lowest --
-    /// nothing in this fixture ever gives declarer or dummy a second real
-    /// choice.
+    /// Used by both pi variants below. North leads the ♦3, and every other
+    /// play is the lowest legal card. Declarer and dummy never have another
+    /// real choice.
     auto forced_play(be::ObservationState const& state) -> be::Card
     {
         int const seat = be::seat_on_play(state.known_holdings);
@@ -144,9 +132,9 @@ namespace
         return be::lowest_legal_card(state.known_holdings, seat);
     }
 
-    /// Distinguishes the two surviving layouts at the decision point by
-    /// East's *remaining* diamond (its honour already played): layout A
-    /// left the queen behind, layout B left the four.
+    /// Tells the two layouts apart at the decision point by East's remaining
+    /// diamond, after its honour is played: the queen in layout A, the four in
+    /// layout B.
     auto is_layout_a(Deal const& layout) -> bool
     {
         return layout.remainCards[East][Diamonds] == be::holding({Queen});
@@ -157,7 +145,7 @@ class RestrictedChoiceTest : public ::testing::Test
 {
 };
 
-// --- the shift under a genuinely stochastic delta ---------------------------
+// --- the shift under a stochastic delta -------------------------------------
 
 TEST_F(RestrictedChoiceTest, TheShiftAfterAnHonourAppearsFromADoubletonHonourHolding)
 {
@@ -169,18 +157,17 @@ TEST_F(RestrictedChoiceTest, TheShiftAfterAnHonourAppearsFromADoubletonHonourHol
     be::assert_forms_one_belief_node({layout_a, layout_b}, North);
 
     // Derivation (equal priors, kappa = 1/2, p_i = 1 at the root):
-    //   layout A: p = 1, delta plays the king 0.5 -- king-branch p = 0.5.
-    //   layout B: p = 1, delta plays the king 1.0 (certain) -- king-branch p = 1.0.
-    // Declarer nodes (North's lead, then South's forced follow) pass p and
-    // kappa through unchanged, so at the decision point:
+    //   layout A: delta plays the king with 0.5, so king-branch p = 0.5.
+    //   layout B: delta plays the king with 1.0, so king-branch p = 1.0.
+    // North's lead is a declarer node and leaves p and kappa unchanged, so at
+    // the decision point:
     //   mass(A) = kappa * 0.5 = 0.25
     //   mass(B) = kappa * 1.0 = 0.50
     //   total   = 0.75
     //   posterior(A) = 0.25 / 0.75 = 1/3
     //   posterior(B) = 0.50 / 0.75 = 2/3
-    // The defender having *had* a choice in layout A is what makes the
-    // observation (the king) twice as likely under layout B -- the classic
-    // 2:1 restricted-choice shift.
+    // East had a choice in layout A, so seeing the king is twice as likely
+    // under layout B: the classic 2:1 restricted-choice shift.
     be::DeclarerStrategy const pi{
         .id = 1,
         .play =
@@ -188,9 +175,8 @@ TEST_F(RestrictedChoiceTest, TheShiftAfterAnHonourAppearsFromADoubletonHonourHol
         {
             if (is_dummys_decision(state))
             {
-                // Info set first: the recorded view must show exactly the
-                // two layouts above before any probability is trusted --
-                // asserted from inside pi, not assumed by the test.
+                // Check the information set first: the view must show exactly
+                // the two layouts above. pi asserts this itself.
                 EXPECT_EQ(view.entries.size(), 2u);
                 Deal const& first = view.entries[0].layout;
                 Deal const& second = view.entries[1].layout;
@@ -236,12 +222,10 @@ TEST_F(RestrictedChoiceTest, ADeterministicDefenceShowsNoShiftOnTheSameFixture)
     be::assert_pool_matches({layout_a, layout_b});
     be::assert_forms_one_belief_node({layout_a, layout_b}, North);
 
-    // Derivation: East now plays the king with certainty in *both* layouts
-    // (never the queen from layout A), so neither layout's mass is ever
-    // split -- both arrive at the decision point with their full prior
-    // mass, kappa * 1 each, and the posterior is exactly the 0.5/0.5 prior
-    // it started as. If both fixtures showed the same shift, the belief
-    // update would not be reading delta at all.
+    // Derivation: East plays the king with certainty in both layouts, so
+    // neither layout's mass is split. Both reach the decision point with mass
+    // kappa * 1, and the posterior stays at the 0.5/0.5 prior. If both tests
+    // showed the same shift, the belief update would not be reading delta.
     be::DeclarerStrategy const pi{
         .id = 1,
         .play =

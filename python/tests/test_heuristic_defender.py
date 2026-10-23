@@ -1,3 +1,7 @@
+"""Tests for HeuristicDefender and DefenderHeuristicChain from Python: built-in
+and Python-written rules, the spread() fallback, and the lifetime of what a
+rule is handed."""
+
 import types
 import unittest
 
@@ -25,10 +29,8 @@ def holding(*ranks: int) -> int:
 
 
 def make_second_seat_layout() -> dict:
-    # West leads a spade (already played, consumed from West's hand).
-    # North, second to act, holds the suit's only other remaining card --
-    # no choice at all, which is all this binding-level test needs: the
-    # rule's own bridge logic is already proven in C++.
+    # West has led the ♠A. North, second to play, holds only the ♠2, so it
+    # has no choice. The C++ tests cover the rule's bridge logic.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = holding(2)
     remain_cards[East][Spades] = holding(3)
@@ -73,21 +75,16 @@ class HeuristicDefenderTest(unittest.TestCase):
         self.assertEqual(probability, 1.0)
 
     def test_a_python_authored_rule_fires_in_its_place_in_the_chain(self):
-        # A plain Python function, not a built-in, added between two
-        # built-ins -- fires exactly where its own condition holds (here,
-        # "is the seat on play North"), proving a caller's own rule is on
-        # equal footing with the shipped ones, with no subclassing and no
-        # trampoline class. North holds two candidates here (not one, as
-        # make_second_seat_layout's forced position does) so the rule's
-        # own answer -- the high one, the opposite of what second_seat_low
-        # would pick -- is distinctive proof it is this rule's return
-        # value flowing through, not an accident of a forced position.
+        # A plain Python function works as a chain rule, with no
+        # subclassing. It fires when the seat on play is North. North holds
+        # ♠K 2 and the rule picks the king, which second_seat_low would not.
+        # So the answer must come from this rule.
         calls = []
 
         def my_rule(context, best_cards):
             calls.append(context.seat)
             if context.seat == North:
-                return Card(Spades, 13)  # the king: distinctive, and genuinely held
+                return Card(Spades, 13)  # the king, which North holds
             return None
 
         remain_cards = [[0, 0, 0, 0] for _ in range(4)]
@@ -120,12 +117,9 @@ class HeuristicDefenderTest(unittest.TestCase):
         self.assertEqual(probability, 1.0)
 
     def test_a_misbehaving_rule_returning_an_invalid_card_falls_back_to_spread(self):
-        # A chain rule is a plain callable with no interface constraining
-        # what it returns. One that always answers with a card the seat
-        # does not even hold, and that the solve never reported, must
-        # never actually reach the caller -- proven here through the
-        # Python binding, mirroring the C++-level proof of the same
-        # guarantee.
+        # Nothing constrains what a chain rule returns. A card the seat does
+        # not hold, and the solve did not report, must not reach the
+        # caller. The C++ tests check the same guarantee.
         def misbehaving_rule(context, best_cards):
             return Card(Spades, 9)
 
@@ -138,35 +132,26 @@ class HeuristicDefenderTest(unittest.TestCase):
         state = types.SimpleNamespace(declarer=East)
         result = defender(layout, North, state)
 
-        # North's only legal card in this layout is the two -- exactly
-        # what spread() falls back to once the misbehaving rule's answer
-        # is rejected, not the invalid nine it tried to return.
+        # The nine is rejected. spread() returns North's only card, the
+        # two.
         self.assertEqual(len(result), 1)
         card, probability = result[0]
         self.assertEqual(card, Card(Spades, 2))
         self.assertEqual(probability, 1.0)
 
     def test_a_custom_rule_sees_the_full_bound_state_not_just_declarer(self):
-        # Every standalone call elsewhere in this file hands HeuristicDefender
-        # a types.SimpleNamespace exposing only .declarer -- deliberately
-        # minimal, for a direct call with nothing else available. evaluate()
-        # calls its own defender argument differently: with a real,
-        # fully-populated ObservationState, the same one a declarer
-        # strategy's play() receives. A custom chain rule must see the
-        # whole thing through context.state in that case, not just
-        # whatever the declarer-only stand-in path would give it.
+        # The direct calls in this file pass a SimpleNamespace with only
+        # .declarer. evaluate() passes a full ObservationState, the one pi
+        # receives. A chain rule must see all of it through context.state.
         stashed = {}
 
         def stashing_rule(context, best_cards):
             stashed["tricks_needed"] = context.state.tricks_needed
             return None
 
-        # solve_board requires all four hands to hold the same number of
-        # cards -- an ordinary well-formed ending, not merely something
-        # belief_evaluation's own machinery tolerates (see
-        # test_belief_space_local_evaluation_docs_examples.py's own
-        # make_solver_seam_root, which this mirrors): two spades and one
-        # club filler each.
+        # solve_board needs equal hand sizes: two spades and a club each.
+        # Mirrors make_solver_seam_root in
+        # test_belief_space_local_evaluation_docs_examples.py.
         remain_cards = [[0, 0, 0, 0] for _ in range(4)]
         remain_cards[North][Spades] = holding(12, 11)
         remain_cards[South][Spades] = holding(2, 3)
@@ -219,27 +204,17 @@ class HeuristicDefenderTest(unittest.TestCase):
         self.assertEqual(stashed.get("tricks_needed"), tricks_needed)
 
     def test_a_stashed_states_play_record_raises_rather_than_reading_freed_memory(self):
-        # context.state is a copy -- documented safe to retain past the
-        # one rule call it was handed to, unlike the context itself (see
-        # the test above and the one below). One field of that copy,
-        # play_record, is a non-owning pointer into the EvaluateOptions
-        # this evaluation was called with (types.hpp's own doxygen on
-        # ObservationState::play_record), which has no guarantee of
-        # outliving this call at all, let alone a rule stashing the copy
-        # past it. Reading .play_record on the stashed copy after this
-        # test's own evaluate() call returns must therefore raise, via the
-        # same play_record_valid guard mechanism evaluate() itself uses
-        # for pi/delta's own ObservationState copies (types.hpp,
-        # belief_space_local_evaluation.cpp) -- not silently read freed
-        # memory, and not silently read back as None either, since every
-        # other field of the same copy (see tricks_needed below) remains
-        # perfectly valid to read at this point.
+        # context.state is a copy, so a rule may keep it after the call.
+        # The context itself may not be kept. play_record in the copy points
+        # into the caller's EvaluateOptions, which may not outlive
+        # evaluate(). After evaluate() returns, reading .play_record must
+        # raise through the play_record_valid guard, as for pi and delta.
+        # It must not read freed memory. It must not return None either,
+        # because the other fields stay valid.
         stashed = {}
 
         def stashing_rule(context, best_cards):
-            # Read live, during this very call, before anything is
-            # retained -- proving the guard does not cost this capability,
-            # only block reading it late.
+            # Read during the call: the guard only blocks late reads.
             stashed["live_play_record"] = context.state.play_record
             stashed["state"] = context.state
             return None
@@ -296,17 +271,15 @@ class HeuristicDefenderTest(unittest.TestCase):
         self.assertIn("state", stashed)
         self.assertIsNotNone(stashed["live_play_record"])
         self.assertEqual(stashed["live_play_record"].opening_leader, East)
-        # The rest of the retained copy is still exactly what the live
-        # call saw -- only play_record, the one field with no safe
-        # lifetime past this call, raises.
+        # The other fields of the kept copy still read correctly. Only
+        # play_record raises.
         self.assertEqual(stashed["state"].tricks_needed, 1)
         with self.assertRaises(ValueError):
             stashed["state"].play_record
 
     def test_a_stashed_context_raises_after_the_rule_that_received_it_returns(self):
-        # DefenderHeuristicContext is only valid for the duration of the
-        # one rule call it is handed to -- stashing it and reading it
-        # later must raise, not read freed memory.
+        # A DefenderHeuristicContext is valid only during the rule call.
+        # Reading a kept one later must raise, not read freed memory.
         stashed = {}
 
         def stashing_rule(context, best_cards):
@@ -329,9 +302,8 @@ class HeuristicDefenderTest(unittest.TestCase):
             stashed["context"].state
 
     def test_a_python_authored_rule_deferring_falls_through_to_the_next_entry(self):
-        # The same custom rule, this time asked about a seat it does not
-        # recognise -- it defers (returns None), and the chain falls
-        # through to the built-in that follows it.
+        # The rule returns None for this seat, so the chain falls through to
+        # the next rule, a built-in.
         def my_rule(context, best_cards):
             if context.seat == East:  # never true in this fixture
                 return Card(Spades, 9)
@@ -353,10 +325,10 @@ class HeuristicDefenderTest(unittest.TestCase):
         self.assertEqual(probability, 1.0)
 
     def test_heuristic_defender_falls_back_to_spread_when_no_rule_fires(self):
-        # The queried seat (East) is the declarer itself: every built-in
-        # rule's gate requires a defending seat, so none fire and the
-        # result must fall through to spread(), matching DoubleDummyDefender's
-        # own output for the same deal and (default) policy.
+        # East, the queried seat, is the declarer. Every built-in rule needs
+        # a defending seat, so none fires. The result falls through to
+        # spread() and must match DoubleDummyDefender with its default
+        # policy.
         remain_cards = [[0, 0, 0, 0] for _ in range(4)]
         remain_cards[North][Spades] = holding(14)  # ace
         remain_cards[East][Spades] = holding(13)  # king
