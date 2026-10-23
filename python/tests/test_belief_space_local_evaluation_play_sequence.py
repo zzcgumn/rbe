@@ -357,7 +357,7 @@ class TestDeclarerView(unittest.TestCase):
             SOUTH: {SPADES: [14, 5], HEARTS: [5]},
         })
         sequence = PlaySequence(deal, declarer=SOUTH, trump=NOTRUMP, level=1)
-        sequence.play_trick("S6 S9 S4 SA")  # W, N, E, S -- South's ace wins
+        sequence.play_trick("S6 S9 S4 SA")  # W, N, E, S: South's ace wins
         sequence.play("S5")                 # South leads trick 2
         sequence.play("S7")                 # West follows
 

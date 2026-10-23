@@ -160,7 +160,8 @@ class TestObservationStateExposesTheDerivedProperties(unittest.TestCase):
     # test_belief_space_local_evaluation_strategies.py checks the values
     # during play. Python cannot construct an ObservationState, and at a
     # root two of these equal `first` and 0. This only checks that each
-    # property exists on the type.
+    # property exists on the type, which catches one missing from the
+    # package re-export.
     DERIVED = (
         "seat_on_play",
         "trick_leader",

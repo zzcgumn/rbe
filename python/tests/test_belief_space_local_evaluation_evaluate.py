@@ -123,7 +123,8 @@ class TestOutOfRangeTricksNeededRaises(unittest.TestCase):
 
 class TestBitwiseMatchAgainstTheExhaustiveAnswer(unittest.TestCase):
     def test_reproduces_the_hand_derived_value_exactly(self) -> None:
-        # Exact equality, not approximate. East holds one of the seven pool
+        # Exact equality: an approximate check would hide a near-miss such
+        # as 0.9999. East holds one of the seven pool
         # cards. North's nine wins unless East holds the ten: 6/7, the same
         # double a C++ run gives.
         root = make_one_card_finesse_root()

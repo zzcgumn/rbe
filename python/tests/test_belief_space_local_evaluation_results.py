@@ -108,7 +108,7 @@ class TestRootChildren(unittest.TestCase):
             self.assertIsInstance(card, Card)
             self.assertEqual(value, 1.0)  # each wins the trick regardless of which is played
         total = sum(value for _card, value in children)
-        self.assertNotEqual(total, entry["p_make"])  # 2.0 != 1.0 -- not a partition here
+        self.assertNotEqual(total, entry["p_make"])  # 2.0 != 1.0: not a partition here
         self.assertEqual(entry["p_make"], 1.0)
 
     def test_root_is_declaring_side_says_which_of_the_two_shapes_it_is(self) -> None:

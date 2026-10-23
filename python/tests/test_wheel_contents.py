@@ -31,8 +31,8 @@ _REQUIRED_EXTENSIONS = (
 
 def _wheel() -> Path:
     # The wheel is in the runfiles tree, under the package that declares
-    # it. Do not call Path.resolve(): this file is a runfiles symlink, and
-    # resolving it leaves the runfiles tree.
+    # it. Do not call Path.resolve(). Under `bazel test` this file is a
+    # runfiles symlink, and resolving it leaves the runfiles tree.
     here = Path(__file__).absolute()
     for parent in here.parents:
         wheels = sorted((parent / "python").glob("*.whl"))

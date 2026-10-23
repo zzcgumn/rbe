@@ -206,7 +206,7 @@ def seat_on_play(deal: dict) -> int:
 class TestPiAndDelta(unittest.TestCase):
     def test_pi_and_delta_shapes_run(self) -> None:
         # The doc's pi and delta return a fixed card ("return
-        # bsle.Card(0, 14)"), which is illegal at most nodes of a search.
+        # bsle.Card(0, 14)"), which is legal only where that card is held.
         # This test keeps the doc's signatures and return types, and plays
         # the lowest card instead.
         def pi(state, view):

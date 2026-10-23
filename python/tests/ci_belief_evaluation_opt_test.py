@@ -27,7 +27,8 @@ def _repo_root(start: Path | None = None) -> Path:
 
 
 # Both platforms are guarded. DDS_CPPOPTS and DDS_LINKOPTS add -flto=thin on
-# macOS to the shared -O3, so the two optimised builds differ.
+# macOS to the shared -O3, so the two optimised builds differ. A Linux-only
+# guard would leave macOS uncovered.
 _GUARDED_WORKFLOWS = ("ci_linux.yml", "ci_macos.yml")
 
 _OPT_BUILD_TARGET = "//src/belief_evaluation"

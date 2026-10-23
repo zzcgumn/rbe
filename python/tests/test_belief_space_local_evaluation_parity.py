@@ -6,10 +6,10 @@ tests/belief_evaluation/parity_reference. That C++ program runs once as a
 subprocess and prints Python literals. Both sides of each comparison come
 from one construction, so a transcription slip cannot hide.
 
-The oracle tests compare against hand-derived constants (1.0, 0.0, 0.5),
-which oracle_test.cpp also asserts. A slip there gives a different number,
-not a false agreement. They also compare against the ORACLE_* values that
-parity_reference prints.
+The oracle cases and the two-way guess compare against hand-derived
+constants (1.0, 0.0, 0.5), which oracle_test.cpp also asserts. A slip there
+gives a different number, not a false agreement. TestOracleCases also
+compares against the ORACLE_* values that parity_reference prints.
 """
 
 import subprocess
@@ -293,8 +293,9 @@ class TestTheTwoWayGuess(unittest.TestCase):
     #
     # Layout 0 (West ♠7): the jack wins trick 1. Dummy's ace beats East's
     # king on trick 2. 2/2, made.
-    # Layout 1 (West ♠K): the king wins trick 1. West leads the ♣5, and East
-    # and South have no clubs. West wins trick 2. 0/2, down.
+    # Layout 1 (West ♠K): the king wins trick 1. West leads the ♣5 and North
+    # follows with the ♣2. East and South have no clubs. West wins trick 2.
+    # 0/2, down.
     # Each layout has kappa = 1/2: P_make = 0.5 * 1 + 0.5 * 0 = 0.5.
     def make_layout0(self) -> dict:
         remain_cards = [[0, 0, 0, 0] for _ in range(4)]

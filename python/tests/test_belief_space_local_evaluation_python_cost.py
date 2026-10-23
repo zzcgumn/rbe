@@ -1,8 +1,9 @@
-"""Tests safety_score_declarer_play, a line-for-line port of
-real_work_declarer_play in benchmarks/python_cost/strategies.hpp. The
-Python-vs-C++ cost comparison uses it as a pi that does real work.
+"""Tests safety_score_declarer_play, a copy of the scoring rule that
+benchmarks/python_cost/timer.py times as real_work_declarer_play. Both port
+real_work_declarer_play in benchmarks/python_cost/strategies.hpp.
 
-The cases are derived by hand, as in safety_score_declarer_play_test.cpp. A
+The cases are derived by hand, as in safety_score_declarer_play_test.cpp,
+which tests the C++ real_work_declarer_play. A
 slip gives a different score, not a false agreement. The worked comments in
 the two files should match. test_belief_space_local_evaluation_parity.py
 covers the binding's bitwise agreement with C++.

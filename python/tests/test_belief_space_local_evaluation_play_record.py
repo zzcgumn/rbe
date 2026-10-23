@@ -175,8 +175,10 @@ class TestEvaluatePlayRecord(unittest.TestCase):
 
 class TestExhaustiveLayoutSourceRecordArgument(unittest.TestCase):
     def test_a_supplied_record_is_consistent_and_reaches_the_source(self) -> None:
-        # With a record, the history and root must hold all 52 cards. One
-        # trick is played, so each hand has 12 cards: C(24, 12) layouts. All
+        # With a record, the history and root must hold all 52 cards. Each
+        # trick removes one card per hand, so a small pool would need many
+        # tricks. One trick is played, so each hand has 12 cards: C(24, 12)
+        # layouts. All
         # four cards are clubs, so no void is shown and the space does not
         # shrink. This test only checks that the record is accepted as
         # Consistent. TestTheHistoryConstrainsTheBeliefSpace in

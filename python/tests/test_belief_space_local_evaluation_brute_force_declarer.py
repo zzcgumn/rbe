@@ -119,9 +119,9 @@ class TestBruteForceDeclarerIsUsableDirectlyAsPi(unittest.TestCase):
         # later changes or frees.
         #
         # Only the first call's state is kept, because later calls see
-        # other holdings. During that call, the spade holding is copied into
-        # a Python int. After evaluate() returns, the kept state must still
-        # read the same value.
+        # other holdings. During that call, the seat's spade holding is
+        # copied into a Python int. After evaluate() returns, the kept state
+        # must still read the same value.
         first_call = {}
 
         def opponent_model(layout, seat, state):
