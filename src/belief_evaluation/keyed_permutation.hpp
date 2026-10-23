@@ -29,9 +29,9 @@ namespace dds::belief_evaluation
 /// 6.8 output bits per input bit, close to the ideal of about 7. 4 and 5
 /// rounds are no better.
 ///
-/// `index >= n` is a caller error (asserted). `n == 0` is also asserted,
-/// and returns `0`: otherwise `n - 1` would underflow and the loop would
-/// never end in a release build.
+/// `index >= n` is a caller error (asserted). `n == 0` is also a caller
+/// error, but it is not asserted. It returns `0`: otherwise `n - 1` would
+/// underflow and the loop would never end in a release build.
 auto keyed_permutation(std::uint64_t index, std::uint64_t n, std::uint64_t seed) -> std::uint64_t;
 
 }  // namespace dds::belief_evaluation

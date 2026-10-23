@@ -2,7 +2,6 @@
 capability: replenished-belief-evaluation
 owners: [belief_evaluation]
 last-updated: 2026-10-21
-related-plans: [brute_force_strategy]
 ---
 
 # Replenished Belief Evaluation

@@ -121,17 +121,19 @@ auto check_leaf(
 /// - **The opponent model should be the paired delta.** With a different
 ///   delta, evaluate() still returns a valid P_make. It is just not the
 ///   double-dummy-optimal value this search computes.
-/// - **The cache is shared across calls only when `max_depth` is
-///   absent.** With `max_depth` set, a node's value depends on the depth
-///   where the search reached it. So each `play()` call starts with an
-///   empty cache.
-/// - **Never share a cache between instances** with a different
-///   DeclarerObjective or opponent model. Values would be silently wrong.
 /// - **The opponent model must answer from the position alone.** It must
 ///   not read `ObservationState::history` or `::play_record`.
 ///   `BruteForceCacheKey` omits both, so a cached value can come from a
 ///   different line of play. `ScriptedDefender` reads `state.history`, so
 ///   it is not a valid opponent model.
+///
+/// **The cache.** Each instance owns one.
+/// - **It is shared across calls only when `max_depth` is absent.** With
+///   `max_depth` set, a node's value depends on the depth where the search
+///   reached it. So each `play()` call starts with an empty cache.
+/// - **It is never shared between instances.** Sharing one between a
+///   different DeclarerObjective or opponent model would make values
+///   silently wrong.
 ///
 /// The ctx rules of DoubleDummyDefender apply.
 class BruteForceDeclarer

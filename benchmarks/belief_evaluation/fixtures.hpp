@@ -111,7 +111,7 @@ auto make_solver_rung_b() -> RungFixture;  // pool_size=6: C(6,3)=20
 
 /// Exhaustive evaluation cost, measured 2026-09-15: scripted single-card
 /// strategies (fixtures_test.cpp, `exhaustively_evaluate`), fastbuild,
-/// Linux. Every rung, both forms, completes in under 50ms. pool8 without
+/// this platform. Every rung, both forms, completes in under 50ms. pool8 without
 /// history (12,870 layouts), the largest, took 49ms. pool6 with history
 /// (210 layouts) took under 1ms.
 ///

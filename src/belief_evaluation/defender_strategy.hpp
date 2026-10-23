@@ -29,7 +29,7 @@ struct DefenderQuery
 ///
 /// Returns a distribution, not a single card, so that it can randomise
 /// between equivalent cards (restricted choice). The contract:
-/// - `seat` holds every card in `layout`, and each is legal there;
+/// - `seat` holds every returned card in `layout`, and each is legal there;
 /// - every probability is strictly positive;
 /// - the probabilities sum to one within tolerance.
 ///

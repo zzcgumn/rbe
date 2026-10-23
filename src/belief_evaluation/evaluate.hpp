@@ -205,10 +205,10 @@ struct EvaluationCounters
 /// a value per root card. A search layer can then compare root cards
 /// without rerunning the search.
 ///
-/// - Declarer (or dummy) on lead: one entry per legal first card. Each is
+/// - Declarer (or dummy) on play: one entry per legal first card. Each is
 ///   `P_make` for playing that card and then following `pi`. **These are
 ///   alternatives, not a partition.** `p_make` is the entry `pi` chose.
-/// - Defender on lead: one entry per card `delta` plays with positive
+/// - Defender on play: one entry per card `delta` plays with positive
 ///   probability somewhere in the belief space. These **do** sum to
 ///   `p_make`.
 /// - Empty at a terminal root, and when declarer already has the tricks

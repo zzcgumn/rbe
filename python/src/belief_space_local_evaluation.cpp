@@ -217,7 +217,8 @@ auto register_observation_state_bindings(py::module_& module) -> void
             "Seat on lead at the root.")
         .def_property_readonly(
             "history", [](be::ObservationState const& self) { return history_to_list(self.history); },
-            "Every card played since the root, in order, as a list of Card.")
+            "The cards of the root's trick in progress, then every card played\n"
+            "since the root, in order, as a list of Card.")
         .def_property_readonly(
             "declarer", [](be::ObservationState const& self) { return self.declarer; },
             "Seat; dummy is (declarer + 2) % 4.")
@@ -2000,8 +2001,8 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
         "The seat that wins the trick in progress when card is played fourth.\n"
         "deal must hold exactly three played cards in current_trick_suit and\n"
         "current_trick_rank.\n\n"
-        "The highest trump wins. With no trump, the highest card of the led\n"
-        "suit wins. A discard never wins.");
+        "The highest trump wins. If no trump was played, the highest card of\n"
+        "the led suit wins. A discard never wins.");
 
     module.def(
         "play",

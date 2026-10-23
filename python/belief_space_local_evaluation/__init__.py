@@ -1,6 +1,7 @@
-# Import dds3 before the extension. dds3 registers SolverContext, and this
-# extension only uses that registration. pybind11 shares registrations between
-# extensions, but only if dds3 is imported first.
+# Import dds3 before the extension. pybind11 shares one type registry between
+# extensions. dds3 registers SolverContext, and this extension only uses that
+# registration. Importing dds3 here makes sure it is registered, whatever the
+# caller imported first.
 import dds3  # noqa: F401
 
 try:

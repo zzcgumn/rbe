@@ -36,8 +36,8 @@ enum class ValidationError
 auto validate_declarer_card(Deal const& deal, int seat, Card const& card) -> ValidationError;
 
 /// Checks a distribution returned by a defender strategy:
-/// - `seat` holds every card in `layout`, and each follows suit if `seat`
-///   can;
+/// - `seat` holds every returned card in `layout`, and each follows suit
+///   if `seat` can;
 /// - every probability is strictly positive;
 /// - the probabilities sum to 1 within `ProbabilitySumTolerance`.
 ///

@@ -55,8 +55,9 @@ struct RankMap
     /// defenders' cards alone.
     ///
     /// Bit `r - 2` for absolute rank `r`. `Deal::remainCards` uses bit `r`.
-    /// Only `to_compacted` in `trick.hpp` converts between them. A stray
-    /// `>> 2` anywhere else is a bug.
+    /// `to_compacted` in `trick.hpp` converts between them for trick play.
+    /// `rank_map.cpp` and `layout_key.cpp` convert for keys. A stray `>> 2`
+    /// anywhere else is a bug.
     std::array<unsigned, DDS_SUITS> aggr;
 
     /// Absolute rank to relative rank, 1 = highest. 0 if the card is not
@@ -75,8 +76,8 @@ struct ObservationState
 {
     int trump;
     int first;                  ///< seat on lead at the root
-    PlayTraceBin history;       ///< every card played since the root, in order,
-                                 ///< including cards already in the root's trick.
+    PlayTraceBin history;       ///< the cards of the root's trick in progress, then
+                                 ///< every card played since the root, in order.
                                  ///< Never cards from earlier tricks: a Deal keeps
                                  ///< no record of them. See play_record.
     int declarer;                ///< seat; dummy is (declarer + 2) % 4

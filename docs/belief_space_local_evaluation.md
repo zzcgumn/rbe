@@ -101,7 +101,7 @@ purpose. The source uses the history to narrow the belief space. π reads
 the record from `state.play_record` to see what happened before the root.
 Every played card is public, so this reveals nothing hidden.
 `state.play_record` is not `state.history`: `history` holds only the
-cards played since the root. See the doxygen on those fields.
+root's trick in progress and the cards played since the root. See the doxygen on those fields.
 
 ## Python
 
@@ -134,7 +134,8 @@ C++ blocks.
   every call. Stored fields:
   - `trump`, `first`, `declarer`, `tricks_needed`,
     `tricks_won_by_declarer`.
-  - `history`: the `Card`s played since the root, in order.
+  - `history`: the `Card`s of the root's trick in progress, then those
+    played since the root, in order.
   - `known_holdings`: a deal dict. Declarer's and dummy's entries are
     exact. Each defender entry is the **union** of both defenders' cards,
     not that defender's actual hand.
@@ -302,7 +303,7 @@ value["root_children"]           # [(Card, float), ...] -- see below
 value["root_is_declaring_side"]  # bool -- which shape root_children has
 ```
 
-`root_children` has two shapes:
+`root_children` has three shapes:
 
 - **At a declarer root**, the entries are alternatives. `p_make` equals
   the entry π chose, not the sum.
