@@ -1,29 +1,25 @@
 """Bridge notation to and from the deal dicts `belief_space_local_evaluation`
 takes and returns.
 
-The library speaks dds's own vocabulary throughout: seats and suits as small
-integers, ranks as absolute 2..14, a holding as a bitmask with bit `r` set
-for rank `r`. That is the right surface for a strategy, which is called
-millions of times and should not be parsing strings -- but it is an
-unreadable way to *write down* a deal, and an unreadable way to print one.
-This module is the translation layer at the edges of an example, and nothing
-here is on any hot path.
+The library uses the dds encoding: seats and suits are small integers, ranks
+are absolute 2..14, and a holding is a bitmask with bit `r` for rank `r`.
+That suits a strategy, which is called millions of times. It is hard to read
+and write by hand. This module converts at the edges. Nothing here is
+performance-critical.
 """
 
-# Seats, in dds's order -- also the clockwise order PBN lists hands in, which
-# is why a PBN hand list maps onto this one by rotation alone.
+# Seats, in dds order. PBN lists hands clockwise in the same order, so a PBN
+# hand list maps onto this by rotation.
 NORTH, EAST, SOUTH, WEST = 0, 1, 2, 3
 SEAT_NAMES = ("North", "East", "South", "West")
 SEAT_LETTERS = "NESW"
 
-# Suits, in dds's order -- also the order PBN writes a hand's four holdings
-# in, highest-ranking first.
+# Suits, in dds order. PBN writes holdings in the same order, highest first.
 SPADES, HEARTS, DIAMONDS, CLUBS = 0, 1, 2, 3
 SUIT_LETTERS = "SHDC"
 SUIT_SYMBOLS = ("♠", "♥", "♦", "♣")
 
-# A denomination, in dds's `trump` encoding: the four suits keep their own
-# numbers and notrump follows them.
+# The dds `trump` encoding: the four suits, then notrump.
 NOTRUMP = 4
 
 RANK_LETTERS = "23456789TJQKA"
@@ -33,8 +29,7 @@ def rank_from_letter(letter: str) -> int:
     """'2'..'9', 'T', 'J', 'Q', 'K', 'A' -> the absolute rank 2..14."""
     index = RANK_LETTERS.find(letter.upper())
     if not letter or index < 0:
-        # str.find("") returns 0, so the empty string would otherwise parse
-        # as the first letter -- silently, and as a legal value.
+        # str.find("") returns 0, so "" would parse as the first letter.
         raise ValueError(f"not a rank: {letter!r}")
     return index + 2
 
@@ -48,8 +43,7 @@ def rank_letter(rank: int) -> str:
 def suit_from_letter(letter: str) -> int:
     index = SUIT_LETTERS.find(letter.upper())
     if not letter or index < 0:
-        # str.find("") returns 0, so the empty string would otherwise parse
-        # as the first letter -- silently, and as a legal value.
+        # str.find("") returns 0, so "" would parse as the first letter.
         raise ValueError(f"not a suit: {letter!r}")
     return index
 
@@ -57,16 +51,14 @@ def suit_from_letter(letter: str) -> int:
 def seat_from_letter(letter: str) -> int:
     index = SEAT_LETTERS.find(letter.upper())
     if not letter or index < 0:
-        # str.find("") returns 0, so the empty string would otherwise parse
-        # as the first letter -- silently, and as a legal value.
+        # str.find("") returns 0, so "" would parse as the first letter.
         raise ValueError(f"not a seat: {letter!r}")
     return index
 
 
 def holding(*ranks: int) -> int:
-    """The bitmask for a set of absolute ranks -- bit `r` for rank `r`, the
-    convention `remain_cards` uses (not the bit `r-2` convention `RankMap.aggr`
-    uses)."""
+    """The bitmask for a set of absolute ranks: bit `r` for rank `r`, as in
+    `remain_cards`. (`RankMap.aggr` uses bit `r-2`.)"""
     mask = 0
     for rank in ranks:
         mask |= 1 << rank
@@ -79,8 +71,8 @@ def ranks_in(mask: int) -> list:
 
 
 def parse_card(text: str):
-    """'SQ' or 'QS' -> a Card. Suit letter first is what this module writes;
-    rank first is accepted because it is what a lot of hand records use."""
+    """'SQ' or 'QS' -> a Card. This module writes the suit first. It also
+    accepts the rank first, as many hand records use it."""
     from belief_space_local_evaluation import Card
 
     if len(text) != 2:
@@ -108,15 +100,14 @@ def parse_deal(text: str) -> dict:
 
         parse_deal("N: KJ7.QJ.QT65.AJ42 A653.86432.J2.T9 T9.AKT.AK98.KQ73 Q842.975.743.865")
 
-    Four hands, clockwise from the named seat, each written as its spade,
-    heart, diamond and club holdings separated by dots. `trump` and `first`
-    are not part of a deal string -- a deal is not a contract -- so they come
-    out as NOTRUMP and North; `PlaySequence` sets both from the contract it
-    is given.
+    Four hands, clockwise from the named seat. Each hand lists its spades,
+    hearts, diamonds and clubs, separated by dots. A deal string has no
+    contract, so `trump` is NOTRUMP and `first` is North. `PlaySequence` sets
+    both from the contract.
 
-    All 52 cards must be present exactly once. A deal that does not say that
-    is a typo, and one caught here names the offending card instead of
-    surfacing later as an unexplained belief space of the wrong size.
+    Each of the 52 cards must appear exactly once. Otherwise this raises
+    ValueError naming the card, instead of giving a belief space of the
+    wrong size later.
     """
     leader_text, _, hands_text = text.partition(":")
     if not _:

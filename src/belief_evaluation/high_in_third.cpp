@@ -7,24 +7,12 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    // The card played at the trick's second position -- always index 1
-    // in currentTrickSuit/Rank whenever position_in_trick == 2 (this
-    // rule's own gate), never "dummy's card" specifically: with partner
-    // on lead, the second player is from the *declaring* side (declarer
-    // and dummy are the only two seats it could be, by the fixed
-    // four-seat rotation this module assumes), but which of the two is
-    // dummy and which is declarer is a per-deal choice, not something
-    // the rotation fixes -- a version of this that computed "dummy's
-    // seat" and derived its *position* from that could legitimately land
-    // on index 3 instead, one past currentTrickRank's three-element
-    // bound.
+    // The rank of the card at trick index 1. In third seat after partner's
+    // lead, that player is declarer or dummy, depending on the deal. So read
+    // index 1 directly, not a derived seat.
     //
-    // Effective rank, not the raw one, since the second player may not
-    // have followed the led suit at all: a trump ruff beats every
-    // candidate this rule ever compares it against (nothing that merely
-    // follows suit can beat a trump), and a plain discard of a third
-    // suit beats none (it does not contest the trick), so raw rank is
-    // only meaningful when the suits actually match.
+    // The effective rank, because the second player may not have followed: a
+    // ruff beats every candidate, and a discard of a third suit beats none.
     auto second_hand_effective_rank(DefenderHeuristicContext const& ctx) -> int
     {
         constexpr int kBeatsNothing = 0;    // lower than any real rank (2..14)

@@ -1,22 +1,9 @@
-"""Tests for `belief_space_local_evaluation.play_sequence`, promoted from
-`examples/play_sequence.py`.
+"""Tests for `belief_space_local_evaluation.play_sequence`.
 
-Moved verbatim from `examples/test_play_sequence.py`, imports updated to the
-installed-package path. Every assertion here is unchanged in what it
-asserts -- this is a location change, not new coverage.
-
-`play_sequence` used to re-implement `src/belief_evaluation/trick.hpp`,
-because those mechanics were not bound to Python. They are bound now, so the
-cases here that exercise `legal_cards` and `seat_on_play` are testing the
-library through its own bindings, and the hand-derived assertions on them
-live in `python/tests/test_belief_space_local_evaluation_trick.py`.
-
-What is left to test here is what this module still owns, and it is the part
-worth the most care: the trick *counting*. `evaluate()` is handed
-`tricks_needed` and takes it on trust, so an off-by-one in
-`tricks_won_by_declarer` silently evaluates a different contract -- which is
-why a defence-won trick is asserted explicitly below, that branch having once
-had no test at all.
+`legal_cards` and `seat_on_play` are library bindings, tested in
+`test_belief_space_local_evaluation_trick.py`. The care here goes to trick
+counting. `evaluate()` trusts `tricks_needed`, so an off-by-one in
+`tricks_won_by_declarer` silently evaluates a different contract.
 """
 
 import dataclasses
@@ -114,11 +101,8 @@ class TestLegalCards(unittest.TestCase):
         self.assertEqual({c.suit for c in legal}, {HEARTS, CLUBS})
 
     def test_ranks_come_back_lowest_first_within_a_suit(self) -> None:
-        # This module used to return them highest first. The library's own
-        # order is ascending -- and it is contract, not incidental, because
-        # root_children is built by indexing into this list. Nothing depended
-        # on the old order: every strategy here reaches for min() or searches
-        # by rank, which is why the switch moved no P_make.
+        # Ascending order is part of the contract: root_children is built by
+        # indexing into this list.
         deal = deal_with(NOTRUMP, SOUTH, {SOUTH: {SPADES: [2, 10, 14]}})
 
         self.assertEqual([c.rank for c in legal_cards(deal, SOUTH)], [2, 10, 14])
@@ -234,10 +218,10 @@ class TestPlaySequence(unittest.TestCase):
         self.assertEqual(sequence.tricks_needed, 11)
 
     def test_a_trick_won_by_the_defence_does_not_count(self) -> None:
-        # The `else` of `if winner in (declarer, dummy)` -- the branch that
-        # decides tricks_won_by_declarer, hence tricks_needed, hence what
-        # "make" means to evaluate(). Nothing else in this package takes it:
-        # all nine tricks of guess_6nt() go to declarer's side.
+        # The `else` of `if winner in (declarer, dummy)`. It decides
+        # tricks_won_by_declarer, and so what "make" means to evaluate().
+        # Nothing else here reaches it: guess_6nt() gives all nine tricks to
+        # declarer's side.
         sequence = self._sequence()
 
         # West leads a low club, North plays low, East's ten wins.
@@ -254,7 +238,7 @@ class TestPlaySequence(unittest.TestCase):
         sequence.play_trick("C5 C2 CT C3")  # East wins.
         self.assertEqual(sequence.tricks_won_by_declarer, 0)
 
-        # East leads, so the order is E, S, W, N -- South's king wins.
+        # East leads, so the order is E, S, W, N. South's king wins.
         sequence.play_trick("C9 CK C6 C4")
         self.assertEqual(sequence.tricks_won_by_declarer, 1)
         self.assertEqual(sequence.tricks_needed, 11)
@@ -281,23 +265,18 @@ class TestPlaySequence(unittest.TestCase):
 
 
 class TestTheHistoryConstrainsTheBeliefSpace(unittest.TestCase):
-    """That passing a `PlayRecord` actually changes the answer.
+    """Passing a `PlayRecord` changes the answer.
 
-    The guide gives a whole section to this ("omitting it does not fail, it
-    quietly answers a different question"), and `PlaySequence` exists largely
-    to collect the history -- but on the Guess 6NT root the constrained and
-    unconstrained spaces are both 70, because every suit either defender
-    showed out of is already exhausted there. So nothing in that example
-    demonstrates the history doing anything, and a regression that silently
-    dropped it would pass every other test in this package.
+    On the Guess 6NT root, both spaces have 70 layouts: every suit a
+    defender showed out of is already exhausted. A regression that dropped
+    the history would pass every other test in this package.
 
-    This fixture is built for the purpose: East holds no spades at all, so a
-    spade lead makes East discard while four spades are still outstanding in
-    West's hand.
+    In this fixture East has no spades. A spade lead makes East discard while
+    West still holds four spades.
     """
 
-    # North/East/South/West. East is void in spades; every suit is otherwise
-    # distributed so that one trick establishes exactly one void.
+    # North, East, South, West. One spade trick shows exactly one void,
+    # East's.
     DEAL_EAST_VOID_IN_SPADES = (
         "N: AKQJ.76.AKQ.AKQJ"
         " .AKQJT98.765.432"
@@ -378,7 +357,7 @@ class TestDeclarerView(unittest.TestCase):
             SOUTH: {SPADES: [14, 5], HEARTS: [5]},
         })
         sequence = PlaySequence(deal, declarer=SOUTH, trump=NOTRUMP, level=1)
-        sequence.play_trick("S6 S9 S4 SA")  # W, N, E, S -- South's ace wins
+        sequence.play_trick("S6 S9 S4 SA")  # W, N, E, S: South's ace wins
         sequence.play("S5")                 # South leads trick 2
         sequence.play("S7")                 # West follows
 
@@ -401,12 +380,9 @@ class TestDeclarerView(unittest.TestCase):
         self.assertEqual(view.tricks_needed, 6)
 
     def test_it_does_not_carry_a_reference_to_the_real_deal(self) -> None:
-        # Attribute-absence, not e.g. a check on dataclasses.fields()'s
-        # length: a fixed-length check breaks the moment a legitimate new
-        # field is added, which is not the failure this test is for. What
-        # matters is that the specific escape hatch -- the real deal, with
-        # every hand including the defenders' -- is unreachable from the
-        # object handed back, however many fields it ends up with.
+        # The view must not reach the real deal, which includes the
+        # defenders' hands. Checking for the attribute, not counting fields,
+        # lets the view gain new fields.
         sequence = PlaySequence(parse_deal(DEAL), declarer=SOUTH, trump=NOTRUMP, level=6)
         sequence.play_trick("C6 C4 C9 CQ")
 
@@ -424,13 +400,10 @@ class TestDeclarerView(unittest.TestCase):
             view.declarer_hand = []
 
     def test_play_history_is_the_full_record_while_observation_state_history_is_root_relative(self) -> None:
-        # The nine tricks that reach the four-card ending this project's own
-        # examples already use (examples/guess_6nt_belief_space.py's
-        # guess_6nt()) -- duplicated here, not imported: python/ may not
-        # depend on examples/. A small hand-built deck doesn't work for this
-        # test the way it did for the earlier ones in this class:
-        # ExhaustiveLayoutSource requires history and root together to
-        # account for all 52 cards, which only a real deal satisfies.
+        # The nine tricks of guess_6nt() in examples/guess_6nt_belief_space.py,
+        # copied because python/ may not depend on examples/. A small deck
+        # will not do: ExhaustiveLayoutSource needs the history and root to
+        # hold all 52 cards between them.
         sequence = PlaySequence(parse_deal(DEAL), declarer=SOUTH, trump=NOTRUMP, level=6)
         sequence.play_trick("C6 C4 C9 CQ")
         sequence.play_trick("CK C8 C2 CT")
@@ -475,7 +448,7 @@ class TestDeclarerView(unittest.TestCase):
 
         self.assertNotIn("error", result)
         self.assertTrue(captured)
-        self.assertEqual(captured[0], 2)  # the root's own trick-in-progress, not 0
+        self.assertEqual(captured[0], 2)  # the root's trick in progress, not 0
         self.assertLess(captured[0], len(view.play_history))
 
 

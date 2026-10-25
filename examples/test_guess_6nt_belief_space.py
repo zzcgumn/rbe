@@ -1,34 +1,29 @@
 """Runs the example, and checks the numbers it prints.
 
-An example nobody runs is an example that rots -- these scripts are the first
-thing a new caller reads, and they exercise the Python surface from outside
-the library the way a caller does. This is what makes "the examples still
-work" a fact rather than a hope.
+The examples are the first thing a new caller reads. These tests keep them
+working.
 
-Every asserted value, and what each one is worth. "Re-derived" means a test
-here recomputes the answer independently and would catch a regression;
-"golden" means it asserts a number established once, elsewhere, and would
-absorb one.
+Each asserted value has a status:
+
+- **Re-derived:** the test recomputes the answer independently, so it
+  catches a regression.
+- **Golden:** the test asserts a number established once, outside this
+  repository, so it would absorb a regression.
 
 | value | what it is | status |
 | --- | --- | --- |
-| 44/70 | fixed line, both sides low | golden (settled by direct playout) |
-| 14/70 | playing low vs double dummy | golden, but cross-checked by the per-layout average below |
-| 55/70 | fixed line vs double dummy | **re-derived** -- set equality against DoubleDummyBound per layout |
-| 35/70 | fixed line vs cover-when-wins | golden (settled by exhaustive minimax); the *ordering* against 55 is re-derived |
-| 1.0 | belief finesse vs low | golden; exact, and the ceiling against that defence is 70/70 |
-| 60/70 | belief finesse vs cover-when-wins | golden (settled by the same minimax) |
-| 0.4488 | belief finesse vs double dummy | golden, and the weakest of the lot -- see below |
+| 44/70 | fixed line, both sides low | golden (direct playout) |
+| 14/70 | playing low vs double dummy | golden, cross-checked by the per-layout average |
+| 55/70 | fixed line vs double dummy | **re-derived**: set equality with `DoubleDummyBound` per layout |
+| 35/70 | fixed line vs cover-when-wins | golden (exhaustive minimax); the ordering against 55 is re-derived |
+| 1.0 | belief finesse vs low | golden; exact |
+| 60/70 | belief finesse vs cover-when-wins | golden (the same minimax) |
+| 0.4488 | belief finesse vs double dummy | golden; the weakest value, see below |
 
-**0.4488 is not a bridge quantity.** It is a mixture, not n/70, because
-`DoubleDummyDefender` spreads probability over tied-for-best cards -- so it
-depends on which of several equally good cards dds happens to name first and
-on `SpreadPolicy`. It pins a solver tie-break, not a property of the ending.
-What is worth pinning there is the *ordering* it participates in
-(test_neither_declarer_dominates_the_other), and that is asserted separately.
-
-The minimax and playout that settled the golden values are deliberately not
-committed; see rbe-notes. Their absence is why those rows say golden.
+**0.4488 is not a bridge quantity.** `DoubleDummyDefender` spreads
+probability over tied cards, so this value depends on the dds tie order and
+on `SpreadPolicy`. The ordering it takes part in is the meaningful result.
+`test_neither_declarer_dominates_the_other` checks that ordering.
 """
 
 import io
@@ -82,20 +77,15 @@ class TestTheBeliefSpace(unittest.TestCase):
 
         source = _source(sequence)
 
-        # history_verdict() can only ever return Consistent from Python -- a
-        # bad history raises from the constructor instead -- so asserting it
-        # would pin nothing. The size is the real assertion, and the raising
-        # behaviour is pinned separately below.
+        # From Python, history_verdict() always returns Consistent, because a
+        # bad history raises in the constructor. So check the size instead.
+        # The next test checks the raise.
         self.assertEqual(source.size(), 70)  # C(8, 4): eight cards out, East has four.
 
     def test_a_bad_history_raises_from_the_constructor(self) -> None:
-        # The documented "Python is deliberately stricter than C++" contract:
-        # in C++ a non-Consistent verdict is an accessor a caller may ignore;
-        # here it raises, so a caller who never thinks to check still finds
-        # out. This is what makes the verdict assertion above redundant.
-        # A duplicated card is caught by PlayRecord's own construction,
-        # before ever reaching ExhaustiveLayoutSource -- see PlayRecord's
-        # own doxygen for which causes need no root to detect.
+        # Python is stricter than C++ here: a bad history raises. A
+        # duplicated card raises from PlayRecord, before
+        # ExhaustiveLayoutSource sees it.
         sequence = example.guess_6nt()
 
         with self.assertRaises(bsle.BeliefSpaceLocalEvaluationError):
@@ -119,8 +109,8 @@ class TestPMake(unittest.TestCase):
 
 class TestDoubleDummyDefence(unittest.TestCase):
     def test_double_dummy_defenders_hold_declarer_to_14_of_the_70_layouts(self) -> None:
-        # Also settled outside the library: declarer, still playing low,
-        # takes three tricks against best defence in 14 of the 70 splits.
+        # Golden: declarer, playing low, takes three tricks against
+        # double-dummy defence in 14 of the 70 layouts.
         sequence = example.guess_6nt()
         source = _source(sequence)
         ctx = dds3.SolverContext()
@@ -133,13 +123,9 @@ class TestDoubleDummyDefence(unittest.TestCase):
         self.assertAlmostEqual(result["by_strategy"][1]["p_make"], 14 / 70, places=9)
 
     def test_p_make_is_the_average_over_the_layouts_taken_one_at_a_time(self) -> None:
-        # pi ignores the BeliefView entirely, so P_make over the belief space
-        # must equal the mean of P_make over each layout evaluated alone.
-        # This is what caught DoubleDummyBound returning dds's "not
-        # evaluated" sentinel as though it were a trick count: the bounded
-        # run reported 0.0 while this average stayed at 0.2. The bound now
-        # range-checks the score, so the two agree; the cross-check is worth
-        # keeping for the next bound, not only for that one.
+        # pi ignores the BeliefView, so P_make over the belief space must
+        # equal the mean of P_make over each layout alone. This check
+        # catches a bound that returns a wrong value.
         sequence = example.guess_6nt()
         ctx = dds3.SolverContext()
         delta = double_dummy_defender(ctx)
@@ -172,13 +158,10 @@ class TestTheDeclarerLine(unittest.TestCase):
         self.assertAlmostEqual(result["by_strategy"][1]["p_make"], 55 / 70, places=9)
 
     def test_the_line_reaches_the_ceiling_against_double_dummy_defence(self) -> None:
-        # Against *double-dummy* defence the line brings home exactly the
-        # layouts in which three tricks are double-dummy achievable -- it
-        # cannot be improved on against that defender. Scoped deliberately:
-        # this says nothing about other defences, and
-        # TestAnOptimalDefence below shows a defender that holds the same
-        # line to 35/70, because double-dummy defence assumes declarer is
-        # also playing double dummy and this declarer is not.
+        # Against double-dummy defence, the line makes in exactly the
+        # layouts where three tricks are double-dummy possible. No line does
+        # better against that defender. This says nothing about other
+        # defences: TestAnOptimalDefence holds the same line to 35/70.
         sequence = example.guess_6nt()
         ctx = dds3.SolverContext()
         bound = bsle.DoubleDummyBound(ctx, sequence.declarer)
@@ -205,13 +188,10 @@ class TestAnOptimalDefence(unittest.TestCase):
     """queen_of_spades_when_it_wins -- optimal against this declarer line."""
 
     def test_it_holds_the_line_to_35_of_the_70_layouts(self) -> None:
-        # A golden value: this asserts the number, it does not re-derive it.
-        # 35 was established once, outside the library, by exhaustive minimax
-        # over every defensive choice against this (deterministic) declarer
-        # line -- which lets it through in exactly 35 layouts, and in exactly
-        # those 35, so no defence can do better and this delta is optimal
-        # here. That minimax is deliberately not committed; the property it
-        # established is guarded by the ordering test below instead.
+        # Golden. An exhaustive minimax over every defensive choice, outside
+        # this repository, lets this line make in exactly these 35 layouts.
+        # So no defence does better, and this delta is optimal here. The
+        # ordering test below guards the property.
         sequence = example.guess_6nt()
 
         result = bsle.evaluate(
@@ -223,10 +203,9 @@ class TestAnOptimalDefence(unittest.TestCase):
         self.assertAlmostEqual(result["by_strategy"][1]["p_make"], 35 / 70, places=9)
 
     def test_it_beats_double_dummy_defence_against_this_declarer(self) -> None:
-        # The finding worth keeping: trick-maximising defence is not
-        # contract-minimising defence, and it also presumes a double-dummy
-        # declarer. Against a fixed, blind line a tailored defender does
-        # strictly better -- 35/70 against 55/70.
+        # Maximising tricks is not the same as defeating the contract.
+        # Against this fixed line, a tailored defender does better: 35/70
+        # against 55/70.
         sequence = example.guess_6nt()
         ctx = dds3.SolverContext()
         pi = example.cash_two_hearts_and_play_a_spade
@@ -255,36 +234,30 @@ class TestTheBeliefReadingDeclarer(unittest.TestCase):
         return result["by_strategy"][1]["p_make"]
 
     def test_it_always_makes_against_defenders_who_play_low(self) -> None:
-        # Exactly 1.0, not approximately: against a defender that never puts
-        # the queen up, reading the beliefs locates it in every layout.
+        # Exactly 1.0. The defender never plays the queen early, so the
+        # beliefs locate it in every layout.
         self.assertAlmostEqual(
             self._p_make(example.finesse_the_queen_from_the_beliefs,
                          lowest_eligible_defender),
             1.0, places=9)
 
     def test_it_makes_in_60_of_the_70_against_the_tailored_defender(self) -> None:
-        # A golden value, like 44 and 35: established once by playing this
-        # declarer against this defender over each of the 70 layouts and
-        # counting, not re-derived here. It is not a ceiling -- the ceiling
-        # against this defence is 70/70 -- so 60 says the belief finesse
-        # locates the queen in 60 of the 70 splits and not that 60 is the most
-        # any declarer could manage. The ordering test below is what would
-        # catch a regression; this pins the number for reference.
+        # Golden, counted once over the 70 layouts. It is not a ceiling:
+        # against this defence, 70/70 is possible. The ordering test below
+        # catches a regression.
         self.assertAlmostEqual(
             self._p_make(example.finesse_the_queen_from_the_beliefs,
                          queen_of_spades_when_it_wins),
             60 / 70, places=9)
 
     def test_neither_declarer_dominates_the_other(self) -> None:
-        # The finding this example exists to show, pinned as an ordering
-        # rather than as two numbers: reading the beliefs is better against
-        # the tailored defender and worse against double-dummy defence. So
-        # "best line" is not defined independently of the defence assumed.
+        # The main result of the example, as an ordering. Reading the
+        # beliefs is better against the tailored defender and worse against
+        # double-dummy defence. So the best line depends on the defence.
         #
-        # Why it loses to double dummy: that defender spreads probability over
-        # tied-for-best cards, which shapes the posterior the finesse reads,
-        # and it optimises trick count against a declarer playing double dummy
-        # -- which neither of these declarers is.
+        # It loses to double dummy for two reasons. That defender spreads
+        # over tied cards, which shapes the posterior the finesse reads. And
+        # it assumes a double-dummy declarer.
         ctx = dds3.SolverContext()
         fixed, belief = (example.cash_two_hearts_and_play_a_spade,
                          example.finesse_the_queen_from_the_beliefs)
@@ -298,15 +271,12 @@ class TestTheBeliefReadingDeclarer(unittest.TestCase):
         self.assertLess(dd_belief, dd_fixed)
 
     def test_it_answers_a_repeated_node_the_same_way(self) -> None:
-        # The contract the evaluator relies on, checked *within* one traversal
-        # rather than across two. The evaluator revisits sibling subtrees, so
-        # the hazard is a strategy answering the same node differently on a
-        # second visit; two identical runs compared afterwards cannot see that
-        # and would pass for any strategy whose state resets between calls.
+        # pi must be pure. Check it within one traversal: the evaluator
+        # revisits nodes, and two separate runs would not catch a strategy
+        # whose state resets between runs.
         #
-        # Keyed on everything pi is allowed to condition on: the position and
-        # the trick in progress. If the same key ever yields two different
-        # cards, pi is not a function of its arguments.
+        # The key is everything pi may depend on: the position and the trick
+        # in progress. Two different cards for one key mean pi is not pure.
         sequence = example.guess_6nt()
         seen = {}
         collisions = []
@@ -330,16 +300,15 @@ class TestTheBeliefReadingDeclarer(unittest.TestCase):
 
         self.assertNotIn("error", result)
         self.assertEqual(collisions, [])
-        # The check is vacuous unless nodes really are revisited. They are:
-        # measured at 773 calls over 322 distinct nodes, one of them 24 times.
+        # The check means something only if nodes are revisited. Measured:
+        # 773 calls over 322 nodes, one of them visited 24 times.
         self.assertGreater(max(visits.values()), 1)
         self.assertGreater(sum(visits.values()), len(visits))
 
 
 class TestTheDocstring(unittest.TestCase):
-    """The example's own module docstring has drifted from main() twice, in
-    both cases because the paragraph and the code it describes are ~150 lines
-    apart. This is the structural guard, not a third round of proofreading."""
+    """The module docstring of the example must match `DECLARERS` and
+    `DEFENCE_NAMES`."""
 
     def test_the_docstring_matches_the_grid(self) -> None:
         doc = example.__doc__
@@ -350,19 +319,17 @@ class TestTheDocstring(unittest.TestCase):
             self.assertIn(name.replace(" ", ""), doc.replace(" ", "").replace("\n", ""))
 
     def test_the_grid_axes_agree_with_each_other(self) -> None:
-        # DEFENCE_NAMES exists so the docstring can be checked without
-        # constructing a SolverContext; it has to stay in step with the real
-        # list, which does construct one.
+        # DEFENCE_NAMES lets the docstring test run without a SolverContext.
+        # It must match the real list, which needs one.
         ctx = dds3.SolverContext()
 
         self.assertEqual(
             tuple(n for n, _ in example.defences_with(ctx)), example.DEFENCE_NAMES)
 
     def test_exactly_one_declarer_reads_the_belief_view(self) -> None:
-        # The scope claim the docstring makes, detected by behaviour rather
-        # than by reading the source. It has to run a real evaluation: the
-        # belief finesse consults `view` only in third hand on a spade, so
-        # probing it at the root would wrongly report that it never does.
+        # Detected by behaviour, in a real evaluation. The belief finesse
+        # reads `view` only in third hand on a spade, so a probe at the root
+        # would miss it.
         sequence = example.guess_6nt()
 
         readers = []
@@ -419,24 +386,20 @@ class TestTheScriptRuns(unittest.TestCase):
 
         printed = output.getvalue()
         self.assertIn("Contract: 6NT by South", printed)
-        # Printed as declarer sees it: the defenders' cards as one pool, never
-        # split. Their actual hands must not appear.
+        # The defenders' cards print as one pool. Their real hands must not
+        # appear.
         self.assertIn("\u2660 AQ6542", printed)
         self.assertNotIn("\u2660 Q42", printed)
-        # Low and double-dummy defence happen to coincide against the fixed
-        # line. That is a coincidence of this ending, not a property of it --
-        # the third column shows the same line held to 0.5000, so the
-        # defenders did have a choice that changes the outcome. Double-dummy
-        # defence optimises trick count against a double-dummy declarer, and
-        # this declarer is neither.
-        # The values, parsed out of their row -- not the row verbatim, whose
-        # spacing is a function of the longest defence name and would fail on
-        # a rename for no behavioural reason.
+        # Low and double-dummy defence give the same value against the fixed
+        # line. That is a coincidence of this ending: the third column shows
+        # the defenders can change the outcome.
+        # Parse the values from each row. Do not compare whole rows: their
+        # spacing depends on the longest defence name.
         rows = {}
         for line in printed.splitlines():
             for name, _ in example.DECLARERS:
-                # A grid row is the declarer's name followed by nothing but
-                # numbers. Other lines start with a declarer's name too.
+                # A grid row is a declarer name followed only by numbers.
+                # Other lines can also start with a declarer name.
                 rest = line[len(name):].split() if line.startswith(name) else None
                 if rest and all(_is_float(token) for token in rest):
                     rows[name] = [float(token) for token in rest]

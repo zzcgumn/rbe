@@ -1,18 +1,9 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# Runnable examples. `bridge_notation` and `PlaySequence`
-# (`belief_space_local_evaluation.play_sequence`) used to live here too, but
-# neither is example-specific: both are general bridge plumbing, reusable by
-# anyone who installs this library, so both were promoted to the installed
-# package -- see python/BUILD.bazel's `bridge_notation_lib` and
-# `belief_space_local_evaluation_lib`.
+# Runnable examples of the Python surface.
 #
-# `strategies.py` is the one thing left deliberately private to this package.
-# It is this one example's own declarer/defender heuristics
-# (`lowest_eligible_declarer`, the belief-finesse declarer,
-# `queen_of_spades_when_it_wins`), not general bridge plumbing -- a second
-# caller depending on it would turn a one-example convenience into a
-# contract this package never intended to support.
+# `strategies.py` holds the heuristics that the examples use. It is private
+# to this package, so that it does not become a supported API.
 
 py_library(
     name = "example_support",
@@ -29,8 +20,8 @@ py_library(
     ],
 )
 
-# The example as a library, so the binary and both tests import one module
-# rather than a py_test depending on a py_binary.
+# The example is a library, so that the binary and both tests can import it.
+# A py_test should not depend on a py_binary.
 py_library(
     name = "guess_6nt_belief_space_lib",
     srcs = ["guess_6nt_belief_space.py"],
@@ -53,10 +44,8 @@ py_test(
     deps = [":guess_6nt_belief_space_lib"],
 )
 
-# strategies.py's templates and its cross-check against the evaluator's own
-# follow-suit rule -- the two things this package still tests directly,
-# now that play_sequence.py and bridge_notation.py's own tests moved with
-# them to python/tests/.
+# Tests the strategies.py templates, and checks them against the
+# evaluator's follow-suit rule.
 py_test(
     name = "strategies_test",
     size = "small",
@@ -70,12 +59,8 @@ py_library(
     srcs = ["restricted_choice_6nt_belief_space.py"],
     imports = ["."],
     deps = [
-        # Imported directly by restricted_choice_6nt_belief_space.py
-        # itself, not only reached transitively through
-        # example_support's own strategies.py -- listed explicitly per
-        # this package's "every direct dependency in deps" rule
-        # (.github/instructions/bazel.instructions.md), rather than
-        # relying on example_support to keep providing them.
+        # Imported directly, so listed directly
+        # (.github/instructions/bazel.instructions.md).
         "//python:belief_space_local_evaluation_lib",
         "//python:bridge_notation_lib",
         "@dds//python:dds3_lib",
@@ -96,9 +81,7 @@ py_test(
     srcs = ["test_restricted_choice_6nt.py"],
     main = "test_restricted_choice_6nt.py",
     deps = [
-        # test_restricted_choice_6nt.py also imports dds3, bridge_notation
-        # and strategies directly, not only the example module itself --
-        # same explicit-dependency rule as restricted_choice_6nt_lib above.
+        # The test imports these directly too.
         "//python:bridge_notation_lib",
         "@dds//python:dds3_lib",
         ":example_support",

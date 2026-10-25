@@ -29,9 +29,9 @@ namespace
     }
 
 
-    /// `root`'s declarer and dummy holdings verbatim; each defender's entry
-    /// replaced by the union pool the two defenders hold between them, per
-    /// ObservationState::known_holdings' own doxygen.
+    /// The declarer and dummy holdings of `root`, with each defender entry
+    /// replaced by the defenders' shared pool. See
+    /// ObservationState::known_holdings.
     auto known_holdings_for(Deal const& root, int declarer, int dummy) -> Deal
     {
         Deal result = root;
@@ -124,13 +124,8 @@ auto make_root(
         return RootConstructionResult{std::nullopt, RootFailure::SourceNotEnumerable};
     }
 
-    // Checked before the scan touches source.at() at all: a sample_size of
-    // exactly 0 would otherwise satisfy the loop's own break condition
-    // (node.layouts.size() >= *sample_size, trivially true at 0) on its
-    // very first check, producing an empty node whose outcome computes to
-    // SampleFilled and whose failure would then read NoLayoutSurvived --
-    // misreporting a degenerate request as "the source was checked and had
-    // nothing consistent in it," which it was never given the chance to be.
+    // Checked before any source.at() call. Otherwise sample_size 0 would end
+    // the loop at once and be reported as NoLayoutSurvived.
     if (options.sample_size.has_value() && *options.sample_size == 0)
     {
         return RootConstructionResult{std::nullopt, RootFailure::SampleSizeZero};
@@ -141,23 +136,15 @@ auto make_root(
     BeliefNode node{};
     node.state = root_observation_state(root_layout, declarer, tricks_needed, record);
 
-    // Not reserved to *size: source.size() is user-supplied and may be far
-    // larger than the number of layouts that actually survive filtering
-    // (or simply enormous), so reserving it up front risks an oversized
-    // allocation attempt before any filtering happens. Ordinary amortised
-    // growth is safe here: nothing holds a reference into node.layouts
-    // until after this function returns a fully-built node, so growth
-    // during construction cannot invalidate anything a caller has seen.
+    // Not reserved to *size: source.size() can be far larger than the number
+    // of layouts that survive. Nothing refers into node.layouts until this
+    // returns, so growth is safe.
     //
-    // Scanned from index 0 regardless of whether options.sample_size or
-    // options.scan_budget is set: any randomness in which layouts get
-    // drawn is the source's own ordering, never this loop's -- see
-    // RootOptions and this function's own doxygen.
+    // Scanned from index 0 always: randomness comes from the order of the
+    // source.
     //
-    // sample_size is checked before scan_budget at every step, so a
-    // layout that fills the sample is never charged against the budget --
-    // the priority this function's own doxygen documents for when both
-    // would bind at once.
+    // sample_size is checked before scan_budget at every step, so a layout
+    // that fills the sample is never charged to the budget.
     std::uint64_t scanned = 0;
     std::uint64_t i = 0;
     for (; i < *size; ++i)
@@ -176,19 +163,15 @@ auto make_root(
         {
             node.layouts.push_back(candidate);
             node.p.push_back(1.0);
-            // Root-space key, computed from the candidate before any card is
-            // played and with a fixed defender seat -- see
-            // BeliefNode::root_keys' own doxygen for why both of those must
-            // hold everywhere this is computed.
+            // Root-space key: from the candidate before any card is played, with the
+            // fixed defender seat. See BeliefNode::root_keys.
             node.root_keys.push_back(layout_key(candidate, (declarer + 1) % DDS_HANDS));
         }
     }
 
-    // Why the scan stopped: the source ran out (i reached *size, whatever
-    // either cap was -- reaching a cap on the very last item still means
-    // there was nothing left to find, not a premature stop), else whichever
-    // cap actually bound, sample_size taking priority to match the loop's
-    // own check order above.
+    // Why the scan stopped. Reaching the end of source is SourceExhausted,
+    // even if a cap was reached on the last item. Otherwise the cap that
+    // stopped it, sample_size first, as in the loop.
     ScanOutcome const outcome = (i >= *size)
         ? ScanOutcome::SourceExhausted
         : ((options.sample_size.has_value() && node.layouts.size() >= *options.sample_size)
@@ -203,9 +186,8 @@ auto make_root(
         return RootConstructionResult{std::nullopt, failure};
     }
 
-    // True exactly when the scan stopped because a cap bound, not merely
-    // because one was supplied -- see this function's own doxygen for why
-    // options.sample_size.has_value() alone would be wrong here.
+    // True when a cap stopped the scan, not when a cap was given. See the
+    // header.
     node.is_sample = outcome != ScanOutcome::SourceExhausted;
 
     node.kappa = 1.0 / static_cast<double>(node.layouts.size());
@@ -229,7 +211,7 @@ auto terminal_value(BeliefNode const& node) -> double
 
 auto is_terminal(BeliefNode const& node) -> bool
 {
-    assert(! node.layouts.empty());  // guaranteed by every construction site in this module
+    assert(! node.layouts.empty());  // every construction site guarantees this
     Deal const& layout = node.layouts.front();
     for (int hand = 0; hand < DDS_HANDS; ++hand)
     {
@@ -254,22 +236,17 @@ auto tricks_remaining(ObservationState const& state) -> int
         card_count += std::popcount(deal.remainCards[state.declarer][suit]);
     }
 
-    // How many cards are already in the trick currently in progress (0..3),
-    // read directly off currentTrickRank -- rank 0 is the empty-slot
-    // sentinel, matching trick.cpp's own played_count() and
-    // validation.cpp's led_suit(). deal.first is that trick's leader (see
-    // trick.hpp/play()), not the root's leader once play has moved on, so
-    // this is the rotation the offset below has to be measured against.
+    // The number of cards in the current trick (0..3); rank 0 marks an empty
+    // slot. deal.first leads this trick. It is not the root's leader once
+    // play has moved on.
     int played_to_current_trick = 0;
     while (played_to_current_trick < 3 && deal.currentTrickRank[played_to_current_trick] != 0)
     {
         ++played_to_current_trick;
     }
 
-    // declarer's rotational position within this trick, 0 = leader. If
-    // that position is already behind how many cards have been played,
-    // declarer's own card count is one short of tricks remaining --
-    // declarer has already contributed its card to the trick in progress.
+    // Declarer's position in this trick, 0 = leader. If declarer has already
+    // played, its card count is one short of the tricks remaining.
     int const declarer_position = (state.declarer - deal.first + DDS_HANDS) % DDS_HANDS;
     bool const declarer_already_played = declarer_position < played_to_current_trick;
     return declarer_already_played ? card_count + 1 : card_count;

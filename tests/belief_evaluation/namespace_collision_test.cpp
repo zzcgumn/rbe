@@ -6,23 +6,10 @@
 
 #include <belief_evaluation/types.hpp>
 
-// A translation unit that includes both api/dds.h (declaring ::Card) and
-// this module's own public headers (declaring dds::belief_evaluation::Card)
-// directly, with no rename trick anywhere in this file -- the acceptance
-// criterion namespacing the module exists to satisfy. Before the module was
-// namespaced, this same pair of includes failed with:
-//
-//   belief_evaluation/types.hpp:24:8: error: redefinition of 'Card'
-//   struct Card
-//          ^
-//   api/dds_data_types.hpp:346:8: note: previous definition is here
-//   struct Card
-//          ^
-//
-// References both names below, not just the includes: a future change that
-// silently merges the two namespaces, or that renames one Card so it no
-// longer shadows the other, would otherwise leave this file compiling for
-// the wrong reason.
+// Includes api/dds.h (global ::Card) and the module header types.hpp
+// (dds::belief_evaluation::Card) in one translation unit, with no renaming.
+// The test uses both names. If the namespaces merged, or one Card were
+// renamed, it would fail instead of compiling for the wrong reason.
 
 TEST(NamespaceCollision, DdsAndModuleCardTypesCoexistAndAreDistinct)
 {

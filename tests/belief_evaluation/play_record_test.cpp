@@ -5,6 +5,9 @@
 
 #include <belief_evaluation/play_record.hpp>
 
+// Tests for PlayRecord::create: accepted records, rejected input and the
+// round trip of cards and opening leader.
+
 namespace be = dds::belief_evaluation;
 
 using be::HistoryVerdict;

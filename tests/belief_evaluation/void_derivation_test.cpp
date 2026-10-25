@@ -8,6 +8,9 @@
 
 #include <belief_evaluation/void_derivation.hpp>
 
+// Tests for derive_voids: discards, ruffs, trailing partial tricks,
+// leader changes and malformed input.
+
 namespace be = dds::belief_evaluation;
 
 using be::derive_voids;
@@ -44,10 +47,9 @@ namespace
         return history;
     }
 
-    /// Every one of the 16 (seat, suit) cells checked individually against
-    /// `expected_void` -- an "asserted in full" comparison with a failure
-    /// message naming exactly which cell disagreed, rather than one opaque
-    /// whole-array EXPECT_EQ.
+    /// Checks each of the 16 (seat, suit) cells against `expected_void`. A
+    /// failure names the cell that disagrees, unlike one EXPECT_EQ on the
+    /// whole array.
     auto expect_voids(VoidsBySeat const& actual, std::set<std::pair<int, int>> const& expected_void)
         -> void
     {
@@ -77,8 +79,8 @@ TEST_F(VoidDerivationTest, EmptyHistoryYieldsNoVoidsForAnybody)
 
 TEST_F(VoidDerivationTest, OneCompleteTrickWithNobodyShowingOutYieldsNoVoids)
 {
-    // North leads the king of diamonds; East, South and West all follow
-    // diamonds. Nobody shows out of anything.
+    // North leads the ♦K, and East, South and West follow in diamonds.
+    // Nobody shows out.
     PlayTraceBin const history =
         trace({{Diamonds, King}, {Diamonds, Two}, {Diamonds, Three}, {Diamonds, Queen}});
     VoidsBySeat const voids = derive_voids(history, North, DDS_NOTRUMP);
@@ -87,8 +89,8 @@ TEST_F(VoidDerivationTest, OneCompleteTrickWithNobodyShowingOutYieldsNoVoids)
 
 TEST_F(VoidDerivationTest, APlainDiscardEstablishesVoidInTheLedSuit)
 {
-    // North leads the king of diamonds. East discards a spade -- void in
-    // diamonds. South and West follow diamonds.
+    // North leads the ♦K. East discards the ♠A, so East is void in diamonds.
+    // South and West follow in diamonds.
     PlayTraceBin const history =
         trace({{Diamonds, King}, {Spades, Ace}, {Diamonds, Two}, {Diamonds, Queen}});
     VoidsBySeat const voids = derive_voids(history, North, DDS_NOTRUMP);
@@ -97,12 +99,12 @@ TEST_F(VoidDerivationTest, APlainDiscardEstablishesVoidInTheLedSuit)
 
 TEST_F(VoidDerivationTest, ARuffEstablishesTheSameVoidAsADiscardWould)
 {
-    // Hearts are trump. North leads the king of spades. East discards a
-    // club -- void in spades. South ruffs with a heart -- also void in
-    // spades, despite winning the trick. West follows spades.
+    // Hearts are trump. North leads the ♠K. East discards a club, so East is
+    // void in spades. South ruffs with a heart and is also void in spades,
+    // although South wins the trick. West follows in spades.
     //
-    // This is the trap: the void comes from the suit played, never from
-    // whether the card happened to win.
+    // This is the trap: the void comes from the suit played, not from whether
+    // the card won.
     PlayTraceBin const history =
         trace({{Spades, King}, {Clubs, Two}, {Hearts, Three}, {Spades, Queen}});
     VoidsBySeat const voids = derive_voids(history, North, Hearts);
@@ -111,12 +113,11 @@ TEST_F(VoidDerivationTest, ARuffEstablishesTheSameVoidAsADiscardWould)
 
 TEST_F(VoidDerivationTest, ATrailingPartialTrickStillEstablishesVoids)
 {
-    // Trick one (no-trump, diamonds): North K, East 2, South 3, West Q --
-    // North's king is highest, so North leads trick two. Nobody shows out.
+    // Trick one (notrump, diamonds): North ♦K, East ♦2, South ♦3, West ♦Q.
+    // North's king wins, so North leads trick two. Nobody shows out.
     //
-    // Trick two is left incomplete after two cards: North leads a club,
-    // East discards a heart -- void in clubs, even though the trick never
-    // completes and has no winner.
+    // Trick two stops after two cards: North leads the ♣5 and East discards a
+    // heart. East is void in clubs, although the trick has no winner.
     PlayTraceBin const history = trace(
         {{Diamonds, King},
          {Diamonds, Two},
@@ -130,30 +131,26 @@ TEST_F(VoidDerivationTest, ATrailingPartialTrickStillEstablishesVoids)
 
 TEST_F(VoidDerivationTest, ASingleCardTrailingTrickStillEstablishesAVoid)
 {
-    // The trailing trick can be as short as one card. North leads a
-    // diamond as the sole card of an otherwise-unplayed trick two, after a
-    // complete, void-free trick one -- nothing to check here except that a
-    // history whose length is not a multiple of four does not crash or
-    // silently drop the last card.
+    // The trailing trick can be one card. After a complete trick one with no
+    // voids, North leads the ♣5 to trick two. No void is shown. The test checks
+    // that a history whose length is not a multiple of four neither crashes
+    // nor drops the last card.
     PlayTraceBin const history = trace(
         {{Diamonds, King}, {Diamonds, Two}, {Diamonds, Three}, {Diamonds, Queen}, {Clubs, Five}});
     VoidsBySeat const voids = derive_voids(history, North, DDS_NOTRUMP);
     expect_voids(voids, {});
 }
 
-// --- malformed input is asserted, and safe (not undefined) either way -----
+// --- malformed input is asserted, and safe in either build mode ----------
 
 TEST_F(VoidDerivationTest, AnOutOfRangeHistoryLengthIsAnAssertedCallerError)
 {
-    // EXPECT_DEBUG_DEATH, not EXPECT_DEATH: the assert this pins is compiled
-    // away under NDEBUG, so a death expectation that does not know about
-    // that build mode would fail there for the wrong reason -- the program
-    // no longer dies, not because the check stopped working. EXPECT_DEBUG_DEATH
-    // checks for death only in a build where assert is actually active, and
-    // is a no-op verification (just runs the statement, exercising the
-    // clamp this test cannot otherwise observe) otherwise.
+    // EXPECT_DEBUG_DEATH, not EXPECT_DEATH: NDEBUG compiles out the assert,
+    // so EXPECT_DEATH would fail there because the program no longer dies.
+    // EXPECT_DEBUG_DEATH expects death only when assert is active. Otherwise
+    // it just runs the statement, which exercises the clamp.
     PlayTraceBin history = trace({{Diamonds, King}, {Diamonds, Two}, {Diamonds, Three}, {Diamonds, Queen}});
-    history.number = 53;  // one past PlayTraceBin::suit/rank's own 52-element bound
+    history.number = 53;  // one past the 52-element bound of PlayTraceBin::suit and rank
     EXPECT_DEBUG_DEATH({ derive_voids(history, North, DDS_NOTRUMP); }, "");
 }
 
@@ -167,12 +164,10 @@ TEST_F(VoidDerivationTest, AnOutOfRangeOpeningLeaderIsAnAssertedCallerError)
 TEST_F(VoidDerivationTest, AMalformedSuitIsClampedRatherThanIndexingOutOfBounds)
 {
     // A led suit outside [0, DDS_SUITS) would index voids[seat][led_suit]
-    // out of bounds if used directly. Clamped to Spades (0) instead --
-    // confirmed by comparing the malformed call's own result against an
-    // otherwise-identical history where the led suit is explicitly Spades,
-    // not merely by observing that the malformed call does not crash.
+    // out of bounds. It is clamped to Spades (0). The test compares the result
+    // with the same history led in spades, not just that the call survives.
     PlayTraceBin malformed = trace({{Spades, King}, {Diamonds, Two}, {Spades, Three}, {Spades, Queen}});
-    malformed.suit[0] = 99;  // out of [0, DDS_SUITS) -- the malformed led suit
+    malformed.suit[0] = 99;  // the malformed led suit, outside [0, DDS_SUITS)
     VoidsBySeat const malformed_voids = derive_voids(malformed, North, DDS_NOTRUMP);
 
     PlayTraceBin const clamped_equivalent =
@@ -185,34 +180,29 @@ TEST_F(VoidDerivationTest, AMalformedSuitIsClampedRatherThanIndexingOutOfBounds)
 
 TEST_F(VoidDerivationTest, AMalformedRankIsClampedRatherThanLeftUnbounded)
 {
-    // A malformed rank cannot index anything out of bounds on its own (it
-    // only ever reaches a magnitude comparison inside trick_winner), but an
-    // extreme value is still clamped -- confirmed the same way, against an
-    // explicit low-rank equivalent, rather than merely trusting the clamp
-    // exists.
+    // A malformed rank cannot index out of bounds: it only reaches a
+    // comparison in trick_winner. It is still clamped. The test compares the
+    // result with an explicit low-rank history.
     PlayTraceBin malformed = trace({{Spades, King}, {Spades, Two}, {Spades, Three}, {Spades, Queen}});
-    malformed.rank[1] = -1000000;  // far below [2, 14] -- the malformed rank
+    malformed.rank[1] = -1000000;  // the malformed rank, far below [2, 14]
     VoidsBySeat const malformed_voids = derive_voids(malformed, North, DDS_NOTRUMP);
 
     PlayTraceBin const clamped_equivalent =
         trace({{Spades, King}, {Spades, Two}, {Spades, Three}, {Spades, Queen}});
     VoidsBySeat const clamped_voids = derive_voids(clamped_equivalent, North, DDS_NOTRUMP);
 
-    expect_voids(malformed_voids, {});  // no suit is off led-suit here, malformed rank or not
+    expect_voids(malformed_voids, {});  // every card follows the led suit
     EXPECT_EQ(malformed_voids, clamped_voids);
 }
 
 TEST_F(VoidDerivationTest, MultipleTricksAccumulateVoidsAcrossLeaderChanges)
 {
-    // Trick one (no-trump, spades): North K, East 2 (follows), South ruffs
-    // -- no, no-trump has no ruffing; keep this trick trump-free to isolate
-    // leader-change arithmetic from the ruff case, already covered above.
-    // North K, East 2, South 3, West Q -- North's king wins, North leads
-    // trick two.
+    // Trick one (notrump, spades): North ♠K, East ♠2, South ♠3, West ♠Q.
+    // North's king wins, so North leads trick two. The trick has no ruff, so
+    // the test isolates the leader change from the ruff case above.
     //
-    // Trick two (hearts): North leads a heart, East discards a spade (void
-    // in hearts), South follows hearts, West follows hearts. East's
-    // hearts-void is the only one established.
+    // Trick two (hearts): North leads the ♥9, East discards the ♠A, and South
+    // and West follow in hearts. East's void in hearts is the only one.
     PlayTraceBin const history = trace(
         {{Spades, King},
          {Spades, Two},

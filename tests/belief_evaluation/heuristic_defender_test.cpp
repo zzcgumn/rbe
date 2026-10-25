@@ -18,6 +18,9 @@
 
 #include "test_support.hpp"
 
+// Tests for HeuristicDefender end to end against real solve_board calls:
+// each built-in rule, the fallback, caller rules and solver failures.
+
 namespace be = dds::belief_evaluation;
 
 namespace
@@ -49,12 +52,11 @@ class HeuristicDefenderTest : public ::testing::Test
 
 TEST_F(HeuristicDefenderTest, SecondSeatLowFiresEndToEnd)
 {
-    // West leads a spade (already played, consumed from West's hand);
-    // North, second to act, holds the suit's only other remaining card --
-    // no choice at all, so the exact rule that produces it is moot here
-    // (already distinguished against hand-built contexts in its own
-    // task); this proves the pipeline -- real solve, real context
-    // construction, real chain -- reaches and returns it correctly.
+    // West has led a spade. North, second to act, holds the suit's only
+    // other remaining card, so there is no choice, and which rule produces it
+    // does not matter. defender_heuristic_test.cpp tells the rules apart with
+    // hand-built contexts. This shows the pipeline (real solve, real context,
+    // real chain) reaches the card and returns it.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = West;
@@ -79,12 +81,10 @@ TEST_F(HeuristicDefenderTest, SecondSeatLowFiresEndToEnd)
 
 TEST_F(HeuristicDefenderTest, ThirdSeatGateFiresEndToEndWhenDummysCardIsBeatable)
 {
-    // South leads, West (dummy) follows -- both already played and
-    // consumed. North, third to act, holds the suit's only remaining low
-    // card: forced, so this exercises the shared third-seat gate
-    // (high_in_third / third_seat_low), not which of the two specifically
-    // answers -- already distinguished against hand-built contexts in
-    // defender_heuristic_test.cpp.
+    // South leads and West (dummy) follows. North, third to act, holds the
+    // suit's only remaining low card, so the play is forced. This exercises
+    // the shared third-seat gate (high_in_third and third_seat_low), not which
+    // of the two answers; defender_heuristic_test.cpp tells them apart.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = South;
@@ -110,8 +110,8 @@ TEST_F(HeuristicDefenderTest, ThirdSeatGateFiresEndToEndWhenDummysCardIsBeatable
 
 TEST_F(HeuristicDefenderTest, FourthSeatLowFiresEndToEnd)
 {
-    // East leads, South and West already played and consumed. North,
-    // fourth to act, holds the suit's only remaining card.
+    // East leads, and South and West have played. North, fourth to act,
+    // holds the suit's only remaining card.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = East;
@@ -138,9 +138,9 @@ TEST_F(HeuristicDefenderTest, FourthSeatLowFiresEndToEnd)
 
 TEST_F(HeuristicDefenderTest, RuffSmallFiresEndToEnd)
 {
-    // Hearts is trump. West leads a spade (consumed). North, void in
-    // spades, holds exactly one heart -- a forced ruff, its only legal
-    // card. East (not yet played) holds a spade, so cannot overruff.
+    // Hearts are trumps. West leads a spade. North, void in spades, holds one
+    // heart: a forced ruff, its only legal card. East has not played yet and
+    // holds a spade, so it cannot overruff.
     Deal deal{};
     deal.trump = Hearts;
     deal.first = West;
@@ -166,8 +166,8 @@ TEST_F(HeuristicDefenderTest, RuffSmallFiresEndToEnd)
 
 TEST_F(HeuristicDefenderTest, DiscardKeepWinnersFiresEndToEnd)
 {
-    // No trump. West leads a heart (consumed). North, void in hearts,
-    // holds exactly one club -- a forced discard, its only legal card.
+    // Notrump. West leads a heart. North, void in hearts, holds one club: a
+    // forced discard, its only legal card.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = West;
@@ -195,11 +195,10 @@ TEST_F(HeuristicDefenderTest, DiscardKeepWinnersFiresEndToEnd)
 
 TEST_F(HeuristicDefenderTest, FallsBackToSpreadWhenNoRuleFires)
 {
-    // The queried seat (East) is the declarer itself: every built-in
-    // rule's own gate requires a defending seat (ruff_small aside, which
-    // requires a trump contract -- absent here), so none fire and the
-    // result must fall through to spread(), identical to
-    // DoubleDummyDefender's own output for the same deal and policy.
+    // The queried seat (East) is declarer. Every built-in rule needs a
+    // defending seat, and ruff_small also needs a trump contract, which this
+    // is not. So no rule fires, and the result falls through to spread(). It
+    // must equal DoubleDummyDefender's output for the same deal and policy.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = East;
@@ -231,15 +230,12 @@ TEST_F(HeuristicDefenderTest, FallsBackToSpreadWhenNoRuleFires)
 
 TEST_F(HeuristicDefenderTest, FallsBackToSpreadWhenAChainRuleReturnsACardOutsideTheOptimalSet)
 {
-    // A chain is a caller-assembled sequence of plain callables -- there
-    // is no interface or base class constraining what a rule may return.
-    // A misbehaving one (a bug in a caller-authored rule, not anything
-    // this chain's own built-ins would do) that always answers with a
-    // card the solve never reported -- not held by the queried seat,
-    // not double-dummy-optimal -- must never actually reach the caller:
-    // specs/replenished-belief-evaluation.md's own claim that this class
-    // "never invents a candidate outside that set" has to hold even when
-    // a chain rule tries to.
+    // A chain is a sequence of plain callables that the caller assembles; no
+    // interface limits what a rule may return. A faulty caller rule might
+    // always return a card the solve never reported: not held by the queried
+    // seat, and not double-dummy-optimal. That card must never reach the
+    // caller. The spec says no rule adds a card outside the solved set, and
+    // that must hold even when a rule tries to.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = West;
@@ -279,13 +275,11 @@ TEST_F(HeuristicDefenderTest, FallsBackToSpreadWhenAChainRuleReturnsACardOutside
 
 TEST_F(HeuristicDefenderTest, FallsBackToSpreadWhenAChainRuleReturnsAnOutOfRangeRank)
 {
-    // Nothing stops a caller-authored rule from returning a rank outside
-    // the documented 2..14 range (Python's Card constructor accepts any
-    // int) -- the validation above must reject this before it is ever
-    // used to shift equals's bits, not merely once rank happens to be a
-    // plausible card. Negative and oversized ranks both exercised, since
-    // either is undefined behaviour for a raw `1u << rank` with no
-    // range check first.
+    // Nothing stops a caller rule from returning a rank outside 2..14
+    // (Python's Card constructor accepts any int). The validation above must
+    // reject it before it shifts equals's bits, not only when the rank looks
+    // like a card. The test tries a negative and an oversized rank: either is
+    // undefined behaviour for an unchecked `1u << rank`.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = West;
@@ -329,15 +323,13 @@ TEST_F(HeuristicDefenderTest, FallsBackToSpreadWhenAChainRuleReturnsAnOutOfRange
 
 TEST_F(HeuristicDefenderTest, ANonDefaultChainBehavesExactlyAsItsOwnSelectCardSays)
 {
-    // A hand-built chain, deliberately not the convenience one: two
-    // built-ins in non-default order (high_in_third before
-    // second_seat_low, the reverse of make_default_defender_heuristics'
-    // own order), with a caller-supplied rule spliced between them.
-    // North, second seat, holds two non-touching spades -- if
-    // second_seat_low ran, it would pick the low one; the custom rule
-    // instead picks the high one, so which card comes back is proof the
-    // custom rule actually fired and won, not merely that it was
-    // accepted without crashing.
+    // A hand-built chain, not the default one: two built-ins in non-default
+    // order (high_in_third before second_seat_low, the reverse of
+    // make_default_defender_heuristics), with a caller rule between them.
+    // North, second seat, holds two spades that do not touch. second_seat_low
+    // would pick the low one, and the custom rule picks the high one. So the
+    // returned card proves the custom rule fired and won, not just that it
+    // was accepted.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = West;
@@ -372,15 +364,13 @@ TEST_F(HeuristicDefenderTest, ANonDefaultChainBehavesExactlyAsItsOwnSelectCardSa
         defender.as_strategy()(be::DefenderQuery{deal, North, state});
 
     ASSERT_EQ(result.size(), 1u);
-    EXPECT_EQ(result[0].card.rank, King);  // the custom rule's own answer, not second_seat_low's
+    EXPECT_EQ(result[0].card.rank, King);  // the custom rule's answer, not second_seat_low's
     EXPECT_DOUBLE_EQ(result[0].probability, 1.0);
     EXPECT_TRUE(custom_rule_called);
 
-    // The composability guarantee itself: HeuristicDefender's own answer
-    // must equal calling this exact chain's select_card() directly
-    // against the same solved position -- proving it has no special
-    // notion of "the default chain" to diverge from, not merely that a
-    // custom rule is accepted.
+    // The composability guarantee: HeuristicDefender's answer must equal this
+    // chain's select_card() called directly on the same solved position. So
+    // HeuristicDefender has no special "default chain" to diverge from.
     FutureTricks fut{};
     ASSERT_EQ(solve_board(ctx, deal, /*target=*/-1, /*solutions=*/2, /*mode=*/0, &fut), RETURN_NO_FAULT);
     std::vector<be::Card> best_cards;
@@ -399,10 +389,10 @@ TEST_F(HeuristicDefenderTest, ANonDefaultChainBehavesExactlyAsItsOwnSelectCardSa
 
 TEST_F(HeuristicDefenderTest, ANonZeroSolveBoardStatusReturnsAnEmptyDistribution)
 {
-    // The same malformed deal (the ace of spades held by two hands at
-    // once) double_dummy_defender_test.cpp uses for the same assertion:
-    // solve_board rejects it outright, and HeuristicDefender returns an
-    // empty distribution rather than inventing a second error path.
+    // The malformed deal (the ace of spades in two hands) from
+    // double_dummy_defender_test.cpp's matching test. solve_board rejects it,
+    // and HeuristicDefender returns an empty distribution instead of adding a
+    // second error path.
     Deal deal{};
     deal.trump = NoTrump;
     deal.first = North;

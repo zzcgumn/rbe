@@ -5,13 +5,12 @@
 namespace dds::belief_evaluation
 {
 
-/// Convenience only -- not the only way to build a chain. Equivalent to
-/// calling `add()` for `second_seat_low(randomize_touching_honors)`,
-/// `high_in_third()`, `third_seat_low()`, `fourth_seat_low()`,
-/// `ruff_small()` (only for a trump denomination -- `trump != DDS_NOTRUMP`),
-/// and `discard_keep_winners()`, in that order. A caller wanting a
-/// different order, a subset, or their own rule spliced in builds a
-/// `DefenderHeuristicChain` directly instead of calling this.
+/// A convenience. Equivalent to calling `add()` for, in order:
+/// `second_seat_low(randomize_touching_honors)`, `high_in_third()`,
+/// `third_seat_low()`, `fourth_seat_low()`, `ruff_small()` (only when
+/// `trump != DDS_NOTRUMP`), and `discard_keep_winners()`. For another
+/// order, a subset or your own rules, build a `DefenderHeuristicChain`
+/// directly.
 auto make_default_defender_heuristics(int trump, bool randomize_touching_honors = true) -> DefenderHeuristicChain;
 
 }  // namespace dds::belief_evaluation

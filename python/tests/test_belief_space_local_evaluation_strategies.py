@@ -1,3 +1,6 @@
+"""Tests for Python pi and delta callables passed to evaluate(), and for the
+ObservationState properties a Python strategy reads."""
+
 import unittest
 
 from belief_space_local_evaluation import Card
@@ -22,11 +25,9 @@ def holding(*ranks: int) -> int:
 
 
 def make_one_card_finesse_root() -> dict:
-    # North (declarer) holds a single middling card (Nine); South (dummy)
-    # holds a single safely-lower card (Eight); East and West share a
-    # seven-card pool {Two..Seven, Ten}. Mirrors
-    # exhaustive_layout_source_integration_test.cpp's own fixture of the
-    # same name.
+    # North (declarer) holds the ♠9 and South (dummy) the ♠8. East and West
+    # share a seven-card pool: ♠2 to ♠7 and ♠10. Mirrors the fixture of the
+    # same name in exhaustive_layout_source_integration_test.cpp.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = holding(9)
     remain_cards[South][Spades] = holding(8)
@@ -53,15 +54,10 @@ def lowest_card_in(remain_cards_row) -> Card:
 
 
 def declarer_play(state, view):
-    # A pure function of (state, view) alone, as DeclarerStrategy::play's
-    # own contract requires -- no PRNG stream, nothing but the arguments.
-    # This fixture never plays a second trick (declarer and dummy hold
-    # exactly one card each, and tricks_needed=1), so the seat on play
-    # within the one trick `first` opened is simply first + however many
-    # cards have been played so far, mod 4 -- no need to replay trick
-    # winners the way multi-trick rotation would require. Only one suit
-    # exists anywhere in this fixture too, so "lowest legal card" reduces
-    # to "the lowest card the seat on play holds".
+    # A pure function of (state, view), as DeclarerStrategy::play requires.
+    # Declarer and dummy hold one card each, so only one trick is played.
+    # The seat on play is first plus the cards played so far, mod 4. Only
+    # spades exist, so the lowest card held is the lowest legal card.
     del view
     seat = (state.first + len(state.history)) % 4
     holdings = state.known_holdings["remain_cards"]
@@ -81,10 +77,8 @@ class TestDeclarerAndDefenderCallables(unittest.TestCase):
         result = evaluate(root, North, 1, source, declarer_play, defender_play)
 
         self.assertNotIn("error", result)
-        # Hand-derived, same as the C++ fixture this mirrors: East holds
-        # one of {2,3,4,5,6,7,10}; North's Nine wins the trick unless
-        # East's own card already beats it (Ten is the only one that
-        # does). 6 of 7 -> 6/7.
+        # East holds one of the seven pool cards. North's nine wins unless
+        # East holds the ten: 6/7.
         self.assertAlmostEqual(result["by_strategy"][1]["p_make"], 6.0 / 7.0, places=9)
 
     def test_root_children_survive_the_call_with_correct_values(self) -> None:
@@ -100,16 +94,13 @@ class TestDeclarerAndDefenderCallables(unittest.TestCase):
 
 
 class TestObservationStateExposesRanks(unittest.TestCase):
-    # ObservationState's own docstring claims every field a C++ strategy
-    # may condition on directly is bound -- ranks (a RankMap) is one of
-    # those fields, the precomputed absolute/relative rank mapping over
-    # the node's outstanding pool. Captured from a real pi call, not
-    # constructed by hand: nothing constructs a RankMap from Python either.
+    # ObservationState binds every field a C++ strategy can read, including
+    # ranks: a RankMap between absolute and relative ranks of the
+    # outstanding cards. Python cannot construct a RankMap, so each test
+    # captures one from a pi call.
     def test_ranks_is_the_publicly_importable_rankmap_type(self) -> None:
-        # RankMap is bound by the extension, but a package's own __init__
-        # must also re-export it for `from belief_space_local_evaluation
-        # import RankMap` (what every other bound type here supports, and
-        # what the capability document documents) to actually work.
+        # The package __init__ must re-export RankMap, or
+        # `from belief_space_local_evaluation import RankMap` fails.
         captured = {}
 
         def pi(state, view):
@@ -125,14 +116,10 @@ class TestObservationStateExposesRanks(unittest.TestCase):
         self.assertIsInstance(captured["ranks"], RankMap)
 
     def test_aggr_matches_known_holdings_own_pool_at_the_same_node(self) -> None:
-        # Cross-checked against known_holdings from the very same call
-        # (both are derived from the same node Deal -- see
-        # known_holdings' own doxygen on a defender's entry already being
-        # the union pool) rather than hand-simulated from the root: pi is
-        # not the root's own first call here (first=East, a defender
-        # leads), so the pool ranks sees already has one card removed
-        # by the time pi first runs, and re-deriving that by hand would
-        # only be re-testing the recursion, not RankMap.
+        # Checked against known_holdings from the same call, since both
+        # come from the same node. A defender's entry there is already the
+        # pooled cards. East leads, so a card has gone before pi first runs.
+        # Deriving the pool by hand would test the recursion, not RankMap.
         captured = {}
 
         def pi(state, view):
@@ -154,8 +141,7 @@ class TestObservationStateExposesRanks(unittest.TestCase):
                 pool_bits |= remain_cards[hand][suit]
             expected_aggr = (pool_bits >> 2) & 0x1FFF
             self.assertEqual(ranks.aggr[suit], expected_aggr, f"suit {suit}")
-        # Not vacuous: this fixture is spades-only, so a real, nonzero
-        # pool is actually being compared for at least one suit.
+        # Not vacuous: the spade pool is not empty.
         self.assertNotEqual(ranks.aggr[Spades], 0)
 
     def test_to_relative_and_to_absolute_round_trip_the_top_card(self) -> None:
@@ -181,13 +167,12 @@ class TestObservationStateExposesRanks(unittest.TestCase):
 
         self.assertEqual(ranks.to_relative(Spades, highest_outstanding), 1)
         self.assertEqual(ranks.to_absolute(Spades, 1), highest_outstanding)
-        # The Ace is never outstanding in this small fixture, whatever
-        # node pi happens to be called at.
+        # No seat holds the ace, so it is never outstanding.
         self.assertEqual(ranks.to_relative(Spades, 14), 0)
 
     def test_out_of_range_suit_or_rank_returns_zero_not_an_error(self) -> None:
-        # RankMap's own doxygen: out-of-range input is "not outstanding",
-        # not a validation error -- matches the type's own C++ contract.
+        # As in C++, out-of-range input means "not outstanding", not an
+        # error.
         captured = {}
 
         def pi(state, view):
@@ -207,11 +192,10 @@ class TestObservationStateExposesRanks(unittest.TestCase):
 
 
 def make_two_cards_each_root() -> dict:
-    # Two cards per hand, so the search plays two tricks and the second one is
-    # led by whoever won the first. That is the only way `trick_leader` can be
-    # seen differing from `first`, which never moves off the root's leader.
-    # North (declarer) holds spades K J, South (dummy) T 9, and the defenders
-    # share the pool {Q, 6, 5, 4}. East leads.
+    # Two cards per hand, so the winner of trick one leads trick two. Only
+    # then can `trick_leader` differ from `first`, which stays the root's
+    # leader. North (declarer) holds ♠K J and South (dummy) ♠10 9. The
+    # defenders share ♠Q 6 5 4. East leads.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = holding(13, 11)
     remain_cards[South][Spades] = holding(10, 9)
@@ -229,11 +213,10 @@ def make_two_cards_each_root() -> dict:
 class TestObservationStateDerivedProperties(unittest.TestCase):
     """The seven properties a strategy would otherwise derive by hand.
 
-    Captured from real pi calls rather than hand-built, because nothing
-    constructs an ObservationState from Python -- and because two of these
-    cannot be caught at a root at all. `trick_leader` equals `first` there, and
-    `position_in_trick` is 0 there, so a root-only test would pass against an
-    implementation that simply returned `first` and 0.
+    Python cannot construct an ObservationState, so the tests capture states
+    from pi calls. At a root, `trick_leader` equals `first` and
+    `position_in_trick` is 0. A root-only test would pass an implementation
+    that returned `first` and 0.
     """
 
     def _observe(self, root: dict) -> list:
@@ -254,20 +237,18 @@ class TestObservationStateDerivedProperties(unittest.TestCase):
             })
             return min(state.legal_cards, key=lambda card: (card.rank, card.suit))
 
-        # tricks_needed = 2, not 1: North's king always wins a trick, so with
-        # 1 the contract is already made after trick one and the search never
-        # reaches a second -- leaving trick_leader equal to first at every call
-        # and no pi call on a lead. Both guards below caught exactly that.
+        # tricks_needed is 2. North's king always wins a trick, so with 1 the
+        # search stops after trick one. trick_leader would then equal first
+        # at every call, and pi would never lead. The guards below check
+        # this.
         source = ExhaustiveLayoutSource(root, North, 5)
         result = evaluate(root, North, 2, source, pi, defender_play)
         self.assertNotIn("error", result)
         return seen
 
     def test_seat_on_play_and_legal_cards_agree_with_the_free_functions(self) -> None:
-        # The same two primitives, reached two ways: through the state a
-        # strategy is handed, and through the module-level functions over that
-        # state's own known_holdings. They must not diverge -- one of them
-        # being wrong is exactly the class of defect this API removes.
+        # The state properties must agree with the module-level functions
+        # applied to the state's known_holdings.
         for call in self._observe(make_two_cards_each_root()):
             deal = call["known_holdings"]
             self.assertEqual(call["seat_on_play"], seat_on_play(deal))
@@ -276,10 +257,9 @@ class TestObservationStateDerivedProperties(unittest.TestCase):
                 [(c.suit, c.rank) for c in legal_cards(deal, call["seat_on_play"])])
 
     def test_trick_leader_is_not_first_once_a_trick_has_been_won(self) -> None:
-        # The trap, asserted as behaviour. `first` is the root's leader and
-        # never moves; the trick in progress is led by whoever won the last
-        # one. A strategy reaching for `first` is right at the root and wrong
-        # from the second trick on.
+        # `first` is the root's leader and never changes. The winner of the
+        # last trick leads the current one. A strategy that reads `first` is
+        # wrong from the second trick on.
         calls = self._observe(make_two_cards_each_root())
 
         diverged = [c for c in calls if c["trick_leader"] != c["first"]]
@@ -301,12 +281,10 @@ class TestObservationStateDerivedProperties(unittest.TestCase):
             self.assertEqual(call["current_trick"] == [], call["position_in_trick"] == 0)
 
     def test_current_trick_is_empty_when_leading_even_though_spades_is_suit_zero(self) -> None:
-        # The second half of the same trap. An empty trick has
-        # current_trick_suit == (0, 0, 0), and spades *are* suit 0, so a
-        # property reading the suit array cannot tell "spades were led" from
-        # "nobody has led". Only current_trick_rank's 0 sentinel distinguishes
-        # them -- and every card in this fixture is a spade, so a property
-        # that got this wrong would report a led spade at every lead.
+        # An empty trick has current_trick_suit == (0, 0, 0), and spades are
+        # suit 0. Only the 0 rank in current_trick_rank marks an empty trick.
+        # Every card here is a spade, so a property that read the suit would
+        # report a led spade at every lead.
         for call in self._observe(make_two_cards_each_root()):
             if call["position_in_trick"] == 0:
                 self.assertEqual(call["current_trick"], [])
@@ -317,9 +295,9 @@ class TestObservationStateDerivedProperties(unittest.TestCase):
         for call in self._observe(make_two_cards_each_root()):
             deal = call["known_holdings"]
             if call["position_in_trick"] == 0:
-                # Nothing led: there is no suit to follow. False rather than
-                # vacuously true, which is the reading that lets a strategy
-                # write `if not can_follow_led_suit` and discard on a lead.
+                # Nothing led, so the property is False, not vacuously true.
+                # A strategy's `if not can_follow_led_suit` branch then picks
+                # freely on a lead, as on a discard.
                 self.assertFalse(call["can_follow_led_suit"])
             else:
                 led = call["current_trick"][0][0]
@@ -327,8 +305,8 @@ class TestObservationStateDerivedProperties(unittest.TestCase):
                 self.assertEqual(call["can_follow_led_suit"], held)
 
     def test_is_declaring_side_is_true_for_dummy_as_well_as_declarer(self) -> None:
-        # pi plays for both, so this must be true at every pi call -- and it
-        # must be derived from declarer *or dummy*, not from `seat == declarer`.
+        # pi plays for declarer and dummy, so this is true at every pi call.
+        # It must not be computed as `seat == declarer`.
         calls = self._observe(make_two_cards_each_root())
 
         for call in calls:
@@ -339,11 +317,8 @@ class TestObservationStateDerivedProperties(unittest.TestCase):
 
 
 class TestStateKey(unittest.TestCase):
-    # evaluate()'s own doxygen: "state_key is never called: there is no
-    # cache yet." So the only thing observable from Python is that
-    # supplying one -- None, or a callable returning bytes -- changes
-    # nothing about the result and does not crash. Direct invocation is
-    # untestable honestly until a cache exists to call it.
+    # Nothing calls state_key yet. These tests only check that passing None
+    # or a callable that returns bytes leaves the result unchanged.
     def test_none_disables_reuse_and_still_works(self) -> None:
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 5)
@@ -369,11 +344,9 @@ class TestStateKey(unittest.TestCase):
 
 class TestCppStrategiesUnaffected(unittest.TestCase):
     def test_the_same_fixture_still_matches_the_c_plus_plus_hand_derived_answer(self) -> None:
-        # Not a new claim about this binding -- the equivalent C++ test
-        # (using the C++-native single_card_declarer_play/single_card_defender,
-        # no Python involved) is part of the unchanged 347. This just
-        # confirms this binding's own Python fixture reproduces the exact
-        # same hand-derived number that test pins, so both surfaces agree.
+        # The C++ test of this fixture uses single_card_declarer_play and
+        # single_card_defender. The Python strategies must give the same
+        # hand-derived answer.
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 5)
         result = evaluate(root, North, 1, source, declarer_play, defender_play)
@@ -381,10 +354,9 @@ class TestCppStrategiesUnaffected(unittest.TestCase):
 
 
 class TestMalformedDefenderDistribution(unittest.TestCase):
-    # See test_belief_space_local_evaluation_errors.py for the full
-    # exception hierarchy this raises through -- these two just pin that
-    # a malformed distribution is reported (as a clean exception, not a
-    # crash) rather than silently accepted.
+    # A malformed distribution raises an exception. It neither crashes nor
+    # passes. test_belief_space_local_evaluation_errors.py covers the full
+    # exception hierarchy.
     def test_probabilities_not_summing_to_one_is_reported_not_crashed(self) -> None:
         def bad_defender(layout, seat, state):
             del state

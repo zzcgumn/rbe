@@ -19,11 +19,9 @@ namespace dds::belief_evaluation::benchmarks
 
 namespace
 {
-    // Local, matching tests/belief_evaluation/test_support.hpp's
-    // own card_count exactly -- that header is private to the core C++
-    // test suite (its own comment says so), so duplicated here rather
-    // than reused, the same choice fixtures.cpp's own binomial-coefficient
-    // copy already made for the same reason.
+    // A local copy of card_count from tests/belief_evaluation/
+    // test_support.hpp, which is private to the core C++ tests. fixtures.cpp
+    // copies its binomial coefficient for the same reason.
     auto card_count(Deal const& deal, int hand) -> int
     {
         int count = 0;
@@ -34,26 +32,21 @@ namespace
         return count;
     }
 
-    // Whether `seat` could conceivably be asked for a card at `node`:
-    // false the moment *any* layout the node holds shows `seat` void
-    // there. `node.state.known_holdings` is exact for declarer and dummy
-    // but is the *aggregate pool* for a defender seat -- both defenders'
-    // entries hold the same union value, not each one's own split (see
-    // ObservationState::known_holdings's own doxygen) -- so it can read
-    // nonzero for a defender who is actually void in every layout this
-    // node holds, once belief has narrowed enough that a real
-    // per-layout split is already certain. Checked directly against
-    // `node.layouts` instead, which is correct for both kinds of seat
-    // (declarer/dummy hold the same exact hand in every layout by
-    // construction, so checking layouts there costs nothing extra and
-    // agrees with checking known_holdings). "Any layout void" rather
-    // than "every layout void": expand_defender_node calls delta once
-    // per layout and delta cannot legally answer for a layout where the
-    // seat holds nothing there (WeightedCard's own contract requires the
-    // card be held), so a mixed node (void in some layouts, not others)
-    // would fail expansion on exactly those layouts regardless -- this
-    // check stops before that happens rather than reaching it and
-    // reporting a spurious "uncut walker failed".
+    // Whether `seat` can be asked for a card at `node`: false as soon as any
+    // layout at the node shows `seat` void.
+    //
+    // It reads `node.layouts`, not `node.state.known_holdings`. For a defender
+    // seat known_holdings is the whole pool, the same value for both
+    // defenders (see ObservationState::known_holdings), so it can read
+    // non-zero for a defender who is void in every layout. For declarer and
+    // dummy the layouts all agree with known_holdings, so the check costs
+    // nothing extra there.
+    //
+    // "Any layout void", not "every layout void": expand_defender_node calls
+    // delta once per layout, and delta cannot answer for a layout where the
+    // seat holds nothing (WeightedCard requires a held card). A mixed node
+    // would fail expansion on those layouts. Stopping first avoids a spurious
+    // "uncut walker failed".
     auto seat_can_play(BeliefNode const& node, int seat) -> bool
     {
         for (Deal const& layout : node.layouts)
@@ -67,10 +60,8 @@ namespace
     }
 
     // Every card `seat` may legally play first at `deal`, flattened from
-    // trick.hpp's own public legal_cards() -- identical to evaluate.cpp's
-    // own private enumerate_legal_cards (same two-line flattening of the
-    // same public bitmask function), duplicated here rather than reused
-    // since that one is anonymous-namespace-private to evaluate.cpp.
+    // trick.hpp's legal_cards(). The same two lines as evaluate.cpp's
+    // enumerate_legal_cards, which is private to that file.
     auto enumerate_legal_cards(Deal const& deal, int seat) -> std::vector<Card>
     {
         std::array<unsigned, DDS_SUITS> const legal = legal_cards(deal, seat);
@@ -102,20 +93,15 @@ auto count_uncut_nodes(
     int const dummy = (declarer + 2) % DDS_HANDS;
     std::uint64_t count = 0;
 
-    // An explicit worklist, not native recursion: a defender node can
-    // have several children and this walker's whole point is trees a real
-    // evaluate() call would have cut short, which can run considerably
-    // deeper than any cut version of the same fixture -- no reason to
-    // trust the call stack with that.
+    // An explicit worklist, not recursion. The trees here are the ones
+    // evaluate() would cut short, so they can run much deeper. The call stack
+    // is not trusted with that.
     std::vector<BeliefNode> pending;
     pending.push_back(*root_result.node);
 
-    // Set once, on the very first iteration below (the worklist starts
-    // with exactly one entry -- the root -- so the first pop is
-    // guaranteed to be it, and nothing pushed during that same iteration
-    // can be popped before the loop moves on). Needed because a
-    // declarer-led *root* specifically needs different handling from
-    // every other declarer node -- see the branch below.
+    // True only on the first iteration. The worklist starts with the root
+    // alone, so the first pop is the root. A declarer-led root needs
+    // different handling from every other declarer node (see below).
     bool is_root = true;
 
     while (! pending.empty())
@@ -134,21 +120,17 @@ auto count_uncut_nodes(
         int const seat = seat_on_play(node.state.known_holdings);
         if (! seat_can_play(node, seat))
         {
-            // Not is_terminal() (some other hand still holds cards) but
-            // this seat has nothing to contribute -- a structural boundary,
-            // not a cut. See this file's own header doxygen and
-            // seat_can_play's own comment.
+            // Not is_terminal(), since another hand still holds cards, but this
+            // seat has nothing to play. A structural boundary, not a cut (see
+            // seat_can_play).
             continue;
         }
 
         if (seat == declarer || seat == dummy)
         {
-            // Not `const`: result is dead after this branch either way,
-            // and moving *result.child (rather than copying it) avoids an
-            // otherwise-avoidable O(layout-count) deep copy of every
-            // BeliefNode this walker enqueues -- on the larger ladders
-            // (pool8's own 12,870-layout rungs) this walker's own worklist
-            // is exactly where that cost would show up.
+            // Not `const`, so *result.child can be moved, not copied. A copy would
+            // deep-copy every enqueued BeliefNode, which is O(layout count). On
+            // pool8 (12,870 layouts) that cost would dominate the worklist.
             ExpandResult result = expand_declarer_node(node, pi);
             if (! result.child.has_value())
             {
@@ -158,20 +140,13 @@ auto count_uncut_nodes(
 
             if (was_root)
             {
-                // evaluate()'s own root-handling block (evaluate.cpp)
-                // additionally expands every *other* legal root card too,
-                // to populate root_children -- p_make()'s own general
-                // recursion, which handles every declarer node but the
-                // root (including every other one this walker's own
-                // expand_declarer_node call above reaches), only ever
-                // follows pi's single chosen card. Missing this would
-                // silently undercount a declarer-led root's true node
-                // count -- found directly against evaluate.cpp's own
-                // root-handling block, not assumed. Fixed by mirroring
-                // its exact chosen/other-cards structure with the same
-                // two public pieces it is itself built from:
-                // expand_declarer_node for the chosen card (above),
-                // make_declarer_children for the rest.
+                // evaluate() expands every other legal root card too, to fill
+                // root_children (see its root handling in evaluate.cpp). Its general
+                // recursion, like expand_declarer_node above, follows only pi's card.
+                // Without this branch a declarer-led root is undercounted. It mirrors
+                // evaluate()'s structure with the same public pieces:
+                // expand_declarer_node for the chosen card, make_declarer_children for
+                // the rest.
                 std::vector<Card> const legal = enumerate_legal_cards(node.state.known_holdings, seat);
                 std::vector<Card> other_cards;
                 other_cards.reserve(legal.size());

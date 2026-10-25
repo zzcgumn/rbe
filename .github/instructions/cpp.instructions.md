@@ -183,6 +183,8 @@ auto result = compute_area(
 - Mark compile-time constants with `constexpr`.
 
 ### Documentation
+Write all docs and comments to `writing.instructions.md`.
+
 Three places, and putting a thing in the wrong one is how the header
 doxygen turns into an essay:
 

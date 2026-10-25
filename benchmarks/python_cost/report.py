@@ -1,14 +1,11 @@
-"""Runs timer_cpp and timer_py and tabulates the ratio between them --
-this task's own "ships, and is re-runnable" measurement, one command.
+"""Runs timer_cpp and timer_py and tabulates the ratio, in one command.
 
     bazel run //benchmarks/python_cost:report [-- ITERATIONS] [-- --label LABEL]
 
-`--label` is cosmetic only (e.g. "default" or "opt") -- this process has
-no reliable way to ask "was I built with -c opt" from the Python side
-(unlike timer.cpp's own NDEBUG check), since -c opt changes the compiled
-extension's own optimisation level, not anything CPython exposes to a
-running script. Run this target twice, once per build mode, passing
---label each time; see this task's own write-up for both runs' output.
+`--label` is only a label, such as "default" or "opt". Python cannot tell
+whether the extension was built with -c opt: timer.cpp checks NDEBUG, and
+CPython exposes no equivalent. Run the target once per build mode, with
+--label each time.
 """
 
 from __future__ import annotations
@@ -24,11 +21,10 @@ def _rlocation(path: str) -> str:
     r = runfiles.Create()
     if r is None:
         raise AssertionError("no runfiles environment -- run this via `bazel run`, not `python3` directly")
-    # Bare logical path first (Linux/macOS), the .exe-suffixed one only if
-    # that is what the runfiles manifest actually has (Windows) -- same
-    # bare/.exe precedence test_belief_space_local_evaluation_parity.py's
-    # own binary lookup uses, adapted to Rlocation() rather than a direct
-    # filesystem check.
+    # The bare logical path first (Linux, macOS), then the .exe one
+    # (Windows). The same order as the binary lookup in
+    # test_belief_space_local_evaluation_parity.py, through Rlocation()
+    # instead of a filesystem check.
     located = r.Rlocation(f"_main/{path}") or r.Rlocation(f"_main/{path}.exe")
     if located is None:
         raise AssertionError(

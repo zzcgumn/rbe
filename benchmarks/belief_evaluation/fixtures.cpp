@@ -26,13 +26,10 @@ namespace
 
     using CardPair = std::pair<int, int>;  // (suit, rank)
 
-    /// `C(n, k)`, a small local copy rather than a call into
-    /// defender_split.hpp's own binomial_coefficient: that one is private
-    /// to the core library (not exported -- see its own doxygen), and
-    /// duplicating it at the small arguments this file ever calls it with
-    /// is the established precedent elsewhere in this codebase (see
-    /// evaluate.hpp's history on binomial_coefficient duplication) rather
-    /// than exporting a function whose whole point was to stay private.
+    /// `C(n, k)`, a small local copy. defender_split.hpp's
+    /// binomial_coefficient is private to the core library and not exported.
+    /// Copying it for the small arguments used here is simpler than exporting
+    /// it.
     auto choose(int n, int k) -> std::uint64_t
     {
         if (k < 0 || k > n)
@@ -47,11 +44,10 @@ namespace
         return result;
     }
 
-    /// The first `count` cards of Clubs (ascending) then Spades (ascending)
-    /// -- the free-suit pool a rung's fixed seat and the other defender
-    /// split between them once the voided suit (Diamonds, below) is set
-    /// aside. Two suits rather than one so `count` can exceed 13 (needed
-    /// at the top of the ladder, k=8: 2k-2=14) without running out.
+    /// The first `count` cards of Clubs, then Spades, each ascending. This is
+    /// the free pool the two defenders split once the voided suit (Diamonds)
+    /// is set aside. Two suits, so `count` can exceed 13 (k=8 needs
+    /// 2k-2 = 14).
     auto free_pool_cards(int count) -> std::vector<CardPair>
     {
         std::vector<CardPair> cards;
@@ -65,28 +61,22 @@ namespace
         return cards;
     }
 
-    /// Builds one rung: a completed trick establishes East's void in
-    /// Diamonds (mirroring exhaustive_layout_source_test.cpp's own
-    /// make_void_ending, scaled up), leaving exactly two Diamonds
-    /// outstanding -- both forced to West by the void -- and a free pool of
-    /// `2k - 2` Clubs/Spades cards, of which the fixed seat (East) needs
-    /// all `k` of its own cards and West needs `k - 2` more (having
-    /// already got its two forced Diamonds). Without a history supplied,
-    /// the same root's unconstrained space is `C(2k, k)`; with it,
-    /// `C(2k - 2, k)`.
+    /// Builds one rung, scaled up from exhaustive_layout_source_test.cpp's
+    /// make_void_ending. A completed trick shows East void in Diamonds. Two
+    /// Diamonds stay outstanding, and the void forces both to West. The free
+    /// pool has `2k - 2` Clubs and Spades: East needs all `k` of its cards from
+    /// it, and West needs `k - 2` more. Without a history the space is
+    /// `C(2k, k)`; with it, `C(2k - 2, k)`.
     ///
-    /// `realistic`: false gives declarer (North) every leftover card as
-    /// filler -- unrealistic, but harmless and exactly
-    /// exhaustive_layout_source_test.cpp's own make_ten_card_pool_root
-    /// precedent, since these fixtures are about the defender pool's
-    /// combinatorics, not about declarer's hand. true (make_realistic_rung_a
-    /// and _b, below) alternates leftover cards between North and South
-    /// instead, so both end up with a believable multi-suit spread rather
-    /// than one entire suit each -- what "a position a bridge player would
-    /// recognise" needs and the plain pool ladder does not.
+    /// `realistic`:
+    /// - false gives declarer (North) every leftover card as filler. That is
+    ///   unrealistic but harmless, as in exhaustive_layout_source_test.cpp's
+    ///   make_ten_card_pool_root. These fixtures are about the defender pool.
+    /// - true (make_realistic_rung_a and _b) alternates leftover cards between
+    ///   North and South, so both get a believable multi-suit hand.
     auto make_rung(char const* name, int k, bool realistic) -> Rung
     {
-        int const c = 2 * k - 2;  // the free pool's own size
+        int const c = 2 * k - 2;  // size of the free pool
         std::vector<CardPair> const free_cards = free_pool_cards(c);
         std::vector<CardPair> const east_cards(free_cards.begin(), free_cards.begin() + k);
         std::vector<CardPair> const west_free_cards(free_cards.begin() + k, free_cards.end());
@@ -96,12 +86,10 @@ namespace
             return std::find(cards.begin(), cards.end(), CardPair{suit, rank}) != cards.end();
         };
 
-        // Trick 1: North leads the Diamond Ace and wins it; East discards
-        // (showing void in Diamonds) rather than following; South and West
-        // both follow suit. Four cards, seated from North -- North, East,
-        // South, West -- exactly matching what `opening_leader = North`
-        // replays. After the trick, root.first is North again (the
-        // winner leads next) and no trick is in progress.
+        // Trick 1: North leads the Diamond Ace and wins it. East discards,
+        // showing a Diamond void; South and West follow. The four cards are
+        // seated North, East, South, West, as `opening_leader = North` replays.
+        // After the trick North leads again and no trick is in progress.
         std::vector<CardPair> const played = {{Diamonds, 14}, {Hearts, 10}, {Diamonds, 13}, {Diamonds, 12}};
         std::set<CardPair> const played_set(played.begin(), played.end());
 
@@ -129,8 +117,8 @@ namespace
             {
                 return West;
             }
-            // Everything else: harmless filler on declarer and dummy,
-            // neither of whom this fixture's combinatorics depend on.
+            // Everything else is filler for declarer and dummy. The fixture's
+            // combinatorics do not depend on it.
             if (! realistic)
             {
                 return North;
@@ -236,18 +224,16 @@ auto all_rungs() -> std::vector<Rung>
 
 auto make_finesse_rung(int suits) -> RungFixture
 {
-    // Close to exhaustive_layout_source_integration_test.cpp's own
-    // make_two_card_finesse_root, in each of `suits` suits: North
-    // (declarer) the Nine, South (dummy) the Eight, a pool split between
-    // East and West. That fixture's own pool is {2..7, 10} (7 cards);
-    // this one drops the Seven -- {2..6, 10}, 6 cards -- so that four
-    // replicated suits (the most DDS_SUITS allows) still fit
-    // binomial_coefficient's own domain: 6 suits * 4 = 24 outstanding
-    // cards, under the 26-card ceiling (7 * 4 = 28 would not be). Root's
-    // own East/West split within each suit is only a template for the
-    // counts ExhaustiveLayoutSource reads (fixed_seat_count via popcount)
-    // -- the enumerated space varies which pool cards East actually
-    // holds, same as every other rung in this file.
+    // Close to make_two_card_finesse_root of
+    // exhaustive_layout_source_integration_test.cpp, in each of `suits`
+    // suits: North (declarer) holds the Nine, South (dummy) the Eight, and
+    // East and West split a pool. That fixture's pool is {2..7, 10}, 7 cards.
+    // This one drops the Seven ({2..6, 10}, 6 cards) so that four suits fit
+    // binomial_coefficient's domain: 24 outstanding cards is under the
+    // 26-card ceiling, and 28 would not be. The root's East/West split per
+    // suit only sets the counts ExhaustiveLayoutSource reads
+    // (fixed_seat_count, by popcount). The enumeration still varies which
+    // pool cards East holds.
     Deal root{};
     root.trump = DDS_NOTRUMP;
     root.first = East;  // a defender leads, as the fixture this mirrors does
@@ -286,11 +272,10 @@ auto all_finesse_rungs() -> std::vector<RungFixture>
 
 namespace
 {
-    /// Spades pool ranks for make_solver_rung(pool_size), chosen (not
-    /// derived from a formula) so the pool always mixes ranks below and
-    /// above North's own Nine -- a pool entirely below it would make
-    /// North's Nine win every layout trivially, the same degenerate
-    /// p_make == 1 problem the finesse ladder's own header explains.
+    /// Spade pool ranks for make_solver_rung(pool_size). Chosen by hand so the
+    /// pool always has ranks both below and above North's Nine. A pool all
+    /// below it would let the Nine win every layout: the degenerate
+    /// p_make == 1 case the finesse ladder exists to avoid.
     auto solver_rung_pool_ranks(int pool_size) -> std::vector<int>
     {
         if (pool_size == 4)
@@ -301,34 +286,27 @@ namespace
         {
             return {2, 3, 4, 10, 11, 12};
         }
-        return {};  // caller error; make_solver_rung's own two wrappers never pass anything else
+        return {};  // caller error; the two wrappers never pass anything else
     }
 }  // namespace
 
 auto make_solver_rung(int pool_size) -> RungFixture
 {
-    // solve_board rejects a deal whose four hands do not all hold the
-    // same card count (table_deal_validate.hpp's own three rules, which
-    // its own doxygen says solve_board enforces too). This function's
-    // own first two drafts both tripped that, for two different reasons,
-    // neither anticipated:
+    // solve_board rejects a deal unless all four hands hold the same number of
+    // cards (the three rules in table_deal_validate.hpp, which solve_board
+    // also enforces). Two simpler constructions fail:
     //
-    //   1. giving East/West `half` Spades on top of one card each in
-    //      Hearts, Diamonds and Clubs, while North/South held only one
-    //      Spade plus those same three suits -- unequal counts outright
-    //      (solve_board's own RETURN_CARD_COUNT, confirmed directly);
-    //   2. after equalising the *counts* by giving North/South extra
-    //      Diamonds, ExhaustiveLayoutSource::size() came back as 252, not
-    //      the intended C(pool_size, half) -- because defender_pool_decomposition
-    //      flattens the pool *across every suit* East or West hold
-    //      anything in, not just Spades, so "fixed" Hearts/Clubs cards on
-    //      East and West were never actually fixed under enumeration; the
-    //      real space mixed them in too.
+    //   1. East and West hold `half` Spades plus one card each in Hearts,
+    //      Diamonds and Clubs. North and South hold one Spade plus the same
+    //      three suits. The counts are unequal (RETURN_CARD_COUNT).
+    //   2. With extra Diamonds for North and South to equalise the counts,
+    //      ExhaustiveLayoutSource::size() is 252, not C(pool_size, half).
+    //      defender_pool_decomposition pools every suit East or West holds,
+    //      so their "fixed" Hearts and Clubs are enumerated too.
     //
-    // The fix for both: East and West hold *only* Spades. Every other
-    // card in the ending -- what equalises the counts -- goes to North
-    // and South alone, who are declarer's own side and never enter the
-    // enumerated pool regardless of suit.
+    // The fix for both: East and West hold only Spades. Every other card,
+    // including the ones that equalise the counts, goes to North and South.
+    // They are declarer's side and never enter the pool.
     std::vector<int> const pool_ranks = solver_rung_pool_ranks(pool_size);
     int const half = pool_size / 2;
 
@@ -346,12 +324,10 @@ auto make_solver_rung(int pool_size) -> RungFixture
         root.remainCards[West][Spades] |= (1u << pool_ranks[i]);
     }
 
-    // Diamonds, North and South only: `half - 1` cards each (the top
-    // `2 * (half - 1)` ranks, split between them) -- the card-count
-    // equaliser, entirely on declarer's own side so East/West's pool
-    // stays Spades alone. North's own top holding is winners in every
-    // layout (nothing else in the deck outranks it), so this suit is not
-    // where the fixture's uncertainty lives -- only Spades is.
+    // Diamonds go to North and South only: `half - 1` each, the top
+    // `2 * (half - 1)` ranks split between them. They equalise card counts and
+    // keep the defenders' pool to Spades. North's top Diamonds win in every
+    // layout, so the uncertainty is in Spades alone.
     int const extra = half - 1;
     for (int i = 0; i < extra; ++i)
     {

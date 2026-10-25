@@ -7,10 +7,12 @@
 #include <belief_evaluation/position.hpp>
 #include <belief_evaluation/renumber.hpp>
 
-// A namespace alias plus targeted `using` declarations, not `using namespace
-// dds::belief_evaluation;` -- see the other test files in this directory for
-// why: kept consistent even though this particular file doesn't yet include
-// anything that makes api/dds_data_types.hpp's global ::Card visible.
+// Tests for trick_winner and legal_plays against the bridge rules, and that
+// renumbering a position preserves play exhaustively.
+
+// A namespace alias and targeted `using` declarations, not `using
+// namespace dds::belief_evaluation;`, to match the other test files. This
+// file does not make the global ::Card visible.
 namespace be = dds::belief_evaluation;
 using be::Position;
 using be::legal_plays;
@@ -20,9 +22,9 @@ using be::trick_winner;
 
 namespace
 {
-    // The pool (OR of all four hands' holdings) per suit, fixed for the
-    // whole deal — renumbering is applied once, up front, to the starting
-    // position, exactly as algorithm.md's "randomised array" model does.
+    // The pool per suit: the OR of all four hands. It is fixed for the whole
+    // deal, so the starting position is renumbered once, as in the
+    // "randomised array" model of algorithm.md.
     auto pool_per_suit(Position const& position) -> std::array<unsigned, DDS_SUITS>
     {
         std::array<unsigned, DDS_SUITS> pool{};
@@ -77,11 +79,10 @@ namespace
         return total;
     }
 
-    // Exhaustively walks every legal line of play from `orig` (the caller's
-    // position) alongside its fixed renumbering `renum`, asserting at every
-    // node that legal move sets correspond under `renumber` and, at every
-    // completed trick, that the winning hand corresponds; at the end of the
-    // deal, that every hand's trick count corresponds.
+    // Walks every legal line of play from `orig` alongside its fixed
+    // renumbering `renum`. At every node the legal move sets must correspond
+    // under `renumber`. At every completed trick the winners must correspond,
+    // and at the end every hand's trick count.
     class IsomorphismWalk
     {
     public:
@@ -120,12 +121,9 @@ namespace
         {
             if (count_in_trick == 0 && total_holding(orig, hand) == 0)
             {
-                // Deal complete: every hand's trick count must correspond.
-                // Also assert every hand is actually empty, not just the one
-                // about to lead — a starting position with unequal card
-                // counts per hand would otherwise let this walk terminate
-                // early and silently under-cover the isomorphism property,
-                // passing without ever having walked the whole deal.
+                // Deal complete: every hand's trick count must correspond. Every
+                // hand must also be empty, not just the next leader. Otherwise unequal
+                // hand sizes could end the walk early and skip part of the deal.
                 for (int h = 0; h < DDS_HANDS; ++h)
                 {
                     EXPECT_EQ(total_holding(orig, h), 0u)
@@ -139,12 +137,9 @@ namespace
             auto const orig_legal = legal_plays(orig, hand, led_suit);
             auto const renum_legal = legal_plays(renum, hand, led_suit);
 
-            // A hand that is unexpectedly empty mid-trick (not at a trick
-            // boundary) returns an all-zero legal set here, and the loop
-            // below then has nothing to iterate — the walk would otherwise
-            // dead-end silently, firing no assertion at all rather than
-            // failing loudly, hiding the same class of unbalanced-position
-            // bug the trick-boundary check above guards against.
+            // A hand that is empty mid-trick gives an empty legal set, and the
+            // walk would stop with no assertion. This check fails loudly instead,
+            // catching the same unbalanced-position bug as the check above.
             EXPECT_NE(
                 orig_legal[0] | orig_legal[1] | orig_legal[2] | orig_legal[3], 0u)
                 << "hand " << hand << " has no legal play mid-trick; the "
@@ -233,15 +228,14 @@ namespace
     }
 }  // namespace
 
-// Direct correctness checks against actual bridge rules — independent of the
-// renumbering isomorphism, which is agnostic to *which* order-based rule
-// trick_winner applies (an order-preserving bijection keeps "lowest wins"
-// just as internally consistent as "highest wins"). These pin the rule down.
+// Checks against the bridge rules. The renumbering isomorphism cannot pin
+// the rule down: an order-preserving bijection keeps "lowest wins" as
+// consistent as "highest wins".
 
 TEST(TrickWinner, HighestCardOfLedSuitWinsWithNoTrumpInPlay)
 {
-    // Leader (hand 0) leads suit 0, bit 3; others follow suit with lower
-    // cards. No trump in play (NOTRUMP).
+    // The leader (hand 0) leads bit 3 of suit 0, and the others follow with
+    // lower cards. Notrump.
     std::array<int, 4> suits{0, 0, 0, 0};
     std::array<int, 4> bits{3, 1, 2, 0};
     EXPECT_EQ(trick_winner(DDS_NOTRUMP, 0, suits, bits), 0);
@@ -251,14 +245,14 @@ TEST(TrickWinner, HighestCardOfLedSuitWinsWhenNotTheLeader)
 {
     std::array<int, 4> suits{0, 0, 0, 0};
     std::array<int, 4> bits{1, 3, 2, 0};
-    // Play order is (leader, leader+1, leader+2, leader+3) = hands (2,3,0,1)
-    // when leader = 2. The highest bit is at play-index 1 -> hand 3.
+    // The play order is leader, leader+1, leader+2, leader+3, which is hands
+    // 2, 3, 0, 1 for leader 2. The highest bit is at play index 1, hand 3.
     EXPECT_EQ(trick_winner(DDS_NOTRUMP, 2, suits, bits), 3);
 }
 
 TEST(TrickWinner, AnyTrumpBeatsAnyCardOfTheLedSuit)
 {
-    // Led suit 0 (spades); play-index 2 discards a low trump (suit 1).
+    // Led suit 0 (spades); play index 2 ruffs with a low trump (suit 1).
     std::array<int, 4> suits{0, 0, 1, 0};
     std::array<int, 4> bits{5, 6, 0, 4};  // trump bit 0 is the lowest card there is
     EXPECT_EQ(trick_winner(/* trump = */ 1, 0, suits, bits), 2);
@@ -273,8 +267,8 @@ TEST(TrickWinner, HighestTrumpWinsWhenSeveralTrumpsArePlayed)
 
 TEST(TrickWinner, DiscardsOffSuitAndNotTrumpNeverWin)
 {
-    // Led suit 0; play-index 3 discards suit 2 (not trump); trump is suit 1
-    // but nobody plays it, so the highest card of the led suit wins.
+    // Suit 0 led; play index 3 discards suit 2. Trump is suit 1, but nobody
+    // plays one, so the highest card of the led suit wins.
     std::array<int, 4> suits{0, 0, 0, 2};
     std::array<int, 4> bits{2, 5, 1, 12};
     EXPECT_EQ(trick_winner(/* trump = */ 1, 0, suits, bits), 1);
@@ -350,20 +344,13 @@ TEST(PositionIsomorphism, ThreeCardsPerHandTwoSuits)
 
 TEST(PositionIsomorphism, FiveCardsPerHandThreeSuitsWithTrumpAndAVoid)
 {
-    // Every hand holds exactly 5 cards. Spades (trump): 2 each, 8 of the
-    // suit's 13 bits. Hearts: N,E,W hold 2 each, South holds only 1 — South
-    // goes void in hearts after playing it, enabling a ruff. Diamonds:
-    // N,E,W hold 1 each, South holds 2, making up South's fifth card.
+    // Every hand holds 5 cards. Spades (trump): 2 each, 8 of the 13 bits.
+    // Hearts: North, East and West hold 2 each, South holds 1. Once South has
+    // played it, South can ruff. Diamonds: North, East and West hold 1 each,
+    // South holds 2.
     //
-    // (An earlier version of this test gave South 4 spades + 1 heart +
-    // 2 diamonds = 7 cards against 5 for every other hand. The isomorphism
-    // walk terminates once the hand about to lead is empty, so that
-    // imbalance let N/E/W's exhaustion end the walk early — South's extra
-    // two cards, and the tricks that would have played them, were never
-    // walked, silently under-covering the property this test exists to
-    // assert. Every hand having the same total is what makes "the hand
-    // about to lead is empty" a sound stand-in for "the deal is complete";
-    // the walk itself now also asserts this explicitly.)
+    // Equal hand sizes matter. The walk ends when the next leader is empty,
+    // and that means the deal is complete only if all hands started equal.
     Position position{};
     position.trump = 0;  // spades
     position.leader = 0;

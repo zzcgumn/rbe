@@ -12,25 +12,16 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    // splitmix64-style mixing step -- cheap, well-distributed, and this
-    // module's own precedent for packing several small integer fields into
-    // one 64-bit key is layout_key()'s own bit-packing; this does the same
-    // job for fields too wide to just shift-and-or together.
+    // A splitmix64-style mixing step, for fields too wide to pack with shifts.
     auto hash_combine(std::uint64_t seed, std::uint64_t value) -> std::uint64_t
     {
         seed ^= value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
         return seed;
     }
 
-    // The exact bit pattern of posterior, for hash_value() -- equal keys
-    // must hash equally, and operator== compares the exact posterior, so
-    // this is the only representation consistent with it. Canonicalises
-    // -0.0 to +0.0 first: plain `==` (what operator== uses) treats them
-    // as equal, so their hashes must match too, even though their bit
-    // patterns otherwise differ. Validated posteriors are always
-    // strictly positive in practice (ProbabilityNonPositive), so this
-    // guards a corner this module's own invariants should already rule
-    // out, not a path ever expected to be exercised.
+    // The exact bits of posterior, which matches operator==. -0.0 becomes
+    // +0.0 first: `==` treats them as equal, so their hashes must match.
+    // Validated posteriors are positive, so this should never apply.
     auto hash_posterior(Probability posterior) -> std::uint64_t
     {
         if (posterior == 0.0)
@@ -86,9 +77,7 @@ auto make_brute_force_cache_key(
     ObservationState const& state, std::vector<Deal> const& layouts,
     std::vector<Probability> const& p) -> BruteForceCacheKey
 {
-    Deal const& representative = layouts.front();  // every layout shares trump/first/current-trick
-                                                     // shape and declarer's/dummy's own holdings --
-                                                     // the module's own outstanding-pool invariant
+    Deal const& representative = layouts.front();  // all layouts share everything but the defenders' split
     int const dummy = (state.declarer + 2) % DDS_HANDS;
 
     BruteForceCacheKey key;
@@ -103,19 +92,14 @@ auto make_brute_force_cache_key(
         key.current_trick_suit[slot] = representative.currentTrickSuit[slot];
         key.current_trick_rank[slot] = representative.currentTrickRank[slot];
     }
-    // Declarer's and dummy's own exact holdings -- not redundant with the
-    // per-layout entries below, which key only a defender's split. See
-    // BruteForceCacheKey's own doxygen for why this field is required.
+    // Declarer's and dummy's exact holdings. Required: see
+    // BruteForceCacheKey.
     key.declarer_holding_key = layout_key(representative, state.declarer);
     key.dummy_holding_key = layout_key(representative, dummy);
 
-    // One defender's seat fixed for this strategy's whole lifetime (the
-    // same declarer, hence the same defender pair, throughout). Both
-    // defenders' own holdings are packed below, exactly, per layout --
-    // layout_key()'s own complement argument ("one defender's holding
-    // determines the other's") holds only within one node's own shared
-    // outstanding pool, never across two keys built independently (see
-    // BruteForceCacheKey::deal_and_posterior's own doxygen).
+    // A fixed defender seat. Both defenders' holdings are packed per layout:
+    // one holding fixes the other only within one pool (see
+    // BruteForceCacheKey::deal_and_posterior).
     int const defender_seat = (state.declarer + 1) % DDS_HANDS;
     int const other_defender_seat = (state.declarer + 3) % DDS_HANDS;
 

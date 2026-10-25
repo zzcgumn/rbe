@@ -1,27 +1,21 @@
 #!/usr/bin/env python3
 """How often SpreadPolicy::TouchingSequence and ::AllOptimal (spread.hpp)
-actually diverge, outside a fixture built to make them -- and, where they
-do, whether that changes the final `p_make`.
+diverge outside a fixture built for it, and whether that changes the final
+`p_make`.
 
-Two numbers, not one (this task's own background says why they are
-different questions):
+Two different questions:
 
   1. **Choice divergence**: at a real defender node, do the two policies'
-     own candidate-card sets differ? Measured directly, one solve_board
-     call per node (see instrument.cpp's counting_divergence_defender --
-     TouchingSequence's set is always a subset of AllOptimal's, so a
-     second solve is never needed to compare them).
-  2. **Answer divergence**: does the choice change the root's own final
-     `p_make`? Measured by running the *real* DoubleDummyDefender under
-     each policy separately (--mode=count) and diffing the two runs'
-     p_make.
+     candidate sets differ? One solve_board call per node is enough (see
+     counting_divergence_defender in instrument.cpp): TouchingSequence's
+     set is always a subset of AllOptimal's.
+  2. **Answer divergence**: does the choice change the root's `p_make`?
+     Runs the real DoubleDummyDefender under each policy (--mode=count)
+     and compares the two p_make values.
 
-Both need a real solve_board call, so both are restricted to the solver
-ladder -- the only fixtures solve_board accepts (see fixtures.hpp's own
-module doxygen; the same restriction cut_rates.py's own tier2_cost_benefit
-ran into). No new fixture, no new instrumentation beyond instrument.cpp's
-own --mode=divergence and --policy -- this task's own background says both
-are meant to be cheap.
+Both need solve_board, so both run only on the solver ladder, the only
+fixtures solve_board accepts (see fixtures.hpp). Both use only the
+instrument's --mode=divergence and --policy.
 
 Usage (after `bazel build //benchmarks/belief_evaluation:instrument`):
 
@@ -37,13 +31,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sweep  # noqa: E402
 
-# Exhaustive fixtures: confirmed directly (three seeds, both rungs, both
-# --mode=divergence and --mode=count) that every number below is bitwise
-# identical across seeds, as an exhaustive run must be -- the source order
-# a seed picks never changes which nodes the tree visits when every layout
-# is included. Several seeds are still run and their values compared
-# rather than assumed equal, so that invariance claim stays checked, not
-# merely stated.
+# The fixtures are exhaustive, so every number is bitwise the same for
+# every seed: the source order never changes which nodes the tree visits
+# when every layout is included. Three seeds still run and are compared,
+# so that claim stays checked.
 SEEDS = [1, 2, 3]
 
 POLICIES = ["touching", "all_optimal"]
@@ -105,23 +96,17 @@ def answer_divergence(binary: Path) -> None:
             f"diff={diff:+.6f}")
 
     print(
-        "\n  Both solver rungs come back p_make=0 under either policy -- confirmed\n"
-        "  this is not a defect of the scripted (lowest-legal-card) declarer used\n"
-        "  throughout this ladder, not a property of the defender's own choice:\n"
-        "  a second, temporary declarer script (cash the side-suit winner before\n"
-        "  touching the contested suit, never committed -- see this task's own\n"
-        "  write-up) gave the identical result. Worked through by hand as well: with\n"
-        "  tricks_needed set to *every* remaining trick and exactly as many\n"
-        "  defender winners in the pool as tricks needed, the single trick that\n"
-        "  clears the contested suit always goes to the defence, whichever hand\n"
-        "  leads it and in whichever order -- these two fixtures are, by\n"
-        "  construction (see fixtures.hpp's own comment: built so a tier-1 dead cut\n"
-        "  can fire), games declarer cannot win against *any* defence, not only the\n"
-        "  two compared here. So this ladder cannot show a nonzero answer\n"
-        "  divergence -- not evidence that one never occurs, a scope limit of the\n"
-        "  only fixtures solve_board accepts. A fixture that could answer this needs\n"
-        "  a genuinely contested position under equal hand counts, which is a new\n"
-        "  fixture this task's own background rules out building.")
+        "\n  Both solver rungs give p_make=0 under either policy. The scripted\n"
+        "  (lowest-legal-card) declarer is not the cause: a declarer that cashes\n"
+        "  the side-suit winner first gives the same result. By hand: tricks_needed\n"
+        "  is every remaining trick, and the pool holds as many defender winners\n"
+        "  as tricks needed, so the defence always wins the trick that clears the\n"
+        "  contested suit. These fixtures are built so a tier-1 dead cut can fire\n"
+        "  (see fixtures.hpp), so declarer cannot make them against any defence.\n"
+        "  So this ladder cannot show an answer divergence. That is a limit of the\n"
+        "  only fixtures solve_board accepts, not evidence that none occurs.\n"
+        "  Answering it needs a contested position with equal hand counts, which\n"
+        "  this ladder does not have.")
 
 
 def run() -> None:

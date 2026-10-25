@@ -8,12 +8,14 @@
 #include <belief_evaluation/kahan.hpp>
 #include <belief_evaluation/node.hpp>
 
-// A namespace alias plus targeted `using` declarations, not `using namespace
-// dds::belief_evaluation;` -- this file's include chain (belief_view.hpp /
-// node.hpp) already makes api/dds_data_types.hpp's global ::Card visible, so
-// a `using namespace` here would make any future bare `Card` reference
-// ambiguous between ::Card and dds::belief_evaluation::Card rather than a
-// clear compile error naming which one was meant.
+// Tests for make_belief_view: normalised posteriors, the is_sample flag
+// and space_size.
+
+// A namespace alias and targeted `using` declarations, not `using
+// namespace dds::belief_evaluation;`. The includes (belief_view.hpp,
+// node.hpp) already make the global ::Card from api/dds_data_types.hpp
+// visible, so a bare `Card` would be ambiguous instead of a clear compile
+// error.
 namespace be = dds::belief_evaluation;
 using be::BeliefEntry;
 using be::BeliefNode;
@@ -41,10 +43,10 @@ class BeliefViewTest : public ::testing::Test
 
 TEST_F(BeliefViewTest, PosteriorsAreNormalisedNotRawPNotWNotKappaTimesP)
 {
-    // p = {0.6, 0.1} does not sum to 1, and kappa != 1, so posterior == p_i,
-    // posterior == w_i (= kappa * p_i), and posterior == the raw p_i are all
-    // simultaneously false unless the view actually normalises within the
-    // node — 0.6 / 0.7 = 0.857142..., 0.1 / 0.7 = 0.142857...
+    // p = {0.6, 0.1} does not sum to 1, and kappa != 1. So posterior == p_i
+    // and posterior == w_i (= kappa * p_i) are both false unless the view
+    // normalises within the node: 0.6 / 0.7 = 0.857142..., 0.1 / 0.7 =
+    // 0.142857...
     BeliefNode const node = make_node_with_p({0.6, 0.1}, /*kappa=*/0.5);
 
     std::vector<BeliefEntry> scratch;
@@ -64,9 +66,8 @@ TEST_F(BeliefViewTest, PosteriorsAreNormalisedNotRawPNotWNotKappaTimesP)
 
 TEST_F(BeliefViewTest, PosteriorReflectsReweightingAfterADefenderPlay)
 {
-    // Simulates what a defender child's p looks like after unequal
-    // reweighting: a stale view (one built before the reweighting) would
-    // still report the old {0.5, 0.5} split.
+    // A defender child's p after unequal reweighting. A stale view, built
+    // before the reweighting, would still report the old {0.5, 0.5} split.
     BeliefNode node = make_node_with_p({0.5, 0.5}, /*kappa=*/1.0);
     node.p = {0.9, 0.3};  // unequally reweighted, e.g. by a defender's play
 
@@ -91,10 +92,9 @@ TEST_F(BeliefViewTest, IsSampleIsFalseAndSpaceSizeIsTheNodesLayoutCount)
 
 TEST_F(BeliefViewTest, IsSampleIsCopiedFromTheNodeNotHardcoded)
 {
-    // This evaluator never sets is_sample true, but make_belief_view must
-    // still read it from the node rather than writing the literal false,
-    // so a future sampling evaluator has one place (BeliefNode::is_sample)
-    // to change rather than every call site.
+    // make_root sets is_sample on a sampled root, and expand() copies it to
+    // the children. make_belief_view must read it from the node, not write a
+    // literal false.
     BeliefNode node = make_node_with_p({1.0}, /*kappa=*/1.0);
     node.is_sample = true;
 
@@ -106,15 +106,12 @@ TEST_F(BeliefViewTest, IsSampleIsCopiedFromTheNodeNotHardcoded)
 
 TEST_F(BeliefViewTest, SpaceSizeIsZeroOnASampledNodeEvenThoughEntriesStillCarriesEveryDrawnLayout)
 {
-    // The false-certainty failure this exists to prevent: on a sampled
-    // node the true belief-space size is genuinely unknown (the evaluator
-    // has seen a prefix of the source, not the whole of it), so
-    // space_size reports 0 -- BeliefView::space_size's own documented
-    // meaning for "unknown" -- rather than the drawn count, which would
-    // hand a strategy a false certainty about how determined the position
-    // is. Nothing else about the view changes: entries still carries every
-    // one of the three drawn layouts and its normalised posterior, exactly
-    // as the unsampled case above does.
+    // On a sampled node the true belief-space size is unknown: the evaluator
+    // has seen a prefix of the source, not all of it. So space_size reports 0,
+    // BeliefView's value for "unknown". The drawn count would give a strategy
+    // a false certainty about how determined the position is. Nothing else
+    // changes: entries still carries all three drawn layouts and their
+    // normalised posteriors, as in the unsampled case above.
     BeliefNode node = make_node_with_p({0.4, 0.3, 0.3}, /*kappa=*/1.0);
     node.is_sample = true;
 

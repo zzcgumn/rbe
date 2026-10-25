@@ -1,63 +1,74 @@
 # Replenished Belief Evaluation: Benchmarks
 
-This document reports what a set of measurements found about the
-replenished-belief-evaluation capability's own behaviour: how sampled
-answers relate to the true one, what a search costs and why, which early
-cuts pay for themselves, and what crossing into Python costs a caller who
-writes π or δ there.
+This document reports measurements of the replenished-belief-evaluation
+capability:
 
-**Who this is for.** If you have built a hand through this implementation
-and gotten a number, this document is where you check whether that number
-is surprising — a wide spread is normal at a given sample size; a
-narrow spread around the wrong answer is not, and Behaviour & spread below
-is where to look for that distinction. Every measurement here reports raw
-counts, never only a ratio, and is labelled with which build mode and
-platform produced it, so a number can be compared rather than merely read.
+- how sampled answers relate to the exhaustive answer;
+- what a search costs, and why;
+- which early cuts pay for themselves;
+- what a π or δ written in Python costs against C++.
 
-**Method, once, rather than per table.** Two build modes exist and they
-differ only by `-DNDEBUG` — `-O3` is on in both, on every platform
-(`CPPVARIABLES.bzl`), so "default" is not "unoptimised" against "optimised
-`-c opt`". What `-c opt` actually removes is the module's own 21 runtime
-asserts, including the mass-conservation invariants. Every counting-based
-measurement below (all of them except the Python-cost section) was run in
-the **default** build, deliberately, so those invariants stayed live while
-the numbers were produced; `-c opt` would report the same counts, faster,
-with less internal checking. The one wall-clock measurement (Python vs
-C++ cost) reports both modes explicitly, since assert cost is exactly what
-a caller comparing the two modes' timings needs to know is or is not in
-the number. All measurements ran on Linux, one machine, one session —
-absolute wall-clock times are not portable to another machine; the ratios
-between two numbers taken in the same run are the more robust thing to
-read across environments.
+**Who this is for.** You built a hand with this implementation and got a
+number. Use this document to check whether the number is surprising. A wide
+spread is normal at a given sample size. A narrow spread around the wrong
+answer is not; "Does a sampled answer converge to the truth?" shows the
+difference. Every measurement reports raw counts, not only ratios, and names
+the build mode and platform that produced it.
 
-Every fixture named below is a member of one of three ladders of
-increasing belief-space size: a **pool** ladder (five rungs, `N` = 70 to
-12,870, declarer holding a whole side-suit as harmless filler) and two
-**realistic** rungs sharing its combinatorics but a believable multi-suit
-declarer hand instead; a **finesse** ladder (four rungs, `N` = 6 to
-10,626, replicated independent finesses, the only ladder with genuine
-per-layout uncertainty — every pool/realistic rung makes with `p_make = 1`
-in every layout by construction); and a two-rung **solver** ladder
-(`N` = 6, 20), the only fixtures small and evenly-dealt enough for
-`solve_board` to accept, used wherever a measurement needed a real
-double-dummy defender rather than a scripted one.
+## Method
 
-## Behaviour & spread: does a sampled answer converge to the truth, and does it converge honestly?
+**Build modes.** The two build modes differ only by `-DNDEBUG`. `-O3` is on
+in both, on every platform (`CPPVARIABLES.bzl`), so the default build is not
+an unoptimised build. `--config=opt` (`-c opt`) removes the module's 21
+runtime asserts, including the mass-conservation invariants.
 
-This is the most consequential question in this document, and the reason
-it comes first: a spread that is merely wide is an inconvenience: a spread
-that is narrow around the *wrong* answer is a bias, and would be the most
-serious finding this capability's own testing could produce, since nothing
-else in the project can detect it directly. So the question is answered in
-that order below — where the true answer sits, before how wide the spread
-is.
+- Every counting measurement (all except the Python cost section) ran in
+  the **default** build, so the invariants stayed live. `-c opt` would give
+  the same counts, faster, with less checking.
+- The one wall-clock comparison, Python against C++, reports both modes.
+  Assert cost is exactly what a caller comparing the two modes needs to see.
 
-**Where the truth sits, at every sample size tried: inside the observed
-spread, never outside it.** Measured on the finesse ladder (the only one
-with real per-layout uncertainty), the exhaustive answer for each fixture
-computed in the *same run* as the sampled ones (never a stored constant),
-at four sample fractions of `N` (10%, 25%, 50%, 75%), 15-30 seeds per
-cell:
+**Machine.** Every measurement ran on Linux, on one machine, in one session.
+Absolute wall-clock times do not carry to another machine. Ratios between
+two numbers from the same run are more robust.
+
+**Commands.** The sweep scripts run a C++ instrument and print tables. Build
+the instrument first, then run a script from the repository root:
+
+```
+bazelisk build //benchmarks/belief_evaluation:instrument
+python3 benchmarks/belief_evaluation/<script>.py
+```
+
+Each section names its script.
+
+**Fixtures.** Every fixture belongs to one of three ladders of increasing
+belief-space size (`benchmarks/belief_evaluation/fixtures.hpp`):
+
+| ladder | rungs | `N` | what it is for |
+|---|---|---|---|
+| pool | pool4 to pool8 | 70 to 12,870 | defender-pool combinatorics; declarer holds a whole side suit as filler |
+| realistic | realistic_a, realistic_b | 924, 12,870 | the pool combinatorics with a believable multi-suit declarer hand |
+| finesse | finesse1 to finesse4 | 6 to 10,626 | replicated independent finesses: the only ladder with real per-layout uncertainty |
+| solver | solver_a, solver_b | 6, 20 | small, evenly dealt positions `solve_board` accepts, for a real double-dummy defender |
+
+Every pool and realistic rung makes with `p_make = 1` in every layout, by
+construction.
+
+## Does a sampled answer converge to the truth?
+
+**Question.** Does the true answer sit inside the spread of sampled answers,
+and how fast does the spread narrow? Where the truth sits comes first. A
+wide spread is an inconvenience. A narrow spread around the *wrong* answer
+is a bias, the most serious finding possible here, and nothing else in the
+project can detect it.
+
+**Command.** `python3 benchmarks/belief_evaluation/convergence.py`
+
+**Setup.** The finesse ladder, the only one with real per-layout uncertainty.
+The exhaustive answer is computed in the same run, never stored. Four
+sample sizes `M` as fractions of `N`, with 15–30 seeds per cell (30 at 10%,
+25 at 25%, 20 at 50%, 15 at 75%). Linux, default build.
 
 | fixture | N | true p_make | M=10%N | M=25%N | M=50%N | M=75%N |
 |---|---:|---:|---|---|---|---|
@@ -66,103 +77,101 @@ cell:
 | finesse3 | 816 | 0.7169 | [0.634, 0.829] | [0.647, 0.784] | [0.706, 0.755] | [0.701, 0.734] |
 | finesse4 | 10,626 | 0.6432 | [0.605, 0.668] | [0.623, 0.654] | [0.632, 0.648] | [0.638, 0.647] |
 
-(Linux, default build.) A minimum sample size (against a degenerate 1- or
-2-layout draw) means finesse1's own 10%/25%/50% *labels* all floor to the
-identical `M=3` — the three matching intervals in its row are the same
-configuration measured with three different seed lists, not three
-increasingly larger samples; only its `M=4` column is genuinely distinct.
-Sixteen seed-batches were run across the table; **fourteen** are distinct
-`(fixture, M)` configurations (finesse1 contributes two, not four). The
-true value fell inside the observed range at every single one of the
-sixteen, including the smallest-`M`, widest-spread cells where a bias
-would be most visible. This is the first check in this capability's own
-testing of whether `ExhaustiveLayoutSource`'s keyed-Feistel shuffling is
-actually unbiased with respect to layout consistency, rather than merely
-asserted to be by construction.
+**Result.**
 
-**Width shrinks monotonically with `M` at every fixture**, roughly as
-`1/sqrt(M)` by eye (not fit statistically — see Limits below): finesse4's
-own spread narrows from 0.063 (10%N) to 0.009 (75%N), a sevenfold
-tightening for a 7.5x sampling increase. finesse1's own width looks flat
-across its first three columns because they are the same `M=3`, not
-because width is insensitive to `M` there — its own genuine step, `M=3`
-to `M=4`, does narrow (0.333 to 0.250), consistent with the other three
-fixtures' own direction at a fixture too small to show much more.
+- **The true value was inside the observed range in every cell**, including
+  the smallest-`M`, widest cells where a bias would show most. This checks
+  in practice that the keyed-Feistel shuffle of `ExhaustiveLayoutSource` is
+  unbiased with respect to layout consistency, not only by construction.
+- A minimum sample size of 3 guards against a degenerate 1- or 2-layout
+  draw. So finesse1's 10%, 25% and 50% columns are all `M=3`: one
+  configuration measured with three seed lists, not three sample sizes.
+  Only its `M=4` column is distinct. Of the 16 seed batches, 14 are
+  distinct `(fixture, M)` configurations.
+- **Width shrinks monotonically with `M` at every fixture**, roughly as
+  `1/sqrt(M)` by eye (not fitted). finesse4 narrows from 0.063 at 10%N to
+  0.009 at 75%N: sevenfold for 7.5 times the sampling. finesse1 looks flat
+  across its first three columns only because they are the same `M=3`. Its
+  real step, `M=3` to `M=4`, narrows from 0.333 to 0.250.
+- `layout_min` (the smallest live layout count at any depth) read 1, the
+  minimum possible, in every cell, sampled or exhaustive. **This is not a
+  red flag.** A search narrows to one layout near the end of a resolved
+  line, as expected at a leaf. One minimum across all depths cannot tell
+  early collapse from that expected narrowing.
 
-**Recommendation: `M` around half of `N`** is a reasonable default for a
-reader who cannot afford exhaustive evaluation and wants the estimator's
-own noise comfortably below single-digit percentage points. Evidence:
-finesse3/finesse4 (the two largest, most representative fixtures here)
-are already under a 0.05 spread at `M=50%N`, and `M=75%N` buys
-comparatively little more (0.049→0.033, 0.016→0.009) for 50% more
-sampling cost. **Limits: drawn from four fixtures of one shape** (a
-replicated finesse), not a general result across fixture geometry, and it
-does not by itself account for sampling cost — Cost of sampling and
-replenishment below covers that, and a bigger `M` is a more expensive one
-there too.
+**Conclusion.** `M` around half of `N` is a reasonable choice when
+exhaustive evaluation is too expensive and estimator noise should stay well
+below single-digit percentage points. `SamplingOptions::sample_size` has no
+default: absent means exhaustive.
 
-One counter carried alongside every convergence run, `layout_min` (the
-smallest live layout count at any depth reached), read 1 — the minimum
-possible — at every cell measured, both sampled and exhaustive. **This is
-not itself a red flag**: a search narrows toward single-layout certainty
-near the end of a resolved line, which is expected at a leaf, not evidence
-of premature collapse partway through. The measurement takes only
-`layout_min`'s own minimum across all depths in one number, which cannot
-distinguish "collapsed early" from "narrowed exactly where it should
-have" — see Limits.
+The evidence: finesse3 and finesse4, the largest fixtures here, are under a
+0.05 spread at `M=50%N`. `M=75%N` buys little more (0.049 to 0.033, and
+0.016 to 0.009) for 50% more sampling.
 
-## Scan-to-hit by depth, against N — and whether a narrowing hint still looks necessary
+**Limits.** Four fixtures of one shape (a replicated finesse), so not a
+general result. It ignores sampling cost; see "What does replenishment
+cost?", where a bigger `M` also costs more.
 
-`at_calls / layouts_added` at a node-local replenishment scan, against the
-belief-space size `N`, across the whole pool/realistic ladder, both
-history forms, swept two ways (Linux, default build, 20 seeds):
+## Scan-to-hit by depth, against N
 
-**Fixed absolute sample size** (`sample_size=5`, the operationally
-realistic case — a caller who picks one practical sample size regardless
-of the position) is roughly flat to mildly rising with `N`: a 184x
-increase in `N` (70 → 12,870) produces about a 1.5-1.8x increase in
-scan-to-hit, from 7.2 to 13.3 at depth 2. Read at face value against the
-matching with-history row, this looks *worse* in 4 of 5 pool rungs (7.22
-→ 8.67 at the smallest) — **this reading is a confound, not a finding**:
-at a fixed absolute sample size, a small constrained space gets
-over-sampled relative to its own size, driving up collision pressure
-(drawn-and-excluded candidates) for a reason that has nothing to do with
-whether history narrows the space usefully.
+**Question.** How many `at()` calls does a node-local replenishment scan
+spend per accepted layout (`at_calls / layouts_added`) as `N` grows? Does a
+narrowing hint look necessary, beyond what a play history already gives?
 
-**Fixed fraction of N** (`sample_size = 20%` of each rung's own size, the
-comparison that removes that confound) rises clearly with `N` (7.4 at
-N=70 to 17.7 at N=12,870, without history), and **history improves or
-matches scan-to-hit in 4 of 5 pool rungs** at matched fraction (only the
-smallest rung is very slightly worse, within small-integer noise). The
-smallest with-history rung (N=15) is not *quite* matched — a floor against
-a degenerate sample (below 4 layouts) pushes it to 26.7% of `N` rather
-than 20%, a higher fraction than its without-history counterpart (N=70,
-exactly 20%) gets — which, if anything, understates how much worse it
-looks: the with-history side still came out marginally behind (8.15 vs
-7.44) despite the extra, unearned sampling share.
+**Command.** `python3 benchmarks/belief_evaluation/scan_to_hit.py`
 
-**Answer: a narrowing hint does not look necessary, on this evidence.**
-At matched sampling fraction, a supplied history already buys most of
-what a hint would — the direction the capability's own design predicted,
-for the predicted reason (a history-constrained space is denser in
-consistent layouts, not merely smaller). **Limits: seven rungs, one
-family of fixture shapes** — pool6 and the corresponding realistic rung
-give literally identical numbers (same defender-pool combinatorics,
-different declarer filler only), a consistency check rather than a second
-independent data point. Read the direction as evidence, not as validated
-across a wide range of fixture shapes.
+**Setup.** The whole pool and realistic ladder, both history forms, 20
+seeds. Linux, default build. Two sweeps.
 
-`attempted` vs `succeeded` stayed close (within a few percent) except at
-the smallest with-history fixture, where 35% of scan attempts added
-nothing — the same collision-pressure story: a 15-layout space with a
-5-sample scan empties its node-local pool fast.
+**Result.**
 
-## What a play history buys, at realistic positions
+| sweep | sample size | without history, depth 2 | with history |
+|---|---|---|---|
+| 1: fixed | `sample_size=5` | 7.2 at N=70 to 13.3 at N=12,870 | looks worse in 4 of 5 pool rungs (7.22 to 8.67 at the smallest): a confound |
+| 2: scaled | 20% of `N` | 7.4 at N=70 to 17.7 at N=12,870 | better or equal in 4 of 5 pool rungs |
 
-Constrained (`with_history`) against unconstrained `size()`, same
-underlying deal, across the pool/realistic ladder (Linux, no search run —
-these are direct `ExhaustiveLayoutSource::size()` calls, no sampling, no
-seed):
+- **Sweep 1, fixed sample size,** is the realistic case: a caller picks one
+  practical sample size whatever the position. Scan-to-hit is roughly flat
+  to mildly rising. A 184-fold increase in `N` gives a 1.5–1.8-fold
+  increase in scan-to-hit.
+- **The with-history comparison in sweep 1 is a confound, not a finding.**
+  At a fixed sample size, a small constrained space is over-sampled for its
+  size. That raises collision pressure (candidates drawn and excluded),
+  whatever the history does.
+- **Sweep 2 removes the confound** by fixing the fraction. Scan-to-hit then
+  rises clearly with `N`. With history it is better or equal in 4 of 5 pool
+  rungs. Only the smallest is slightly worse, within small-integer noise.
+- That smallest with-history rung (N=15) is not quite matched. A floor of 4
+  layouts gives it 26.7% of `N`, not 20%. Even with that extra share it came
+  out slightly behind (8.15 against 7.44), so the mismatch, if anything,
+  understates the gap.
+- `attempted` and `succeeded` stayed within a few percent, except at the
+  smallest with-history fixture. There 35% of attempts added nothing: a
+  15-layout space with a 5-layout sample empties its pool fast.
+
+**Conclusion.** A narrowing hint does not look necessary. At a matched
+sampling fraction, a play history already buys most of what a hint would,
+because a history-constrained space is denser in consistent layouts, not
+only smaller.
+
+**Limits.** Seven rungs, one family of shapes. pool6 and realistic_a give
+identical numbers (the same defender pool, different declarer filler), so
+they are a consistency check, not two data points.
+
+## What a play history buys at realistic positions
+
+**Question.** How much does a play history shrink the belief space, and how
+wrong is an answer that ignores it?
+
+**Command.**
+
+```
+bazelisk build //benchmarks/belief_evaluation:ladder_reference
+python3 benchmarks/belief_evaluation/space_size.py
+```
+
+**Setup.** Direct `ExhaustiveLayoutSource::size()` calls on the same deal,
+with and without history. No search, no sampling, no seed. Linux.
 
 | rung | unconstrained | constrained | ratio |
 |---|---:|---:|---:|
@@ -174,61 +183,61 @@ seed):
 | realistic_a | 924 | 210 | 4.40x |
 | realistic_b | 12,870 | 3,003 | 4.29x |
 
-The two realistic rungs are genuine post-trick-one positions, not small
-endings with a synthetic history stapled on: declarer leads a top winner
-and wins it, one defender discards (showing a real void), and the history
-supplied replays exactly that. The ratio falls slowly toward 4, not
-toward 1, as the pool grows (a void always removes the same two forced
-cards, so its relative bite shrinks with pool size but never vanishes) —
-**a supplied history keeps mattering at any pool size this ladder reaches
-or plausibly could.**
+The two realistic rungs are real positions after trick one, not small
+endings with a made-up history. Declarer leads a top winner and wins it, one
+defender discards (showing a real void), and the history replays exactly
+that.
 
-**How wrong an unconstrained answer would have been, concretely, at the
-two realistic rungs:** with `n` outstanding pool cards and a defender
-holding `k`, the unconstrained enumeration gives that defender any
-specific card with probability `k/n`; a defender who has shown void in a
-suit with `h` cards still in the pool should instead see `k/(n-h)`.
+**How wrong an unconstrained answer is.** Take `n` pool cards and a
+defender holding `k`. Without the void, that defender holds a given card
+with probability `k/n`. If they have shown void in a suit with `h` cards
+still in the pool, the right answer is `k/(n-h)`.
 
 | rung | k | unconstrained P(defender holds a given pool card) | constrained P | swing |
 |---|---:|---:|---:|---:|
 | realistic_a | 6 | 6/12 = 0.500 | 6/10 = 0.600 | +10.0pp |
 | realistic_b | 8 | 8/16 = 0.500 | 8/14 = 0.571 | +7.1pp |
 
-That swing lands on **every one of the ten (realistic_a) or fourteen
-(realistic_b) outstanding non-void cards**, not on a single decision — the
-error from an unconstrained answer is not confined to the voided suit.
-The two forced-void cards themselves are the sharper number: an
-unconstrained answer reports a flat 50% chance either defender holds one,
-when the true answer is a certainty (0%) — the defender already showed
-out of them.
+- The swing applies to every one of the 10 (realistic_a) or 14
+  (realistic_b) outstanding non-void cards, not to one decision. The error
+  is not confined to the voided suit.
+- The two forced cards of the voided suit are worse. The unconstrained
+  answer gives the void defender a 50% chance of each; the true chance is
+  0%, because that defender has shown out.
+- The ratio falls slowly towards 4, not 1, as the pool grows. A void always
+  removes the same two forced cards, so its relative effect shrinks with
+  pool size but never vanishes.
+- Scan-to-hit also improves at these sizes (sweep 2 above, depth 2): from
+  13.44 (N=924, no history) to 11.54 (N=210, with history), and from 17.69
+  to 17.62 at the larger rung. Flat to better, never worse.
 
-Scan-to-hit improves at these same two rungs' own sizes too, not merely
-space size: at matched sampling fraction (Scan-to-hit above, sweep 2),
-depth-2 scan-to-hit went from 13.44 (N=924, no history) to 11.54 (N=210,
-with history) at the smaller size, and from 17.69 to 17.62 at the larger
-— flat to improving, never worse. **The size ratio alone understates what
-a history buys a sampling run**, because the layouts a void removes are
-disproportionately the ones a sampling scan would otherwise have drawn
-and discarded as inconsistent.
+**Conclusion.** A play history keeps mattering at every pool size this
+ladder reaches. The size ratio understates what it buys a sampling run: the
+layouts a void removes are mostly ones a scan would otherwise draw and
+discard as inconsistent.
 
-## Cost of sampling and replenishment, especially when it fails
+## What does replenishment cost?
 
-Two purpose-built cases (no existing fixture happens to exercise both;
-Linux, default build):
+**Question.** What does a replenishment scan cost, especially when it
+fails? Should `SamplingOptions::replenish_below` stay off by default?
 
-- **A replenishment attempt that fails outright** (a near-exhausted
-  source): 6.0 `at_calls` per attempt, **zero layouts added** — cheap per
-  attempt, and buys literally nothing.
-- **An attempt that always succeeds** (fresh candidates never scarce): 76
-  to 105 `at_calls` per attempt, 100% success.
+**Command.** `python3 benchmarks/belief_evaluation/replenishment_cost.py`
 
-A failed attempt being *cheaper per call* is not a contradiction — it is
-a scan giving up fast against an exhausted space; a larger nearly-exhausted
-space could cost far more per failed attempt before conceding.
+**Cost per attempt.** Two purpose-built cases, since no existing fixture
+exercises both. Linux, default build.
 
-**`delta_calls` and wall time, `replenish_below` set against not set**,
-swept across three rungs of increasing scale, three thresholds each
-(10/25/50% of sample size), 10 seeds, best of 3 repeats:
+| case | `at_calls` per attempt | layouts added | success |
+|---|---:|---:|---:|
+| fails outright: finesse1, a near-exhausted source | 6.0 | 0 | 0% |
+| always succeeds: pool8, fresh candidates never scarce | 76–105 | | 100% |
+
+A failed attempt is cheaper because the scan gives up fast against an
+exhausted space. It buys nothing. A larger, nearly exhausted space could
+cost far more per failed attempt.
+
+**With `replenish_below` set against without.** Three rungs of increasing
+scale, three thresholds each (10%, 25% and 50% of the sample size), 10
+seeds, best of 3 repeats.
 
 | rung | sample_size | threshold | delta_calls | wall time | share of total |
 |---|---:|---:|---:|---:|---:|
@@ -242,32 +251,32 @@ swept across three rungs of increasing scale, three thresholds each
 | pool7 | 343 | 25% | +2754% | 162.15x | 99% |
 | pool7 | 343 | 50% | +2878% | 161.46x | 99% |
 
-Every figure above is the median of each seed's own paired (with −
-without) delta, not the difference of two independently-computed
-medians — the two are not the same thing in general (median is not
-linear), though here they land within a few percent of each other on
-every row. Also: the "share of total" column is the with/without
-*configuration* delta as a fraction of the with-run's own total wall
-time, not isolated replenishment-scan time in isolation — the two runs
-also visit different nodes and make different callback counts.
+- Each figure is the median of each seed's paired (with − without) value,
+  not the difference of two medians. The two are not the same in general,
+  since the median is not linear. Here they agree within a few percent on
+  every row.
+- "Share of total" is the with/without difference as a fraction of the
+  with-run's total wall time. It is not isolated scan time: the two runs
+  also visit different nodes and make different numbers of callbacks.
 
-**Recommendation: leaving `replenish_below` absent by default is right.**
-Evidence: every configuration tested with it set showed replenishment
-dominating total wall time (74-99% of the with-replenishment run), and
-the cost grows sharply, not linearly, with fixture scale — two to nearly
-three orders of magnitude of wall-time multiplier as fixture scale grows
-across the rungs tested. Leaving it absent costs nothing (unchanged
-behaviour); setting it without accounting for this scale dependence risks
-a wall-time regression of two orders of magnitude, not a modest one.
-**Limits: three rungs across two fixture shapes**, not a systematic sweep
-of sample size at fixed `N` that would isolate scale from shape more
-cleanly.
+**Conclusion.** Keep `SamplingOptions::replenish_below` absent by default.
+In every configuration replenishment dominated wall time (74–99% of the run),
+and the multiplier grows sharply with scale, to 124–162x at pool7. Leaving
+it absent costs nothing. Setting it without allowing for scale risks a
+slowdown of two orders of magnitude.
+
+**Limits.** Three rungs across two fixture shapes. A sweep of sample size
+at a fixed `N` would separate scale from shape more cleanly.
 
 ## Cut rates: how much tier 1 removes, and whether tier 2 pays
 
-**Tier 1 (unconditional arithmetic cuts), made and dead cut rates as a
-percentage of nodes visited**, across every fixture (Linux, default
-build, 10 seeds, median):
+**Question.** How much of the tree do the early cuts remove? Does tier 2 pay
+for its bound calls?
+
+**Command.** `python3 benchmarks/belief_evaluation/cut_rates.py`
+
+**Tier 1 cut rates**, as a percentage of nodes visited. Every fixture,
+Linux, default build, 10 seeds, median.
 
 | fixture | N | made_cuts | dead_cuts |
 |---|---:|---:|---:|
@@ -277,23 +286,13 @@ build, 10 seeds, median):
 | realistic_a/b, with history | 210, 3,003 | 32.3%, 31.7% | 0.0% |
 | finesse1..4 | 6-10,626 | 20.0-22.8% | 2.5-4.7% |
 
-Dead cuts read zero across the whole pool/realistic ladder by
-construction, not by defect — those fixtures make with `p_make=1` in
-every single layout, so there is never a losing line for `is_dead()` to
-prune. The finesse ladder is the only one where declarer can lose, and is
-the only one with nonzero dead-cut activity.
+Dead cuts are zero across the pool and realistic ladder by construction.
+Those fixtures make in every layout, so `is_dead()` has no losing line to
+prune. Only the finesse ladder has lines declarer can lose.
 
-**How much of the tree a cut actually removes** (not merely what fraction
-of *visited* nodes were cuts — a cut high in the tree removes a whole
-subtree from ever being visited, which a per-visited-node rate
-systematically understates), measured against a walker that removes both
-tiers and counts the resulting tree — valid only on the finesse and
-solver ladders, confirmed directly rather than assumed (the real
-evaluator revisits sibling subtrees for belief-view renormalisation in a
-way this single-pass walker cannot replicate, and the walker's own count
-comes back smaller than the real tree's on every pool/realistic rung,
-which is provably impossible where the property holds — so it is reported
-only where checked to hold):
+**Tree fraction removed.** A rate per visited node understates a cut high
+in the tree, which removes a whole subtree that is never visited. So this
+compares against a walker with both tiers removed (`uncut_tree.hpp`).
 
 | fixture | N | tree fraction removed |
 |---|---:|---:|
@@ -302,63 +301,68 @@ only where checked to hold):
 | finesse3 | 816 | 16.2% |
 | finesse4 | 10,626 | 23.4% |
 
-**Compounding grows with `N`, not flat** — independent cut opportunities
-remove a growing share of the tree as it grows, across three orders of
-magnitude on one fixture shape. **Limits: one fixture shape** (a
-replicated finesse), not a systematic sweep of shape independent of
-scale; the pool/realistic ladder's own compounding cannot be measured
-with a walker built from the evaluator's own public pieces, for the
-structural reason above.
+This is valid only on the finesse and solver ladders, where it was checked.
+The real evaluator revisits sibling subtrees to renormalise belief views,
+and the single-pass walker cannot. On every pool and realistic rung the
+walker's count came back smaller than the real tree, which is impossible
+where the comparison holds. So no fraction is reported there.
 
-**Tier 2 (the injected-bound cut), on the two solver-ladder rungs** — the
-only fixtures small and evenly-dealt enough for a real double-dummy
-defender, exhaustive, 10 seeds:
+**Tier 2**, on the two solver rungs, exhaustive, 10 seeds:
 
 | fixture | N | nodes: without/with tier 2 | delta_calls: without/with | bound_calls (with) |
 |---|---:|---|---|---:|
 | solver_a | 6 | 25 / 5 | 14 / 6 | 10 |
 | solver_b | 20 | 49 / 7 | 50 / 20 | 40 |
 
-Clear benefit on both: 80% and 86% fewer nodes visited, 57% and 60% fewer
-delta calls. Cost, re-measured directly: roughly 18-25 µs per bound call
-against roughly 80-109 µs per delta call — but **neither figure is an
-isolated per-call cost**, both are whole-run wall time divided by a call
-count. The bound-call figure is the **net** wall-time delta between the
-two runs — the median of each seed's own paired (with − without) delta,
-not the difference of two independently-computed medians, which is not
-the same thing in general — divided by bound calls, which already has
-tier 2's own downstream savings (fewer nodes, fewer delta calls) folded
-into it working the other way; the delta-call figure is the entire
-without-tier-2 run's own wall time — source scanning, node expansion,
-every callback kind, not delta calls in isolation — divided by delta
-calls.
+- Tier 2 visits 80% and 86% fewer nodes, and makes 57% and 60% fewer delta
+  calls.
+- Cost: roughly 18–25 µs per bound call, against roughly 80–109 µs per
+  delta call. **Neither is an isolated per-call cost**; each is whole-run
+  wall time divided by a call count.
+  - The bound-call figure is the net wall-time difference between the two
+    runs (the median of paired per-seed differences), divided by bound
+    calls. It already includes tier 2's savings (fewer nodes, fewer delta
+    calls), which work the other way.
+  - The delta-call figure is the whole without-tier-2 run (source scanning,
+    node expansion, every callback) divided by delta calls.
 
-**Recommendation: on this evidence, tier 2 pays, clearly, on both
-fixtures it was tested against.** **Limits: the qualifying-δ sample size
-is exactly one** (a double-dummy defender paired with a double-dummy
-bound — the only pairing that satisfies the soundness obligation this
-tier's own injected bound carries), and both fixtures are small (`N` = 6
-and 20). This is a real finding at that scale, not a general claim about
-tier 2 at production scale.
+**Conclusion.**
 
-**Checked against the documentation's own claim that early cuts "speed up
-the search significantly": not contradicted.** Made-cut rates are
-substantial everywhere measured (20-46% of visited nodes), tier 1's own
-tree-fraction-removed grows with `N` rather than staying flat, and tier 2
-shows a clear net benefit on both fixtures tested. Nothing found here
-argues for softening or qualifying that claim.
+- Tier 1's tree fraction removed grows with `N`, over three orders of
+  magnitude on one fixture shape: independent cut opportunities compound.
+- Tier 2 pays clearly on both fixtures tested. It is opt-in, through
+  `EvaluateOptions::bound` and `EvaluateOptions::delta_is_double_dummy_optimal`.
+- The claim in `algorithm.md` that early cuts "speed up the search
+  significantly" is not contradicted. Made cuts are 20–46% of visited nodes
+  everywhere measured, tier 1's tree fraction grows with `N`, and tier 2
+  shows a clear net benefit on both fixtures.
 
-## `TouchingSequence` against `AllOptimal`: how often the two spread policies actually diverge
+**Limits.**
 
-Both halves of this question need a real double-dummy solve, restricting
-the measurement to the two solver-ladder rungs (Linux, default build,
-three seeds, confirmed bitwise identical across seeds — these are
-exhaustive fixtures, so seed cannot affect the answer).
+- Tier 1: one fixture shape (a replicated finesse), not a sweep of shape
+  independent of scale. Compounding on the pool and realistic ladder cannot
+  be measured with a walker built from the evaluator's public pieces, for
+  the reason above.
+- Tier 2: exactly one qualifying δ, a double-dummy defender with a
+  double-dummy bound. That is the only pairing that meets the soundness
+  obligation of the injected bound. Both fixtures are small (`N` = 6 and
+  20). This is a real finding at that scale, not a claim about tier 2 at
+  production scale.
 
-**Choice divergence** — do the two policies pick different candidate card
-sets at the same node — run once with each policy driving the tree (the
-two trees genuinely differ, since which children a defender node gets
-depends on which policy is live):
+## How often `TouchingSequence` and `AllOptimal` diverge
+
+**Question.** How often do the two spread policies choose different cards?
+Does the choice change the final `p_make`?
+
+**Command.** `python3 benchmarks/belief_evaluation/divergence.py`
+
+**Setup.** Both questions need a real double-dummy solve, so this uses the
+two solver rungs. Linux, default build, three seeds. The results were
+bitwise identical across seeds, as they must be on exhaustive fixtures.
+
+**Choice divergence:** do the two policies pick different card sets at the
+same node? Each policy drives the tree once. The trees differ, since a
+defender node's children depend on which policy is live.
 
 | fixture | driven by | delta_calls | divergences | rate |
 |---|---|---:|---:|---:|
@@ -367,40 +371,45 @@ depends on which policy is live):
 | solver_b | TouchingSequence | 50 | 23 | 46.0% |
 | solver_b | AllOptimal | 80 | 51 | 63.7% |
 
-**This is not rare** — between a quarter and two-thirds of defender calls
-on these two small, unremarkable fixtures (not built to engineer a tie)
-see the two policies diverge.
+**This is not rare.** Between a quarter and two-thirds of defender calls
+diverge, on two small, ordinary fixtures not built to force a tie.
 
-**Answer divergence** — does the choice change the final `p_make` — read
-`p_make(TouchingSequence)` against `p_make(AllOptimal)` on the same
-fixture: both rungs report `0.0` under either policy. **This is not
-evidence the choice never matters** — traced rather than reported flat,
-both solver rungs turn out to be positions declarer cannot make against
-*any* defence at all (by their own construction: exactly as many defender
-winners in the pool as tricks needed), so the zero is a ceiling on what
-these two fixtures can show, not a finding about the parameter itself.
+**Answer divergence:** `p_make` is 0.0 on both rungs under either policy.
+**That is not evidence that the choice never matters.** Both solver rungs
+are positions declarer cannot make against any defence: by construction the
+pool holds exactly as many defender winners as tricks needed. The zero is a
+limit of these fixtures, not a finding about the policies.
 
-**Conclusion: a real choice to the search, unresolved for the final
-answer.** The two policies choose differently often enough that a caller
-selecting between them is selecting a materially different search tree,
-not a corner case. Whether that choice ever changes which hands are
-recommended makeable remains open — closing it needs a fixture where
-declarer's success genuinely depends on the defence, under the equal hand
-counts a real double-dummy solve requires, which the existing fixture
-ladder does not have.
+**Conclusion.** The two policies build materially different search trees,
+so choosing between them is a real choice, not a corner case. Whether it
+ever changes which hands are makeable is open. Answering that needs a
+fixture where declarer's success depends on the defence, with the equal
+hand counts `solve_board` requires. The ladder has none.
 
-## What a Python π and δ cost against their C++ equivalents
+## What a Python π and δ cost against C++
 
-Same fixture, same seed, same rule on both sides for the shared parts —
-`single_card_declarer_play`'s own "lowest legal card" rule (identical to
-the existing parity test's own π, already proven bitwise-identical
-between languages) crossed with a "real work" π that scores every legal
-card by the posterior-weighted count of defender cards that would beat it
-(entries × candidates work, proven correct independently in both
-languages via a hand-derived case, not through a fixture) — and a
-replenishing sampling configuration against a non-replenishing one
-differing only in `replenish_below`. 2000 iterations per cell, one run
-per build mode, Linux:
+**Question.** How much does a π or δ written in Python cost, against the
+same callback in C++?
+
+**Command.** One run per build mode:
+
+```
+bazelisk run //benchmarks/python_cost:report -- --label default
+bazelisk run --config=opt //benchmarks/python_cost:report -- --label opt
+```
+
+**Setup.** The same fixture and seed on both sides, 2000 iterations per
+cell, one run per build mode, Linux. Two π crossed with two sampling
+configurations:
+
+- trivial π: the "lowest legal card" rule of `single_card_declarer_play`,
+  the π of the parity test, already shown bitwise identical in both
+  languages;
+- real-work π: scores each legal card by the posterior-weighted count of
+  defender cards that would beat it (entries × candidates work). It is
+  checked in both languages against a hand-derived case;
+- replenishing and non-replenishing configurations, differing only in
+  `replenish_below`.
 
 | π | config | build mode | C++ ms/iter | Python ms/iter | ratio |
 |---|---|---|---:|---:|---:|
@@ -413,86 +422,68 @@ per build mode, Linux:
 | real-work | replenishing | default | 0.055005 | 0.866256 | 15.75x |
 | real-work | replenishing | opt | 0.053723 | 0.702686 | 13.08x |
 
-**Reproduces an earlier order-of-magnitude check's own ratio closely**
-(trivial-π/replenishing: 10.30x default against a prior ~9.0x, 8.94x
-`-c opt` against a prior ~7.8x — same order of magnitude, same direction,
-opt lower than default in both). Absolute times do not reproduce and
-should not be expected to — both languages run roughly 4.5-5x slower here
-than the earlier check's own figures, consistently across both languages
-and both build modes, which is what different underlying hardware running
-the same relative workload produces, not a methodology difference (which
-would distort the ratio, not scale both sides by close to the same
-constant).
+**Result.**
 
-**Does a Python π dominate the profile? Yes — more emphatically than the
-trivial-rule ratio alone suggests, for a specific, checked reason.** A
-real-work π was predicted to *narrow* the ratio (fixed crossing cost
-amortising over more work); measured here it **widens** instead, at both
-sampling configurations and both build modes. Traced to a fact about the
-fixture, confirmed from its own construction rather than inferred: it
-gives declarer exactly one legal card at every decision, so the real-work
-scoring's own `entries × candidates` work collapses to `entries × 1` — a
-handful of floating-point multiply-adds C++ absorbs for free at these
-timescales (real-work measures at or below trivial on the C++ side, every
-cell). **On the Python side that same work is not free**: real-work costs
-0.126-0.284ms/iteration more than trivial, holding the sampling
-configuration fixed — the entire size of the gap the ratio widens by. A
-Python callback's own cost is not only the fixed cost of crossing the
-boundary; it is also the raw interpreter cost of whatever the callback
-does once there, and that second cost is visible in Python at a scale C++
-cannot measure at all. **Condition this can state precisely**: it holds
-whenever the belief view being reasoned over carries more than a handful
-of entries. **Condition it cannot speak to**: this fixture's own
-single-candidate-per-suit construction means the *candidates* side of
-that product was never exercised above 1.
+- **The ratio reproduces an earlier order-of-magnitude check.** Trivial π,
+  replenishing: 10.30x in the default build against an earlier ~9.0x, and
+  8.94x in opt against ~7.8x. Opt is lower than default in both. Absolute
+  times here are 4.5–5 times slower for both languages and both modes. That
+  is what different hardware does; a change of method would distort the
+  ratio, not scale both sides by the same constant.
+- **A Python π dominates the profile, more than the trivial ratio
+  suggests.** A real-work π was expected to narrow the ratio, as a fixed
+  crossing cost spreads over more work. It widens it instead, in both
+  configurations and both build modes.
+  - The fixture gives declarer exactly one legal card at every decision.
+    So the `entries × candidates` work is `entries × 1`: a few
+    multiply-adds that cost C++ nothing at this scale (real-work is at or
+    below trivial on the C++ side in every cell).
+  - In Python the same work is not free. Real-work costs 0.126–0.284
+    ms/iteration more than trivial at a fixed configuration, which is the
+    whole widening. A Python callback costs the boundary crossing plus the
+    interpreter cost of what it does, and the second cost shows where C++
+    shows none.
+  - This holds whenever the belief view has more than a handful of entries.
+    It says nothing about the candidates side, which this fixture never
+    takes above 1.
+- **Replenishment costs much more on the Python side, in raw
+  milliseconds.** As percentages it looks the other way round: +176.9% in
+  C++ (default) against +68.4% in Python. The percentages use very
+  different baselines, a near-free C++ call against an expensive Python
+  one. In raw terms replenishment adds 0.036 ms/iteration in C++ against
+  0.236 in Python (trivial π, default): about 6.5 times as much, and about
+  11 times at the real-work π.
 
-**Replenishment's cost is dominated by the Python side, read as raw
-milliseconds rather than a percentage.** A percentage reading looks
-backwards — replenishment appears *proportionally* larger on the C++ side
-(+176.9% default) than the Python side (+68.4%) — because the two
-percentages are computed against very different baselines (a near-free
-C++ call, an already-expensive Python one), and a percentage against
-different baselines obscures rather than reveals the comparison. The raw
-figures say the opposite: replenishment adds 0.036ms/iteration in C++
-against 0.236ms/iteration in Python (trivial π, default) — **Python's own
-replenishment tax is roughly 6.5x the size of C++'s in absolute wall
-time**, growing to roughly 11x at the real-work π. A Python δ does sit on
-a hot inner loop once replenishment is enabled, and its cost is not a
-rounding error next to the trivial-π baseline.
+**Conclusion.** A Python π or δ costs 9–24 times its C++ equivalent here,
+and work inside a Python callback costs where the same work in C++ is free.
+Replenishment puts δ on a hot inner loop, so a Python δ is expensive once
+`replenish_below` is set.
 
-## Limits: what this document could not measure, and what would close each gap
+## Limits: what this document could not measure
 
-- **The exhaustive-evaluation ceiling** (a measurement, not a guess, from
-  building the fixture ladder itself): every pool/realistic rung, both
-  history forms, completes an exhaustive evaluation in under 50ms on this
-  platform — the largest (12,870 layouts) took 49ms. This is not this
-  ladder's own general ceiling: every rung here needs only one trick, so
-  cost stays roughly linear in belief-space size rather than growing with
-  a search tree the way a multi-trick position with real declarer
-  choices would. Locating that boundary needs a richer fixture (more
-  tricks needed, a strategy that actually varies its answer by layout),
-  not attempted here.
-- **No defect surfaced by any fixture in this document that no existing
-  test already covers.** Checked explicitly, not merely unmentioned —
-  running positions nothing had run before was the most likely thing in
-  this whole effort to surface one by accident, and none did.
-- **The pool/realistic ladder's own convergence behaviour** is not
-  measured (Behaviour & spread above covers only the finesse ladder,
-  which has genuine per-layout uncertainty; the pool/realistic ladder
-  makes with `p_make=1` in every layout by construction and has nothing
-  to converge on). A non-degenerate strategy over that ladder would be
-  needed to extend it.
-- **Whether `TouchingSequence`/`AllOptimal` divergence ever changes the
-  final answer** is open (`TouchingSequence` against `AllOptimal` above)
-  — needs a fixture genuinely winnable in some layouts and not others,
-  under the equal hand counts a real double-dummy solve requires.
-- **No Python δ was measured with real work** — only π got the two-shape
-  treatment; δ stayed the trivial rule throughout on both languages. The
-  replenishment-cost finding above still bears on a Python δ's own risk,
-  since it is δ's *call frequency* the replenishing/non-replenishing
-  contrast isolates, not δ's own per-call complexity.
-- **Whether a bound provider and a defender interleaving on the same node
-  defeat the solver's own transposition-table warmth** (the `similarDeal`
-  question) was not attempted — it would need solver-internal
-  instrumentation beyond what this capability's own public interface
-  exposes.
+- **The ceiling of exhaustive evaluation.** Every pool and realistic rung,
+  both history forms, completes an exhaustive evaluation in under 50ms on
+  this platform; the largest (12,870 layouts) took 49ms (fixtures_test.cpp,
+  `bazelisk test //benchmarks/belief_evaluation:fixtures_test`). That is not
+  the real ceiling. Every rung here needs one trick, so cost grows roughly
+  linearly with belief-space size, not with a search tree. Finding the limit
+  needs a richer fixture: more tricks needed, and a strategy that varies by
+  layout.
+- **No defect found.** No fixture here surfaced a defect that existing tests
+  do not cover. This was checked, not assumed: running new positions was the
+  likeliest way to find one by accident.
+- **Convergence on the pool and realistic ladder** is not measured. Those
+  fixtures make with `p_make = 1` in every layout, so there is nothing to
+  converge on. Extending it needs a non-degenerate strategy over that
+  ladder.
+- **Whether spread-policy divergence changes the final answer** is open
+  (see the divergence section). It needs a fixture winnable in some layouts
+  and not others, with the equal hand counts `solve_board` requires.
+- **No Python δ was measured with real work.** Only π had two shapes; δ was
+  the trivial rule in both languages. The replenishment finding still bears
+  on a Python δ, since the replenishing contrast isolates how often δ is
+  called, not what each call does.
+- **Whether a bound provider and a defender on the same node defeat the
+  solver's transposition-table warmth** (`similarDeal`) was not attempted.
+  It needs solver-internal instrumentation beyond this capability's public
+  interface.

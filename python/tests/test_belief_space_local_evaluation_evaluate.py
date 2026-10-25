@@ -1,3 +1,6 @@
+"""Tests for evaluate() from Python: argument checks, keyword-only options,
+and the hand-derived answer on a one-card finesse."""
+
 import unittest
 
 from belief_space_local_evaluation import Card
@@ -19,12 +22,9 @@ def holding(*ranks: int) -> int:
 
 
 def make_one_card_finesse_root() -> dict:
-    # North (declarer) holds a single middling card (Nine); South (dummy)
-    # holds a single safely-lower card (Eight); East and West share a
-    # seven-card pool {Two..Seven, Ten}. Mirrors
-    # exhaustive_layout_source_integration_test.cpp's own fixture of the
-    # same name -- small enough to state the hand-derived answer by hand,
-    # per this task's own steps.
+    # North (declarer) holds the ♠9 and South (dummy) the ♠8. East and West
+    # share a seven-card pool: ♠2 to ♠7 and ♠10. Mirrors the fixture of the
+    # same name in exhaustive_layout_source_integration_test.cpp.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = holding(9)
     remain_cards[South][Spades] = holding(8)
@@ -74,14 +74,10 @@ class TestTheEntryPointWorks(unittest.TestCase):
 
 
 class TestOutOfRangeDeclarerRaises(unittest.TestCase):
-    # evaluate()'s own declarer is forwarded to the C++ evaluator's
-    # make_root(), which indexes remainCards[declarer] while filtering
-    # candidates with no range check of its own -- src/ has
-    # nothing that reports this as a cause the way a rejected history or a
-    # RootFailure does, so an out-of-range value here is undefined
-    # behaviour unless this binding boundary catches it first, the same
-    # way ExhaustiveLayoutSource's own constructor pre-checks declarer
-    # before ever reaching derive_voids.
+    # make_root() in C++ indexes remainCards[declarer] with no range
+    # check, and no failure cause reports a bad declarer. An out-of-range
+    # value would be undefined behaviour, so the binding checks it, as the
+    # ExhaustiveLayoutSource constructor does.
     def test_negative_declarer_raises_value_error(self) -> None:
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 1)
@@ -98,15 +94,11 @@ class TestOutOfRangeDeclarerRaises(unittest.TestCase):
 
 
 class TestOutOfRangeTricksNeededRaises(unittest.TestCase):
-    # already_made() is `state.tricks_won_by_declarer >= state.tricks_needed`,
-    # and tricks_won_by_declarer starts at 0 -- a negative tricks_needed
-    # therefore satisfies it before either strategy is ever called,
-    # silently returning p_make=1.0 for a nonsensical request rather than
-    # raising. 0 itself is legitimate (a real, if degenerate, "already
-    # made" case -- see
-    # test_belief_space_local_evaluation_results.py's own coverage of it),
-    # so the rejected range is strictly negative, plus above the most
-    # tricks any deal can have.
+    # already_made() is `tricks_won_by_declarer >= tricks_needed`, and the
+    # count starts at 0. A negative tricks_needed would silently return
+    # p_make 1.0. Zero is a valid, already-made case (see
+    # test_belief_space_local_evaluation_results.py). The binding rejects
+    # values below 0 and above 13.
     def test_negative_tricks_needed_raises_value_error(self) -> None:
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 1)
@@ -131,11 +123,10 @@ class TestOutOfRangeTricksNeededRaises(unittest.TestCase):
 
 class TestBitwiseMatchAgainstTheExhaustiveAnswer(unittest.TestCase):
     def test_reproduces_the_hand_derived_value_exactly(self) -> None:
-        # Not approx: sample_size=0.9999... would be a different bug than
-        # this criterion is pinning. East holds one of {2,3,4,5,6,7,10};
-        # North's Nine wins the trick unless East's own card already beats
-        # it (only Ten does). 6 of 7 -> 6/7 exactly, the same double a C++
-        # run of the equivalent fixture produces.
+        # Exact equality: an approximate check would hide a near-miss such
+        # as 0.9999. East holds one of the seven pool
+        # cards. North's nine wins unless East holds the ten: 6/7, the same
+        # double a C++ run gives.
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 5)
 
@@ -149,9 +140,8 @@ class TestKeywordOnlyOptions(unittest.TestCase):
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 1)
         with self.assertRaises(TypeError):
-            # retain_root positionally, where bound's own precedent from
-            # C++ argument order might tempt a caller -- must reject, not
-            # silently accept into the wrong slot.
+            # A caller following the C++ argument order might pass an
+            # option by position. It must raise, not fill the wrong slot.
             evaluate(root, North, 1, source, declarer_play, defender_play, False)
 
     def test_retain_root_and_collect_counters_accepted(self) -> None:
@@ -175,7 +165,7 @@ class TestKeywordOnlyOptions(unittest.TestCase):
 
         def bound(deal):
             seen.append(deal)
-            return 13  # never dead -- disables tier2_dead() from firing
+            return 13  # never dead, so tier2_dead() never fires
 
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 1)
@@ -196,8 +186,7 @@ class TestKeywordOnlyOptions(unittest.TestCase):
         self.assertEqual(result["by_strategy"][1]["p_make"], 6.0 / 7.0)
 
     def test_scan_budget_alone_does_not_raise(self) -> None:
-        # scan_budget without sample_size legitimately caps a scan on its
-        # own and must not be treated as a mistake.
+        # scan_budget without sample_size is a valid cap on the scan.
         root = make_one_card_finesse_root()
         source = ExhaustiveLayoutSource(root, North, 1)
         result = evaluate(
@@ -230,11 +219,9 @@ class TestSampleSizeZeroRaises(unittest.TestCase):
             evaluate(root, North, 1, source, declarer_play, defender_play, sample_size=0)
 
     def test_sample_size_zero_is_distinguishable_from_an_ordinary_root_failure(self) -> None:
-        # An ordinary empty source (nothing consistent) is NoLayoutSurvived,
-        # not SampleSizeZeroError -- the two must never be confused.
-        # Constructed by hand here (not through ExhaustiveLayoutSource,
-        # which cannot itself produce an inconsistent candidate) via a tiny
-        # Python LayoutSource whose one candidate does not match root.
+        # A source with no consistent layout raises NoLayoutSurvived, not
+        # SampleSizeZeroError. ExhaustiveLayoutSource never yields an
+        # inconsistent layout, so a Python source supplies one.
         from belief_space_local_evaluation import LayoutSource
 
         class EmptySource(LayoutSource):
@@ -243,8 +230,8 @@ class TestSampleSizeZeroRaises(unittest.TestCase):
 
             def at(self, index):
                 deal = make_one_card_finesse_root()
-                # Give declarer a card it does not hold at the real root --
-                # inconsistent, so make_root's own filter drops it.
+                # Declarer holds a card it does not hold at the root, so
+                # make_root drops the layout.
                 deal["remain_cards"][North][Spades] = holding(9, 8)
                 return deal
 

@@ -11,81 +11,72 @@
 namespace dds::belief_evaluation
 {
 
-/// `state` advanced by `seat_on_play(state.known_holdings)` playing `card`:
-/// `known_holdings` and `ranks` updated via `play()`, the card appended to
-/// `history`, and `tricks_won_by_declarer` incremented if the play resolved
-/// a trick declarer's or dummy's way. `trump`, `declarer`, `tricks_needed`
-/// and `first` are unaffected by a single card.
+/// `state` after the seat on play (`seat_on_play(state.known_holdings)`)
+/// plays `card`:
+/// - `known_holdings` and `ranks` updated by `play()`;
+/// - the card appended to `history`;
+/// - `tricks_won_by_declarer` incremented if declarer or dummy won the
+///   trick.
 ///
-/// Exposed so a node-local replay can rebuild the intermediate states δ was
-/// asked about during the original expansion. The recursion retains none of
-/// them, so replaying from the root's state is the only way to recover
-/// them.
+/// `trump`, `declarer`, `tricks_needed` and `first` do not change.
+///
+/// Public so that a node-local replay can rebuild the states δ saw. The
+/// recursion keeps none of them.
 auto advance_state(ObservationState const& state, Card const& card) -> ObservationState;
 
-/// The result of expanding one node: either the child, or the
-/// `ValidationError` a callback's return violated. A local, minimal shape —
-/// `EvaluationError` is what carries the fuller context across the whole
-/// evaluator.
+/// The result of expanding a declarer node: the child, or the
+/// `ValidationError` that a callback's return broke. `EvaluationError`
+/// carries the full context.
 struct ExpandResult
 {
     std::optional<BeliefNode> child;
     Card card{};                                     ///< the card pi returned; meaningful only when child has a value
     ValidationError error = ValidationError::None;  ///< meaningful only when child is nullopt
 
-    /// Set only when `pi` itself threw `DeclarerStrategyContractViolation`
-    /// (rather than returning a card that failed `validate_declarer_card`):
-    /// that exception's own seat/layout, naming *the internal delegate's*
-    /// seat and the exact layout it was asked to decide for -- more
-    /// specific than this node's own `seat`/`known_holdings`, which is all
-    /// a caller would otherwise have to report. `evaluate.cpp` prefers
-    /// these over the node's own seat/known_holdings, and reports
-    /// `EvaluationCallback::DefenderStrategy`, when present -- the
-    /// violating callback genuinely was a `DefenderStrategy`-shaped one,
-    /// just not the outer `delta` `evaluate()` was itself given.
+    /// Set only when `pi` threw `DeclarerStrategyContractViolation`. The
+    /// seat and layout of *the delegate* that broke its contract.
+    /// `evaluate.cpp` reports these instead of the node's, with
+    /// `EvaluationCallback::DefenderStrategy`: the delegate is
+    /// defender-shaped, though it is not the outer `delta`.
     std::optional<int> nested_seat;
     std::optional<Deal> nested_layout;
 };
 
-/// Expands a node where declarer or dummy is on play: calls `pi` once,
-/// validates the card through `validate_declarer_card`, and builds the
-/// single child via `make_declarer_children`.
+/// Expands a node where declarer or dummy is on play. Calls `pi` once,
+/// checks the card with `validate_declarer_card`, and builds the one child
+/// with `make_declarer_children`.
 auto expand_declarer_node(BeliefNode const& node, DeclarerStrategy const& pi) -> ExpandResult;
 
-/// The mass-propagation step declarer children go through, isolated so a
-/// unit test can pin it: the evaluator only ever calls it with one card, so
-/// it cannot distinguish giving each child the parent's full mass from
-/// dividing it.
+/// Builds declarer children. Public so that a unit test can check the mass
+/// rule: the evaluator always passes one card.
 ///
-/// Every child receives `parent`'s full mass. Declarer's and dummy's cards
-/// are public, so declarer's play neither filters nor reweights the belief
-/// space — unlike a defender's. Each child's `p` and `kappa` are exactly
-/// `parent`'s, and each layout is the corresponding parent layout advanced
-/// by the card.
+/// Every child gets the full mass of `parent`. Declarer's and dummy's
+/// cards are public, so declarer's play does not filter or reweight the
+/// belief space. Each child has the `p` and `kappa` of `parent`, with each
+/// layout advanced by the card.
 auto make_declarer_children(BeliefNode const& parent, std::vector<Card> const& cards)
     -> std::vector<BeliefNode>;
 
-/// The result of expanding a defender node: either the children, or the
-/// `ValidationError` a callback's return violated.
+/// The result of expanding a defender node: the children, or the
+/// `ValidationError` that a callback's return broke.
 struct ExpandDefenderResult
 {
     std::optional<std::vector<BeliefNode>> children;
     ValidationError error = ValidationError::None;  ///< meaningful only when children is nullopt
-    Deal offending_layout{};  ///< the layout whose distribution violated the contract; meaningful only on error
+    Deal offending_layout{};  ///< the layout whose distribution broke the contract; meaningful only on error
 };
 
-/// Expands a node where a defender is on play: calls `delta` once per
+/// Expands a node where a defender is on play. Calls `delta` once per
 /// layout and groups the results by card. Child `C_a` holds
-/// `{B_i : delta(C_a | B_i) > 0}` with `p_i' = p_i * delta(C_a | B_i)` — a
-/// layout `delta` gives no probability to is absent from that child rather
-/// than present at `p = 0`, and one layout may appear in several children.
-/// `kappa` is unchanged in every child: defender children partition `p`,
-/// not `kappa`.
+/// `{B_i : delta(C_a | B_i) > 0}`, with `p_i' = p_i * delta(C_a | B_i)`.
+/// A layout with zero probability for a card is absent from that child.
+/// One layout can be in several children. `kappa` is the same in every
+/// child: defender children split `p`, not `kappa`.
 ///
-/// An empty distribution is reported as `ValidationError::DistributionEmpty`
-/// before `validate_defender_distribution` is called — see that enum value.
-/// Every other distribution goes through that function, and a violation
-/// aborts expansion and is reported rather than asserted.
+/// An empty distribution is reported as
+/// `ValidationError::DistributionEmpty`. Every other distribution goes
+/// through `validate_defender_distribution`. A violation stops the
+/// expansion and is reported, not asserted.
 auto expand_defender_node(BeliefNode const& node, DefenderStrategy const& delta)
     -> ExpandDefenderResult;
 

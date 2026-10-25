@@ -7,12 +7,10 @@
 namespace dds::belief_evaluation
 {
 
-/// A minimal trick-play position for stating the renumbering isomorphism:
-/// each hand's outstanding holding per suit, in dds's aggregate bit
-/// convention (bit i = the (i+2)-th absolute rank), the trump suit, and the
-/// hand on lead for the next trick. Carries no strategy and computes no
-/// result — it exists only to let the renumbering isomorphism property be
-/// stated and tested.
+/// A minimal trick-play position, used only to state and test the
+/// renumbering isomorphism. It holds each hand's outstanding cards per
+/// suit (bit i = absolute rank i + 2), the trump suit, and the hand on
+/// lead to the next trick.
 struct Position
 {
     std::array<std::array<unsigned, DDS_SUITS>, DDS_HANDS> holding;
@@ -20,17 +18,15 @@ struct Position
     int leader;  ///< hand (0..3) on lead for the next trick
 };
 
-/// Legal cards `hand` may play, one bitmask per suit, given the suit led to
-/// the current trick so far (`led_suit`, or -1 if `hand` is leading). A hand
-/// must follow `led_suit` if it holds any card there; otherwise every held
-/// card is legal.
+/// The cards `hand` may play, one bitmask per suit. `led_suit` is the suit
+/// led to the current trick, or -1 if `hand` leads. A hand must follow
+/// `led_suit` if it can; otherwise every held card is legal.
 auto legal_plays(Position const& position, int hand, int led_suit)
     -> std::array<unsigned, DDS_SUITS>;
 
-/// The hand (0..3) that wins a trick of four plays, each given as
-/// `(suit, bit_position)`, indexed by the order played starting from
-/// `leader`. Highest trump wins if any trump was played; otherwise highest
-/// card of the led suit.
+/// The hand (0..3) that wins a trick of four plays. Each play is
+/// `(suit, bit_position)`, in order from `leader`. The highest trump wins
+/// if any trump was played; otherwise the highest card of the led suit.
 auto trick_winner(
     int trump,
     int leader,

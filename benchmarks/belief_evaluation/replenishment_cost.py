@@ -1,30 +1,20 @@
 #!/usr/bin/env python3
 """What a node-local replenishment scan costs, especially when it fails.
 
-Four parts:
+Three parts:
 
-  1. A configuration built to make every attempt at some depth FAIL --
-     add nothing (SAMPLE_ONLY_FAILS below) -- since no committed test
-     happens to measure this case (every existing fixture has at least
-     one attempt succeed, by accident of what those fixtures needed, not
-     by design).
-  2. A configuration built to make every attempt SUCCEED
-     (SAMPLE_ONLY_SUCCEEDS below), for the matching successful-cost
-     number.
-  3. delta call counts and wall clock, WITH replenish_below set against
-     WITHOUT it (same fixture, same seed, same sample_size), on two
-     rungs -- replenishment's own share of total cost, and a caveat this
-     is a with/without configuration delta (source scanning, node
-     expansion, every callback kind, not replenishment scans in
-     isolation), not an isolated replenishment-only cost. Every
-     with-vs-without comparison below is a *paired* per-seed
-     ratio/percentage, its own median taken after pairing, not the
-     difference of two independently-computed medians (median is not
-     linear, and the with/without runs are already paired by seed).
-  4. Comparison against a prior figure (delta calls up 63%, wall time
-     roughly tripled, replenishment ~65% of total wall time) that exists
-     only as a reverted scratch measurement upstream of this plan and
-     cannot be cited as a baseline -- treated here as a prior to test.
+  1. A configuration where every attempt at some depth FAILS, adding
+     nothing (SAMPLE_ONLY_FAILS). No test measures this case: in every
+     other fixture at least one attempt succeeds.
+  2. A configuration where every attempt SUCCEEDS (SAMPLE_ONLY_SUCCEEDS),
+     for the matching cost.
+  3. Delta calls and wall time with replenish_below set against without
+     it (same fixture, seed and sample_size), on three rungs. This is a
+     whole-configuration delta: the two runs also differ in source
+     scanning, node expansion and every callback, so it is not the cost of
+     replenishment scans alone. Every comparison is the median of paired
+     per-seed ratios, not a ratio of two medians (the median is not
+     linear).
 
 Usage (after `bazel build //benchmarks/belief_evaluation:instrument`):
 
@@ -40,13 +30,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sweep  # noqa: E402
 
-# Found by direct trial against the instrument (not derived analytically):
-# finesse1 (N=6) with sample_size=replenish_below=5 leaves exactly one
-# layout never yet drawn after the root's own initial sample, so every
-# node-local attempt below the root finds nothing new -- SourceExhausted
-# by construction, not by chance. pool8 (N=12,870) with a sample_size and
-# replenish_below both small relative to N is the mirror case: fresh
-# candidates are never scarce, so every attempt succeeds.
+# Found by trial against the instrument, not derived. finesse1 (N=6) with
+# sample_size = replenish_below = 5 leaves one layout undrawn after the
+# root sample, so every attempt below the root finds nothing new
+# (SourceExhausted). pool8 (N=12,870) with a small sample_size and
+# replenish_below is the mirror case: fresh candidates are never scarce,
+# so every attempt succeeds.
 SAMPLE_ONLY_FAILS = dict(
     fixture="finesse1", history="without", sample_size=5, replenish_below=5, scan_budget=500)
 SAMPLE_ONLY_SUCCEEDS = dict(
@@ -54,24 +43,18 @@ SAMPLE_ONLY_SUCCEEDS = dict(
 
 WALL_TIME_SEEDS = list(range(1, 11))  # 10 seeds, best-of-3 repeats each
 WALL_TIME_REPEAT = 3
-# Three rungs, not one: two at the scale the scan-to-hit sweep already
-# uses (a meaningful fraction of a large N), one deliberately small
-# (finesse2, sample_size well under N) -- added after the first two came
-# back far above the reverted scratch prior at every fraction tried, to
-# check whether that gap tracks *scale* rather than being a fixed
-# multiplier. It does -- see the report.
+# Three rungs: two at the scale the scan-to-hit sweep uses (a sizeable
+# fraction of a large N), and one small (finesse2, sample_size well under
+# N). The small one shows whether the cost grows with scale or is a fixed
+# multiplier. It grows with scale; see the report.
 WALL_TIME_RUNGS = [
     dict(fixture="pool7", history="without", sample_size=343, scan_budget=20_000),
     dict(fixture="finesse3", history="without", sample_size=204, scan_budget=20_000),
     dict(fixture="finesse2", history="without", sample_size=30, scan_budget=2_000),
 ]
-# replenish_below as a fraction of sample_size -- swept rather than fixed
-# at one point, because the first run (fraction=0.5 only) came back far
-# above the reverted scratch prior (delta calls +2918%/+403%, not +63%;
-# wall time 159x/8x, not ~3x) and a single point cannot say whether that
-# is because replenish_below itself is this expensive in general or
-# because 0.5 is simply a much more aggressive threshold than whatever
-# the scratch measurement used (its own parameters were never recorded).
+# replenish_below as a fraction of sample_size. Swept, because one point
+# cannot tell whether replenishment is expensive in general or only at an
+# aggressive threshold.
 WALL_TIME_REPLENISH_FRACTIONS = [0.10, 0.25, 0.50]
 
 
@@ -101,9 +84,9 @@ def wall_time_and_delta(binary: Path, fixture: str, history: str, seed: int, sam
         scan_budget=scan_budget, replenish_below=replenish_below, mode="time",
         repeat=WALL_TIME_REPEAT)
     best_ms = float(record.fields["elapsed_ms.best"])
-    # The trial matching elapsed_ms.best's own delta_calls, not an
-    # average across trials -- the two must describe the *same* run for
-    # "replenishment's share of wall time" to mean anything.
+    # The delta_calls of the trial that gave elapsed_ms.best, not an
+    # average. Both must describe the same run for a share of wall time to
+    # mean anything.
     trials_ms = [float(x) for x in record.trials["elapsed_ms"]]
     best_index = trials_ms.index(min(trials_ms))
     delta_calls = int(record.trials["delta_calls"][best_index])
@@ -145,18 +128,11 @@ def run_wall_time_comparison(binary: Path) -> None:
             with_ms_med = statistics.median(with_ms)
             with_delta_med = statistics.median(with_delta)
 
-            # Paired per-seed: with_ms/without_ms/with_delta/without_delta
-            # are already aligned by seed (WALL_TIME_SEEDS drives both the
-            # without_* loop above and this one, in the same order), and
-            # median(with) - median(without) is not in general the median
-            # of (with[i] - without[i]) -- median is not linear, and this
-            # fixture's own sampling makes with_delta/without_delta
-            # genuinely seed-dependent (unlike cut_rates.py's exhaustive
-            # solver ladder, where the same fix left node/delta counts
-            # unchanged because they carry no seed-to-seed variation at
-            # all there). Computed as the median of each seed's own
-            # ratio/percentage, not a paired absolute delta divided by an
-            # unpaired baseline median.
+            # The median of paired per-seed ratios and percentages. The
+            # lists are aligned by seed (WALL_TIME_SEEDS drives both loops),
+            # and the median is not linear. Sampling makes the delta counts
+            # vary by seed here, so pairing matters, unlike on the
+            # exhaustive solver ladder in cut_rates.py.
             delta_pct = statistics.median(
                 100.0 * (w - wo) / wo for w, wo in zip(with_delta, without_delta))
             time_multiplier = statistics.median(w / wo for w, wo in zip(with_ms, without_ms))
@@ -165,17 +141,13 @@ def run_wall_time_comparison(binary: Path) -> None:
             print(
                 f"  replenish_below={replenish_below} ({fraction:.0%} of sample_size): "
                 f"delta_calls={with_delta_med:.0f} ({delta_pct:+.0f}%)  "
-                f"wall_ms={with_ms_med:.4f} ({time_multiplier:.2f}x, the with/without "
-                f"configuration delta is {time_share:.0f}% of the with-replenishment total -- "
-                f"not isolated replenishment-scan time; the two runs also visit different "
-                f"nodes and make different callback counts, see this script's own module "
-                f"doxygen)")
+                f"wall_ms={with_ms_med:.4f} ({time_multiplier:.2f}x; the with/without "
+                f"delta is {time_share:.0f}% of the with-replenishment total, not isolated "
+                f"scan time; see the module docstring)")
 
             summary.append((fixture, fraction, delta_pct, time_multiplier, time_share))
 
-    print("\n--- against the prior (delta calls +63%, wall time ~3x, ~65% of total) ---")
-    print("  (the prior's own replenish_below fraction of sample_size was never recorded,")
-    print("   so read this as a range the prior sits inside, not a single point to match)")
+    print("\n--- summary ---")
     for fixture, fraction, delta_pct, multiplier, share in summary:
         print(
             f"  {fixture} @ {fraction:.0%}: delta_calls {delta_pct:+.0f}%, "

@@ -41,14 +41,10 @@ namespace
         result["tier1_dead_cuts"] = counters.tier1_dead_cuts;
         result["tier2_cuts"] = counters.tier2_cuts;
 
-        // Not summarised, not turned into a ratio on the way out -- a
-        // ratio cannot be summed across depths or runs, which is exactly
-        // why the C++ type stores counts rather than a scan-to-hit figure
-        // itself. An index beyond either list's own length means "no node
-        // was ever visited at this depth", distinct from an entry present
-        // with nodes == 0 -- the vectors are grown on demand for exactly
-        // this reason, and that distinction survives here unchanged: this
-        // list is exactly as long as the C++ vector, no padding either way.
+        // Raw counts, not ratios: counts can be summed across depths and
+        // runs. The list is exactly as long as the C++ vector. An index past
+        // the end means no node was visited at that depth. That differs from
+        // an entry with nodes == 0.
         py::list sample_size_by_depth;
         for (const be::DepthSampleStats& depth : counters.sample_size_by_depth) {
             sample_size_by_depth.append(depth_sample_stats_to_dict(depth));
@@ -64,14 +60,9 @@ namespace
         return result;
     }
 
-    // The root node only -- EvaluateOptions::retain_root never holds a
-    // retained tree (a deliberate choice, not an oversight: see that
-    // field's own doxygen), and a caller seeing "retained root" in a
-    // result would otherwise reasonably assume a tree is reachable from
-    // it. kappa never crosses, for the same reason a BeliefView's own
-    // posterior is the normalised form and not kappa (see belief_view.hpp)
-    // -- it is the evaluator's own sample-weight bookkeeping, not
-    // something declarer (or a caller reading the result) ever needs.
+    // The root node only, never a tree (see EvaluateOptions::retain_root).
+    // kappa is internal sample-weight bookkeeping, so it is not exposed,
+    // as in BeliefView (see belief_view.hpp).
     auto belief_node_to_dict(const be::BeliefNode& node) -> py::dict
     {
         py::dict result;
@@ -100,16 +91,9 @@ namespace
     }
 }  // namespace
 
-// Dict out for a *successful* result, matching converters.cpp's idiom
-// (see this function's own doxygen in belief_converters.hpp for why the
-// direction matters here and not for a Deal or an ObservationState).
-// EvaluationResult::error is not represented here at all: the evaluate()
-// binding that is this function's only caller raises before ever
-// reaching this call when result.error is set (every RootFailure and
-// every ValidationError cause raises a distinguishable exception, rather
-// than the evaluator's own "reported, not thrown" posture surviving
-// unchanged all the way to the Python boundary) -- so by_strategy is
-// always populated by the time this runs.
+// Converts a successful result to a dict. EvaluationResult::error is not
+// converted: the evaluate() binding raises before it calls this. So
+// by_strategy is always populated here.
 auto evaluation_result_to_dict(const be::EvaluationResult& result) -> py::dict
 {
     py::dict out;
@@ -118,22 +102,17 @@ auto evaluation_result_to_dict(const be::EvaluationResult& result) -> py::dict
         py::dict entry;
         entry["p_make"] = value.p_make;
 
-        // root_children: alternatives, not a partition, at a declarer
-        // root (p_make equals whichever entry pi actually chose, not
-        // their sum); a genuine partition summing to p_make at a
-        // defender root; empty at a terminal root, or one where declarer
-        // has already banked every trick the contract needs. Summing
-        // these and comparing to p_make agrees sometimes and not others
-        // -- read EvaluationValue::root_children's own doxygen before
-        // drawing a conclusion from a mismatch.
+        // root_children (see EvaluationValue::root_children):
+        // - at a declarer root, alternatives: p_make is the one pi chose;
+        // - at a defender root, a partition that sums to p_make;
+        // - empty at a terminal root, or when the contract is already made.
         py::list root_children;
         for (const be::RootChildValue& child : value.root_children) {
             root_children.append(py::make_tuple(child.card, child.value));
         }
         entry["root_children"] = root_children;
-        // Which of the two shapes root_children has -- see
-        // EvaluationValue::root_is_declaring_side. Present on every result,
-        // including those where root_children is empty.
+        // Which shape root_children has. Present on every result, even when
+        // root_children is empty.
         entry["root_is_declaring_side"] = value.root_is_declaring_side;
 
         if (value.retained_root.has_value()) {

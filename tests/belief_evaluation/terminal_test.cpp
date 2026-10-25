@@ -2,12 +2,12 @@
 
 #include <belief_evaluation/node.hpp>
 
-// A namespace alias plus targeted `using` declarations, not `using namespace
-// dds::belief_evaluation;` -- this file also includes api/dds_data_types.hpp
-// (declaring global ::Card) via belief_evaluation/node.hpp's own chain, so a
-// `using namespace` here would make any future bare `Card` reference in this
-// file ambiguous between ::Card and dds::belief_evaluation::Card rather than
-// a clear compile error naming which one was meant.
+// Tests for terminal_value and is_terminal.
+
+// A namespace alias and targeted `using` declarations, not `using
+// namespace dds::belief_evaluation;`. The include of node.hpp brings in the
+// global ::Card from api/dds_data_types.hpp, so a bare `Card` would be
+// ambiguous instead of a clear compile error.
 namespace be = dds::belief_evaluation;
 using be::BeliefNode;
 using be::is_terminal;
@@ -41,9 +41,8 @@ TEST_F(TerminalTest, ValueIsZeroWhenContractFails)
 
 TEST_F(TerminalTest, ValueUsesUnequalPToRuleOutAnAveragingBug)
 {
-    // {0.5, 0.5} would pass under a mass function that averaged p instead
-    // of summing it; these do not sum to a value that an averaging bug
-    // could accidentally reproduce.
+    // {0.5, 0.5} would also pass if the mass were averaged instead of
+    // summed. These values catch that bug.
     BeliefNode node{};
     node.p = {0.1, 0.2, 0.3};
     node.kappa = 2.0;

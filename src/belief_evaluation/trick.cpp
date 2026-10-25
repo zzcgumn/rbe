@@ -9,9 +9,8 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    /// How many cards have already been played to the trick in progress:
-    /// the count of leading non-zero entries of currentTrickRank. Rank 0 is
-    /// the empty-slot sentinel, matching validation.cpp's led_suit().
+    /// The number of cards played to the current trick: the leading non-zero
+    /// entries of currentTrickRank. Rank 0 marks an empty slot.
     auto played_count(Deal const& deal) -> int
     {
         int count = 0;
@@ -22,8 +21,8 @@ namespace
         return count;
     }
 
-    /// -1 if no card has yet been played to the trick in progress, else the
-    /// suit of the first card played.
+    /// -1 if no card has been played to the current trick, else the suit of
+    /// the first card.
     auto led_suit_of(Deal const& deal) -> int
     {
         if (deal.currentTrickRank[0] == 0)
@@ -77,10 +76,9 @@ auto legal_cards(Deal const& deal, int seat) -> std::array<unsigned, DDS_SUITS>
 
 auto trick_complete_winner(Deal const& deal, Card const& card) -> int
 {
-    // Precondition, per this function's own doxygen: exactly three cards
-    // already played. An unplayed slot (rank 0) would feed
-    // rank_to_bit_position() a -2, an invalid bit position, straight into
-    // trick_winner()'s comparisons -- silent out-of-bounds, not a crash.
+    // Precondition: three cards already played. An empty slot (rank 0) would
+    // give rank_to_bit_position() -2, a silent out-of-bounds read in
+    // trick_winner().
     assert(deal.currentTrickRank[0] != 0);
     assert(deal.currentTrickRank[1] != 0);
     assert(deal.currentTrickRank[2] != 0);

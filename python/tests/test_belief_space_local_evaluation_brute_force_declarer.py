@@ -1,6 +1,6 @@
-"""Tests for `BruteForceDeclarer`'s Python surface: usable directly as
-`evaluate()`'s own `pi` argument, the same way `DoubleDummyDefender`/
-`HeuristicDefender` are already usable directly as `delta`.
+"""Tests for `BruteForceDeclarer` from Python. It can be passed to
+`evaluate()` as `pi`, as `DoubleDummyDefender` and `HeuristicDefender` can be
+passed as `delta`.
 """
 
 import unittest
@@ -44,11 +44,9 @@ def make_one_card_root() -> dict:
 
 
 def make_two_card_root() -> dict:
-    # Two cards per hand, so the internal search's own recursion builds
-    # and discards more than one node after the opponent model's first
-    # call -- the state-retention test below needs that churn for a
-    # retained-but-not-copied state to have a chance of showing stale or
-    # reused memory rather than coincidentally-still-live bytes.
+    # Two cards per hand, so the internal search builds and discards several
+    # nodes after the opponent model's first call. A kept state that was not
+    # copied then has a chance to show stale or reused memory.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = holding(11, 2)  # Jack, Two
     remain_cards[South][Spades] = holding(3, 5)  # Three, Five
@@ -98,10 +96,8 @@ class TestBruteForceDeclarerIsUsableDirectlyAsPi(unittest.TestCase):
         result_explicit = evaluate(root, North, 1, source, pi_explicit, lowest_eligible_defender)
         self.assertNotIn("error", result_default)
         self.assertNotIn("error", result_explicit)
-        # Keyed by pi's strategy id, always 1 for a Python pi -- the id
-        # BruteForceDeclarer's own as_strategy() sets internally (0) is
-        # never consulted here: evaluate()'s own Python binding wraps
-        # whatever py::function is handed to it with its own fixed id.
+        # The binding gives every Python pi the id 1. The id 0 that
+        # as_strategy() sets inside BruteForceDeclarer is not used.
         self.assertEqual(result_default["by_strategy"][1]["p_make"], result_explicit["by_strategy"][1]["p_make"])
 
     def test_a_python_callable_opponent_model_is_accepted(self) -> None:
@@ -115,31 +111,17 @@ class TestBruteForceDeclarerIsUsableDirectlyAsPi(unittest.TestCase):
         self.assertNotIn("error", result)
 
     def test_a_retained_opponent_model_state_is_not_corrupted_after_evaluate_returns(self) -> None:
-        # make_opponent_model's own py::cast(query.state) used to omit
-        # py::return_value_policy::copy -- unlike make_defender_strategy's
-        # own cast of a delta's state argument, which has always used it.
-        # A Python opponent_model is as free to retain its state argument
-        # as any other Python delta is (see
-        # test_a_delta_stashed_states_play_record_raises_after_evaluate_
-        # returns and its sibling in test_belief_space_local_evaluation_
-        # play_record.py for the general hazard this module already
-        # guards against elsewhere); without the copy, the retained
-        # object wraps memory this search's own internal recursion goes
-        # on to mutate or free for later nodes, not a snapshot of the
-        # holding at the call that was actually made.
+        # make_opponent_model casts query.state with
+        # py::return_value_policy::copy, as make_defender_strategy does for
+        # delta. An opponent model may keep its state argument, like any
+        # delta (see test_belief_space_local_evaluation_play_record.py).
+        # Without the copy, the kept object would wrap memory the search
+        # later changes or frees.
         #
-        # The internal search queries this opponent model many times, at
-        # many different nodes -- only the *first* call's own state is
-        # kept, since every later call would legitimately see a different
-        # (correct) holding as the search explores further, which a fixed
-        # expected value could not distinguish from genuine corruption.
-        # remain_cards_at_call_time is read right there, during the call,
-        # into a plain Python int -- an independent snapshot, unaffected
-        # by anything the recursion does afterwards -- so comparing the
-        # retained state's own reading of the same field *after*
-        # evaluate() returns against that snapshot is a direct test of
-        # whether the retained object still reflects the call it was
-        # actually given.
+        # Only the first call's state is kept, because later calls see
+        # other holdings. During that call, the seat's spade holding is
+        # copied into a Python int. After evaluate() returns, the kept state
+        # must still read the same value.
         first_call = {}
 
         def opponent_model(layout, seat, state):
@@ -167,18 +149,13 @@ class TestBruteForceDeclarerIsUsableDirectlyAsPi(unittest.TestCase):
     def test_a_malformed_internal_opponent_model_raises_the_typed_error_not_a_runtime_error(
         self,
     ) -> None:
-        # BruteForceDeclarer is itself exposed to Python as a plain
-        # callable object (__call__), the same shape every Python pi
-        # already has -- so when it is used as evaluate()'s own pi *from
-        # Python*, as here, the call into it crosses the pybind boundary
-        # before expand_declarer_node's own C++-side catch for
-        # DeclarerStrategyContractViolation ever gets a chance to run.
-        # Without PyBruteForceDeclarer::call's own catch, this raised a
-        # generic RuntimeError, losing validation/seat/layout and
-        # contradicting the typed-error mapping every other callback
-        # contract violation in this module already gets (see
-        # TestEveryValidationErrorCauseRaisesWithContext in
-        # test_belief_space_local_evaluation_errors.py).
+        # From Python, BruteForceDeclarer is a callable like any pi. The
+        # call crosses the pybind boundary before expand_declarer_node can
+        # catch DeclarerStrategyContractViolation. PyBruteForceDeclarer::call
+        # catches it instead and raises the typed error, with validation,
+        # seat and layout. Without that catch the caller would get a plain
+        # RuntimeError. See TestEveryValidationErrorCauseRaisesWithContext
+        # in test_belief_space_local_evaluation_errors.py.
         def broken_internal_opponent_model(layout, seat, state):
             del layout, seat, state
             return []

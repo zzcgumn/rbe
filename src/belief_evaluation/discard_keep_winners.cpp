@@ -21,12 +21,8 @@ auto discard_keep_winners() -> DefenderHeuristic
 
         std::array<int, 4> const tricks = suit_top_tricks(ctx.layout, ctx.seat, ctx.trump);
 
-        // Unlike second/third/fourth-seat low, candidates here may come
-        // from different suits, so two touching runs are not guaranteed
-        // disjoint in rank the way they are within one suit -- the true
-        // rank of each candidate must be resolved before comparing, not
-        // only once a winning index is found (see true_lowest_rank's own
-        // doxygen).
+        // Candidates may come from different suits, so resolve each true rank
+        // before comparing (see true_lowest_rank).
         std::size_t best_index = 0;
         int best_rank = true_lowest_rank(best_cards, ctx.fut, 0);
         for (std::size_t i = 1; i < best_cards.size(); ++i)

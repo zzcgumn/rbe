@@ -1,6 +1,5 @@
-// The size guard the ladder's own doxygen promises: a fixture whose size
-// drifts silently invalidates every number the tasks after this one
-// report, so this is not a courtesy check.
+// The size guard for the fixture ladder. If a fixture's size drifts, every
+// benchmark number measured on it is silently wrong.
 #include <algorithm>
 #include <cstdint>
 #include <optional>
@@ -40,7 +39,7 @@ namespace
     }
 }  // namespace
 
-// --- every rung's own size() matches what it claims, both forms ----------
+// --- every rung's size() matches its claim, in both forms ---------------
 
 class FixtureLadderTest : public testing::TestWithParam<bench::Rung>
 {
@@ -66,10 +65,9 @@ TEST_P(FixtureLadderTest, WithHistorySizeMatchesExpected)
 
 TEST_P(FixtureLadderTest, HistoryFormIsStrictlySmallerThanUnconstrained)
 {
-    // The pairing exists to compare the two -- if a rung's history did not
-    // actually narrow anything, it would not be testing what the plan's
-    // background says it must: "the constrained space is smaller and
-    // denser in consistent layouts".
+    // The pairing exists to compare the two forms. If the history narrowed
+    // nothing, the rung would not have the property it is built for: a
+    // smaller constrained space, denser in consistent layouts.
     bench::Rung const rung = GetParam();
     ASSERT_TRUE(rung.without_history.expected_size > 0);
     EXPECT_LT(rung.with_history.expected_size, rung.without_history.expected_size) << rung.name;
@@ -77,11 +75,9 @@ TEST_P(FixtureLadderTest, HistoryFormIsStrictlySmallerThanUnconstrained)
 
 TEST_P(FixtureLadderTest, WithoutHistoryFormAppliesNoConstraintAtAll)
 {
-    // The without-history form is the same root with history simply
-    // omitted, not a separately-constructed "equivalent" position -- so
-    // its own verdict is Consistent trivially (nothing to reject), the
-    // same guarantee every call site written before the history parameter
-    // existed still relies on.
+    // The without-history form is the same root with the history omitted,
+    // not a separately built position. So its verdict is trivially
+    // Consistent, as for every caller that passes no history.
     bench::Rung const rung = GetParam();
     ExhaustiveLayoutSource const source(
         rung.without_history.root, rung.without_history.declarer, /*seed=*/1u);
@@ -122,12 +118,11 @@ TEST(FixtureLadderShapeTest, EveryRungNameIsDistinct)
     }
 }
 
-// --- the bottom two rungs are exhaustively evaluable in a test-cycle time
-// budget: evaluate() over the *whole* space (no sampling), both forms,
-// with strategies.hpp's own scripted, deterministic strategy pair --
-// mirroring tests/belief_evaluation/test_support.hpp's own
-// precedent for why a scripted strategy (not the solver) is enough to
-// exercise this. ---------
+// --- The bottom two rungs are exhaustively evaluable within a test-cycle
+// budget: evaluate() over the whole space, both forms, with the scripted
+// strategies of strategies.hpp. As in tests/belief_evaluation/
+// test_support.hpp, a scripted strategy is enough; no solver is needed.
+// ---------
 
 namespace
 {
@@ -145,14 +140,11 @@ class BottomTwoRungsAreExhaustivelyEvaluableTest : public testing::TestWithParam
 {
 };
 
-// be::ProbabilitySumTolerance (1e-6), not a bare 1.0: a Kahan-summed
-// p_make over a several-hundred-layout node can land a float epsilon
-// above or below 1.0 -- one run of pool6's with-history form (210
-// layouts) landed at 1.0000000000000002, an illustration of the class of
-// slack this guards against on this platform/compiler/build, not a
-// guaranteed or exact value elsewhere. validation.hpp's own tolerance
-// exists for exactly this class of aggregate floating-point slack, so
-// this test reuses it rather than picking a bespoke bound.
+// be::ProbabilitySumTolerance (1e-6), not a bare 1.0. A Kahan-summed
+// p_make over a few hundred layouts can land a float epsilon away from
+// 1.0. One run of pool6 with history (210 layouts) gave
+// 1.0000000000000002; other platforms and builds may differ. validation.hpp
+// defines this tolerance for exactly this kind of slack.
 TEST_P(BottomTwoRungsAreExhaustivelyEvaluableTest, WithoutHistoryCompletesAndReportsAProbability)
 {
     bench::Rung const rung = GetParam();
@@ -176,13 +168,12 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(bench::make_pool4_rung(), bench::make_pool5_rung()),
     [](testing::TestParamInfo<bench::Rung> const& info) { return info.param.name; });
 
-// --- the finesse ladder: size, and genuine (non-degenerate) uncertainty --
-// unlike the pool/realistic rungs above, whose p_make is exactly 1 in
-// every layout by construction, these fixtures exist precisely because
-// their own p_make is *not* trivial -- a convergence study needs
-// something to converge on. All four are exhaustively evaluable well
-// inside a test-cycle budget too (measured: finesse4, the largest, under
-// 20ms), so the guard covers that here as well. ---------------------
+// --- The finesse ladder: size, and real (non-degenerate) uncertainty.
+// Unlike the pool and realistic rungs, whose p_make is exactly 1 in every
+// layout, these fixtures exist because their p_make is not trivial. A
+// convergence study needs something to converge on. All four are also
+// exhaustively evaluable within a test-cycle budget (finesse4, the
+// largest, measured under 20ms). -------------------------------------
 
 TEST(FinesseLadderTest, SizeMatchesExpected)
 {
@@ -205,12 +196,10 @@ TEST(FinesseLadderTest, SpansAtLeastOneOrderOfMagnitude)
 
 TEST(FinesseLadderTest, EveryRungExhaustivelyEvaluatesToAGenuinelyNonDegenerateProbability)
 {
-    // Not >= 0 and <= 1 (that would also accept the pool ladder's own
-    // trivial p_make == 1 everywhere) -- strictly between the two, with
-    // margin, so a future edit that accidentally makes this ladder
-    // degenerate again (declarer always wins, or always loses) fails
-    // here rather than silently producing a convergence sweep with
-    // nothing to converge on.
+    // Strictly between 0 and 1, with margin. A plain [0, 1] check would also
+    // accept the pool ladder's p_make == 1. An edit that makes this ladder
+    // degenerate again (declarer always wins, or always loses) fails here,
+    // not silently in a convergence sweep.
     for (bench::RungFixture const& fixture : bench::all_finesse_rungs())
     {
         be::EvaluationResult const result = exhaustively_evaluate(fixture);
@@ -221,9 +210,8 @@ TEST(FinesseLadderTest, EveryRungExhaustivelyEvaluatesToAGenuinelyNonDegenerateP
     }
 }
 
-// --- the solver ladder: size, and that solve_board actually accepts it ---
-// (the whole reason this ladder exists -- see fixtures.hpp's own module
-// doxygen for the two ways the earlier attempts at this failed). ---------
+// --- The solver ladder: size, and that solve_board accepts it. That is why
+// the ladder exists; fixtures.hpp explains the two traps. ---------------
 
 TEST(SolverLadderTest, SizeMatchesExpected)
 {

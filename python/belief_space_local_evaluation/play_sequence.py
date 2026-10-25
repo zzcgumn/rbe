@@ -1,27 +1,18 @@
 """Playing a hand out to the position you want to evaluate.
 
-`belief_space_local_evaluation` evaluates *one* root: a position, a declarer,
-and how many more tricks are still needed. It does not play cards, and it
-carries no trick counter -- `evaluate()` is handed the answer to "how many
-more?" rather than working it out. Getting to an interesting root therefore
-means playing the earlier tricks yourself, and that is all this module does.
+`evaluate()` evaluates one root: a position, a declarer, and the tricks
+still needed. It does not play cards or count tricks. To reach a mid-play
+root, you play the earlier tricks yourself. This module does that.
 
-It also collects the thing a root alone cannot express: the **play history**.
-Handed to `ExhaustiveLayoutSource`, that history is what rules out the
-layouts in which a defender holds a suit they have already shown out of. See
-"The play history: needed, not merely optional" in
-docs/belief_space_local_evaluation.md -- omitting it does not fail, it
-quietly answers a different question.
+It also records the **play history**. Pass it to `ExhaustiveLayoutSource` to
+rule out layouts in which a defender holds a suit they have shown out of.
+Without it, nothing fails, but the answer is for a different question. See
+"Supply the play history" in docs/belief_space_local_evaluation.md.
 
-The trick mechanics and the trick *counting* are **not** here any more. `bsle.seat_on_play`,
-`bsle.legal_cards`, `bsle.play` and `bsle.trick_complete_winner` are the
-library's own, the same four the evaluator applies to the root you hand it, so
-this module no longer carries a second copy of the follow-suit and trick-winner
-rules that could disagree with them. Nor the derivations a strategy needs: a
-declarer strategy reads `state.seat_on_play`, `state.trick_leader`,
-`state.current_trick` and `state.legal_cards` off the ObservationState it is
-handed. What is left is the bookkeeping the library genuinely does not do:
-counting tricks, collecting the history, and turning hand records into cards.
+The trick rules come from the library: `bsle.seat_on_play`,
+`bsle.legal_cards`, `bsle.play` and `bsle.trick_complete_winner`. These are
+the rules the evaluator uses. This module adds only what the library does not
+do: count tricks, record the history, and parse hand records.
 """
 
 import dataclasses
@@ -37,16 +28,14 @@ from bridge_notation import (
 
 @dataclasses.dataclass(frozen=True)
 class DeclarerView:
-    """Everything declarer legitimately knows at this point in a
-    PlaySequence, for inspecting a position outside a real evaluate() call.
+    """What declarer knows at this point in a PlaySequence. Use it to
+    inspect a position outside evaluate().
 
-    Not ObservationState: that type only exists inside a live evaluation and
-    is not constructible from Python. This is PlaySequence's own equivalent,
-    shaped the same way on purpose.
+    It has the same shape as ObservationState, which Python cannot
+    construct.
 
-    play_history is the FULL record from trick one, not "from the root" --
-    PlaySequence has no root concept. Deliberately a different name from
-    ObservationState.history (root-relative), not a synonym for it.
+    play_history is the full record from trick one. It has a different name
+    from ObservationState.history, which starts at the root.
     """
     declarer_hand: list
     dummy_hand: list
@@ -63,12 +52,9 @@ class DeclarerView:
 
 
 def _hand(remain_cards_row: list) -> list:
-    """A seat's remaining cards as a list of Card, suit ascending then rank
-    ascending within a suit -- matching `legal_cards`' own order, not
-    `bridge_notation.ranks_in`'s highest-first order. `legal_cards` is a
-    subset of whichever of `declarer_hand`/`dummy_hand` owns the seat on
-    play; having a subset and its superset printed in different orders
-    inside the same DeclarerView would be worth avoiding on sight."""
+    """A seat's remaining cards as a list of Card, sorted by suit, then rank,
+    ascending. This matches the order of `legal_cards`, which is a subset of
+    one of these hands. (`bridge_notation.ranks_in` sorts highest first.)"""
     return [
         bsle.Card(suit, rank)
         for suit in range(4)
@@ -78,12 +64,11 @@ def _hand(remain_cards_row: list) -> list:
 
 
 def cards_on_trick(deal: dict) -> list:
-    """The cards already played to the trick in progress, in play order --
-    empty when the seat on play is leading.
+    """The cards already played to the trick in progress, in order. Empty
+    when the seat on play is leading.
 
-    These are *not* in anybody's `remain_cards`: a card is removed from the
-    hand that played it as it is played. The trick in progress lives only
-    here.
+    These cards are in no `remain_cards`: a played card leaves the hand at
+    once.
     """
     return [
         bsle.Card(suit, rank)
@@ -102,11 +87,9 @@ def suit_led(deal: dict) -> int:
 def play_card(deal: dict, card) -> dict:
     """The deal after the seat on play plays `card`, via `bsle.play`.
 
-    The play itself is the library's. What is added here is a diagnostic:
-    `bsle.play` has a precondition rather than a check, so a hand record with
-    a card in the wrong place would otherwise produce a nonsense position
-    instead of an error naming the card. Transcription mistakes are the
-    common case for this module's callers, so they are worth catching by name.
+    Adds a check: `bsle.play` does not check legality, so a hand record with
+    a card in the wrong place would give a nonsense position. This raises
+    ValueError naming the card.
     """
     seat = bsle.seat_on_play(deal)
     if deal["remain_cards"][seat][card.suit] & (1 << card.rank) == 0:
@@ -123,9 +106,9 @@ def play_card(deal: dict, card) -> dict:
 class PlaySequence:
     """A deal, a contract, and the cards played so far.
 
-    Play tricks onto it, then read off the three things `evaluate()` wants --
-    `current_deal`, `tricks_needed`, and the `history`/`opening_leader` pair
-    an `ExhaustiveLayoutSource` needs.
+    Play tricks onto it. Then read the inputs for `evaluate()`:
+    `current_deal`, `tricks_needed`, and the `history` and `opening_leader`
+    that `ExhaustiveLayoutSource` needs.
     """
 
     def __init__(self, deal: dict, declarer: int, trump: int, level: int):
@@ -148,12 +131,10 @@ class PlaySequence:
 
     @property
     def tricks_won_by_declarer(self) -> int:
-        """Tricks to declarer's side so far, dummy's included.
+        """Tricks won by declarer's side so far, dummy's included.
 
-        Derived by the library rather than counted here. It is the same number
-        `evaluate()`'s `tricks_needed` is measured against, and an off-by-one in
-        it does not fail -- it evaluates a different contract and reports a
-        confident number for it. Not somewhere to keep a hand-written counter.
+        Computed by `bsle.play_out`, not by a counter here. An off-by-one would
+        not fail: it would evaluate a different contract.
         """
         _root, won = bsle.play_out(
             self._initial_deal, self.history, self.opening_leader, self.declarer)
@@ -161,13 +142,13 @@ class PlaySequence:
 
     @property
     def tricks_needed(self) -> int:
-        """What is still needed from here -- `evaluate()`'s third argument.
-        Counted from the root, which is why it shrinks as tricks are won."""
+        """The tricks still needed: the third argument of `evaluate()`. It
+        shrinks as declarer wins tricks."""
         return self.tricks_to_make - self.tricks_won_by_declarer
 
     def play(self, *cards) -> "PlaySequence":
-        """Play cards in order, from whoever is on play. Accepts Cards, or
-        notation as one string per card or one string for the lot."""
+        """Play cards in order, from the seat on play. Accepts Cards, one
+        string per card, or one string for all of them."""
         for card in cards:
             for one in (parse_cards(card) if isinstance(card, str) else [card]):
                 self._play_one(one)
@@ -179,16 +160,14 @@ class PlaySequence:
         self.current_deal = play_card(self.current_deal, card)
         self.history.append(card)
         if before == 3:
-            # For `format_tricks` only. Who won a trick is worth printing; what
-            # that makes the running total is `tricks_won_by_declarer`, which
-            # the library derives -- this loop deliberately does not add up.
+            # For `format_tricks` only. This does not count tricks:
+            # `tricks_won_by_declarer` does.
             self.completed_tricks.append((leader, self.history[-4:], self.current_deal["first"]))
 
     def play_trick(self, cards) -> "PlaySequence":
-        """Play four cards, checking they really are a whole trick. Worth
-        preferring over `play` when transcribing a hand record: a dropped card
-        otherwise shows up as every later trick being played by the wrong
-        seats."""
+        """Play four cards, and check that they are a whole trick. Prefer it
+        to `play` when you transcribe a hand record. Otherwise a missing card
+        makes every later trick start from the wrong seat."""
         cards = parse_cards(cards) if isinstance(cards, str) else list(cards)
         if len(cards) != 4:
             raise ValueError(f"a trick is 4 cards, got {len(cards)}")
@@ -206,9 +185,10 @@ class PlaySequence:
         return "\n".join(lines)
 
     def declarer_view(self) -> DeclarerView:
-        """Raises ValueError if a defender is on play: legal_cards and the
-        hand-in-turn can only be answered from a hand the caller may
-        legitimately see, and a defender's remaining cards are not one."""
+        """What declarer knows now, as a DeclarerView.
+
+        Raises ValueError if a defender is on play. The legal cards would come
+        from a defender's hand, which declarer cannot see."""
         seat = bsle.seat_on_play(self.current_deal)
         if seat not in (self.declarer, self.dummy):
             raise ValueError(

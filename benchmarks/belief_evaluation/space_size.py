@@ -1,28 +1,22 @@
 #!/usr/bin/env python3
-"""What a play history buys, at realistic positions -- constrained against
-unconstrained `size()` across the whole pool/realistic ladder, and how
-wrong the unconstrained odds are at the two rungs built to be positions a
-bridge player would recognise (`realistic_a`/`realistic_b`).
+"""What a play history buys at realistic positions: constrained against
+unconstrained `size()` across the pool and realistic ladder, and how wrong
+the unconstrained odds are at the two rungs a bridge player would
+recognise (`realistic_a`, `realistic_b`).
 
-No search run, no seed, no sampling -- `ladder_reference` (built for the
-Python-side fixture-ladder test) already computes both forms' sizes
-directly from `ExhaustiveLayoutSource::size()`, and this script's only job
-is to read its output and tabulate it. Reading a C++ program's own output
-from Python is not a Python-driven measurement (this plan's own decision
-1) -- the same "build both sides of one comparison from one description"
-mechanism `test_belief_space_local_evaluation_fixture_ladder.py` already
-uses, applied here for a report instead of an assertion.
+No search, no seed, no sampling. `ladder_reference` (built for the Python
+fixture-ladder test) already prints both sizes from
+`ExhaustiveLayoutSource::size()`; this script only tabulates them, so every
+number still comes from C++. `test_belief_space_local_evaluation_fixture_ladder.py`
+reads the same program, for an assertion instead of a report.
 
-`history_verdict()` is not re-checked here: `fixtures_test.cpp`'s own
-`FixtureLadderTest.WithHistorySizeMatchesExpected`, parameterised over
-every rung `ladder_reference` below also emits, already asserts
-`HistoryVerdict::Consistent` before trusting any of these sizes, in the
-default test cycle -- cited, not re-run.
+`history_verdict()` is not checked here.
+`FixtureLadderTest.WithHistorySizeMatchesExpected` in fixtures_test.cpp
+asserts `HistoryVerdict::Consistent` for every rung, in the default test
+cycle.
 
-Usage -- two steps, not one: this script is invoked directly with
-`python3` (matching sweep.py/cut_rates.py/divergence.py's own convention
-in this directory), which does not build anything itself, so
-`ladder_reference` needs building first:
+Usage: like the other scripts here, this runs with plain `python3` and
+builds nothing, so build `ladder_reference` first:
 
     bazel build //benchmarks/belief_evaluation:ladder_reference
     python3 benchmarks/belief_evaluation/space_size.py
@@ -38,10 +32,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sweep  # noqa: E402
 
-# Name, python-literal key ladder_reference.cpp prints it under, and the
-# fixture's own `k` (half the unconstrained pool -- ladder_reference itself
-# does not print k, so this is read off fixtures.cpp's own make_rung(name, k,
-# ...) calls, not re-derived).
+# Name, the key ladder_reference.cpp prints it under, and the fixture's `k`
+# (half the unconstrained pool). ladder_reference does not print k, so it
+# is copied from the make_rung(name, k, ...) calls in fixtures.cpp.
 RUNGS = [
     ("pool4", "RUNG_POOL4", 4),
     ("pool5", "RUNG_POOL5", 5),
@@ -52,17 +45,15 @@ RUNGS = [
     ("realistic_b", "RUNG_REALISTIC_B", 8),
 ]
 
-# realistic_a/b only: fixtures.cpp's own make_rung() forces exactly two
-# low Diamonds to West by the void (h=2 outstanding void-suit cards),
-# regardless of k -- read from that file's own comment, not re-derived.
+# realistic_a and _b only: make_rung() in fixtures.cpp forces exactly two
+# low Diamonds to West by the void (h=2), whatever k is.
 VOID_FORCED_CARDS = 2
 
 
 def ladder_reference_binary() -> Path:
-    # Bare name on Linux/macOS, .exe on Windows -- same lookup shape as
-    # test_belief_space_local_evaluation_fixture_ladder.py's own
-    # _ladder_reference_binary(), which already needs this for the same
-    # binary.
+    # The bare name on Linux and macOS, .exe on Windows. The same lookup as
+    # _ladder_reference_binary() in
+    # test_belief_space_local_evaluation_fixture_ladder.py.
     root = sweep.bazel_bin_root() / "benchmarks" / "belief_evaluation" / "ladder_reference"
     for candidate in (root, root.with_suffix(".exe")):
         if candidate.is_file():
@@ -76,10 +67,9 @@ def run_ladder_reference() -> dict:
     output = subprocess.run(
         [str(ladder_reference_binary())], check=True, capture_output=True, text=True).stdout
     namespace: dict = {}
-    # Trusted, self-generated output (this process's own data dependency),
-    # a sequence of assignment statements -- exec, not ast.literal_eval,
-    # matching test_belief_space_local_evaluation_fixture_ladder.py's own
-    # consumption of the identical program.
+    # Trusted output from our own data dependency: a sequence of assignment
+    # statements. So exec, not ast.literal_eval, as
+    # test_belief_space_local_evaluation_fixture_ladder.py does.
     exec(compile(output, "<ladder_reference>", "exec"), namespace)  # noqa: S102
     return namespace
 
@@ -102,12 +92,12 @@ def how_wrong_at_realistic_rungs() -> None:
     print("# How wrong the unconstrained odds are, at the two realistic rungs")
     print("#" * 78)
     print(
-        "\n  Formula (read from analysis/validation_risk_analysis.md section A,\n"
-        "  not re-derived): unconstrained P(a defender holds a given pool card)\n"
-        "  = k/n; constrained = k/(n-h), for a pool of n with a defender holding\n"
-        "  k and h cards of the voided suit still outstanding. realistic_a/b:\n"
-        "  n=2k (the full pool, forced void cards included), h=2 (the two low\n"
-        "  Diamonds the void forces to West).")
+        "\n  Formula (specs/replenished-belief-evaluation.md, on vacant-spaces\n"
+        "  reasoning): unconstrained P(a defender holds a given pool card) = k/n;\n"
+        "  constrained = k/(n-h), for a pool of n with a defender holding k and h\n"
+        "  cards of the voided suit still outstanding. realistic_a/b: n=2k (the\n"
+        "  full pool, forced void cards included), h=2 (the two low Diamonds the\n"
+        "  void forces to West).")
     for name, _key, k in RUNGS:
         if name not in ("realistic_a", "realistic_b"):
             continue

@@ -1,3 +1,6 @@
+"""Tests for BeliefView from Python: posteriors, sample flags, and expiry
+once the callback that received the view returns."""
+
 import unittest
 
 from belief_space_local_evaluation import ExpiredBeliefViewError
@@ -11,8 +14,8 @@ DDS_NOTRUMP = 4
 
 
 def make_layout(spade_rank: int) -> dict:
-    # Distinct layouts differ only in which spade East holds -- enough to
-    # tell entries apart without needing a realistic full deal.
+    # Layouts differ only in East's one spade, which is enough to tell
+    # entries apart.
     return {
         "trump": DDS_NOTRUMP,
         "first": North,
@@ -145,8 +148,8 @@ class TestExpiryAfterTheCallbackReturns(unittest.TestCase):
         with self.assertRaises(ExpiredBeliefViewError):
             stashed["entry"].posterior
 
-        # But the dict already read out of it is a plain copy -- ordinary
-        # data from here on, with no tie to the expired view at all.
+        # The layout dict read earlier is a plain copy with no tie to the
+        # view.
         self.assertEqual(stashed["layout"], layouts[0])
 
     def test_an_entry_obtained_after_expiry_also_raises(self) -> None:

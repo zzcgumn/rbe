@@ -7,12 +7,10 @@
 namespace dds::belief_evaluation
 {
 
-/// Builds a RankMap from a Deal: aggr[s] is the OR of remainCards[h][s]
-/// across all four hands, for each suit s, converted from Deal's public bit
-/// convention (bit r = absolute rank r) to the compacted convention the
-/// lookup tables use (bit r-2 = absolute rank r), masked to 13 significant
-/// bits so a malformed Deal with a stray bit set above rank 14 cannot push
-/// an aggr entry out of the lookup tables' valid index range.
+/// Builds a RankMap from a Deal. aggr[s] is the OR of remainCards[h][s]
+/// over the four hands, moved from bit r to bit r-2 for absolute rank r.
+/// Masked to 13 bits, so a malformed Deal cannot index past the lookup
+/// tables.
 auto make_rank_map(Deal const& deal) -> RankMap;
 
 }  // namespace dds::belief_evaluation

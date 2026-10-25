@@ -12,12 +12,13 @@
 
 #include "test_support.hpp"
 
-// A namespace alias plus targeted `using` declarations, not `using namespace
-// dds::belief_evaluation;` -- this file includes api/dds_data_types.hpp
-// directly (declaring global ::Card), so a `using namespace` here would make
-// any future bare `Card` reference ambiguous between ::Card and
-// dds::belief_evaluation::Card rather than a clear compile error naming
-// which one was meant.
+// Tests for make_root, root_keys, tricks_remaining and the play_record
+// field of ObservationState.
+
+// A namespace alias and targeted `using` declarations, not `using
+// namespace dds::belief_evaluation;`. This file includes
+// api/dds_data_types.hpp, which declares a global ::Card, so a bare `Card`
+// would be ambiguous instead of a clear compile error.
 namespace be = dds::belief_evaluation;
 using be::BeliefNode;
 using be::HistoryVerdict;
@@ -44,14 +45,13 @@ namespace
     constexpr int King = 13;
     constexpr int Ace = 14;
 
-    constexpr int North = 0;  // declarer throughout this file
+    constexpr int North = 0;  // declarer in every test
     constexpr int East = 1;   // a defender
     constexpr int South = 2;  // dummy: (declarer + 2) % DDS_HANDS
     constexpr int West = 3;   // a defender
 
-    /// North (declarer) holds spades A/K, South (dummy) holds hearts A/K,
-    /// and East/West hold diamonds Q/J between them, split East=Q, West=J.
-    /// Trump is notrump, North leads, nothing played yet.
+    /// North (declarer) holds ♠AK and South (dummy) holds ♥AK. East holds
+    /// the ♦Q and West the ♦J. Notrump, North to lead, nothing played.
     auto make_root_layout() -> Deal
     {
         Deal deal{};
@@ -64,9 +64,8 @@ namespace
         return deal;
     }
 
-    /// Same shape as make_root_layout(), but with the diamond queen and
-    /// jack swapped between the defenders — the same outstanding pool,
-    /// split the other way.
+    /// make_root_layout() with the ♦Q and ♦J swapped between the defenders:
+    /// the same pool, split the other way.
     auto make_swapped_split_layout() -> Deal
     {
         Deal deal = make_root_layout();
@@ -75,8 +74,8 @@ namespace
         return deal;
     }
 
-    /// Differs from make_root_layout() in dummy's holding (hearts A only,
-    /// missing the king) — must not survive filtering against the root.
+    /// make_root_layout() with dummy holding only the ♥A. It must not
+    /// survive filtering against the root.
     auto make_wrong_dummy_layout() -> Deal
     {
         Deal deal = make_root_layout();
@@ -116,11 +115,8 @@ TEST_F(NodeTest, RootInvariantsHoldOverEveryLayoutThatSurvivesFiltering)
 TEST_F(NodeTest, KappaIsOneOverTheSurvivingCountNotTheRawSourceSize)
 {
     Deal const root_layout = make_root_layout();
-    // Three raw layouts, only two of which are consistent with the root —
-    // kappa must be 1/2, not 1/3. A kappa computed from source.size()
-    // directly would pass every other test in this file, since none of
-    // them puts an inconsistent layout in the source alongside consistent
-    // ones.
+    // Three raw layouts, two of them consistent with the root, so kappa must
+    // be 1/2. A kappa computed from source.size() would give 1/3.
     VectorLayoutSource source(
         {make_root_layout(), make_swapped_split_layout(), make_wrong_dummy_layout()});
 
@@ -151,9 +147,7 @@ TEST_F(NodeTest, ASourceWhereNoLayoutSurvivesIsReportedAsAnError)
 TEST_F(NodeTest, TheTwoFailureCausesAreDistinguishable)
 {
     // "source.size() is nullopt" and "no layout survived filtering" both
-    // leave RootConstructionResult::node empty, but for genuinely different
-    // reasons a caller (and a test) can tell apart via ::failure -- the gap
-    // EvaluationError::root_failure's own doxygen used to admit.
+    // leave RootConstructionResult::node empty. ::failure tells them apart.
     Deal const root_layout = make_root_layout();
     UnboundedLayoutSource unbounded_source;
     VectorLayoutSource empty_result_source({make_wrong_dummy_layout()});
@@ -213,11 +207,10 @@ TEST_F(NodeTest, CommonKnowledgeFieldsAreSetFromTheRootLayoutAndCaller)
 
 TEST_F(NodeTest, HistoryIsSeededFromCardsAlreadyPlayedToTheRootsTrickInProgress)
 {
-    // North led the spade king and East followed with the two before this
-    // search began -- the root position starts two cards into a trick, not
-    // fresh. history must reflect that, since callers rely on it to see
-    // "every card played so far", and both those cards are still
-    // recoverable from root_layout's own currentTrickSuit/Rank.
+    // The root position starts two cards into a trick: North led the ♠K and
+    // East followed with the ♠2. history must include both cards, because
+    // callers rely on it for every card played so far. Both are in
+    // root_layout's currentTrickSuit and currentTrickRank.
     Deal root_layout = make_root_layout();
     root_layout.currentTrickSuit[0] = 0;  // spades
     root_layout.currentTrickRank[0] = King;
@@ -247,28 +240,25 @@ TEST_F(NodeTest, MakeRootPopulatesRootKeysOneForEachSurvivingLayoutWithTheFixedS
     ASSERT_TRUE(node.has_value());
     ASSERT_EQ(node->root_keys.size(), node->layouts.size());
 
-    // The fixed seat is (declarer + 1) % DDS_HANDS = East -- see
-    // BeliefNode::root_keys' own doxygen for why the seat must never vary.
+    // The fixed seat is (declarer + 1) % DDS_HANDS = East. See the doxygen
+    // of BeliefNode::root_keys for why the seat must never vary.
     int const fixed_seat = (North + 1) % DDS_HANDS;
     for (std::size_t i = 0; i < node->layouts.size(); ++i)
     {
         EXPECT_EQ(node->root_keys[i], layout_key(node->layouts[i], fixed_seat));
     }
-    // The two surviving layouts split the diamond pool the other way round
-    // from each other, so their keys must differ.
+    // The two layouts split the diamonds in opposite ways, so their keys
+    // must differ.
     EXPECT_NE(node->root_keys[0], node->root_keys[1]);
 }
 
 TEST_F(NodeTest, RootSpaceKeysStayDistinctEvenWhenNodeDepthDealsHaveConverged)
 {
-    // Two root-space layouts, an honour swapped between the defenders --
-    // East holds the diamond king and West the queen in one, the other way
-    // round in the other. Once both honours are gone from the table (the
-    // line of play that consumes both), a node holding one entry from each
-    // would show bit-identical Deals for the two: exactly the case a
-    // node-depth key would collide on, and root_keys must not (see
-    // BeliefNode::root_keys' own doxygen and node.hpp's rationale for why
-    // the exclusion set this feeds must key root space, never node depth).
+    // Two root layouts with the diamond honours swapped: East holds the ♦K
+    // and West the ♦Q in one, the reverse in the other. Once both honours are
+    // played, the two Deals in a node are identical. A key taken at node depth
+    // would collide; root_keys must not. See BeliefNode::root_keys and
+    // node.hpp for why the exclusion set keys root space.
     Deal root_a = make_root_layout();
     root_a.remainCards[East][2] = holding({King});
     root_a.remainCards[West][2] = holding({Queen});
@@ -281,8 +271,8 @@ TEST_F(NodeTest, RootSpaceKeysStayDistinctEvenWhenNodeDepthDealsHaveConverged)
     std::uint64_t const key_b = layout_key(root_b, fixed_seat);
     ASSERT_NE(key_a, key_b);  // the swap is genuinely visible before any card is played
 
-    // The Deal a node would show once the diamond honours are both gone --
-    // the same value regardless of which root candidate supplied it.
+    // The Deal a node shows once both diamond honours are gone, whichever
+    // root layout it came from.
     Deal after_play = make_root_layout();
     after_play.remainCards[East][2] = 0;
     after_play.remainCards[West][2] = 0;
@@ -295,15 +285,15 @@ TEST_F(NodeTest, RootSpaceKeysStayDistinctEvenWhenNodeDepthDealsHaveConverged)
     ASSERT_EQ(node.root_keys.size(), node.layouts.size());
     EXPECT_EQ(node.layouts[0].remainCards[East][2], node.layouts[1].remainCards[East][2]);
     EXPECT_EQ(node.layouts[0].remainCards[West][2], node.layouts[1].remainCards[West][2]);
-    EXPECT_NE(node.root_keys[0], node.root_keys[1]);  // a node-depth-derived key would have collided here
+    EXPECT_NE(node.root_keys[0], node.root_keys[1]);  // a key taken at node depth would collide
 }
 
 // --- tricks_remaining() ----------------------------------------------------
 
 TEST_F(NodeTest, TricksRemainingAtATrickBoundaryEqualsDeclarersOwnCardCount)
 {
-    // make_root_layout(): North (declarer) holds spades A/K -- two cards,
-    // nothing played, so two tricks remain.
+    // make_root_layout(): North (declarer) holds ♠AK, two cards, and nothing
+    // has been played, so two tricks remain.
     Deal const root_layout = make_root_layout();
     VectorLayoutSource source({root_layout});
     std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
@@ -314,12 +304,9 @@ TEST_F(NodeTest, TricksRemainingAtATrickBoundaryEqualsDeclarersOwnCardCount)
 
 TEST_F(NodeTest, TricksRemainingCrossCheckedAgainstADefendersOwnHolding)
 {
-    // A cross-check worth building even though it is not shipped: tricks
-    // remaining computed from declarer's holding must equal the same
-    // count computed directly from a single layout's defender holding
-    // (East's two diamonds here, one card each of the pool the two
-    // defenders' entries would otherwise double if summed together) --
-    // this is exactly the mistake tricks_remaining() itself must not make.
+    // Counts a defender's cards in one layout, not in known_holdings.
+    // known_holdings gives each defender the union pool of both diamonds, so
+    // summing defender entries there would double count.
     Deal const root_layout = make_root_layout();
     VectorLayoutSource source({root_layout});
     std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
@@ -331,24 +318,18 @@ TEST_F(NodeTest, TricksRemainingCrossCheckedAgainstADefendersOwnHolding)
     {
         east_diamond_count += std::popcount(node->layouts[0].remainCards[East][suit]);
     }
-    // East alone holds one of the two outstanding diamonds (West holds the
-    // other) -- not itself tricks_remaining, but every suit here has depth
-    // one, so North's spade count (2) equals declarer's card count exactly
-    // as tricks_remaining() computes it; this test pins that a defender's
-    // OWN entry (not the union pool known_holdings would give) is the
-    // right thing to cross-check against.
+    // East holds one of the two outstanding diamonds and West the other.
+    // tricks_remaining() counts declarer's cards instead: North's two spades.
     EXPECT_EQ(east_diamond_count, 1);
     EXPECT_EQ(tricks_remaining(node->state), 2);
 }
 
 TEST_F(NodeTest, TricksRemainingMidTrickIsOneShortForAHandThatHasAlreadyPlayed)
 {
-    // North led the spade king (already played, one card gone from its
-    // holding) before this search began; East has not followed yet. North
-    // (declarer) is the trick's leader here, so it has already played to
-    // the trick in progress -- its own remaining card count (1, the ace)
-    // is one short of tricks_remaining, which must still read 2 (the ace
-    // trick, plus the queen/jack diamond trick still to come).
+    // North led the ♠K before the search began, and East has not followed.
+    // North, the leader, has already played to the trick, so it holds one
+    // card (the ♠A). tricks_remaining must still read 2: the trick in progress
+    // and one more.
     Deal root_layout = make_root_layout();
     root_layout.currentTrickSuit[0] = 0;  // spades
     root_layout.currentTrickRank[0] = King;
@@ -357,16 +338,16 @@ TEST_F(NodeTest, TricksRemainingMidTrickIsOneShortForAHandThatHasAlreadyPlayed)
     std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
     ASSERT_TRUE(node.has_value());
 
-    ASSERT_EQ(card_count(node->state.known_holdings, North), 1);  // declarer's own count: one short
+    ASSERT_EQ(card_count(node->state.known_holdings, North), 1);  // one short
     EXPECT_EQ(tricks_remaining(node->state), 2);
 }
 
 TEST_F(NodeTest, TricksRemainingMidTrickTwoCardsInIsStillCorrectForTheLeader)
 {
-    // Two cards into the trick North led (king, then East's queen), with
-    // North (the leader) still one short of tricks_remaining exactly as
-    // in the one-card-in case above -- pinned separately per this file's
-    // own standing rule against collapsing trick-boundary cases together.
+    // Two cards into the trick: North led the ♠K and East discarded the ♦Q.
+    // North, the leader, is still one card short of tricks_remaining. A
+    // separate test from the one-card case, because trick-boundary cases are
+    // easy to get wrong.
     Deal root_layout = make_root_layout();
     root_layout.currentTrickSuit[0] = 0;  // spades
     root_layout.currentTrickRank[0] = King;
@@ -384,13 +365,9 @@ TEST_F(NodeTest, TricksRemainingMidTrickTwoCardsInIsStillCorrectForTheLeader)
 
 TEST_F(NodeTest, TricksRemainingMidTrickIsNotShortForAHandThatHasNotPlayedYet)
 {
-    // Same two-cards-in position as above, but read from a seat that has
-    // NOT yet played to the trick in progress: South (dummy) is due to
-    // play third (after North and East), so its own remaining card count
-    // (2, the ace and king of hearts) already equals tricks_remaining
-    // exactly, with no +1 adjustment needed -- the mirror case
-    // tricks_remaining() has to get right along with the "already played"
-    // case above.
+    // The same position, read from a seat that has not played to the trick.
+    // South (dummy) plays third, after North and East. South still holds two
+    // cards (♥AK), which equals tricks_remaining with no adjustment.
     Deal root_layout = make_root_layout();
     root_layout.currentTrickSuit[0] = 0;  // spades
     root_layout.currentTrickRank[0] = King;
@@ -402,20 +379,17 @@ TEST_F(NodeTest, TricksRemainingMidTrickIsNotShortForAHandThatHasNotPlayedYet)
     std::optional<BeliefNode> const node = make_root(root_layout, North, /*tricks_needed=*/2, source).node;
     ASSERT_TRUE(node.has_value());
 
-    // tricks_remaining() reads state.declarer directly, not "the real
-    // declarer" -- and South's own known_holdings entry is exact (South is
-    // this fixture's dummy, kept verbatim by known_holdings_for(), the
-    // same as declarer's own entry), so pointing declarer at South is a
-    // legitimate way to ask "what would tricks_remaining read from South's
-    // own seat instead of North's".
+    // tricks_remaining() reads state.declarer. South is dummy, so its
+    // known_holdings entry is exact, like declarer's. Setting declarer to South
+    // asks what tricks_remaining reads from South's seat.
     ObservationState south_view = node->state;
     south_view.declarer = South;
     ASSERT_EQ(card_count(south_view.known_holdings, South), 2);
     EXPECT_EQ(tricks_remaining(south_view), 2);
 }
 
-// --- play_record: threaded through root_observation_state, invariant across
-// advance_state ---------------------------------------------------------
+// --- play_record: set by root_observation_state, unchanged by
+// advance_state ----------------------------------------------------------
 
 TEST_F(NodeTest, RootObservationStateCarriesTheSuppliedPlayRecord)
 {
@@ -458,8 +432,8 @@ TEST_F(NodeTest, PlayRecordSurvivesAdvanceStateUnchanged)
     ObservationState const root_state =
         root_observation_state(root_layout, North, /*tricks_needed=*/2, &*record);
 
-    // North (declarer) is on lead in make_root_layout() and holds spades
-    // A/K -- the ace is a legal lead.
+    // North (declarer) is on lead in make_root_layout() and holds ♠AK, so
+    // the ace is a legal lead.
     ObservationState const child = advance_state(root_state, be::Card{0, Ace});
 
     EXPECT_EQ(child.play_record, root_state.play_record);  // same address

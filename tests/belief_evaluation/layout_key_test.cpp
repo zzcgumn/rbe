@@ -8,12 +8,13 @@
 
 #include <belief_evaluation/layout_key.hpp>
 
-// A namespace alias plus a targeted `using` declaration, not `using
-// namespace dds::belief_evaluation;` -- this file includes
-// api/dds_data_types.hpp directly (declaring global ::Card), so a `using
-// namespace` here would make any future bare `Card` reference ambiguous
-// between ::Card and dds::belief_evaluation::Card rather than a clear
-// compile error naming which one was meant.
+// Tests for layout_key: distinct keys for distinct holdings, disjoint suit
+// fields, out-of-range seats and stray bits.
+
+// A namespace alias and a targeted `using` declaration, not `using
+// namespace dds::belief_evaluation;`. This file includes
+// api/dds_data_types.hpp, which declares a global ::Card, so a bare `Card`
+// would be ambiguous instead of a clear compile error.
 namespace be = dds::belief_evaluation;
 using be::layout_key;
 
@@ -71,12 +72,9 @@ TEST(LayoutKey, RejectsAnOutOfRangeSeatWithoutUndefinedBehaviour)
 
 TEST(LayoutKey, StrayBitsAboveRankFourteenDoNotLeakIntoTheNextSuitsField)
 {
-    // A well-formed Deal never sets remainCards bits above bit 14 (ace), but
-    // nothing in the type stops it. Without masking after `>> 2`, a stray
-    // high bit here would shift into spades' 13-bit field of the packed key
-    // (hearts occupies bits 13..25, so anything above hearts' own 13 bits
-    // once shifted would collide with spades' field at bits 0..12... in
-    // practice it collides one field up, into the next suit checked below).
+    // A well-formed Deal never sets a remainCards bit above rank 14, but the
+    // type allows it. Without the 13-bit mask after `>> 2`, the stray hearts
+    // bit below would land at key bit 31, in the diamonds field.
     Deal clean{};
     clean.remainCards[2][1] = 0b1 << 2;  // South: deuce of hearts only
 

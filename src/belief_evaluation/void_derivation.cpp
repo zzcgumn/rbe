@@ -12,23 +12,13 @@ namespace dds::belief_evaluation
 
 namespace
 {
-    // The only range PlayTraceBin::suit/rank's 52-element arrays actually
-    // hold -- see derive_voids' own doxygen for why this is asserted, not
-    // merely assumed, and clamped to rather than left unchecked.
+    // The size of the PlayTraceBin arrays.
     constexpr int MaxHistoryLength = 52;
 
-    // A card's own suit/rank fields, unlike history.number and
-    // opening_leader above, are read up to 52 times per call rather than
-    // once -- silently clamped to a safe value on each read, not asserted
-    // per card, matching RankMap::to_relative's own established precedent
-    // for exactly this shape of check (a public, directly-callable
-    // function reading a caller-supplied per-element field that indexes
-    // something). 0 (Spades) and 2 (the lowest rank) are safe substitutes
-    // in the sense RankMap's own doxygen means it: out-of-range input
-    // cannot be a real card, so what comes out for it is garbage-in,
-    // garbage-out, but never undefined behaviour -- never an out-of-bounds
-    // `voids[seat][led_suit]`, and never the signed-overflow
-    // `rank_to_bit_position` could otherwise see from an extreme rank.
+    // A card's suit and rank are read up to 52 times per call. So they are
+    // clamped silently, not asserted, as in RankMap::to_relative. 0 (Spades)
+    // and rank 2 are safe: the result is garbage, but never an out-of-bounds
+    // `voids[seat][led_suit]` or an overflow in `rank_to_bit_position`.
     auto safe_suit(int suit) -> int
     {
         return (suit >= 0 && suit < DDS_SUITS) ? suit : 0;
@@ -44,12 +34,8 @@ auto derive_voids(PlayTraceBin const& history, int opening_leader, int trump) ->
 {
     VoidsBySeat voids{};
 
-    // Caller error, both -- asserted for a build where that is caught
-    // loudly; the clamp/normalise below is what stops it becoming an
-    // out-of-bounds read (a malformed history.number) or an out-of-range
-    // seat (a malformed opening_leader) in a build where it is not. This
-    // is what keeps the function total per its own doxygen, on every
-    // input, not only the ones verify_history happened to check first.
+    // Caller errors, both. Asserted; the clamps below keep the function total
+    // when asserts are off.
     assert(history.number >= 0 && history.number <= MaxHistoryLength);
     assert(opening_leader >= 0 && opening_leader < DDS_HANDS);
     int const history_length = std::clamp(history.number, 0, MaxHistoryLength);
@@ -68,9 +54,8 @@ auto derive_voids(PlayTraceBin const& history, int opening_leader, int trump) ->
             int const seat = (leader + i) % DDS_HANDS;
             int const suit = safe_suit(history.suit[start + i]);
 
-            // The void follows from the suit played, full stop -- never
-            // from whether this card goes on to win the trick. A ruff and
-            // a plain discard are both handled by this one comparison.
+            // The void follows from the suit played, not from who wins. This covers
+            // a ruff and a discard alike.
             if (suit != led_suit)
             {
                 voids[seat][led_suit] = true;
@@ -80,11 +65,8 @@ auto derive_voids(PlayTraceBin const& history, int opening_leader, int trump) ->
             bit_played[i] = rank_to_bit_position(safe_rank(history.rank[start + i]));
         }
 
-        // A trailing partial trick (history ends mid-trick, as
-        // ObservationState::history always does at a mid-trick root) has
-        // already had its voids recorded above; there is no winner to
-        // compute and none is needed, since there is no further trick in
-        // history to derive a leader for.
+        // A trailing partial trick has had its voids recorded above. No winner
+        // is needed: no later trick follows.
         if (cards_in_trick == 4)
         {
             leader = trick_winner(trump, leader, suit_played, bit_played);

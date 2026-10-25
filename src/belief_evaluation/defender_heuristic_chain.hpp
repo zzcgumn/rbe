@@ -9,11 +9,8 @@
 namespace dds::belief_evaluation
 {
 
-/// An ordered sequence of DefenderHeuristic rules, tried in add() order.
-/// The one and only way a chain is built -- there is no second
-/// constructor, no denomination argument, no enum of "which built-ins to
-/// include": a caller's chain is entirely and exactly whatever sequence of
-/// add() calls they make.
+/// An ordered list of DefenderHeuristic rules, tried in add() order.
+/// add() is the only way to build one.
 class DefenderHeuristicChain
 {
 public:

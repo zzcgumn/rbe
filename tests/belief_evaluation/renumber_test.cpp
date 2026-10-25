@@ -2,11 +2,12 @@
 
 #include <belief_evaluation/renumber.hpp>
 
-// A namespace alias plus a targeted `using` declaration, not `using
-// namespace dds::belief_evaluation;` -- see the other test files in this
-// directory for why: kept consistent even though this particular file
-// doesn't yet include anything that makes api/dds_data_types.hpp's global
-// ::Card visible.
+// Tests that renumber removes the gaps in a pool and maps a holding onto
+// the result.
+
+// A namespace alias and a targeted `using` declaration, not `using
+// namespace dds::belief_evaluation;`, to match the other test files. This
+// file does not make the global ::Card visible.
 namespace be = dds::belief_evaluation;
 using be::renumber;
 
@@ -42,11 +43,9 @@ TEST(Renumber, FullPoolIsIdentity)
 
 TEST(Renumber, DoesNotOverflowWhenPoolsHighestSetBitIsBit31)
 {
-    // No documented caller passes a pool wider than 13 bits (renumber.hpp's
-    // doxygen scopes both arguments to dds's aggregate convention), but the
-    // function is unsigned-typed generally rather than scoped to 13 bits by
-    // its type, so this pins down that the top bit doesn't shift `in_bit`
-    // past the width of `unsigned` in the loop that walks pool's set bits.
+    // Callers pass 13-bit aggregates, but the type allows any unsigned. Bit
+    // 31 must not shift `in_bit` past the width of `unsigned` in the loop
+    // over the pool's set bits.
     unsigned const pool = (1u << 31) | 0b1u;
     unsigned const holding = pool;
     EXPECT_EQ(renumber(holding, pool), 0b11u);

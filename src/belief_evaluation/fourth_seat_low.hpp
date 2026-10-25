@@ -5,12 +5,10 @@
 namespace dds::belief_evaluation
 {
 
-/// delta rule: in fourth seat, following suit, as a defender -- play the
+/// delta rule: in fourth seat, following suit, as a defender: play the
 /// lowest double-dummy-optimal card. Every candidate is already
-/// trick-optimal by construction (`best_cards` comes from the solve);
-/// this rule exists only to break the tie among them the same low-first
-/// way `second_seat_low`/`third_seat_low` do, rather than leaving it to
-/// the chain's fallback spread.
+/// trick-optimal. The rule only breaks the tie, low first, as the other
+/// seat rules do.
 auto fourth_seat_low() -> DefenderHeuristic;
 
 }  // namespace dds::belief_evaluation

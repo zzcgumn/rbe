@@ -8,12 +8,9 @@ namespace dds::belief_evaluation
 
 auto RankMap::to_relative(int suit, int rank) const -> int
 {
-    // Out-of-range suit/rank cannot be outstanding, so 0 ("not outstanding")
-    // is the correct answer as well as the safe one — without this guard,
-    // an out-of-range suit indexes aggr out of bounds and an out-of-range
-    // rank indexes rel_rank's second dimension out of bounds, both undefined
-    // behaviour. RankMap is a public type callback authors read directly, so
-    // it must fail safely rather than assume its callers validated first.
+    // A suit or rank out of range cannot be outstanding, so 0 is correct.
+    // Without the guard it would index aggr or rel_rank out of bounds.
+    // Callback authors call RankMap directly, so it must fail safely.
     if (suit < 0 || suit >= DDS_SUITS || rank < 2 || rank > 14)
     {
         return 0;
@@ -23,9 +20,8 @@ auto RankMap::to_relative(int suit, int rank) const -> int
 
 auto RankMap::to_absolute(int suit, int ordinal) const -> int
 {
-    // ordinal is a count of top cards to keep, valid over 0..13 (win_ranks'
-    // second dimension); see win_ranks' doxygen in lookup_tables.hpp. Guard
-    // both ends and the suit for the same reason as to_relative above.
+    // ordinal is valid over 1..13 (see win_ranks in lookup_tables.hpp). The
+    // suit is guarded as in to_relative.
     if (suit < 0 || suit >= DDS_SUITS || ordinal <= 0 || ordinal > 13)
     {
         return 0;
@@ -47,12 +43,9 @@ auto make_rank_map(Deal const& deal) -> RankMap
         {
             pool |= deal.remainCards[hand][suit];
         }
-        // remainCards sets bit r for absolute rank r; aggr and the lookup
-        // tables use the compacted convention, bit r-2 for absolute rank r.
-        // A well-formed Deal never sets a remainCards bit above rank 14, but
-        // nothing in the type enforces that, and an unmasked stray bit here
-        // would push aggr[suit] past 0x1FFF — out of bounds for every
-        // rel_rank/win_ranks/highest_rank lookup that indexes by aggr.
+        // remainCards uses bit r for rank r; aggr uses bit r-2. Masked to 13 bits,
+        // so a stray bit above rank 14 cannot push aggr[suit] past 0x1FFF and out
+        // of the lookup tables.
         map.aggr[suit] = (pool >> 2) & ThirteenBitMask;
     }
     return map;
