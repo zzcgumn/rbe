@@ -294,15 +294,15 @@ auto make_solver_rung(int pool_size) -> RungFixture
 {
     // solve_board rejects a deal unless all four hands hold the same number of
     // cards (the three rules in table_deal_validate.hpp, which solve_board
-    // also enforces). Two earlier versions failed:
+    // also enforces). Two simpler constructions fail:
     //
-    //   1. East and West held `half` Spades plus one card each in Hearts,
-    //      Diamonds and Clubs. North and South held one Spade plus the same
-    //      three suits. The counts were unequal (RETURN_CARD_COUNT).
+    //   1. East and West hold `half` Spades plus one card each in Hearts,
+    //      Diamonds and Clubs. North and South hold one Spade plus the same
+    //      three suits. The counts are unequal (RETURN_CARD_COUNT).
     //   2. With extra Diamonds for North and South to equalise the counts,
-    //      ExhaustiveLayoutSource::size() was 252, not C(pool_size, half).
+    //      ExhaustiveLayoutSource::size() is 252, not C(pool_size, half).
     //      defender_pool_decomposition pools every suit East or West holds,
-    //      so their "fixed" Hearts and Clubs were enumerated too.
+    //      so their "fixed" Hearts and Clubs are enumerated too.
     //
     // The fix for both: East and West hold only Spades. Every other card,
     // including the ones that equalise the counts, goes to North and South.

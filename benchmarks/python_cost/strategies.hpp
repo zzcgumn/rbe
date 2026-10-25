@@ -7,8 +7,8 @@
 // C++ tests.
 //
 // safety_score_declarer_play_test.cpp proves real_work_declarer_play
-// correct, independently of any fixture or evaluate() call. Its Python
-// port is checked in
+// correct, independently of any fixture or evaluate() call. A separate
+// Python copy of the rule is checked in
 // python/tests/test_belief_space_local_evaluation_python_cost.py. timer.cpp
 // only times it.
 

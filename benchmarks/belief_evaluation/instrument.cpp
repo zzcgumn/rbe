@@ -22,10 +22,10 @@
 // That keeps the distinction EvaluationCounters documents: a depth with no
 // entry is not a depth with zero.
 //
-// `delta_calls`, printed in every mode, counts calls to the defender
-// strategy. EvaluationCounters has no such count, so the callable is
-// wrapped. Counting costs nothing next to delta itself, so it does not
-// confound a timed run. `bound_calls` (non-zero only with --tier2) counts
+// `delta_calls`, printed in the count, time and divergence modes, counts
+// calls to the defender strategy. EvaluationCounters has no such count, so
+// the callable is wrapped. Counting costs nothing next to delta itself, so
+// it does not confound a timed run. `bound_calls` (non-zero only with --tier2) counts
 // calls to the injected LayoutBound the same way.
 //
 // --strategy scripted (default) is solver-free. --strategy double_dummy

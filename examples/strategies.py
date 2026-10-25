@@ -29,8 +29,8 @@ def lowest_eligible_card(deal: dict, seat: int):
     """The lowest legal card. Compare ranks first. Break a tie by suit,
     spades lowest.
 
-    The tie-break matters only when discarding. It is arbitrary but fixed,
-    so the same node always gives the same card.
+    The tie-break matters only when leading or discarding. It is arbitrary
+    but fixed, so the same node always gives the same card.
     """
     legal = legal_cards(deal, seat)
     if not legal:

@@ -178,10 +178,9 @@ class TestExhaustiveLayoutSourceRecordArgument(unittest.TestCase):
         # With a record, the history and root must hold all 52 cards. Each
         # trick removes one card per hand, so a small pool would need many
         # tricks. One trick is played, so each hand has 12 cards: C(24, 12)
-        # layouts. All
-        # four cards are clubs, so no void is shown and the space does not
-        # shrink. This test only checks that the record is accepted as
-        # Consistent. TestTheHistoryConstrainsTheBeliefSpace in
+        # layouts. All four cards are clubs, so no void is shown and the
+        # space does not shrink. This test only checks that the record is
+        # accepted as Consistent. TestTheHistoryConstrainsTheBeliefSpace in
         # test_belief_space_local_evaluation_play_sequence.py checks the
         # narrowing.
         history = [Card(Clubs, 2), Card(Clubs, 3), Card(Clubs, 4), Card(Clubs, 5)]  # W, N, E, S

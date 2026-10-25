@@ -111,10 +111,10 @@ def higher_defender_count(layout: dict, declarer: int, suit: int, rank: int) -> 
 
 
 def real_work_declarer_play(state, view):
-    # The same rule as real_work_declarer_play in strategies.hpp. Proved
-    # correct, independently in each language, by
-    # safety_score_declarer_play_test.cpp and
-    # test_belief_space_local_evaluation_python_cost.py. Only timed here.
+    # The same rule as real_work_declarer_play in strategies.hpp, which
+    # safety_score_declarer_play_test.cpp proves correct.
+    # test_belief_space_local_evaluation_python_cost.py checks a separate
+    # Python copy, not this function. Only timed here.
     known_holdings = state.known_holdings
     seat = seat_on_play(known_holdings)
     candidates = enumerate_legal_cards(known_holdings, seat)

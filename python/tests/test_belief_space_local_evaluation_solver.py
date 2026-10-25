@@ -27,9 +27,10 @@ def holding(*ranks: int) -> int:
 
 def make_declarer_never_wins_a_trick() -> dict:
     # North (declarer) holds the ♠Q J. East holds the ♠A 4 and West the ♠K 5,
-    # and West holds the top club, so declarer's double-dummy value is 0. Mirrors the
-    # fixture of ReproductionRunBTierOneAndTwoTogetherAgainstAQualifyingDelta
-    # in double_dummy_bound_test.cpp.
+    # and West holds the top club, so declarer's double-dummy value is 0.
+    # Mirrors the fixture of
+    # ReproductionRunBTierOneAndTwoTogetherAgainstAQualifyingDelta in
+    # double_dummy_bound_test.cpp.
     remain_cards = [[0, 0, 0, 0] for _ in range(4)]
     remain_cards[North][Spades] = holding(12, 11)  # Q, J
     remain_cards[South][Spades] = holding(2, 3)

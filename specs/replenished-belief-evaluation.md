@@ -645,9 +645,10 @@ with no renaming or include-order trick.
     private to each `play()` call, and `evaluate()` does not know it
     happened.
   - The cache belongs to the instance, so two differently configured
-    instances never share it. Without `max_depth`, calls share it. A hit across calls is
-    rare: each call's root is renormalised to 1, but the inner recursion
-    never renormalises, so only a chain of probability-1 choices matches.
+    instances never share it. Without `max_depth`, calls share it. A hit
+    across calls is rare: each call's root is renormalised to 1, but the
+    inner recursion never renormalises, so only a chain of probability-1
+    choices matches.
     Reuse within one call is unaffected. With `max_depth`, the cutoff
     depends on depth within the call, so each call starts with a clean
     cache.
