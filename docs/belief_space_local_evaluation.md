@@ -101,7 +101,8 @@ purpose. The source uses the history to narrow the belief space. π reads
 the record from `state.play_record` to see what happened before the root.
 Every played card is public, so this reveals nothing hidden.
 `state.play_record` is not `state.history`: `history` holds only the
-root's trick in progress and the cards played since the root. See the doxygen on those fields.
+root's trick in progress and the cards played since the root. See the
+doxygen on those fields.
 
 ## Python
 
@@ -309,7 +310,7 @@ value["root_is_declaring_side"]  # bool -- which shape root_children has
   the entry π chose, not the sum.
 - **At a defender root**, the entries partition the mass. They sum to
   `p_make`.
-- **At a terminal root**, it is empty.
+- **At a terminal root, or when a cut fires at the root**, it is empty.
 
 **Use `root_is_declaring_side` to tell which shape you have.** Do not
 work it out from the root seat. It is true when declarer *or dummy* is on

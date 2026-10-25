@@ -1963,8 +1963,8 @@ PYBIND11_MODULE(_belief_space_local_evaluation, module)
 
     // The trick primitives from trick.hpp: the four functions the evaluator
     // uses to walk a position. A Python caller who reaches a mid-play root
-    // with them applies the same rules as the evaluator. A caller's own
-    // version that differs gives a wrong root, with no error.
+    // with them applies the same rules as the evaluator. A caller who writes
+    // a version that differs gets a wrong root, with no error.
     //
     // All four take and return deal dicts, the shape of
     // ObservationState.known_holdings.

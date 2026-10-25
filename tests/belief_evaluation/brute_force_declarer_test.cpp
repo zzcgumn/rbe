@@ -932,7 +932,7 @@ TEST_F(BruteForceDeclarerTest, MaxLayoutsMustBeAppliedBeforeCutoffLeafValueNotAf
     // extra layout shifts every candidate's value by the same amount and
     // never changes which one wins. The absolute value is not public:
     // search() is private, and evaluate()'s root_children for a declarer root
-    // come from evaluate()'s own recursion. So this test calls check_leaf(),
+    // come from evaluate()'s recursion. So this test calls check_leaf(),
     // the function search() calls, for the depth-cutoff case: prune, then
     // check the cutoff. is_terminal is checked before pruning, since a
     // terminal leaf costs no solve (see

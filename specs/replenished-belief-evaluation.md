@@ -300,7 +300,7 @@ non-goals" says what is absent.
     source ran out. Supplying `M` is not enough. If `M` is at least the
     number of consistent layouts, the run is byte-for-byte the exhaustive
     one.
-  - Children inherit `is_sample` as a starting value. A node's own
+  - Children inherit `is_sample` as a starting value. The child's
     replenishment scan can set it back to `false` (see below).
 - **A sample can collapse, and replenishment bounds that only as far as the
   source allows.** `EvaluateOptions::sampling` groups `sample_size`,

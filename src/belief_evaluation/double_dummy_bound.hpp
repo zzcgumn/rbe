@@ -20,8 +20,9 @@ namespace dds::belief_evaluation
 /// `EvaluateOptions::delta_is_double_dummy_optimal`. `DoubleDummyDefender`
 /// qualifies under either `SpreadPolicy`, and is the intended pair.
 ///
-/// When the solver returns no score, this asks again. If that fails too,
-/// it returns a value that is too high. See `as_bound()`.
+/// When the solver returns no valid score, this asks again. If that fails
+/// too, or the solver reports an error, it returns a value that is too
+/// high. See `as_bound()`.
 class DoubleDummyBound
 {
 public:
@@ -44,7 +45,8 @@ public:
     /// **Do not clamp a missing score.** Clamping −2 gives 0, and the cut
     /// would still fire. The value must be too high.
     ///
-    /// Before giving up, this retries at `solutions = 3`. That scored every
+    /// An out-of-range score is retried at `solutions = 3` before giving up.
+    /// A non-zero status is not retried. `solutions = 3` scored every
     /// position measured to fail at `solutions = 1`. So tier 2 still prunes:
     /// on a four-card ending, nodes visited fall from 6283 to 3159.
     ///
